@@ -27,17 +27,29 @@ export class TurnUsageAccumulator {
   #reportedCalls = 0;
   #promptTokens = 0;
   #completionTokens = 0;
+  #pendingCalls = 0;
 
   record(usage: ModelUsage | undefined): void {
+    this.startCall()(usage);
+  }
+
+  startCall(): (usage: ModelUsage | undefined) => void {
     this.#modelCalls++;
-    if (usage === undefined) return;
-    this.#reportedCalls++;
-    this.#promptTokens += usage.promptTokens;
-    this.#completionTokens += usage.completionTokens;
+    this.#pendingCalls++;
+    let completed = false;
+    return (usage) => {
+      if (completed) return;
+      completed = true;
+      this.#pendingCalls--;
+      if (usage === undefined) return;
+      this.#reportedCalls++;
+      this.#promptTokens += usage.promptTokens;
+      this.#completionTokens += usage.completionTokens;
+    };
   }
 
   snapshot(): TurnUsageSnapshot {
-    const complete = this.#reportedCalls === this.#modelCalls;
+    const complete = this.#pendingCalls === 0 && this.#reportedCalls === this.#modelCalls;
     return {
       modelCalls: this.#modelCalls,
       promptTokens: complete ? this.#promptTokens : null,
@@ -51,7 +63,8 @@ export function observeModelClient(
   client: AssistantModelClient,
   recorder: {
     record(usage: ModelUsage | undefined): void;
-    capture?(): { record(usage: ModelUsage | undefined): void } | null;
+    startCall?(): (usage: ModelUsage | undefined) => void;
+    capture?(): { record(usage: ModelUsage | undefined): void; startCall?(): (usage: ModelUsage | undefined) => void } | null;
   },
 ): AssistantModelClient {
   return {
@@ -59,14 +72,15 @@ export function observeModelClient(
     async generate(request: AssistantModelRequest): Promise<AssistantModelResponse> {
       // Capture the active turn once; a late response cannot read a later turn's mutable pointer.
       const callRecorder = recorder.capture ? recorder.capture() : recorder;
+      const complete = callRecorder?.startCall?.() ?? ((usage: ModelUsage | undefined) => callRecorder?.record(usage));
       let response: AssistantModelResponse;
       try {
         response = await client.generate(request);
       } catch (error) {
-        callRecorder?.record(undefined);
+        complete(undefined);
         throw error;
       }
-      callRecorder?.record(response.usage);
+      complete(response.usage);
       return response;
     },
     projectProviderContinuation(response, acceptedCalls) {

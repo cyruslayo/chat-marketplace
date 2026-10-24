@@ -139,3 +139,37 @@ Self-review against Definition of Done:
 7. Full Workers, full `npm test`, bounded live evaluation, integrated captures, and final independent review still govern batch acceptance.
 
 The issue and batch remain claimed. This entry does not establish acceptance.
+
+Final independent review found three additional cases at `3d09368`.
+Mixed-request failure metadata was missing, first-stay grading used the post-turn selection, and pending provider usage could appear complete.
+The corrections retain closed failure outcomes, pin the expected Unit before generation, and mark pending usage and cost unavailable.
+
+Named regressions and preserved red evidence:
+
+- `npx tsx --test test/assistant-persistent-continuity.test.ts` initially passed 2 tests and failed 1. Log: `mixed-outcome-red.log`.
+- `npx tsx --test test/pilot-agent-smoke-metrics.test.ts` initially passed 7 tests and failed 1. Log: `pending-usage-red.log`.
+- `npx tsx --test test/pilot-agent-smoke-grading.test.ts` initially passed 7 tests and failed 1. Log: `first-unit-grader-red.log`.
+
+Corrected gate, with `NODE_ENV=test` and `COMMERCE_REFERENCE_TEST_KEY=allow`:
+
+`npx tsx --test test/pilot-agent-smoke-grading.test.ts test/pilot-agent-smoke-metrics.test.ts test/pilot-agent-smoke-reference.test.ts test/pilot-agent-smoke-report.test.ts test/concierge-controls-eval.test.ts test/assistant-persistent-continuity.test.ts test/assistant-control-metrics.test.ts test/assistant-scope-controls.test.ts`
+
+Result: 43 passed, 0 failed, cancelled, or skipped; exit 0. Log: `final-review-regressions.log`.
+`npm run check` passed again; exit 0. Log: `final-review-check.log`.
+The scope-timeout regression holds the provider promise open until after the runtime returns.
+Its snapshot reports one call with unavailable tokens, then attributes completion to the original call.
+The controlled report copies pending snapshots and marks token and cost fields unavailable.
+
+The full Worker gate passed 170 tests across 27 files; exit 0. Log: `integrated-workers.log`.
+A final repeat will cover the last runtime error-outcome change.
+Integrated captures passed seven named AC7 tests and 56 viewport/theme checks.
+They cover results, details, draft, redirect, unavailable, actual quota refusal, and support.
+Logs: `capture-integrated-*.log`. Images: `2026-10-24-controls-integrated/`.
+No shared CSS changed after those captures.
+
+`git diff --cached --check` reported whitespace inside preserved raw command logs during the phase-B commit.
+The source and document whitespace check remains separate from verbatim logs.
+No runtime failure was hidden by those log warnings.
+
+Live semantic checks, full `npm test`, and final review clearance remain pending.
+Keep the issue and batch claimed.

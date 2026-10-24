@@ -3202,6 +3202,7 @@ export class LocalGuestApp {
       case "scope_redirect": return ASSISTANT_CONTROL_COPY.redirect;
       case "scope_unavailable":
       case "quota_refusal":
+      case "model_handling_failure":
       case "guard_failure": return ASSISTANT_CONTROL_COPY.unavailable;
       case "support_guidance":
         // This plan renders only fixed support copy from the Shortlet pack; no model prose enters the timeline.

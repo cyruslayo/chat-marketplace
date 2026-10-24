@@ -1,5 +1,9 @@
 export const SMOKE_GRADING_PROFILE = "price-roles-and-status-v3";
 
+export function requestedUnitMatches(expectedUnitId: string | undefined, actualUnitId: string | undefined): boolean {
+  return typeof expectedUnitId === "string" && expectedUnitId.length > 0 && actualUnitId === expectedUnitId;
+}
+
 /** Public price facts supplied by a domain projection or quote (ADR 0015). */
 export interface SmokePriceFacts {
   readonly nightlyKobo?: number;

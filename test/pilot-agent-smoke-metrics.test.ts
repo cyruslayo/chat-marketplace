@@ -4,6 +4,8 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ASSISTANT_CONTROL_OUTCOMES } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import {
   TurnUsageAccumulator,
   buildPerformanceReport,
@@ -279,6 +281,7 @@ test("AC3: observation preserves guarded adapter capability, continuation projec
     capture: () => currentTurn,
   });
   const pending = observed.generate({ systemInstruction: "test", tools: [], history: [] });
+  assert.deepEqual(firstTurn.snapshot(), { modelCalls: 1, promptTokens: null, completionTokens: null }, "An outstanding provider call cannot report complete zero usage");
   currentTurn = secondTurn;
   resolveResponse?.({ text: "safe", usage: { promptTokens: 7, completionTokens: 2 } });
   await pending;
@@ -314,4 +317,21 @@ test("AC4 guard: the benchmark document is refused unless the result file holds 
   });
   assert.match(validateLiveBenchmarkResult(offline) ?? "", /not a live run/);
   assert.throws(() => renderBenchmarkDocument(offline));
+});
+
+test("A scope timeout before provider completion reports one pending call and unavailable usage", async () => {
+  const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
+  const usage = new TurnUsageAccumulator();
+  let resolveResponse: ((response: { usage: { promptTokens: number; completionTokens: number } }) => void) | undefined;
+  const observed = observeModelClient({ generate: async () => new Promise<{ usage: { promptTokens: number; completionTokens: number } }>((resolve) => { resolveResponse = resolve; }) }, usage);
+  const runtime = new AssistantRuntime(environment, observed, { scopeTimeoutMs: 10, scopeClassifier: {
+    assess: async () => { await observed.generate({ systemInstruction: "synthetic", tools: [], history: [] }); return undefined; },
+  } });
+  try {
+    assert.equal((await runtime.handleTurn("pending-timeout", "Hello")).ok, true);
+    assert.deepEqual(usage.snapshot(), { modelCalls: 1, promptTokens: null, completionTokens: null });
+    resolveResponse?.({ usage: { promptTokens: 7, completionTokens: 2 } });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(usage.snapshot(), { modelCalls: 1, promptTokens: 7, completionTokens: 2 });
+  } finally { environment.close(); }
 });

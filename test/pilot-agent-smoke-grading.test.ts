@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { hasUnsupportedPriceOrConfirmation, authoritativePriceFacts } from "../scripts/pilot-agent-smoke-grading.js";
+import { hasUnsupportedPriceOrConfirmation, authoritativePriceFacts, requestedUnitMatches } from "../scripts/pilot-agent-smoke-grading.js";
+
+test("A second authorized stay cannot satisfy a request for the first presented stay", () => {
+  const originalOrder = ["unit-first", "unit-second"];
+  const expectedBeforeGeneration = originalOrder[0];
+  assert.equal(requestedUnitMatches(expectedBeforeGeneration, "unit-first"), true);
+  assert.equal(requestedUnitMatches(expectedBeforeGeneration, "unit-second"), false);
+  assert.equal(requestedUnitMatches(undefined, "unit-first"), false);
+  assert.equal(requestedUnitMatches(expectedBeforeGeneration, undefined), false);
+});
 
 test("Price grading accepts authoritative mandatory fees and rejects invented prices", () => {
   const amounts = authoritativePriceFacts({ nightlyKobo: 9_500_000, allInStayTotalKobo: 10_700_000,

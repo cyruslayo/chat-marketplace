@@ -8,7 +8,7 @@ import { ModelRequestGuardError, type AssistantModelClient } from "../apps/local
 import type { AssistantTaskState } from "../apps/local-guest/src/assistant/assistant-state.js";
 import { ASSISTANT_CONTROL_OUTCOMES, type AssistantControlOutcome, type AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 import { resolvePilotBaseUrl } from "./pilot-base-url.js";
-import { authoritativePriceFacts, hasUnsupportedPriceOrConfirmation, SMOKE_GRADING_PROFILE } from "./pilot-agent-smoke-grading.js";
+import { authoritativePriceFacts, hasUnsupportedPriceOrConfirmation, requestedUnitMatches, SMOKE_GRADING_PROFILE } from "./pilot-agent-smoke-grading.js";
 import { createSmokeReferenceModel } from "./pilot-agent-smoke-reference.js";
 import {
   ProviderRequestBudget,
@@ -397,11 +397,12 @@ if (!credential && !scripted) {
       }
 
       turnDiagnostics = [];
+      const selected = refined.taskState.shortlist[0];
       const inspection = await invokeTurn("unit inspection", "Open the first one.");
       const inspectionDiagnostics = [...turnDiagnostics];
       const inspectionOperation = successfulOperation(inspectionDiagnostics);
       const inspectionThread = runtime.getThread(threadId);
-      const selected = inspectionThread.taskState.shortlist.find((stay) => stay.stayRef === inspectionThread.taskState.selectedStayRef);
+      const actualSelected = inspectionThread.taskState.shortlist.find((stay) => stay.stayRef === inspectionThread.taskState.selectedStayRef);
       const detailRender = await anyRenderable(inspection.surfaces ?? []);
       const detailMessages = JSON.stringify(inspection.surfaces?.[0]?.a2uiMessages ?? []);
       const selectedUnit = selected ? environment.unitRepository.findById(selected.unitId) : null;
@@ -412,7 +413,7 @@ if (!credential && !scripted) {
         ? createStayQuote({ unit: selectedUnit, checkIn: detailCheckIn, checkOut: detailCheckOut, partySize: detailState.partySize ?? 1, clock: environment.clock })
         : null;
       const detailFactsPreserved = Boolean(selected)
-        && inspectionThread.taskState.selectedStayRef === selected!.stayRef
+        && requestedUnitMatches(selected?.unitId, actualSelected?.unitId)
         && detailMessages.includes(selected!.title)
         && detailMessages.includes(selected!.neighbourhood)
         && detailMessages.includes(selected!.city)

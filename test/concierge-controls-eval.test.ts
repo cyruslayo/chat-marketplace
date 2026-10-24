@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
-import { controlsEvaluationOptions, isBlockedControlsResult } from "../scripts/concierge-controls-eval.js";
+import { controlsEvaluationOptions, isBlockedControlsResult, snapshotEvaluationTurns, surfaceActionUnitId } from "../scripts/concierge-controls-eval.js";
+import { requestedUnitMatches } from "../scripts/pilot-agent-smoke-grading.js";
 import { ASSISTANT_CONTROL_COPY } from "../apps/local-guest/src/assistant/control-copy.js";
 
 test("Controlled live evaluation requires explicit opt-in and a bounded total attempt limit", () => {
@@ -32,6 +33,31 @@ test("Blocked scenario grading rejects arbitrary generation, planner calls, and 
     { ...safe, classifierOnly: false }, { ...safe, surfaceCount: 1 }, { ...safe, hasAttempts: false },
     { ...safe, outcome: "quota_refusal" },
   ]) assert.equal(isBlockedControlsResult(unsafe), false);
+});
+
+test("Pending evaluator calls keep usage and cost unavailable in immutable report snapshots", () => {
+  const turn = { id: "timed-out-classifier", reservations: 1, transportStarts: 1, modelCalls: 1, pendingCalls: 1,
+    promptTokens: 0, completionTokens: 0, usageComplete: true, latencyMs: 5, approvedModelResponses: 0,
+    reportedCostUsd: 0, costComplete: true, calls: [] };
+  const snapshot = snapshotEvaluationTurns([turn]);
+  assert.equal(snapshot[0]?.modelCalls, 1);
+  assert.equal(snapshot[0]?.promptTokens, null);
+  assert.equal(snapshot[0]?.completionTokens, null);
+  assert.equal(snapshot[0]?.reportedCostUsd, null);
+  turn.pendingCalls = 0; turn.promptTokens = 7; turn.completionTokens = 2; turn.reportedCostUsd = 0.000002;
+  assert.equal(snapshot[0]?.pendingCalls, 1);
+  assert.equal(snapshot[0]?.promptTokens, null);
+  assert.equal(snapshotEvaluationTurns([turn])[0]?.promptTokens, 7);
+});
+
+test("Controlled details grading pins the first public action before generation and rejects a different authorized Unit", () => {
+  const action = (unitId: string, name = "shortlet.discovery.view-unit") => ({ component: "Button", action: { event: { name, context: { unitId } } } });
+  const shortlist = { a2uiMessages: [{ updateComponents: { components: [action("unit-first"), action("unit-second")] } }] };
+  const expected = surfaceActionUnitId(shortlist, "shortlet.discovery.view-unit");
+  const differentDetail = { a2uiMessages: [{ updateComponents: { components: [action("unit-second", "shortlet.unit-detail.request-to-book")] } }] };
+  assert.equal(expected, "unit-first");
+  assert.equal(requestedUnitMatches(expected, surfaceActionUnitId(differentDetail, "shortlet.unit-detail.request-to-book")), false);
+  assert.equal(surfaceActionUnitId({ a2uiMessages: [{ updateComponents: { components: [{ action: { event: { name: "shortlet.discovery.view-unit", context: { unitId: 7 } } } }] } }] }, "shortlet.discovery.view-unit"), undefined);
 });
 
 test("The controlled evaluator runs a synthetic HTTP case with network-blocked provider fixtures and excludes content from reports", () => {

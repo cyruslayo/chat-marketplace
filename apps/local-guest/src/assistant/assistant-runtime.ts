@@ -51,7 +51,7 @@ import { redactSensitiveData } from "../../../../packages/platform-core/src/reda
 
 export const ASSISTANT_CONTROL_OUTCOMES = [
   "scope_redirect", "scope_unavailable", "quota_refusal", "guard_failure", "rejected_plan_fallback",
-  "support_guidance", "no_current_booking", "successful_model_handling", "tool_denial",
+  "support_guidance", "no_current_booking", "successful_model_handling", "model_handling_failure", "tool_denial",
 ] as const;
 export type AssistantControlOutcome = typeof ASSISTANT_CONTROL_OUTCOMES[number];
 
@@ -925,8 +925,10 @@ export class AssistantRuntime {
         controlOutcome = error.code === "quota_denied" ? "quota_refusal" : "guard_failure";
       } else if (error instanceof ModelRequestGuardError && error.code === "deadline_exceeded") {
         controlOutcome = "guard_failure";
+      } else {
+        controlOutcome = "model_handling_failure";
       }
-      if (error instanceof ModelRequestGuardError) recordOutcome(controlOutcome);
+      recordOutcome(controlOutcome);
       this.#diagnose(createFailureDiagnostic(activeStage, round, activeToolName, error));
       if (hasSuccessfulApplicationOperation && candidateSurfaces.length > 0) {
         recordOutcome("rejected_plan_fallback");
@@ -947,7 +949,7 @@ export class AssistantRuntime {
       // Rollback: thread is not mutated on error
       if (discardUserInput) {
         return { ok: true, messages: [ASSISTANT_CONTROL_COPY.unavailable], surfaces: [],
-          modelHandled: false, discardUserInput: true, tasks: this.getTaskRail(threadId) };
+          modelHandled: false, discardUserInput: true, controlOutcome, tasks: this.getTaskRail(threadId) };
       }
       if (error instanceof ModelRequestGuardError) {
         return {

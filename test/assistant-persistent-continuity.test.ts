@@ -5,6 +5,8 @@ import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-ru
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { LocalGuestApp } from "../apps/local-guest/src/guest-server.js";
 import { guestAction, restartFixture } from "./helpers/guest-restart.js";
+import { ModelRequestGuardError } from "../apps/local-guest/src/assistant/assistant-model.js";
+import { ASSISTANT_CONTROL_COPY } from "../apps/local-guest/src/assistant/control-copy.js";
 
 const serverModel: AssistantModelClient = {
   generate: async (request) => {
@@ -25,6 +27,37 @@ const serverModel: AssistantModelClient = {
     return { toolCalls: [{ id: "search", name: "search_stays", args: { city: "Lagos", neighbourhood: "Old Ikoyi", checkIn: null, nights: 4, guests: 2 } }] };
   },
 };
+
+test("Mixed-request quota, storage, and provider failures retain unavailable wording after refresh and restart", async () => {
+  for (const failure of ["quota_denied", "quota_unavailable", "provider_failure"] as const) {
+    let armed = false;
+    const model: AssistantModelClient = { generate: async (request) => {
+      if (armed && request.structuredOutput?.name === "concierge_scope") return { text: JSON.stringify({
+        scope: "mixed", risk: "ordinary", intents: ["search"], reasonCode: "mixed",
+        slots: { city: "Lagos", neighbourhood: "Old Ikoyi", bedrooms: null, nights: 4, guests: 2, checkIn: null, checkOut: null },
+      }) };
+      if (armed) throw failure === "provider_failure" ? new Error("Synthetic provider failure") : new ModelRequestGuardError(failure);
+      return serverModel.generate(request);
+    } };
+    const fixture = await restartFixture({}, { modelClient: model, conciergeMode: "assistant-offline" });
+    try {
+      assert.equal((await fixture.send("/api/turn", { text: "Find Ikoyi stays for four nights for two guests" })).ok, true);
+      armed = true;
+      const failed = await fixture.send("/api/turn", { text: "Find Old Ikoyi stays for 4 nights and 2 guests, and write a sorting program." });
+      assert.equal(failed.ok, true);
+      if (!failed.ok) return;
+      assert.equal(failed.assistantControlOutcome, failure === "quota_denied" ? "quota_refusal" : failure === "quota_unavailable" ? "guard_failure" : "model_handling_failure");
+      assert.deepEqual(failed.messages, [ASSISTANT_CONTROL_COPY.unavailable]);
+      const current = await fixture.state();
+      assert.equal(current.ok, true);
+      if (current.ok) assert.equal(current.timeline.at(-1)?.text, ASSISTANT_CONTROL_COPY.unavailable);
+      await fixture.restart();
+      const restored = await fixture.state();
+      assert.equal(restored.ok, true);
+      if (restored.ok) assert.equal(restored.timeline.at(-1)?.text, ASSISTANT_CONTROL_COPY.unavailable);
+    } finally { await fixture.close(); }
+  }
+});
 
 test("A scope redirect keeps its fixed meaning in the timeline and after refresh", async () => {
   const fixture = await restartFixture({}, { modelClient: serverModel, conciergeMode: "assistant-offline" });

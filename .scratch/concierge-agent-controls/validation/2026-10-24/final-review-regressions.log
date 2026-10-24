@@ -1,0 +1,280 @@
+TAP version 13
+# (node:119232) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC6: classifier guard failures and quota refusals emit separate metadata-only outcomes once
+ok 1 - AC6: classifier guard failures and quota refusals emit separate metadata-only outcomes once
+  ---
+  duration_ms: 111.4529
+  type: 'test'
+  ...
+# (node:87904) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Mixed-request quota, storage, and provider failures retain unavailable wording after refresh and restart
+ok 2 - Mixed-request quota, storage, and provider failures retain unavailable wording after refresh and restart
+  ---
+  duration_ms: 4256.9655
+  type: 'test'
+  ...
+# Subtest: A scope redirect keeps its fixed meaning in the timeline and after refresh
+ok 3 - A scope redirect keeps its fixed meaning in the timeline and after refresh
+  ---
+  duration_ms: 1474.8351
+  type: 'test'
+  ...
+# Subtest: Assistant Shortlet search, detail, and draft continuity survive authenticated HTTP refreshes and application restarts
+ok 4 - Assistant Shortlet search, detail, and draft continuity survive authenticated HTTP refreshes and application restarts
+  ---
+  duration_ms: 1460.1193
+  type: 'test'
+  ...
+# (node:29912) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Scope AC1: unrelated requests never invoke planner tools or retain rejected input
+ok 5 - Scope AC1: unrelated requests never invoke planner tools or retain rejected input
+  ---
+  duration_ms: 645.744
+  type: 'test'
+  ...
+# Subtest: Scope AC3: mixed requests send only validated scope slots to the planner
+ok 6 - Scope AC3: mixed requests send only validated scope slots to the planner
+  ---
+  duration_ms: 739.526
+  type: 'test'
+  ...
+# Subtest: Scope AC4: unavailable and malformed classifier decisions use fixed replies without a planner call
+ok 7 - Scope AC4: unavailable and malformed classifier decisions use fixed replies without a planner call
+  ---
+  duration_ms: 673.5223
+  type: 'test'
+  ...
+# Subtest: Scope AC2: valid stays, greetings, Pidgin, corrections and contextual follow-ups reach planning
+ok 8 - Scope AC2: valid stays, greetings, Pidgin, corrections and contextual follow-ups reach planning
+  ---
+  duration_ms: 728.7467
+  type: 'test'
+  ...
+# Subtest: Scope AC5: pending confirmations and cancellations bypass an unavailable classifier
+ok 9 - Scope AC5: pending confirmations and cancellations bypass an unavailable classifier
+  ---
+  duration_ms: 1014.1857
+  type: 'test'
+  ...
+# Subtest: Scope AC6: rejected input stays absent from persisted history and later classifier context
+ok 10 - Scope AC6: rejected input stays absent from persisted history and later classifier context
+  ---
+  duration_ms: 646.8789
+  type: 'test'
+  ...
+# Subtest: Scope AC7: the default classifier is tool-free and excludes prior history and listing prose
+ok 11 - Scope AC7: the default classifier is tool-free and excludes prior history and listing prose
+  ---
+  duration_ms: 602.6513
+  type: 'test'
+  ...
+# (node:163252) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Controlled live evaluation requires explicit opt-in and a bounded total attempt limit
+ok 12 - Controlled live evaluation requires explicit opt-in and a bounded total attempt limit
+  ---
+  duration_ms: 10.3131
+  type: 'test'
+  ...
+# Subtest: Blocked scenario grading rejects arbitrary generation, planner calls, and new surfaces despite unchanged database effects
+ok 13 - Blocked scenario grading rejects arbitrary generation, planner calls, and new surfaces despite unchanged database effects
+  ---
+  duration_ms: 8.7902
+  type: 'test'
+  ...
+# Subtest: Pending evaluator calls keep usage and cost unavailable in immutable report snapshots
+ok 14 - Pending evaluator calls keep usage and cost unavailable in immutable report snapshots
+  ---
+  duration_ms: 1.0778
+  type: 'test'
+  ...
+# Subtest: Controlled details grading pins the first public action before generation and rejects a different authorized Unit
+ok 15 - Controlled details grading pins the first public action before generation and rejects a different authorized Unit
+  ---
+  duration_ms: 1.5299
+  type: 'test'
+  ...
+# Subtest: The controlled evaluator runs a synthetic HTTP case with network-blocked provider fixtures and excludes content from reports
+ok 16 - The controlled evaluator runs a synthetic HTTP case with network-blocked provider fixtures and excludes content from reports
+  ---
+  duration_ms: 6120.0462
+  type: 'test'
+  ...
+# Subtest: A second authorized stay cannot satisfy a request for the first presented stay
+ok 17 - A second authorized stay cannot satisfy a request for the first presented stay
+  ---
+  duration_ms: 2.1188
+  type: 'test'
+  ...
+# Subtest: Price grading accepts authoritative mandatory fees and rejects invented prices
+ok 18 - Price grading accepts authoritative mandatory fees and rejects invented prices
+  ---
+  duration_ms: 7.2679
+  type: 'test'
+  ...
+# Subtest: Finding 1: a mandatory fee cannot be presented as the full stay total
+ok 19 - Finding 1: a mandatory fee cannot be presented as the full stay total
+  ---
+  duration_ms: 0.8841
+  type: 'test'
+  ...
+# Subtest: Finding 1: currency suffixes and alternative booking confirmations cannot bypass grading
+ok 20 - Finding 1: currency suffixes and alternative booking confirmations cannot bypass grading
+  ---
+  duration_ms: 2.1079
+  type: 'test'
+  ...
+# Subtest: Finding 1: ambiguous price roles fail closed and separate messages cannot share a negation
+ok 21 - Finding 1: ambiguous price roles fail closed and separate messages cannot share a negation
+  ---
+  duration_ms: 0.5212
+  type: 'test'
+  ...
+# Subtest: Finding 1: an authoritative accommodation subtotal is valid only as accommodation
+ok 22 - Finding 1: an authoritative accommodation subtotal is valid only as accommodation
+  ---
+  duration_ms: 1.5856
+  type: 'test'
+  ...
+# Subtest: Finding 1: amount due and stay total remain distinct when a deposit changes the cash requirement
+ok 23 - Finding 1: amount due and stay total remain distinct when a deposit changes the cash requirement
+  ---
+  duration_ms: 1.3575
+  type: 'test'
+  ...
+# Subtest: Booking grading distinguishes a negated booking from a false confirmation
+ok 24 - Booking grading distinguishes a negated booking from a false confirmation
+  ---
+  duration_ms: 0.4368
+  type: 'test'
+  ...
+# (node:131428) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC1: the smoke result JSON includes per-turn latency, model-call count and token usage when the provider returns usage
+ok 25 - AC1: the smoke result JSON includes per-turn latency, model-call count and token usage when the provider returns usage
+  ---
+  duration_ms: 17.7102
+  type: 'test'
+  ...
+# Subtest: AC1 percentiles: p50 and p95 are nearest-rank over the recorded samples and null when empty
+ok 26 - AC1 percentiles: p50 and p95 are nearest-rank over the recorded samples and null when empty
+  ---
+  duration_ms: 0.7185
+  type: 'test'
+  ...
+# Subtest: AC1 failure path: when the provider returns no usage, the report still writes and token and cost fields are unavailable instead of zero
+ok 27 - AC1 failure path: when the provider returns no usage, the report still writes and token and cost fields are unavailable instead of zero
+  ---
+  duration_ms: 331.5432
+  type: 'test'
+  ...
+# Subtest: AC2: the cost estimate comes from the OpenRouter-reported price for the model slug
+ok 28 - AC2: the cost estimate comes from the OpenRouter-reported price for the model slug
+  ---
+  duration_ms: 2.6241
+  type: 'test'
+  ...
+# Subtest: AC2 failure path: an unknown slug, a failed price fetch or a missing price leaves the cost unavailable
+ok 29 - AC2 failure path: an unknown slug, a failed price fetch or a missing price leaves the cost unavailable
+  ---
+  duration_ms: 2.0637
+  type: 'test'
+  ...
+# Subtest: AC3: no prompt, reply or key text is written to the result or report files (ADR 0075)
+ok 30 - AC3: no prompt, reply or key text is written to the result or report files (ADR 0075)
+  ---
+  duration_ms: 230.511
+  type: 'test'
+  ...
+# Subtest: AC3: observation preserves guarded adapter capability, continuation projection, and per-call usage ownership
+ok 31 - AC3: observation preserves guarded adapter capability, continuation projection, and per-call usage ownership
+  ---
+  duration_ms: 2.7758
+  type: 'test'
+  ...
+# Subtest: AC4 guard: the benchmark document is refused unless the result file holds real live results
+ok 32 - AC4 guard: the benchmark document is refused unless the result file holds real live results
+  ---
+  duration_ms: 5.5453
+  type: 'test'
+  ...
+# Subtest: A scope timeout before provider completion reports one pending call and unavailable usage
+ok 33 - A scope timeout before provider completion reports one pending call and unavailable usage
+  ---
+  duration_ms: 116.8831
+  type: 'test'
+  ...
+# (node:39728) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: The four-turn scripted reference uses the full smoke harness without credentials, network calls or live performance claims
+ok 34 - The four-turn scripted reference uses the full smoke harness without credentials, network calls or live performance claims
+  ---
+  duration_ms: 11036.8153
+  type: 'test'
+  ...
+# Subtest: A bounded offline transport probe reserves retries outside transport catches and reports quota refusal once
+ok 35 - A bounded offline transport probe reserves retries outside transport catches and reports quota refusal once
+  ---
+  duration_ms: 1977.0271
+  type: 'test'
+  ...
+# Subtest: Finding 2: complete consistent live evidence produces GO
+ok 36 - Finding 2: complete consistent live evidence produces GO
+  ---
+  duration_ms: 32.1258
+  type: 'test'
+  ...
+# Subtest: AC6: reserved capacity and actual transport starts are reported and validated separately
+ok 37 - AC6: reserved capacity and actual transport starts are reported and validated separately
+  ---
+  duration_ms: 4.5861
+  type: 'test'
+  ...
+# Subtest: Finding 2: empty, missing, duplicate and unknown journey stages cannot produce GO
+ok 38 - Finding 2: empty, missing, duplicate and unknown journey stages cannot produce GO
+  ---
+  duration_ms: 8.0095
+  type: 'test'
+  ...
+# Subtest: Finding 2: contradictory verdicts and journey or request counts are refused
+ok 39 - Finding 2: contradictory verdicts and journey or request counts are refused
+  ---
+  duration_ms: 20.3868
+  type: 'test'
+  ...
+# Subtest: Finding 2: a complete single journey remains INCOMPLETE for the three-journey benchmark
+ok 40 - Finding 2: a complete single journey remains INCOMPLETE for the three-journey benchmark
+  ---
+  duration_ms: 5.9364
+  type: 'test'
+  ...
+# Subtest: Finding 2: a complete failed run preserves its NO-GO evidence
+ok 41 - Finding 2: a complete failed run preserves its NO-GO evidence
+  ---
+  duration_ms: 3.487
+  type: 'test'
+  ...
+# Subtest: Finding 2: legacy grading and malformed nested evidence cannot produce a new GO
+ok 42 - Finding 2: legacy grading and malformed nested evidence cannot produce a new GO
+  ---
+  duration_ms: 14.7016
+  type: 'test'
+  ...
+# Subtest: AC6: failed task selection does not become a false refusal without refusal evidence
+ok 43 - AC6: failed task selection does not become a false refusal without refusal evidence
+  ---
+  duration_ms: 3.9275
+  type: 'test'
+  ...
+1..43
+# tests 43
+# suites 0
+# pass 43
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 14637.3495
