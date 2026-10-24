@@ -1,0 +1,3 @@
+(node:122092) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Controlled evaluation: 5/12 passed; 39/64 reserved. Report: C:\AI2026\chat-marketplace-controls\.scratch\concierge-agent-controls\validation\live-2026-10-24T20-40-01-850Z-43dcb507
