@@ -6,6 +6,7 @@ import { COMMERCE_OWNED_TABLES, PLATFORM_OWNED_TABLES } from "./do-export.js";
 import type { RemoteGuestAccounts } from "../../../packages/platform-core/src/accounts/remote-port.js";
 import type { GuestDataPort } from "../../local-guest/src/guest-data-port.js";
 import { GuestAccountAuthorityError, type GuestAccountAuthorityErrorCode } from "../../../packages/platform-core/src/accounts/authority.js";
+import type { ModelRequestQuotaPort, ModelRequestQuotaReservation } from "../../../packages/platform-core/src/model-request-quota.js";
 
 const INTERNAL_PREFIX = "/_internal/";
 
@@ -62,6 +63,27 @@ export function platformAccountStateReader(env: CloudflareEnv, tenantId: string)
       if (raw.status === "missing" || raw.status === "closed") return { status: raw.status };
       if (raw.status !== "active" || !Number.isSafeInteger(raw.emailRevision) || Number(raw.emailRevision) < 0) throw new Error("Platform account state response is malformed");
       return { status: "active", emailRevision: Number(raw.emailRevision) };
+    },
+  };
+}
+
+/** Durable shared quota authority for domain objects in one platform tenant (ADR 0101). */
+export function platformModelRequestQuota(env: CloudflareEnv, tenantId: string): ModelRequestQuotaPort {
+  const normalizedTenant = tenantId.trim();
+  if (!normalizedTenant || normalizedTenant !== env.SHORTLET_TENANT_ID?.trim()) throw new Error("Tenant does not match the configured platform tenant");
+  const stub = env.PLATFORM.get(env.PLATFORM.idFromName(normalizedTenant), { locationHint: "afr" });
+  return {
+    async reserve(input): Promise<ModelRequestQuotaReservation> {
+      if (input.tenantId !== normalizedTenant || !input.guestId.trim() || input.guestId.length > 200) throw new Error("Invalid model quota scope");
+      const raw = object(await postJson(stub, "model-quota/reserve", { tenantId: normalizedTenant, guestId: input.guestId }));
+      if (raw.ok !== true || typeof raw.reserved !== "boolean") throw new Error("Platform model quota response is malformed");
+      if (raw.reserved) {
+        if (Object.keys(raw).some((key) => !["ok", "reserved"].includes(key))) throw new Error("Platform model quota response is malformed");
+        return { reserved: true };
+      }
+      if (raw.reason !== "tenant_day_limit" && raw.reason !== "guest_hour_limit") throw new Error("Platform model quota response is malformed");
+      if (Object.keys(raw).some((key) => !["ok", "reserved", "reason"].includes(key))) throw new Error("Platform model quota response is malformed");
+      return { reserved: false, reason: raw.reason };
     },
   };
 }

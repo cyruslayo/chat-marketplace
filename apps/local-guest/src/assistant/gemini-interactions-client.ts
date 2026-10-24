@@ -65,6 +65,7 @@ function mapToInteractionsThinkingLevel(level: string | undefined): Interactions
  * Keeps API key strictly server-side (Item 5).
  */
 export class GeminiInteractionsClient implements AssistantModelClient {
+  readonly supportsProviderAttemptReservation = true as const;
   readonly #interactions: InteractionTransport;
   readonly #model: string;
   readonly #timeoutMs: number;
@@ -108,11 +109,10 @@ export class GeminiInteractionsClient implements AssistantModelClient {
       ...(generation_config ? { generation_config } : {}),
     };
 
-    const options: InteractionRequestOptions = {
-      timeout: request.timeoutMs ?? this.#timeoutMs,
-    };
+    const timeoutMs = request.timeoutMs ?? this.#timeoutMs;
+    const options: InteractionRequestOptions = { timeout: timeoutMs };
 
-    const interaction = await this.#createWithBoundedConnectionRetry(params, options);
+    const interaction = await this.#createWithBoundedConnectionRetry(params, options, request, timeoutMs);
     return this.#parseInteractionResponse(interaction);
   }
 
@@ -141,10 +141,18 @@ export class GeminiInteractionsClient implements AssistantModelClient {
   async #createWithBoundedConnectionRetry(
     params: Interactions.CreateModelInteractionParamsNonStreaming,
     options: InteractionRequestOptions,
+    request: AssistantModelRequest,
+    timeoutMs: number,
   ): Promise<Interactions.Interaction> {
+    const now = Date.now();
+    const deadlineAt = Math.min(request.deadlineAt ?? now + timeoutMs, now + timeoutMs);
     for (let attempt = 0; ; attempt++) {
+      if (Date.now() >= deadlineAt) throw new Error("Model request deadline exceeded");
+      await request.beforeProviderAttempt?.();
+      const remainingMs = deadlineAt - Date.now();
+      if (remainingMs <= 0) throw new Error("Model request deadline exceeded");
       try {
-        return await this.#interactions.create(params, options);
+        return await this.#interactions.create(params, { ...options, timeout: Math.min(timeoutMs, remainingMs) });
       } catch (error) {
         if (attempt >= MAX_CONNECTION_RETRIES || !isRetryableConnectionError(error)) throw error;
         await new Promise<void>((resolve) => setTimeout(resolve, CONNECTION_RETRY_DELAY_MS));

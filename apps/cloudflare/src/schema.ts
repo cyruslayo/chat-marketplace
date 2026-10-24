@@ -24,6 +24,7 @@ import { GUEST_ACCOUNT_SCHEMA } from "../../../packages/platform-core/src/accoun
 import { GUEST_ACCOUNT_LINK_SCHEMA } from "../../../packages/platform-core/src/accounts/links.js";
 import { GUEST_CONTACT_SCHEMA } from "../../../packages/platform-core/src/accounts/contact.js";
 import { THREAD_SESSION_SCHEMA } from "../../../domains/shortlet/src/index.js";
+import { MODEL_REQUEST_QUOTA_SCHEMA } from "../../../packages/platform-core/src/model-request-quota.js";
 
 /**
  * Slice 16 / D3: the Durable Object's schema, as ordered migrations. The object applies them on startup
@@ -101,6 +102,7 @@ export const PLATFORM_SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
   { version: 3, name: "retryable post-commit email assurance cleanup", statements: [
     "ALTER TABLE guest_account_email_commands ADD COLUMN assurance_cleanup_completed INTEGER NOT NULL DEFAULT 0 CHECK (assurance_cleanup_completed IN (0, 1))",
   ] },
+  { version: 4, name: "durable model request quota authority", statements: [MODEL_REQUEST_QUOTA_SCHEMA] },
 ];
 
 export const PLATFORM_SCHEMA_VERSION = PLATFORM_SCHEMA_MIGRATIONS.length;

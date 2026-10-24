@@ -8,7 +8,6 @@ import type {
   HttpResponseLike,
 } from "../../../packages/platform-core/src/http-like.js";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { isExplicitCancellation, isExplicitConfirmation } from "./assistant/pending-actions.js";
 import {
   A2UI_V091_BASIC_CATALOG_ID,
   type A2UIComponent,
@@ -791,10 +790,8 @@ export class LocalGuestApp {
       };
     }
 
-    // ADR 0072/0080: deterministic pending decisions retain their command path after the model budget is spent.
-    const pending = this.#assistantRuntime?.getThread(threadId).taskState.pendingAction;
-    const pendingDecision = pending && !pending.executed && (isExplicitConfirmation(text) || isExplicitCancellation(text));
-    if (this.#assistantRuntime && ((this.#modelCallBudget?.hasCapacity() ?? true) || pendingDecision)) {
+    // ADR 0072/0080: pending confirmations and cancellations are resolved before any model request.
+    if (this.#assistantRuntime) {
       const output = await this.#assistantRuntime.handleTurn(threadId, text);
       if (output.ok) {
         if (output.modelHandled) this.#modelCallBudget?.recordTurn("model");

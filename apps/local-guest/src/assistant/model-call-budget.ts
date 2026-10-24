@@ -71,12 +71,14 @@ export class ModelCallBudget {
 
 /** Counts every model request the concierge makes; a request the fallback provider answers still counts once. */
 export class BudgetedModelClient implements AssistantModelClient {
+  readonly supportsProviderAttemptReservation: true | undefined;
   readonly #inner: AssistantModelClient;
   readonly #budget: ModelCallBudget;
 
   constructor(inner: AssistantModelClient, budget: ModelCallBudget) {
     this.#inner = inner;
     this.#budget = budget;
+    if (inner.supportsProviderAttemptReservation === true) this.supportsProviderAttemptReservation = true;
   }
 
   generate(request: AssistantModelRequest): Promise<AssistantModelResponse> {

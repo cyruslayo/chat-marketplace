@@ -255,6 +255,8 @@ import {
   type ModelCallBudget,
 } from "./assistant/model-call-budget.js";
 import type { AssistantModelClient } from "./assistant/assistant-model.js";
+import { SqliteModelRequestQuota, type ModelRequestQuotaPort } from "../../../packages/platform-core/src/model-request-quota.js";
+import { ModelQuotaGuardClient } from "./assistant/model-quota-guard.js";
 import {
   ASSISTANT_CONFIRM_ACTION_EVENT,
   ASSISTANT_CANCEL_ACTION_EVENT,
@@ -2236,6 +2238,8 @@ export interface GuestRequestHandlerOptions {
   fixtureRoutes?: boolean;
   /** Issue 19: daily cap on model calls; when it is spent, turns use the deterministic concierge. */
   modelCallBudget?: ModelCallBudget;
+  /** Shared platform-owned per-provider-attempt quota authority. */
+  modelRequestQuota?: ModelRequestQuotaPort;
   /** Slice 26: extra domain packs registered with the assistant runtime (multi-domain shell). */
   additionalPacks?: readonly AssistantDomainPack[];
   /** Issue 19: a session's runtime (environment, SQLite connection, assistant memory) is closed after this idle time. */
@@ -2345,6 +2349,9 @@ export function createGuestRequestHandler(
     (paystackClient === undefined
       ? undefined
       : new PaystackPayments({ card: paystackClient }));
+  const modelRequestQuota = options.modelRequestQuota ?? (mode === "gemini" || mode === "openai-compatible"
+    ? new SqliteModelRequestQuota(env.database)
+    : undefined);
 
   let assistantRuntime: AssistantRuntime | undefined;
   let assistantModelClient: AssistantModelClient | undefined;
@@ -2364,12 +2371,17 @@ export function createGuestRequestHandler(
       );
     if (!assistantModelClient)
       throw new Error(`CONCIERGE_MODE=${mode} requires a model client`);
+    if (production && (!modelRequestQuota || assistantModelClient.supportsProviderAttemptReservation !== true))
+      throw new Error("Production model use requires persistent quota storage and an attempt-aware adapter");
     if (options.modelCallBudget)
       assistantModelClient = new BudgetedModelClient(
         assistantModelClient,
         options.modelCallBudget,
       );
-    assistantRuntime = new AssistantRuntime(env, assistantModelClient, {
+    const guardedModelClient = modelRequestQuota
+      ? new ModelQuotaGuardClient(assistantModelClient, modelRequestQuota, { tenantId: env.config.tenantId, guestId: env.guestPrincipal().id })
+      : assistantModelClient;
+    assistantRuntime = new AssistantRuntime(env, guardedModelClient, {
       additionalPacks: options.additionalPacks,
     });
   }
@@ -2493,7 +2505,9 @@ export function createGuestRequestHandler(
           ? {
               assistantRuntime: new AssistantRuntime(
                 runtimeEnvironment,
-                assistantModelClient,
+                modelRequestQuota
+                  ? new ModelQuotaGuardClient(assistantModelClient, modelRequestQuota, { tenantId: runtimeEnvironment.config.tenantId, guestId: runtimeEnvironment.guestPrincipal().id })
+                  : assistantModelClient,
                 { additionalPacks: options.additionalPacks },
               ),
             }

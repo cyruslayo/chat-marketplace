@@ -9,11 +9,15 @@ import type { AssistantModelClient, AssistantModelRequest, AssistantModelRespons
  * messages from the neutral history fields, and the OpenAI-compatible adapter emits no rawStep.
  */
 export class FallbackModelClient implements AssistantModelClient {
+  readonly supportsProviderAttemptReservation = true as const;
   readonly #primary: AssistantModelClient;
   readonly #secondary: AssistantModelClient;
   readonly #responseProviders = new WeakMap<object, AssistantModelClient>();
 
   constructor(primary: AssistantModelClient, secondary: AssistantModelClient) {
+    if (primary.supportsProviderAttemptReservation !== true || secondary.supportsProviderAttemptReservation !== true) {
+      throw new Error("Every configured model provider must support per-attempt reservations");
+    }
     this.#primary = primary;
     this.#secondary = secondary;
   }

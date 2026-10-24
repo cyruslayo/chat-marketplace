@@ -19,6 +19,7 @@ declare module "*.json?raw" {
 /** Test-runtime bindings (`wrangler.test.jsonc`). The deployable shape is `CloudflareEnv` in cloudflare-config.ts. */
 declare namespace Cloudflare {
   interface Env {
+    SHORTLET_TENANT_ID: string;
     TEST_HARNESS: import("@cloudflare/workers-types").DurableObjectNamespace<
       import("./test-harness-do.js").TestHarnessDO
     >;

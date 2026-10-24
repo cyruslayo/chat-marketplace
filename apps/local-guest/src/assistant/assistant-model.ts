@@ -63,6 +63,18 @@ export interface AssistantModelRequest {
   readonly structuredOutput?: { readonly name: string; readonly schema: Readonly<Record<string, unknown>>; readonly strict?: boolean };
   /** Maximum generated tokens; this is an engineering bound, not a domain rule. */
   readonly maxOutputTokens?: number;
+  /** Internal server hook. Adapters call it immediately before every provider transport attempt. */
+  readonly beforeProviderAttempt?: () => Promise<void>;
+  /** Absolute server-owned deadline in Unix milliseconds for the complete provider request. */
+  readonly deadlineAt?: number;
+}
+
+/** A server-side request guard stopped work before provider transport began. */
+export class ModelRequestGuardError extends Error {
+  constructor(readonly code: "quota_denied" | "quota_unavailable" | "deadline_exceeded") {
+    super(code);
+    this.name = "ModelRequestGuardError";
+  }
 }
 
 export interface AssistantModelResponse {
@@ -75,6 +87,8 @@ export interface AssistantModelResponse {
 }
 
 export interface AssistantModelClient {
+  /** True only when the adapter calls the request's attempt hook before each provider transport. */
+  readonly supportsProviderAttemptReservation?: true;
   generate(request: AssistantModelRequest): Promise<AssistantModelResponse>;
   /** Optional provider seam: retain only validated opaque continuity metadata for accepted calls. */
   projectProviderContinuation?(response: AssistantModelResponse, acceptedCalls: readonly AssistantToolCall[]): unknown;

@@ -1,10 +1,11 @@
-import type {
-  AssistantConversationStep,
-  AssistantModelClient,
-  AssistantModelRequest,
-  AssistantModelResponse,
-  AssistantToolCall,
-  AssistantToolDefinition,
+import {
+  ModelRequestGuardError,
+  type AssistantModelClient,
+  type AssistantModelRequest,
+  type AssistantModelResponse,
+  type AssistantConversationStep,
+  type AssistantToolCall,
+  type AssistantToolDefinition,
 } from "./assistant-model.js";
 
 /**
@@ -67,6 +68,7 @@ type ChatMessage =
   | { readonly role: "tool"; readonly tool_call_id: string; readonly content: string };
 
 export class OpenAiCompatibleClient implements AssistantModelClient {
+  readonly supportsProviderAttemptReservation = true as const;
   readonly #apiKey: string;
   readonly #endpoint: string;
   readonly #model: string;
@@ -99,13 +101,16 @@ export class OpenAiCompatibleClient implements AssistantModelClient {
       ...(request.maxOutputTokens !== undefined ? { max_completion_tokens: request.maxOutputTokens } : {}),
       stream: false,
     });
-    return this.#postWithBoundedConnectionRetry(body, request.timeoutMs ?? this.#timeoutMs);
+    return this.#postWithBoundedConnectionRetry(body, request.timeoutMs ?? this.#timeoutMs, request);
   }
 
-  async #postWithBoundedConnectionRetry(body: string, timeoutMs: number): Promise<AssistantModelResponse> {
+  async #postWithBoundedConnectionRetry(body: string, timeoutMs: number, request: AssistantModelRequest): Promise<AssistantModelResponse> {
+    const now = Date.now();
+    const deadlineAt = Math.min(request.deadlineAt ?? now + timeoutMs, now + timeoutMs);
+    if (!Number.isSafeInteger(deadlineAt) || deadlineAt <= 0) throw new ModelRequestGuardError("deadline_exceeded");
     for (let attempt = 0; ; attempt++) {
       try {
-        return await this.#post(body, timeoutMs);
+        return await this.#post(body, deadlineAt, request.beforeProviderAttempt);
       } catch (error) {
         const retryable = error instanceof APIConnectionError && error.code === "connection_failed";
         if (attempt >= MAX_CONNECTION_RETRIES || !retryable) throw error;
@@ -114,14 +119,19 @@ export class OpenAiCompatibleClient implements AssistantModelClient {
     }
   }
 
-  async #post(body: string, timeoutMs: number): Promise<AssistantModelResponse> {
+  async #post(body: string, deadlineAt: number, beforeProviderAttempt?: () => Promise<void>): Promise<AssistantModelResponse> {
+    if (Date.now() >= deadlineAt) throw new ModelRequestGuardError("deadline_exceeded");
+    // Guard failures stay outside the transport catch so quota/storage errors cannot become provider retries.
+    await beforeProviderAttempt?.();
+    const remainingMs = deadlineAt - Date.now();
+    if (remainingMs <= 0) throw new ModelRequestGuardError("deadline_exceeded");
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
         controller.abort();
         reject(new APIConnectionError("timeout"));
-      }, timeoutMs);
+      }, remainingMs);
     });
     const operation = async (): Promise<AssistantModelResponse> => {
       let response: Response;

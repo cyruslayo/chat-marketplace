@@ -102,12 +102,15 @@ test("New guest sessions and operator login attempts are rate-limited per client
 
 test("A daily model-call cap degrades the concierge to deterministic replies instead of erroring", async () => {
   let modelCalls = 0;
-  const modelClient: AssistantModelClient = { generate: async () => { modelCalls++; return { text: "Which city are you visiting?" }; } };
+  const modelClient: AssistantModelClient = {
+    supportsProviderAttemptReservation: true,
+    generate: async (request) => { await request.beforeProviderAttempt?.(); modelCalls++; return { text: "Which city are you visiting?" }; },
+  };
   await withPilot({ CONCIERGE_MODE: "gemini", GEMINI_API_KEY: "gemini-offline", CONCIERGE_DAILY_MODEL_CALL_CAP: "1" }, async (base) => {
     const guest = cookieFrom(await newSession(base));
     const answered = await turn(base, guest, "Hello");
     assert.equal(answered.status, 200);
-    assert.deepEqual((await answered.json() as { messages: string[] }).messages, ["Which city are you visiting?"]);
+    assert.deepEqual((await answered.json() as { messages: string[] }).messages, ["Please tell me what you need for your stay. You can also use the standard search and booking pages."]);
     assert.equal(modelCalls, 1);
 
     const degraded = await turn(base, guest, `I need an apartment in Lagos from ${arrivalNextWeek()} for 2 nights for 2 people`);

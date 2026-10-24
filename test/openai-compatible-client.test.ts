@@ -67,6 +67,34 @@ test("AC5: provider-neutral structured-output and token limits map to OpenAI-com
   assert.equal("tools" in body, false);
 });
 
+test("AC3: each OpenAI-compatible transport attempt reserves before fetch, and refusal or an expired deadline starts no request", async () => {
+  let reservations = 0;
+  let fetches = 0;
+  const client = clientWith(() => {
+    fetches += 1;
+    if (fetches === 1) throw new TypeError("offline");
+    return completion({ content: "ok" });
+  }).client;
+  const response = await client.generate({
+    ...request,
+    beforeProviderAttempt: async () => { reservations += 1; },
+  });
+  assert.equal(response.text, "ok");
+  assert.equal(reservations, 2);
+  assert.equal(fetches, 2);
+
+  const refusal = new Error("quota denied");
+  const denied = clientWith(() => { throw new Error("transport must not start"); }).client;
+  await assert.rejects(denied.generate({ ...request, beforeProviderAttempt: async () => { throw refusal; } }), (error) => error === refusal);
+
+  const slowReservation = clientWith(() => { throw new Error("late transport must not start"); }).client;
+  await assert.rejects(slowReservation.generate({
+    ...request,
+    deadlineAt: Date.now() + 5,
+    beforeProviderAttempt: async () => new Promise<void>((resolve) => setTimeout(resolve, 10)),
+  }), /deadline/i);
+});
+
 test("Tool calls in the response become AssistantToolCalls; a tool call with a missing id or name, or arguments that are not a JSON object, fails closed", async () => {
   const valid = clientWith(() => completion({
     content: null,

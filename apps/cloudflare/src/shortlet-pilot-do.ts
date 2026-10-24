@@ -37,7 +37,7 @@ import { createOpsHandler, type OpsHandler } from "./ops-routes.js";
 import { SHORTLET_SCHEMA_MIGRATIONS } from "./schema.js";
 import { cloudflareAssetLoader } from "./pilot-assets.js";
 import { R2ReceiptBlobStore } from "./r2-receipt-blob-store.js";
-import { commerceMigrationClient, platformGuestAccountDependencies, platformGuestData, platformMigrationClient } from "./do-clients.js";
+import { commerceMigrationClient, platformGuestAccountDependencies, platformGuestData, platformMigrationClient, platformModelRequestQuota } from "./do-clients.js";
 import { demoMode, pilotDeployment } from "../../pilot/src/pilot-config-core.js";
 
 /**
@@ -321,6 +321,8 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
       },
       payments,
       modelCallBudget,
+      // ADR 0101: quota reservations live in PLATFORM, shared by every domain object.
+      modelRequestQuota: platformModelRequestQuota(this.env, configuration.tenantId),
       sessionRuntimeIdleMs: configuration.limits.sessionRuntimeIdleMinutes * 60_000,
       // 04c: the user-approved production cap; the Durable Object has 128 MB of memory.
       sessionRuntimeLimit: configuration.sessionRuntimeLimit,
