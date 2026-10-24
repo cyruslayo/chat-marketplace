@@ -1,0 +1,192 @@
+TAP version 13
+# (node:185732) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC6: classifier guard failures and quota refusals emit separate metadata-only outcomes once
+ok 1 - AC6: classifier guard failures and quota refusals emit separate metadata-only outcomes once
+  ---
+  duration_ms: 55.0167
+  type: 'test'
+  ...
+# (node:165684) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Scope AC1: unrelated requests never invoke planner tools or retain rejected input
+ok 2 - Scope AC1: unrelated requests never invoke planner tools or retain rejected input
+  ---
+  duration_ms: 451.9797
+  type: 'test'
+  ...
+# Subtest: Scope AC3: mixed requests send only validated scope slots to the planner
+ok 3 - Scope AC3: mixed requests send only validated scope slots to the planner
+  ---
+  duration_ms: 564.7976
+  type: 'test'
+  ...
+# Subtest: Scope AC4: unavailable and malformed classifier decisions use fixed replies without a planner call
+ok 4 - Scope AC4: unavailable and malformed classifier decisions use fixed replies without a planner call
+  ---
+  duration_ms: 623.6154
+  type: 'test'
+  ...
+# Subtest: Scope AC2: valid stays, greetings, Pidgin, corrections and contextual follow-ups reach planning
+ok 5 - Scope AC2: valid stays, greetings, Pidgin, corrections and contextual follow-ups reach planning
+  ---
+  duration_ms: 753.7996
+  type: 'test'
+  ...
+# Subtest: Scope AC5: pending confirmations and cancellations bypass an unavailable classifier
+ok 6 - Scope AC5: pending confirmations and cancellations bypass an unavailable classifier
+  ---
+  duration_ms: 949.22
+  type: 'test'
+  ...
+# Subtest: Scope AC6: rejected input stays absent from persisted history and later classifier context
+ok 7 - Scope AC6: rejected input stays absent from persisted history and later classifier context
+  ---
+  duration_ms: 779.4136
+  type: 'test'
+  ...
+# Subtest: Scope AC7: the default classifier is tool-free and excludes prior history and listing prose
+ok 8 - Scope AC7: the default classifier is tool-free and excludes prior history and listing prose
+  ---
+  duration_ms: 600.4012
+  type: 'test'
+  ...
+# Subtest: Classifier reasoning can retain provider defaults without extending its five-second deadline
+ok 9 - Classifier reasoning can retain provider defaults without extending its five-second deadline
+  ---
+  duration_ms: 12.8107
+  type: 'test'
+  ...
+# (node:135720) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Controlled live evaluation requires explicit opt-in and a bounded total attempt limit
+ok 10 - Controlled live evaluation requires explicit opt-in and a bounded total attempt limit
+  ---
+  duration_ms: 4.6397
+  type: 'test'
+  ...
+# Subtest: Blocked scenario grading rejects arbitrary generation, planner calls, and new surfaces despite unchanged database effects
+ok 11 - Blocked scenario grading rejects arbitrary generation, planner calls, and new surfaces despite unchanged database effects
+  ---
+  duration_ms: 0.6547
+  type: 'test'
+  ...
+# Subtest: Pending evaluator calls keep usage and cost unavailable in immutable report snapshots
+ok 12 - Pending evaluator calls keep usage and cost unavailable in immutable report snapshots
+  ---
+  duration_ms: 0.5395
+  type: 'test'
+  ...
+# Subtest: Controlled details grading pins the first public action before generation and rejects a different authorized Unit
+ok 13 - Controlled details grading pins the first public action before generation and rejects a different authorized Unit
+  ---
+  duration_ms: 0.8755
+  type: 'test'
+  ...
+# Subtest: The controlled evaluator runs a synthetic HTTP case with network-blocked provider fixtures and excludes content from reports
+ok 14 - The controlled evaluator runs a synthetic HTTP case with network-blocked provider fixtures and excludes content from reports
+  ---
+  duration_ms: 4627.7019
+  type: 'test'
+  ...
+# Subtest: AC3: a quota reservation that exceeds the request deadline cannot start transport after it resolves
+ok 15 - AC3: a quota reservation that exceeds the request deadline cannot start transport after it resolves
+  ---
+  duration_ms: 63.8674
+  type: 'test'
+  ...
+# Subtest: AC3: the shorter of the request timeout and absolute deadline bounds quota reservation
+ok 16 - AC3: the shorter of the request timeout and absolute deadline bounds quota reservation
+  ---
+  duration_ms: 160.1238
+  type: 'test'
+  ...
+# Subtest: AC3: a configured fallback provider reserves its own actual transport attempt
+ok 17 - AC3: a configured fallback provider reserves its own actual transport attempt
+  ---
+  duration_ms: 2.8256
+  type: 'test'
+  ...
+# Subtest: AC2: quota refusal and authority failure stop transport safely
+ok 18 - AC2: quota refusal and authority failure stop transport safely
+  ---
+  duration_ms: 1.3795
+  type: 'test'
+  ...
+# Subtest: The request maps the system instruction, user and assistant turns, tool calls and tool results onto Chat Completions messages, and tool definitions onto tools[].function
+ok 19 - The request maps the system instruction, user and assistant turns, tool calls and tool results onto Chat Completions messages, and tool definitions onto tools[].function
+  ---
+  duration_ms: 53.3908
+  type: 'test'
+  ...
+# Subtest: AC5: provider-neutral structured-output and token limits map to OpenAI-compatible parameters
+ok 20 - AC5: provider-neutral structured-output and token limits map to OpenAI-compatible parameters
+  ---
+  duration_ms: 1.829
+  type: 'test'
+  ...
+# Subtest: A closed classifier can disable reasoning without changing the planner or selected model
+ok 21 - A closed classifier can disable reasoning without changing the planner or selected model
+  ---
+  duration_ms: 3.005
+  type: 'test'
+  ...
+# Subtest: AC3: each OpenAI-compatible transport attempt reserves before fetch, and refusal or an expired deadline starts no request
+ok 22 - AC3: each OpenAI-compatible transport attempt reserves before fetch, and refusal or an expired deadline starts no request
+  ---
+  duration_ms: 145.0304
+  type: 'test'
+  ...
+# Subtest: Tool calls in the response become AssistantToolCalls; a tool call with a missing id or name, or arguments that are not a JSON object, fails closed
+ok 23 - Tool calls in the response become AssistantToolCalls; a tool call with a missing id or name, or arguments that are not a JSON object, fails closed
+  ---
+  duration_ms: 14.5971
+  type: 'test'
+  ...
+# Subtest: A connection failure is retried exactly once; an HTTP error response is never retried
+ok 24 - A connection failure is retried exactly once; an HTTP error response is never retried
+  ---
+  duration_ms: 219.4534
+  type: 'test'
+  ...
+# Subtest: HTTP 429 surfaces as RateLimitError and other HTTP errors as APIError, carrying only a sanitised status and code
+ok 25 - HTTP 429 surfaces as RateLimitError and other HTTP errors as APIError, carrying only a sanitised status and code
+  ---
+  duration_ms: 4.2461
+  type: 'test'
+  ...
+# Subtest: Requests time out after the configured timeout (default matches DEFAULT_GEMINI_TIMEOUT_MS)
+ok 26 - Requests time out after the configured timeout (default matches DEFAULT_GEMINI_TIMEOUT_MS)
+  ---
+  duration_ms: 53.7287
+  type: 'test'
+  ...
+# Subtest: The adapter refuses to construct without an API key, a model, or an HTTPS base URL
+ok 27 - The adapter refuses to construct without an API key, a model, or an HTTPS base URL
+  ---
+  duration_ms: 3.5618
+  type: 'test'
+  ...
+# (node:190700) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: The four-turn scripted reference uses the full smoke harness without credentials, network calls or live performance claims
+ok 28 - The four-turn scripted reference uses the full smoke harness without credentials, network calls or live performance claims
+  ---
+  duration_ms: 7595.9706
+  type: 'test'
+  ...
+# Subtest: A bounded offline transport probe reserves retries outside transport catches and reports quota refusal once
+ok 29 - A bounded offline transport probe reserves retries outside transport catches and reports quota refusal once
+  ---
+  duration_ms: 2023.7797
+  type: 'test'
+  ...
+1..29
+# tests 29
+# suites 0
+# pass 29
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 10847.7768

@@ -138,6 +138,11 @@ async function run(): Promise<void> {
   const catalogue: unknown = await catalogueResponse.json();
   const price = parseOpenRouterModelPrice(catalogue, MODEL);
   if (!price) throw new Error("The exact approved model and price must be available");
+  const modelMetadata: unknown = catalogue !== null && typeof catalogue === "object" && "data" in catalogue && Array.isArray(catalogue.data)
+    ? catalogue.data.find((entry: unknown) => entry !== null && typeof entry === "object" && "id" in entry && entry.id === MODEL) : undefined;
+  const reasoning = modelMetadata !== null && typeof modelMetadata === "object" && "reasoning" in modelMetadata ? modelMetadata.reasoning : undefined;
+  if (reasoning === null || typeof reasoning !== "object" || !("mandatory" in reasoning) || reasoning.mandatory !== false
+    || !("supported_efforts" in reasoning) || !Array.isArray(reasoning.supported_efforts) || !reasoning.supported_efforts.includes("none")) throw new Error("The approved classifier reasoning preference is unsupported");
   let totalReservations = 0;
   let budgetExceeded = false;
   const reports: Record<string, unknown>[] = [];

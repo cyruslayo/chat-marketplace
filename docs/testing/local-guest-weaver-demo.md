@@ -59,6 +59,9 @@ npm run pilot:local:agent-smoke
 Run one smoke journey before browser work. Keep the legacy cap at ten reserved provider attempts per journey.
 Set `--request-limit 16` for a controlled four-turn evaluation. `PILOT_AGENT_SMOKE_REQUEST_LIMIT=16` sets the same cap.
 Use `PILOT_AGENT_SMOKE_REPORT_DIRECTORY` for a fresh report directory. Retain failed reports before rerunning.
+The closed classifier requests `reasoningEffort: "none"` through the model port. The OpenAI-compatible adapter sends `reasoning_effort: "none"`.
+Its five-second deadline and 512-token bound remain unchanged. Planning retains the provider's existing reasoning settings.
+`AssistantRuntimeOptions.scopeReasoningEffort: "provider_default"` omits the classifier preference. Gemini retains its existing provider settings.
 Reports show reserved capacity and actual transport starts separately. Use `--runs 3` only for deliberate variability tests.
 `PILOT_AGENT_SMOKE_RUNS=3` also sets three journeys. A provider HTTP 429 stops the smoke immediately.
 The command does not start or reset the pilot. It does not submit a Booking Request or start payment.

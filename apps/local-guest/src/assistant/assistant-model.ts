@@ -63,6 +63,8 @@ export interface AssistantModelRequest {
   readonly structuredOutput?: { readonly name: string; readonly schema: Readonly<Record<string, unknown>>; readonly strict?: boolean };
   /** Maximum generated tokens; this is an engineering bound, not a domain rule. */
   readonly maxOutputTokens?: number;
+  /** Optional engineering preference for a closed, latency-bounded classification call. */
+  readonly reasoningEffort?: "none";
   /** Internal server hook. Adapters call it immediately before every provider transport attempt. */
   readonly beforeProviderAttempt?: () => Promise<void>;
   /** Absolute server-owned deadline in Unix milliseconds for the complete provider request. */

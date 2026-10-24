@@ -140,7 +140,26 @@ test("Scope AC7: the default classifier is tool-free and excludes prior history 
   runtime.getThread("scope-default").conversationHistory.push({ role: "assistant", text: "REJECTED-HISTORY" });
   await runtime.handleTurn("scope-default", "Abeg, any two-bedroom for Wuse?");
   assert.equal(calls[0]?.structuredOutput?.name, "concierge_scope");
+  assert.equal(calls[0]?.reasoningEffort, "none");
+  assert.equal(calls[1]?.reasoningEffort, undefined);
   assert.deepEqual(calls[0]?.tools, []);
   assert.doesNotMatch(JSON.stringify(calls[0]), /REJECTED-HISTORY/);
   assert.ok(calls.length > 1);
+});
+
+test("Classifier reasoning can retain provider defaults without extending its five-second deadline", async () => {
+  const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
+  const requests: AssistantModelRequest[] = [];
+  const model = { generate: async (request: AssistantModelRequest) => {
+    requests.push(request);
+    return { text: request.structuredOutput?.name === "concierge_scope" ? JSON.stringify(allowed) : "{}" };
+  } };
+  try {
+    const runtime = new AssistantRuntime(environment, model, { scopeReasoningEffort: "provider_default" });
+    await runtime.handleTurn("default-reasoning", "Find a stay");
+    assert.equal(requests[0]?.reasoningEffort, undefined);
+    assert.equal(requests[0]?.timeoutMs, 5000);
+    assert.equal(requests[0]?.maxOutputTokens, 512);
+    assert.throws(() => new AssistantRuntime(environment, model, { scopeReasoningEffort: "unsupported" as never }), /reasoning effort/);
+  } finally { environment.close(); }
 });

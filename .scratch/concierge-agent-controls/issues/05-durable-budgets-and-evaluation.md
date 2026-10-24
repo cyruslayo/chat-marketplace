@@ -211,3 +211,37 @@ Log: `integrated-workers-final.log`.
 A fresh full Worker result will cover the corrected capability as well.
 The original checkout still has its initial tracked-diff hash, HEAD, and untracked-file count.
 The batch remains claimed pending the corrected live benchmark and remaining gates.
+
+Second bounded benchmark evidence:
+
+`node --import tsx scripts/pilot-agent-smoke.ts --runs 1 --request-limit 16`
+
+The run started six attempts and passed one of four stages.
+Three classifier calls reached the unchanged five-second deadline.
+There were no false-refusal labels or prohibited effects in the report.
+Token and cost totals remained unavailable for unfinished or failed provider calls.
+The failed run was committed as `fd6f6f16237e1c45a42bd87e287fde1b4fddf08d` before another source change.
+Directory: `validation/benchmark-20261024T202834Z/`.
+
+Read-only public metadata confirms optional reasoning, medium default effort, and support for none on the approved model.
+Source: `validation/2026-10-24/approved-model-reasoning.json`.
+The classifier now requests no hidden reasoning for its closed schema.
+The provider-neutral request carries the preference; the OpenAI-compatible adapter maps it to `reasoning_effort`.
+The planner, model, provider, five-second deadline, 512-token bound, key cap, and remote settings remain unchanged.
+The runtime offers `scopeReasoningEffort: provider_default` to omit the preference.
+The engineering setting and primary documentation are recorded in `classifier-engineering-2026-10-24.md`.
+This setting is a tested latency/cost measure, not a claim about every timeout's cause.
+
+The closed-classifier adapter regression initially failed one test; log: `classifier-reasoning-red.log`.
+With `NODE_ENV=test` and `COMMERCE_REFERENCE_TEST_KEY=allow`, this corrected command passed 29 tests:
+`npx tsx --test test/openai-compatible-client.test.ts test/assistant-scope-controls.test.ts test/assistant-control-metrics.test.ts test/model-quota-guard.test.ts test/concierge-controls-eval.test.ts test/pilot-agent-smoke-reference.test.ts`
+Result: 29 passed, 0 failed, cancelled, or skipped; exit 0. Log: `classifier-reasoning-green.log`.
+The preflight HTTP fixture also verifies reasoning is disabled only for the classifier.
+`npx tsx --test test/concierge-controls-eval.test.ts test/assistant-scope-controls.test.ts test/openai-compatible-client.test.ts`
+passed 22 tests, with no failures, cancellations, or skips; exit 0. Log: `classifier-preflight-final.log`.
+`npm run check` passed again; exit 0. Log: `classifier-preflight-check.log`.
+
+Classifier failures now emit sanitized round-zero diagnostics, so guard outages are not mislabeled as task-selection failures.
+The diagnostics regression verifies that exception text and guest content remain absent.
+The next paid preflight must verify support for the selected reasoning preference before inference.
+The batch remains claimed.

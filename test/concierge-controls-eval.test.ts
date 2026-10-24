@@ -68,9 +68,11 @@ globalThis.fetch = async (url, init) => {
   const address = String(url);
   if (address.startsWith('http://127.0.0.1:')) return localFetch(url, init);
   if (address === 'https://openrouter.ai/api/v1/key') return Response.json({data:{limit:2,limit_reset:null,usage:0,limit_remaining:2}});
-  if (address === 'https://openrouter.ai/api/v1/models') return Response.json({data:[{id:'openai/gpt-6-luna',pricing:{prompt:'0.0000001',completion:'0.0000005'}}]});
+  if (address === 'https://openrouter.ai/api/v1/models') return Response.json({data:[{id:'openai/gpt-6-luna',pricing:{prompt:'0.0000001',completion:'0.0000005'},reasoning:{mandatory:false,supported_efforts:['none']}}]});
   if (address !== 'https://openrouter.ai/api/v1/chat/completions') throw new Error('Network forbidden');
   const body = JSON.parse(String(init.body));
+  if (body.response_format.json_schema.name === 'concierge_scope' && body.reasoning_effort !== 'none') throw new Error('Classifier reasoning preference missing');
+  if (body.response_format.json_schema.name !== 'concierge_scope' && 'reasoning_effort' in body) throw new Error('Planner reasoning was changed');
   const plan = body.response_format.json_schema.name === 'concierge_scope'
     ? {scope:'in_scope',risk:'ordinary',intents:['greet'],reasonCode:'supported',slots:{city:null,neighbourhood:null,bedrooms:null,nights:null,guests:null,checkIn:null,checkOut:null}}
     : {kind:'clarify_stay',references:[]};

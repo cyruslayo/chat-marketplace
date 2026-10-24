@@ -130,6 +130,7 @@ export interface AssistantRuntimeOptions {
   readonly maxPlanningOutputTokens?: number;
   readonly scopeClassifier?: ScopeClassifier;
   readonly scopeTimeoutMs?: number;
+  readonly scopeReasoningEffort?: "none" | "provider_default";
   readonly maxInputCharacters?: number;
   /** Engineering bounds on retained model context; packs supply the canonical state summary. */
   readonly maxHistorySteps?: number;
@@ -232,7 +233,8 @@ export class AssistantRuntime {
       || !Number.isSafeInteger(this.#maxHistorySteps) || this.#maxHistorySteps < 2 || this.#maxHistorySteps > MAX_ASSISTANT_HISTORY_STEPS
       || !Number.isSafeInteger(this.#maxHistoryCharacters) || this.#maxHistoryCharacters < 256 || this.#maxHistoryCharacters > MAX_ASSISTANT_HISTORY_CHARACTERS) throw new Error("Scope and history engineering limits are outside configured bounds");
     if (!Number.isSafeInteger(this.#maxContextItems) || this.#maxContextItems < 1 || this.#maxContextItems > MAX_ASSISTANT_CONTEXT_ITEMS) throw new Error("maxContextItems is outside configured bounds");
-    this.#scopeClassifier = options.scopeClassifier ?? new ModelScopeClassifier(modelClient, this.#scopeTimeoutMs);
+    if (options.scopeReasoningEffort !== undefined && options.scopeReasoningEffort !== "none" && options.scopeReasoningEffort !== "provider_default") throw new Error("Invalid scope reasoning effort");
+    this.#scopeClassifier = options.scopeClassifier ?? new ModelScopeClassifier(modelClient, this.#scopeTimeoutMs, undefined, options.scopeReasoningEffort);
     this.#packs.register(createShortletAssistantPack(environment));
     for (const pack of options.additionalPacks ?? []) this.#packs.register(pack);
   }
@@ -608,6 +610,7 @@ export class AssistantRuntime {
       domain: packForScope.id, description: packForScope.scopeDescription ?? packForScope.label,
       hasShortlist: candidateTaskState.shortlist.length > 0, hasSelectedStay: Boolean(candidateTaskState.selectedStayRef), hasOffer: Boolean(candidateTaskState.currentOfferId),
     }, this.#scopeTimeoutMs, (error) => {
+      this.#diagnose(createFailureDiagnostic("provider_request", 0, undefined, error));
       scopeFailureOutcome = error instanceof ModelRequestGuardError && error.code === "quota_denied" ? "quota_refusal" : "guard_failure";
       recordOutcome(scopeFailureOutcome);
     });

@@ -99,6 +99,7 @@ export class OpenAiCompatibleClient implements AssistantModelClient {
         ...(this.#requireSupportedParameters ? { provider: { require_parameters: true } } : {}),
       } : {}),
       ...(request.maxOutputTokens !== undefined ? { max_completion_tokens: request.maxOutputTokens } : {}),
+      ...(request.reasoningEffort !== undefined ? { reasoning_effort: request.reasoningEffort } : {}),
       stream: false,
     });
     return this.#postWithBoundedConnectionRetry(body, request.timeoutMs ?? this.#timeoutMs, request);

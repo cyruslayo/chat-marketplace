@@ -67,6 +67,15 @@ test("AC5: provider-neutral structured-output and token limits map to OpenAI-com
   assert.equal("tools" in body, false);
 });
 
+test("A closed classifier can disable reasoning without changing the planner or selected model", async () => {
+  const { client, requests } = clientWith(() => completion({ content: "{}" }), { baseUrl: "https://openrouter.ai/api/v1", model: "openai/gpt-6-luna" });
+  await client.generate({ ...request, tools: [], reasoningEffort: "none" });
+  assert.equal(requests[0]?.body.reasoning_effort, "none");
+  assert.equal(requests[0]?.body.model, "openai/gpt-6-luna");
+  await client.generate(request);
+  assert.equal("reasoning_effort" in requests[1]!.body, false);
+});
+
 test("AC3: each OpenAI-compatible transport attempt reserves before fetch, and refusal or an expired deadline starts no request", async () => {
   let reservations = 0;
   let fetches = 0;
