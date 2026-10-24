@@ -24,7 +24,8 @@ Never change provider account settings.
 Read OpenRouter key metadata immediately before inference.
 Verify the exact model slug remains available.
 Record the starting account usage and remaining limit.
-Run one existing four-turn benchmark with an explicit 16-attempt limit.
+Run one existing four-turn benchmark with `--request-limit 16`.
+The optional `PILOT_AGENT_SMOKE_REQUEST_LIMIT=16` setting provides the same cap.
 Keep the legacy default at ten attempts per journey.
 
 Use a separate bounded controls evaluation for these cases:
@@ -50,6 +51,36 @@ Record scenario identifiers, effects, outcomes, tokens, latency, and costs.
 Keep raw model content, credentials, and private fields out of diagnostic artifacts.
 Retain failed evidence before correcting and rerunning a failed case.
 Recheck account usage after inference.
+
+### Controlled evaluation command
+
+Load `LLM_API_KEY` only into the evaluation process from the approved environment store.
+Do not print the credential.
+Run this command after the focused offline gates pass:
+
+```powershell
+node --import tsx scripts/concierge-controls-eval.ts --live --request-limit 64
+```
+
+The 64-attempt ceiling covers twelve scenarios and their required discovery setup turns.
+It counts classifier, planner, continuation, and retry transports through the attempt hook.
+Evaluation reservations and actual transport starts remain separate counters.
+Unused reservations never imply provider usage.
+The runner verifies the existing non-resetting USD 2 cap before inference.
+It verifies the exact model catalogue entry and each successful response's model identifier.
+It records reported numeric cost, estimated cost, and account usage snapshots separately.
+It never changes account settings.
+
+Each invocation creates a new timestamped report directory under this effort's `validation/` directory.
+Reports contain scenario identifiers, effects, outcomes, counts, usage, and timings.
+They exclude prompts, raw responses, private guest details, and credentials.
+Failed runs remain available when a later run starts.
+Use `--case <scenario-id>` with another explicit request limit for a focused rerun.
+The script rejects model substitutions and unknown options.
+
+The legacy four-turn benchmark remains separate.
+Use its explicit controlled-evaluation limit of 16 attempts.
+Its default smoke limit must remain ten attempts per journey.
 
 ## Guest captures
 
