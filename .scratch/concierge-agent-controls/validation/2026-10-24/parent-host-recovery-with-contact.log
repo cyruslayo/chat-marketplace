@@ -1,0 +1,254 @@
+TAP version 13
+# (node:57276) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC4: exhaustion, provider refusal, and guard outage preserve authenticated deterministic pending decisions
+    # Subtest: quota: Yes
+    not ok 1 - quota: Yes
+      ---
+      duration_ms: 1296.7402
+      type: 'test'
+      location: 'C:\\AI2026\\chat-marketplace-controls\\test\\model-quota-host-recovery.test.ts:1:2181'
+      failureType: 'testCodeFailure'
+      error: 'Guest contact requires an authoritative Guest session'
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        GuestContactApplication.#guestContext (C:\AI2026\chat-marketplace-controls\apps\web\src\guest-contact-application.ts:25:83)
+        GuestContactApplication.submitPhone (C:\AI2026\chat-marketplace-controls\apps\web\src\guest-contact-application.ts:15:40)
+        Object.providePhone (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:45:43)
+        TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:69:19)
+        process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:64:7)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: quota: Cancel
+    not ok 2 - quota: Cancel
+      ---
+      duration_ms: 947.9569
+      type: 'test'
+      location: 'C:\\AI2026\\chat-marketplace-controls\\test\\model-quota-host-recovery.test.ts:1:2181'
+      failureType: 'testCodeFailure'
+      error: 'Guest contact requires an authoritative Guest session'
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        GuestContactApplication.#guestContext (C:\AI2026\chat-marketplace-controls\apps\web\src\guest-contact-application.ts:25:83)
+        GuestContactApplication.submitPhone (C:\AI2026\chat-marketplace-controls\apps\web\src\guest-contact-application.ts:15:40)
+        Object.providePhone (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:45:43)
+        TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:69:19)
+        process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:64:7)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: storage: Yes
+    not ok 3 - storage: Yes
+      ---
+      duration_ms: 1181.0675
+      type: 'test'
+      location: 'C:\\AI2026\\chat-marketplace-controls\\test\\model-quota-host-recovery.test.ts:1:2181'
+      failureType: 'testCodeFailure'
+      error: 'Guest contact requires an authoritative Guest session'
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        GuestContactApplication.#guestContext (C:\AI2026\chat-marketplace-controls\apps\web\src\guest-contact-application.ts:25:83)
+        GuestContactApplication.submitPhone (C:\AI2026\chat-marketplace-controls\apps\web\src\guest-contact-application.ts:15:40)
+        Object.providePhone (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:45:43)
+        TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:69:19)
+        process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:64:7)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: storage: Cancel
+    not ok 4 - storage: Cancel
+      ---
+      duration_ms: 1308.8683
+      type: 'test'
+      location: 'C:\\AI2026\\chat-marketplace-controls\\test\\model-quota-host-recovery.test.ts:1:2181'
+      failureType: 'testCodeFailure'
+      error: 'Guest contact requires an authoritative Guest session'
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        GuestContactApplication.#guestContext (C:\AI2026\chat-marketplace-controls\apps\web\src\guest-contact-application.ts:25:83)
+        GuestContactApplication.submitPhone (C:\AI2026\chat-marketplace-controls\apps\web\src\guest-contact-application.ts:15:40)
+        Object.providePhone (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:45:43)
+        TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:69:19)
+        process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:64:7)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: provider: Yes
+    not ok 5 - provider: Yes
+      ---
+      duration_ms: 1492.9379
+      type: 'test'
+      location: 'C:\\AI2026\\chat-marketplace-controls\\test\\model-quota-host-recovery.test.ts:1:2181'
+      failureType: 'testCodeFailure'
+      error: 'Guest contact requires an authoritative Guest session'
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        GuestContactApplication.#guestContext (C:\AI2026\chat-marketplace-controls\apps\web\src\guest-contact-application.ts:25:83)
+        GuestContactApplication.submitPhone (C:\AI2026\chat-marketplace-controls\apps\web\src\guest-contact-application.ts:15:40)
+        Object.providePhone (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:45:43)
+        TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:69:19)
+        process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:64:7)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: provider: Cancel
+    not ok 6 - provider: Cancel
+      ---
+      duration_ms: 1196.1237
+      type: 'test'
+      location: 'C:\\AI2026\\chat-marketplace-controls\\test\\model-quota-host-recovery.test.ts:1:2181'
+      failureType: 'testCodeFailure'
+      error: 'Guest contact requires an authoritative Guest session'
+      code: 'ERR_TEST_FAILURE'
+      stack: |-
+        GuestContactApplication.#guestContext (C:\AI2026\chat-marketplace-controls\apps\web\src\guest-contact-application.ts:25:83)
+        GuestContactApplication.submitPhone (C:\AI2026\chat-marketplace-controls\apps\web\src\guest-contact-application.ts:15:40)
+        Object.providePhone (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:45:43)
+        TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:69:19)
+        process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:64:7)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    1..6
+not ok 1 - AC4: exhaustion, provider refusal, and guard outage preserve authenticated deterministic pending decisions
+  ---
+  duration_ms: 7435.8117
+  type: 'test'
+  location: 'C:\\AI2026\\chat-marketplace-controls\\test\\model-quota-host-recovery.test.ts:1:1961'
+  failureType: 'subtestsFailed'
+  error: '6 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: AC4: exhaustion, provider refusal, and guard outage preserve authorized conventional discovery and draft routes
+    # Subtest: healthy
+    not ok 1 - healthy
+      ---
+      duration_ms: 1172.1453
+      type: 'test'
+      location: 'C:\\AI2026\\chat-marketplace-controls\\test\\model-quota-host-recovery.test.ts:1:3690'
+      failureType: 'testCodeFailure'
+      error: |-
+        The authorized discovery action must remain available
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:107:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:93:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: quota
+    not ok 2 - quota
+      ---
+      duration_ms: 2585.5114
+      type: 'test'
+      location: 'C:\\AI2026\\chat-marketplace-controls\\test\\model-quota-host-recovery.test.ts:1:3690'
+      failureType: 'testCodeFailure'
+      error: |-
+        The authorized discovery action must remain available
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:107:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:93:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: storage
+    not ok 3 - storage
+      ---
+      duration_ms: 819.2863
+      type: 'test'
+      location: 'C:\\AI2026\\chat-marketplace-controls\\test\\model-quota-host-recovery.test.ts:1:3690'
+      failureType: 'testCodeFailure'
+      error: |-
+        The authorized discovery action must remain available
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:107:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:93:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: provider
+    not ok 4 - provider
+      ---
+      duration_ms: 921.0468
+      type: 'test'
+      location: 'C:\\AI2026\\chat-marketplace-controls\\test\\model-quota-host-recovery.test.ts:1:3690'
+      failureType: 'testCodeFailure'
+      error: |-
+        The authorized discovery action must remain available
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:107:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:93:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..4
+not ok 2 - AC4: exhaustion, provider refusal, and guard outage preserve authorized conventional discovery and draft routes
+  ---
+  duration_ms: 5503.3846
+  type: 'test'
+  location: 'C:\\AI2026\\chat-marketplace-controls\\test\\model-quota-host-recovery.test.ts:1:3494'
+  failureType: 'subtestsFailed'
+  error: '4 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..2
+# tests 12
+# suites 0
+# pass 0
+# fail 12
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 16426.306

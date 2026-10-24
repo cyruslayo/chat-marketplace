@@ -1,0 +1,202 @@
+TAP version 13
+# (node:67316) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC4: exhaustion, provider refusal, and guard outage preserve authenticated deterministic pending decisions
+    # Subtest: quota: Yes
+    not ok 1 - quota: Yes
+      ---
+      duration_ms: 2646.1571
+      type: 'test'
+      location: 'C:\\AI2026\\chat-marketplace-controls\\test\\model-quota-host-recovery.test.ts:1:2039'
+      failureType: 'testCodeFailure'
+      error: |-
+        {"ok":false,"code":"INTERNAL_ERROR","message":"Something went wrong. Please try again."}
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:74:18)
+        process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:60:7)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: quota: Cancel
+    ok 2 - quota: Cancel
+      ---
+      duration_ms: 2164.0866
+      type: 'test'
+      ...
+    # Subtest: storage: Yes
+    not ok 3 - storage: Yes
+      ---
+      duration_ms: 954.8102
+      type: 'test'
+      location: 'C:\\AI2026\\chat-marketplace-controls\\test\\model-quota-host-recovery.test.ts:1:2039'
+      failureType: 'testCodeFailure'
+      error: |-
+        {"ok":false,"code":"INTERNAL_ERROR","message":"Something went wrong. Please try again."}
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:74:18)
+        process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:60:7)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: storage: Cancel
+    ok 4 - storage: Cancel
+      ---
+      duration_ms: 954.7858
+      type: 'test'
+      ...
+    # Subtest: provider: Yes
+    not ok 5 - provider: Yes
+      ---
+      duration_ms: 950.2921
+      type: 'test'
+      location: 'C:\\AI2026\\chat-marketplace-controls\\test\\model-quota-host-recovery.test.ts:1:2039'
+      failureType: 'testCodeFailure'
+      error: |-
+        {"ok":false,"code":"INTERNAL_ERROR","message":"Something went wrong. Please try again."}
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:74:18)
+        process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:60:7)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+      ...
+    # Subtest: provider: Cancel
+    ok 6 - provider: Cancel
+      ---
+      duration_ms: 1248.2099
+      type: 'test'
+      ...
+    1..6
+not ok 1 - AC4: exhaustion, provider refusal, and guard outage preserve authenticated deterministic pending decisions
+  ---
+  duration_ms: 8926.113
+  type: 'test'
+  location: 'C:\\AI2026\\chat-marketplace-controls\\test\\model-quota-host-recovery.test.ts:1:1819'
+  failureType: 'subtestsFailed'
+  error: '3 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: AC4: exhaustion, provider refusal, and guard outage preserve authorized conventional discovery and draft routes
+    # Subtest: quota
+    not ok 1 - quota
+      ---
+      duration_ms: 2246.0979
+      type: 'test'
+      location: 'C:\\AI2026\\chat-marketplace-controls\\test\\model-quota-host-recovery.test.ts:1:3482'
+      failureType: 'testCodeFailure'
+      error: |-
+        {"ok":false,"code":"STALE_SURFACE","message":"That action is no longer available; please use the current options."}
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:100:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:88:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: storage
+    not ok 2 - storage
+      ---
+      duration_ms: 793.0886
+      type: 'test'
+      location: 'C:\\AI2026\\chat-marketplace-controls\\test\\model-quota-host-recovery.test.ts:1:3482'
+      failureType: 'testCodeFailure'
+      error: |-
+        {"ok":false,"code":"STALE_SURFACE","message":"That action is no longer available; please use the current options."}
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:100:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:88:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    # Subtest: provider
+    not ok 3 - provider
+      ---
+      duration_ms: 768.6827
+      type: 'test'
+      location: 'C:\\AI2026\\chat-marketplace-controls\\test\\model-quota-host-recovery.test.ts:1:3482'
+      failureType: 'testCodeFailure'
+      error: |-
+        {"ok":false,"code":"STALE_SURFACE","message":"That action is no longer available; please use the current options."}
+        
+        false !== true
+        
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: true
+      actual: false
+      operator: 'strictEqual'
+      stack: |-
+        TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:100:16)
+        process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\model-quota-host-recovery.test.ts:88:5)
+        async Test.run (node:internal/test_runner/test:1054:7)
+        async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+      ...
+    1..3
+not ok 2 - AC4: exhaustion, provider refusal, and guard outage preserve authorized conventional discovery and draft routes
+  ---
+  duration_ms: 3812.1525
+  type: 'test'
+  location: 'C:\\AI2026\\chat-marketplace-controls\\test\\model-quota-host-recovery.test.ts:1:3296'
+  failureType: 'subtestsFailed'
+  error: '3 subtests failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..2
+# tests 11
+# suites 0
+# pass 3
+# fail 8
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 15068.0864
