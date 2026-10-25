@@ -88,9 +88,19 @@ export class IsolatedCommerceMarket extends CommerceMarket {
   constructor(ctx: DurableObjectState, env: IsolatedTenantEnv) {
     const tenantId = ctx.id.name;
     if (!tenantId) throw new Error("Isolated test Durable Object must use idFromName");
-    // Test-only seam: a tenant named failing-* starts without its payment reference key, so its object is in the failed state.
+    // Test-only seams (ADR 0104 decision 5). The shared test env is ON (wrangler.test.jsonc), so:
+    // failing-* is ON with no payment reference key (the failed state); commerce-off-* starts with the switch unset and no key pair;
+    // commerce-invalid-* starts with a value the switch refuses.
     const failing = tenantId.startsWith("failing-");
-    super(ctx, { ...env, SHORTLET_TENANT_ID: tenantId, ...(failing ? { COMMERCE_REFERENCE_HMAC_KEY: undefined } : {}) });
+    const off = tenantId.startsWith("commerce-off-");
+    const invalid = tenantId.startsWith("commerce-invalid-");
+    super(ctx, {
+      ...env,
+      SHORTLET_TENANT_ID: tenantId,
+      ...(failing ? { COMMERCE_REFERENCE_HMAC_KEY: undefined } : {}),
+      ...(off ? { COMMERCE_ENABLED: undefined, COMMERCE_REFERENCE_HMAC_KEY: undefined, COMMERCE_REFERENCE_HMAC_KEY_ID: undefined } : {}),
+      ...(invalid ? { COMMERCE_ENABLED: "maybe-value" } : {}),
+    });
   }
 }
 

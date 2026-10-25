@@ -71,8 +71,13 @@ export interface OpsRouteDependencies {
   readonly platformMigration?: {
     request<T>(operation: "import" | "export" | "verify" | "status" | "cutover", input?: Readonly<Record<string, unknown>>): Promise<T>;
   };
+  /**
+   * ADR 0104 decision 5: whether commerce is on. Absent means on, so an unset dependency keeps the ON cutover path and its
+   * fail-closed refusal (the switched-off skip must be an explicit decision).
+   */
+  readonly commerceEnabled?: boolean;
   readonly commerceMigration?: {
-    request<T>(operation: "import" | "export" | "verify" | "status" | "cutover", input?: Readonly<Record<string, unknown>>): Promise<T>;
+    request<T>(operation: "import" | "export" | "verify" | "status" | "cutover" | "rows", input?: Readonly<Record<string, unknown>>): Promise<T>;
   };
 }
 
@@ -295,13 +300,31 @@ export function createOpsHandler(dependencies: OpsRouteDependencies): OpsHandler
     if (request.method === "POST" && path === "/_ops/cutover/complete") {
       // ADR 0101: record cutover independently in both authorities. Each object persists its own marker before its SQL flag.
       assertSchemaCurrent(dependencies.database, SHORTLET_SCHEMA_VERSION);
+      // ADR 0104 decision 5 / ADR 0101 amendment (25 Oct 2026): while commerce is off, the commerce object is skipped only after it
+      // confirms zero commerce rows. This check runs before any platform or Shortlet write, so a refusal leaves every object unchanged.
+      const commerceOn = dependencies.commerceEnabled ?? true;
+      if (dependencies.commerceMigration && !commerceOn) {
+        let rowCount: unknown;
+        try {
+          rowCount = (await dependencies.commerceMigration.request<{ readonly rowCount: unknown }>("rows")).rowCount;
+        } catch {
+          return json(503, { ok: false, code: "COMMERCE_CUTOVER_UNAVAILABLE", message: "The commerce row check could not run, so the cutover is not recorded. Nothing changed; run it again." });
+        }
+        if (typeof rowCount !== "number" || !Number.isSafeInteger(rowCount) || rowCount < 0) {
+          return json(503, { ok: false, code: "COMMERCE_CUTOVER_UNAVAILABLE", message: "The commerce row check gave no usable count, so the cutover is not recorded. Nothing changed; run it again." });
+        }
+        if (rowCount > 0) {
+          return json(409, { ok: false, code: "COMMERCE_ROWS_PRESENT_WHILE_DISABLED", message: "Commerce holds rows while COMMERCE_ENABLED is off, so the cutover is refused. Nothing changed." });
+        }
+      }
       try {
         const platform = dependencies.platformMigration
           ? await dependencies.platformMigration.request<{ readonly cutoverCompletedAt: string }>("cutover")
           : null;
         // Commerce is genuinely needed here: a cutover that cannot record commerce must not record Shortlet (issue 24 review 6).
+        // While commerce is off it was checked above and holds no rows, so there is no commerce cutover to record.
         let commerce: { readonly cutoverCompletedAt: string } | null = null;
-        if (dependencies.commerceMigration) {
+        if (dependencies.commerceMigration && commerceOn) {
           try { commerce = await dependencies.commerceMigration.request<{ readonly cutoverCompletedAt: string }>("cutover"); } catch {
             return json(503, { ok: false, code: "COMMERCE_CUTOVER_UNAVAILABLE", message: "The commerce cutover could not be recorded, so the Shortlet cutover is not recorded either. Nothing changed; run it again." });
           }

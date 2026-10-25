@@ -9,6 +9,9 @@ export interface CommerceObjectEnv {
   readonly SHORTLET_TENANT_ID?: string;
   readonly SHORTLET_EXPORT_RETENTION_DAYS?: string;
   readonly SHORTLET_RECEIPT_ORPHAN_GRACE_HOURS?: string;
+  /** ADR 0104 decision 5: the one switch. Unset, empty or "false" is off; exactly "true" is on. */
+  readonly COMMERCE_ENABLED?: string;
+  /** Required only while commerce is on (ADR 0104 decision 5). */
   readonly COMMERCE_REFERENCE_HMAC_KEY?: string;
   readonly COMMERCE_REFERENCE_HMAC_KEY_ID?: string;
 }

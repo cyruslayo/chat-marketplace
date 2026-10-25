@@ -1,5 +1,6 @@
 import { bindings, defineConfig, defineWorker, exports } from "cf/config";
 import * as entrypoint from "./src/worker.ts" with { type: "cf-worker" };
+import { commerceEnabledFromEnv } from "../local-guest/src/commerce-switch-local.js";
 
 /**
  * Typed Cloudflare configuration for the Shortlet pilot (slice 10b).
@@ -13,6 +14,13 @@ import * as entrypoint from "./src/worker.ts" with { type: "cf-worker" };
  */
 
 type PilotEnvironment = "development" | "staging" | "production";
+
+/**
+ * ADR 0104 decision 5: commerce is off in every environment unless COMMERCE_ENABLED is exactly "true". The switch is read here, at
+ * build time, and an invalid value stops the build with an error that names the variable. The HMAC key pair is declared only when
+ * commerce is on, so the default deployment needs no commerce secret.
+ */
+const COMMERCE_ON = commerceEnabledFromEnv({ COMMERCE_ENABLED: process.env.COMMERCE_ENABLED });
 
 /** The public origin each deployment serves (the Paystack callback origin must equal this, ADR 0087). */
 const PUBLIC_ORIGIN: Record<PilotEnvironment, string> = {
@@ -109,9 +117,15 @@ function workerFor(environment: PilotEnvironment) {
       RESEND_API_KEY: bindings.secret(),
       SHORTLET_GUEST_CODE_HASHING_KEY: bindings.secret(),
       OPS_SHARED_SECRET: bindings.secret(),
-      // Issue 24 (user decision 18 Oct 2026, ADR 0075): the keyed payment reference secret; the id is a plain var, so rotation is a new id.
-      COMMERCE_REFERENCE_HMAC_KEY: bindings.secret(),
-      COMMERCE_REFERENCE_HMAC_KEY_ID: bindings.text("k1"),
+      // ADR 0104 decision 5: the switch is always declared; the key pair is declared only while it is on.
+      COMMERCE_ENABLED: bindings.text(COMMERCE_ON ? "true" : "false"),
+      ...(COMMERCE_ON
+        ? {
+            // Issue 24 (user decision 18 Oct 2026, ADR 0075): the keyed payment reference secret; the id is a plain var, so rotation is a new id.
+            COMMERCE_REFERENCE_HMAC_KEY: bindings.secret(),
+            COMMERCE_REFERENCE_HMAC_KEY_ID: bindings.text("k1"),
+          }
+        : {}),
     },
   });
 }

@@ -38,6 +38,7 @@ import { SHORTLET_SCHEMA_MIGRATIONS } from "./schema.js";
 import { cloudflareAssetLoader } from "./pilot-assets.js";
 import { R2ReceiptBlobStore } from "./r2-receipt-blob-store.js";
 import { commerceMigrationClient, platformGuestAccountDependencies, platformGuestData, platformMigrationClient, platformModelRequestQuota } from "./do-clients.js";
+import { commerceSwitchIsOn } from "./commerce-switch.js";
 import { demoMode, pilotDeployment } from "../../pilot/src/pilot-config-core.js";
 
 /**
@@ -203,6 +204,8 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
       conciergeDiagnostics: () => this.#modelCallBudget?.turnCounts ?? { modelHandledTurns: 0, deterministicFallbackTurns: 0 },
       platformMigration: platformMigrationClient(this.env, this.env.SHORTLET_TENANT_ID?.trim() ?? ""),
       commerceMigration: commerceMigrationClient(this.env, this.env.SHORTLET_TENANT_ID?.trim() ?? ""),
+      // ADR 0104 decision 5: an invalid value reads as off here, and the commerce object then refuses the zero-row check, so the cutover fails closed.
+      commerceEnabled: commerceSwitchIsOn(this.env),
     });
   }
 

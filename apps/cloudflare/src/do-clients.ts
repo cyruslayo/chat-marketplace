@@ -203,11 +203,11 @@ export function commerceCheckoutClient(env: CloudflareEnv, tenantId: string): {
  * call that needs commerce. The tenant check and the stub lookup both run per request.
  */
 export function commerceMigrationClient(env: CloudflareEnv, tenantId: string): {
-  request<T>(operation: "import" | "export" | "verify" | "status" | "cutover", input?: Readonly<Record<string, unknown>>): Promise<T>;
+  request<T>(operation: "import" | "export" | "verify" | "status" | "cutover" | "rows", input?: Readonly<Record<string, unknown>>): Promise<T>;
 } {
   const normalizedTenant = tenantId.trim();
   return {
-    async request<T>(operation: "import" | "export" | "verify" | "status" | "cutover", input: Readonly<Record<string, unknown>> = {}): Promise<T> {
+    async request<T>(operation: "import" | "export" | "verify" | "status" | "cutover" | "rows", input: Readonly<Record<string, unknown>> = {}): Promise<T> {
       if (!normalizedTenant || normalizedTenant !== env.SHORTLET_TENANT_ID?.trim()) throw new Error("Tenant does not match the configured commerce tenant");
       const stub = env.COMMERCE.get(env.COMMERCE.idFromName(normalizedTenant), { locationHint: "afr" });
       if (operation === "import" || operation === "export") {
