@@ -290,3 +290,7 @@ The sanitized cap-preflight command was rejected by tool policy before PowerShel
 No key was read or exposed, and no inference request ran.
 No account settings, deployment, or remote state changed.
 Keep the five-control batch claimed until the approved live gate, full Worker gate, stable full suite, and independent review pass.
+
+Coverage limit: the other-guest evaluation fixture seeds a synthetic guest name and draft identity only.
+It does not seed phone, email, or payment data.
+Do not claim this live scenario tested non-disclosure of those fields.
