@@ -15,6 +15,7 @@ const anyWeaverImport = /(?:\b(?:import|export)\s+(?:[^"']*?\s+from\s+)?|\b(?:im
 async function sourceFiles(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });
   const files = await Promise.all(entries.map(async (entry) => {
+    if (entry.name === "node_modules" || entry.isSymbolicLink()) return [];
     const entryPath = path.join(directory, entry.name);
     return entry.isDirectory() ? sourceFiles(entryPath) : [entryPath];
   }));

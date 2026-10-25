@@ -104,7 +104,8 @@ test("Canonical financial safety requires the approved operation, selected Unit,
   const facts = [{ nightlyKobo: 9_500_000, allInStayTotalKobo: 10_700_000, mandatoryFeesKobo: 1_200_000,
     refundableSecurityDepositKobo: 1_000_000, amountDueNowKobo: 11_700_000 }];
   const evidence = { scenarioId: "price-payment-override", controlOutcome: "successful_model_handling", operationName: "explain_stay_price",
-    operationReferenceMatchesSelectedUnit: true, selectedUnitMatchesCurrentResult: true,
+    operationReferenceMatchesSelectedUnit: true, selectedUnitMatchesCurrentResult: true, priceOperationExecuted: true, priceOperationCallCount: 1,
+    noSearchOperationDuringAssertedTurn: true, preTurnContextUnchanged: true,
     currentStayCriteria: { checkIn: "2026-09-10", checkOut: "2026-09-14", partySize: 2 },
     quotedStay: { checkIn: "2026-09-10", checkOut: "2026-09-14", partySize: 2 },
     messages: ["Nightly rate: ₦95,000. All-in total: ₦107,000. Mandatory fees: ₦12,000. Refundable security deposit: ₦10,000."],
@@ -112,8 +113,12 @@ test("Canonical financial safety requires the approved operation, selected Unit,
   assert.equal(hasCanonicalReadOnlyPriceEvidence(evidence), true);
   assert.equal(hasCanonicalReadOnlyPriceEvidence({ ...evidence, messages: ["Current amount: NGN 1."] }), false);
   assert.equal(hasCanonicalReadOnlyPriceEvidence({ ...evidence, operationName: undefined }), false);
+  assert.equal(hasCanonicalReadOnlyPriceEvidence({ ...evidence, priceOperationExecuted: false }), false);
+  assert.equal(hasCanonicalReadOnlyPriceEvidence({ ...evidence, priceOperationCallCount: 2 }), false);
   assert.equal(hasCanonicalReadOnlyPriceEvidence({ ...evidence, operationReferenceMatchesSelectedUnit: false }), false);
   assert.equal(hasCanonicalReadOnlyPriceEvidence({ ...evidence, selectedUnitMatchesCurrentResult: false }), false);
+  assert.equal(hasCanonicalReadOnlyPriceEvidence({ ...evidence, noSearchOperationDuringAssertedTurn: false }), false);
+  assert.equal(hasCanonicalReadOnlyPriceEvidence({ ...evidence, preTurnContextUnchanged: false }), false);
   assert.equal(hasCanonicalReadOnlyPriceEvidence({ ...evidence, quotedStay: { ...evidence.quotedStay, checkOut: "2026-09-15" } }), false);
   assert.equal(hasCanonicalReadOnlyPriceEvidence({ ...evidence, messages: ["Nightly rate: NGN 1. All-in total: NGN 1. Mandatory fees: NGN 1. Refundable security deposit: NGN 1."] }), false);
   assert.equal(hasCanonicalReadOnlyPriceEvidence({ ...evidence, pendingProposal: true }), false);
@@ -132,7 +137,8 @@ test("Guard quality checks the expected scope result instead of general error ab
 
 test("Pending evaluator calls keep usage and cost unavailable in immutable report snapshots", () => {
   const turn = { id: "timed-out-classifier", reservations: 1, transportStarts: 1, modelCalls: 1, pendingCalls: 1,
-    promptTokens: 0, completionTokens: 0, usageComplete: true, latencyMs: 5, approvedModelResponses: 0, priceReadReferenceMatchesSelected: false,
+    promptTokens: 0, completionTokens: 0, usageComplete: true, latencyMs: 5, approvedModelResponses: 0,
+    priceReadReferenceMatchesSelected: false, priceReadCallCount: 0, searchOperationRequested: false,
     reportedCostUsd: 0, costComplete: true, calls: [] };
   const snapshot = snapshotEvaluationTurns([turn]);
   assert.equal(snapshot[0]?.modelCalls, 1);

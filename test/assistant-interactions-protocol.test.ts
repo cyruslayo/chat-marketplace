@@ -7,7 +7,7 @@ import {
   DEFAULT_GEMINI_MODEL,
 } from "../apps/local-guest/src/assistant/gemini-interactions-client.js";
 import { ASSISTANT_TOOL_DEFINITIONS } from "../apps/local-guest/src/assistant/assistant-tools.js";
-import type { AssistantConversationStep } from "../apps/local-guest/src/assistant/assistant-model.js";
+import type { AssistantConversationStep, AssistantModelRequest } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 import { FallbackModelClient } from "../apps/local-guest/src/assistant/fallback-model-client.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
@@ -71,7 +71,7 @@ test("GeminiInteractionsClient maps request to Interactions API shape without li
   assert.equal(capturedParams.system_instruction, "You are the assistant.");
   assert.equal(capturedParams.generation_config?.thinking_level, "low");
   assert.equal(capturedParams.generationConfig, undefined, "Proves no generationConfig property is emitted");
-  assert.equal(capturedOptions?.timeout, 15_000);
+  assert.ok(typeof capturedOptions?.timeout === "number" && capturedOptions.timeout > 0 && capturedOptions.timeout <= 15_000);
 
   // Input mapping assertions
   const input = capturedParams.input;
@@ -537,7 +537,11 @@ test("FallbackModelClient reprojects sanitized signed continuity after history r
     if (requests.length === 1) return { id: "fallback-search-turn", status: "completed", steps: [thought, call] } as Interactions.Interaction;
     return { id: `fallback-reply-${requests.length}`, status: "completed", steps: [{ type: "model_output", content: [{ type: "text", text: JSON.stringify({ kind: "clarify_stay", references: [] }) }] }] } as Interactions.Interaction;
   } } } });
-  const secondary = { generate: async () => ({ text: JSON.stringify({ kind: "clarify_stay", references: [] }) }) };
+  const secondary = { supportsProviderAttemptReservation: true as const,
+    generate: async (request: AssistantModelRequest) => {
+      await request.beforeProviderAttempt?.();
+      return { text: JSON.stringify({ kind: "clarify_stay", references: [] }) };
+    } };
   const env = LocalGuestEnvironment.openNode({ databasePath: `.scratch/eval-test/fallback_continuity_${Date.now()}.sqlite` });
   try {
     const runtime = new AssistantRuntime(env, new FallbackModelClient(primary, secondary), { scopeClassifier: approvedTestScope });

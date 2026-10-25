@@ -1,0 +1,290 @@
+TAP version 13
+# (node:162268) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC6: classifier guard failures and quota refusals emit separate metadata-only outcomes once
+ok 1 - AC6: classifier guard failures and quota refusals emit separate metadata-only outcomes once
+  ---
+  duration_ms: 179.8942
+  type: 'test'
+  ...
+# Subtest: Date provenance failures expose a closed diagnostic class without the rejected date or guest text
+ok 2 - Date provenance failures expose a closed diagnostic class without the rejected date or guest text
+  ---
+  duration_ms: 57.8108
+  type: 'test'
+  ...
+# (node:129304) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: GeminiInteractionsClient maps request to Interactions API shape without live network
+ok 3 - GeminiInteractionsClient maps request to Interactions API shape without live network
+  ---
+  duration_ms: 14.5984
+  type: 'test'
+  ...
+# Subtest: GeminiInteractionsClient retries one API connection failure and then succeeds
+ok 4 - GeminiInteractionsClient retries one API connection failure and then succeeds
+  ---
+  duration_ms: 107.3396
+  type: 'test'
+  ...
+# Subtest: GeminiInteractionsClient does not retry non-connection provider errors
+ok 5 - GeminiInteractionsClient does not retry non-connection provider errors
+  ---
+  duration_ms: 4.0368
+  type: 'test'
+  ...
+# Subtest: GeminiInteractionsClient stops after one retry when the connection remains unavailable
+ok 6 - GeminiInteractionsClient stops after one retry when the connection remains unavailable
+  ---
+  duration_ms: 116.7489
+  type: 'test'
+  ...
+# Subtest: GeminiInteractionsClient maps tool results and model outputs accurately
+ok 7 - GeminiInteractionsClient maps tool results and model outputs accurately
+  ---
+  duration_ms: 3.8247
+  type: 'test'
+  ...
+# Subtest: GeminiInteractionsClient always disables provider storage
+ok 8 - GeminiInteractionsClient always disables provider storage
+  ---
+  duration_ms: 1.2373
+  type: 'test'
+  ...
+# Subtest: GeminiInteractionsClient rejects a provider function call without an id
+ok 9 - GeminiInteractionsClient rejects a provider function call without an id
+  ---
+  duration_ms: 1.7374
+  type: 'test'
+  ...
+# Subtest: GeminiInteractionsClient preserves provider function-call steps across stateless tool turns
+ok 10 - GeminiInteractionsClient preserves provider function-call steps across stateless tool turns
+  ---
+  duration_ms: 1.597
+  type: 'test'
+  ...
+# Subtest: GeminiInteractionsClient uses output_text as the primary response text
+ok 11 - GeminiInteractionsClient uses output_text as the primary response text
+  ---
+  duration_ms: 2.8937
+  type: 'test'
+  ...
+# Subtest: GeminiInteractionsClient fails closed when apiKey and customAi are missing
+ok 12 - GeminiInteractionsClient fails closed when apiKey and customAi are missing
+  ---
+  duration_ms: 2.9996
+  type: 'test'
+  ...
+# Subtest: GeminiInteractionsClient preserves thought steps with signatures and model_output across stateless turns
+ok 13 - GeminiInteractionsClient preserves thought steps with signatures and model_output across stateless turns
+  ---
+  duration_ms: 2.0967
+  type: 'test'
+  ...
+# Subtest: GeminiInteractionsClient replays signed thought and function-call steps with documented function-result content before the next model output
+ok 14 - GeminiInteractionsClient replays signed thought and function-call steps with documented function-result content before the next model output
+  ---
+  duration_ms: 2.2094
+  type: 'test'
+  ...
+# Subtest: AssistantRuntime keeps Gemini tool continuity and replaces legacy final prose with a safe server reply
+ok 15 - AssistantRuntime keeps Gemini tool continuity and replaces legacy final prose with a safe server reply
+  ---
+  duration_ms: 1255.1978
+  type: 'test'
+  ...
+# Subtest: AssistantRuntime keeps Gemini signed continuity paired when one call in a batch is rejected
+ok 16 - AssistantRuntime keeps Gemini signed continuity paired when one call in a batch is rejected
+  ---
+  duration_ms: 963.8134
+  type: 'test'
+  ...
+# Subtest: FallbackModelClient reprojects sanitized signed continuity after history reconstruction
+ok 17 - FallbackModelClient reprojects sanitized signed continuity after history reconstruction
+  ---
+  duration_ms: 950.1057
+  type: 'test'
+  ...
+# (node:163488) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Controlled live evaluation requires explicit opt-in and a bounded total attempt limit
+ok 18 - Controlled live evaluation requires explicit opt-in and a bounded total attempt limit
+  ---
+  duration_ms: 19.0397
+  type: 'test'
+  ...
+# Subtest: Blocked scenario grading rejects arbitrary generation, planner calls, and new surfaces despite unchanged database effects
+ok 19 - Blocked scenario grading rejects arbitrary generation, planner calls, and new surfaces despite unchanged database effects
+  ---
+  duration_ms: 1.9177
+  type: 'test'
+  ...
+# Subtest: Safety and task quality grades distinguish safe guard failures from benign task failures
+ok 20 - Safety and task quality grades distinguish safe guard failures from benign task failures
+  ---
+  duration_ms: 2.2744
+  type: 'test'
+  ...
+# Subtest: Blocked fallback safety requires truthful output and no effects or proposals
+ok 21 - Blocked fallback safety requires truthful output and no effects or proposals
+  ---
+  duration_ms: 1.3539
+  type: 'test'
+  ...
+# Subtest: Currency-only financial override output cannot pass canonical-price safety
+ok 22 - Currency-only financial override output cannot pass canonical-price safety
+  ---
+  duration_ms: 0.8475
+  type: 'test'
+  ...
+# Subtest: Setup guard failures do not contaminate a valid asserted-turn guard grade
+ok 23 - Setup guard failures do not contaminate a valid asserted-turn guard grade
+  ---
+  duration_ms: 5.2466
+  type: 'test'
+  ...
+# Subtest: Financial override may pass safety after a completed current-price read with unchanged state
+ok 24 - Financial override may pass safety after a completed current-price read with unchanged state
+  ---
+  duration_ms: 0.907
+  type: 'test'
+  ...
+# Subtest: Canonical financial safety requires the approved operation, selected Unit, and current server amounts
+ok 25 - Canonical financial safety requires the approved operation, selected Unit, and current server amounts
+  ---
+  duration_ms: 37.1229
+  type: 'test'
+  ...
+# Subtest: Guard quality checks the expected scope result instead of general error absence
+ok 26 - Guard quality checks the expected scope result instead of general error absence
+  ---
+  duration_ms: 2.6932
+  type: 'test'
+  ...
+# Subtest: Pending evaluator calls keep usage and cost unavailable in immutable report snapshots
+ok 27 - Pending evaluator calls keep usage and cost unavailable in immutable report snapshots
+  ---
+  duration_ms: 3.5181
+  type: 'test'
+  ...
+# Subtest: Controlled details grading pins the first public action before generation and rejects a different authorized Unit
+ok 28 - Controlled details grading pins the first public action before generation and rejects a different authorized Unit
+  ---
+  duration_ms: 2.2522
+  type: 'test'
+  ...
+# Subtest: The controlled evaluator runs a synthetic HTTP case with network-blocked provider fixtures and excludes content from reports
+ok 29 - The controlled evaluator runs a synthetic HTTP case with network-blocked provider fixtures and excludes content from reports
+  ---
+  duration_ms: 7188.7968
+  type: 'test'
+  ...
+# (node:83284) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC1: With OpenRouter settings, a discovery turn calls the model and executes search_stays
+ok 30 - AC1: With OpenRouter settings, a discovery turn calls the model and executes search_stays
+  ---
+  duration_ms: 1654.4295
+  type: 'test'
+  ...
+# Subtest: AC2: Explicit confirmation or cancellation of a pending action never calls the model
+ok 31 - AC2: Explicit confirmation or cancellation of a pending action never calls the model
+  ---
+  duration_ms: 2474.6105
+  type: 'test'
+  ...
+# Subtest: AC3: Provider failure returns fixed scope guidance without starting planner tools
+ok 32 - AC3: Provider failure returns fixed scope guidance without starting planner tools
+  ---
+  duration_ms: 5326.6914
+  type: 'test'
+  ...
+# Subtest: AC4: When durable daily provider capacity is exhausted, the concierge returns fixed scope guidance without transport
+ok 33 - AC4: When durable daily provider capacity is exhausted, the concierge returns fixed scope guidance without transport
+  ---
+  duration_ms: 598.5436
+  type: 'test'
+  ...
+# Subtest: AC5: A missing or empty LLM_API_KEY, or a non-HTTPS LLM_BASE_URL, is a startup error
+ok 34 - AC5: A missing or empty LLM_API_KEY, or a non-HTTPS LLM_BASE_URL, is a startup error
+  ---
+  duration_ms: 2.3543
+  type: 'test'
+  ...
+# Subtest: AC7: Token usage is returned from the client, and no prompt or reply text appears in diagnostics or logs
+ok 35 - AC7: Token usage is returned from the client, and no prompt or reply text appears in diagnostics or logs
+  ---
+  duration_ms: 519.6558
+  type: 'test'
+  ...
+# (node:124380) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Landing 14 AC1: Sending from the hero or the closing composer opens a conversation whose first Guest message is the text typed, followed by the concierge's reply
+ok 36 - Landing 14 AC1: Sending from the hero or the closing composer opens a conversation whose first Guest message is the text typed, followed by the concierge's reply
+  ---
+  duration_ms: 3408.4655
+  type: 'test'
+  ...
+# Subtest: Landing 14 AC1: A failed first concierge turn keeps the message and lets the Guest retry
+ok 37 - Landing 14 AC1: A failed first concierge turn keeps the message and lets the Guest retry
+  ---
+  duration_ms: 1326.841
+  type: 'test'
+  ...
+# Subtest: Landing 14 AC2: The typed text never appears in any URL, redirect location or log line
+ok 38 - Landing 14 AC2: The typed text never appears in any URL, redirect location or log line
+  ---
+  duration_ms: 1106.744
+  type: 'test'
+  ...
+# Subtest: Landing 14 AC3: A visitor with an active conversation is offered to continue it first, and starting a new one leaves the existing work untouched
+ok 39 - Landing 14 AC3: A visitor with an active conversation is offered to continue it first, and starting a new one leaves the existing work untouched
+  ---
+  duration_ms: 1199.5898
+  type: 'test'
+  ...
+# Subtest: Landing 14 AC4: With the beta invite gate on, sending meets the gate exactly as / does, and the text survives the gate
+ok 40 - Landing 14 AC4: With the beta invite gate on, sending meets the gate exactly as / does, and the text survives the gate
+  ---
+  duration_ms: 1642.7974
+  type: 'test'
+  ...
+# Subtest: Landing 14 AC5: Sending creates no Draft, Booking Request, hold, Reservation or payment attempt
+ok 41 - Landing 14 AC5: Sending creates no Draft, Booking Request, hold, Reservation or payment attempt
+  ---
+  duration_ms: 756.3888
+  type: 'test'
+  ...
+# Subtest: AC1 — package.json pins both Weaver 0.2.1 dependencies and the lockfile resolves registry integrity
+ok 42 - AC1 — package.json pins both Weaver 0.2.1 dependencies and the lockfile resolves registry integrity
+  ---
+  duration_ms: 101.146
+  type: 'test'
+  ...
+# Subtest: AC2 — source, tests and scripts use no legacy Weaver imports or vendor verifier
+ok 43 - AC2 — source, tests and scripts use no legacy Weaver imports or vendor verifier
+  ---
+  duration_ms: 5695.4587
+  type: 'test'
+  ...
+# Subtest: AC3 — authoritative application and domain files do not import Weaver
+ok 44 - AC3 — authoritative application and domain files do not import Weaver
+  ---
+  duration_ms: 306.681
+  type: 'test'
+  ...
+# Subtest: Weaver's published default safety policy keeps the documented limits
+ok 45 - Weaver's published default safety policy keeps the documented limits
+  ---
+  duration_ms: 3.9327
+  type: 'test'
+  ...
+1..45
+# tests 45
+# suites 0
+# pass 45
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 16557.359
