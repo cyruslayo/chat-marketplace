@@ -1,0 +1,41 @@
+TAP version 13
+# Subtest: AC1 — package.json pins both Weaver 0.2.1 dependencies and the lockfile resolves registry integrity
+ok 1 - AC1 — package.json pins both Weaver 0.2.1 dependencies and the lockfile resolves registry integrity
+  ---
+  duration_ms: 18.2765
+  type: 'test'
+  ...
+# Subtest: AC2 — source, tests and scripts use no legacy Weaver imports or vendor verifier
+ok 2 - AC2 — source, tests and scripts use no legacy Weaver imports or vendor verifier
+  ---
+  duration_ms: 974.1271
+  type: 'test'
+  ...
+# Subtest: AC2 source scan follows linked source files but excludes dependency junctions
+ok 3 - AC2 source scan follows linked source files but excludes dependency junctions
+  ---
+  duration_ms: 19.2985
+  type: 'test'
+  ...
+# This Windows account cannot create file symlinks; the source-directory junction assertion still ran.
+# Subtest: AC3 — authoritative application and domain files do not import Weaver
+ok 4 - AC3 — authoritative application and domain files do not import Weaver
+  ---
+  duration_ms: 97.3197
+  type: 'test'
+  ...
+# Subtest: Weaver's published default safety policy keeps the documented limits
+ok 5 - Weaver's published default safety policy keeps the documented limits
+  ---
+  duration_ms: 2.1429
+  type: 'test'
+  ...
+1..5
+# tests 5
+# suites 0
+# pass 5
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1856.7148
