@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { BROWSER_FILE_TIMEOUT_MS, browserFileTimeoutMs, killProcessTree, runBrowserFile } from "../scripts/browser-phase.mjs";
+import { BROWSER_FILE_TIMEOUT_MS, browserFileTimeoutMs, inspectWindowsWorker, killProcessTree, runBrowserFile } from "../scripts/browser-phase.mjs";
 
 // Phase 2 of `npm test` runs each real-browser file in its own process under a timeout. A file that stalls is killed
 // (with its browser children) and reported as timed out, and the run goes on to the next file.
@@ -45,8 +45,8 @@ test("The deadline settles when a grandchild keeps stdout open after the runner 
     assert.ok(Date.now() - started < 10_000, "the result settled at the configured deadline");
   } finally {
     if (await import("node:fs").then(({ existsSync }) => existsSync(pidFile))) {
-      const pid = Number(readFileSync(pidFile, "utf8"));
-      if (Number.isInteger(pid) && pid > 0) killProcessTree(pid);
+      const owner = JSON.parse(readFileSync(pidFile, "utf8")) as { pid: number; token: string };
+      if (Number.isInteger(owner.pid) && owner.pid > 0) killProcessTree(owner.pid, inspectWindowsWorker(owner.pid, owner.token));
     }
     rmSync(dir, { recursive: true, force: true });
   }
@@ -57,4 +57,35 @@ test("The per-file timeout defaults to about 2.4 times the slowest browser file,
   assert.equal(browserFileTimeoutMs({}), 900_000);
   assert.equal(browserFileTimeoutMs({ SHORTLET_BROWSER_FILE_TIMEOUT_MS: "1500" }), 1500);
   assert.throws(() => browserFileTimeoutMs({ SHORTLET_BROWSER_FILE_TIMEOUT_MS: "soon" }), /SHORTLET_BROWSER_FILE_TIMEOUT_MS/);
+});
+
+test("A Windows worker identity mismatch or unknown tree produces zero signals", async () => {
+  const { killProcessTree } = await import("../scripts/browser-phase.mjs");
+  const identity = { pid: 41, parentProcessId: 1, executable: "C:\\node.exe", creationTime: "worker-start", scriptToken: "test-file-token" };
+  let signals = 0;
+  assert.equal(killProcessTree(identity.pid, identity, {
+    platform: "win32",
+    inspectTree: () => [{ pid: 41, parentProcessId: 1, executable: "C:\\node.exe", creationTime: "reused-pid" }],
+    signal: () => { signals += 1; return true; },
+  }), false);
+  assert.equal(killProcessTree(identity.pid, identity, {
+    platform: "win32",
+    inspectTree: () => undefined,
+    signal: () => { signals += 1; return true; },
+  }), false);
+  assert.equal(signals, 0);
+});
+
+test("Windows browser workers signal verified descendants before their parent", async () => {
+  const { killProcessTree } = await import("../scripts/browser-phase.mjs");
+  const root = { pid: 51, parentProcessId: 1, executable: "C:\\node.exe", creationTime: "root" };
+  const child = { pid: 52, parentProcessId: 51, executable: "C:\\chrome.exe", creationTime: "child" };
+  const signalled: number[] = [];
+  assert.equal(killProcessTree(root.pid, { ...root, scriptToken: "token" }, {
+    platform: "win32",
+    inspectTree: () => [root, child],
+    inspectProcess: (pid) => pid === root.pid ? root : child,
+    signal: (pid) => { signalled.push(pid); return true; },
+  }), true);
+  assert.deepEqual(signalled, [52, 51]);
 });

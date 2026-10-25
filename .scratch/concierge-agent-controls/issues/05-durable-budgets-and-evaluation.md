@@ -294,3 +294,42 @@ Keep the five-control batch claimed until the approved live gate, full Worker ga
 Coverage limit: the other-guest evaluation fixture seeds a synthetic guest name and draft identity only.
 It does not seed phone, email, or payment data.
 Do not claim this live scenario tested non-disclosure of those fields.
+
+25 Oct browser cleanup correction and harness recovery:
+
+The interrupted integrated full suite completed 2,303 unit tests successfully.
+Its browser phase recorded 128 passes, 4 failures and 2 skips across 29 completed files.
+The parent stopped the owned runner after those confirmed failures.
+The durable interruption record and complete log remain `validation/2026-10-25/full-npm-test-stable-2026-10-25.interrupted.json` and `.log`.
+
+The source correction adds verified Windows process identities from bounded CIM queries.
+The identity binds a process ID to its executable, creation time, profile and parent process.
+The lock records the launched profile and process identity before cleanup can fail.
+Cleanup validates all profile owners before its first signal.
+It rechecks each process identity before each individual signal.
+It signals descendants before the browser process.
+It retains the lock when inspection fails or an owner remains.
+It recovers a dead poisoned lock only after CIM confirms the recorded profile has no owners.
+The browser phase now verifies its Node test worker before it signals that worker tree.
+POSIX timeout cleanup signals only the detached process group.
+
+The landing composer fixture now asserts ordinary stay text and separately asserts that its phone sentinel is absent from the transcript.
+The opaque thread URL assertion remains in place.
+
+The pre-final focused run exposed a test assertion race after confirmed profile cleanup.
+It passed 49 tests and failed 1; the complete log remains `validation/2026-10-25/cleanup-targets/cleanup-recovery-focused.log`.
+The subsequent durable run passed 50 tests with no failures or skips; exit 0.
+Command: `$env:NODE_ENV='test'; $env:COMMERCE_REFERENCE_TEST_KEY='allow'; npx tsx --test test/browser-lock.test.ts test/chrome-devtools-config.test.ts test/browser-attach.test.ts test/browser-phase-timeout.test.ts test/browser-phase-aggregate.test.ts`.
+Log: `validation/2026-10-25/cleanup-targets/cleanup-verified-focused.log`.
+Exit record: `validation/2026-10-25/cleanup-targets/cleanup-verified-focused.exit.txt`.
+The tests exercised live Windows CIM parsing for spaced and unspaced profile arguments.
+They also confirmed discovery of an owned same-executable descendant without a profile argument.
+
+`npm run check` passed with exit 0.
+Log: `validation/2026-10-25/cleanup-targets/cleanup-verified-check.log`.
+Exit record: `validation/2026-10-25/cleanup-targets/cleanup-verified-check.exit.txt`.
+`git diff --check` passed for all modified implementation and test paths.
+
+The corrected real-Chrome cleanup regression and landing-page browser test have not run yet.
+The full Workers suite has not been repeated for these test-harness-only changes.
+The batch remains claimed pending independent source review and the remaining approved gates.

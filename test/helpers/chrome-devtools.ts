@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
 import {
   closeSync,
   futimesSync,
@@ -35,6 +35,107 @@ const DEFAULT_CHROME_PATH =
 export interface ChromeLaunchConfig {
   readonly executable: string;
   readonly sandboxArgs: readonly string[];
+}
+
+export interface ManagedProcessIdentity {
+  readonly pid: number;
+  readonly executable: string;
+  readonly creationTime: string;
+  readonly profile: string;
+  readonly parentProcessId?: number;
+}
+
+function normalizedIdentityPath(value: string): string {
+  return value.replaceAll("/", "\\").replace(/\\+$/, "").toLocaleLowerCase("en-US");
+}
+
+/** Unknown or incomplete observations never authorize a process signal. */
+export function processIdentityMatches(
+  expected: ManagedProcessIdentity | undefined,
+  actual: ManagedProcessIdentity | undefined,
+): boolean {
+  const complete = (value: ManagedProcessIdentity | undefined): value is ManagedProcessIdentity =>
+    value !== undefined && Number.isSafeInteger(value.pid) && value.pid > 0 &&
+    typeof value.executable === "string" && value.executable.trim().length > 0 &&
+    typeof value.creationTime === "string" && value.creationTime.trim().length > 0 &&
+    typeof value.profile === "string" && value.profile.trim().length > 0;
+  return Boolean(
+    complete(expected) && complete(actual) && expected.pid === actual.pid &&
+    expected.creationTime === actual.creationTime &&
+    (expected.parentProcessId === undefined || actual.parentProcessId === expected.parentProcessId) &&
+    normalizedIdentityPath(expected.executable) === normalizedIdentityPath(actual.executable) &&
+    normalizedIdentityPath(expected.profile) === normalizedIdentityPath(actual.profile),
+  );
+}
+
+/** Reads only identity fields from CIM. The raw command line stays inside PowerShell. */
+export function inspectWindowsProcess(pid: number, timeoutMs = 5_000): ManagedProcessIdentity | undefined {
+  if (process.platform !== "win32" || !Number.isInteger(pid) || pid <= 0) return undefined;
+  const script = String.raw`$p=Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" -ErrorAction Stop; if ($null -eq $p) { exit 3 }; $m=[regex]::Match([string]$p.CommandLine,'(?:"--user-data-dir=([^"]+)"|--user-data-dir="([^"]+)"|--user-data-dir=(\S+))'); if (!$m.Success) { exit 4 }; $profile=if ($m.Groups[1].Success) {$m.Groups[1].Value} elseif ($m.Groups[2].Success) {$m.Groups[2].Value} else {$m.Groups[3].Value}; [pscustomobject]@{pid=[int]$p.ProcessId; parentProcessId=[int]$p.ParentProcessId; executable=[string]$p.ExecutablePath; creationTime=$p.CreationDate.ToUniversalTime().ToString('o'); profile=$profile} | ConvertTo-Json -Compress`;
+  try {
+    const output = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+      encoding: "utf8", timeout: Math.max(1, Math.min(5_000, timeoutMs)), windowsHide: true, stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    const value: unknown = JSON.parse(output);
+    if (typeof value !== "object" || value === null) return undefined;
+    const row = value as Record<string, unknown>;
+    if (row.pid !== pid || typeof row.executable !== "string" || typeof row.creationTime !== "string" || typeof row.profile !== "string" || !Number.isSafeInteger(row.parentProcessId)) return undefined;
+    return { pid, executable: row.executable, creationTime: row.creationTime, profile: row.profile, parentProcessId: row.parentProcessId as number };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Rechecks an already-attested owner by stable process identity without exposing its command line. */
+function inspectWindowsProcessRecord(pid: number, profile: string, timeoutMs: number): ManagedProcessIdentity | undefined {
+  if (process.platform !== "win32" || !Number.isSafeInteger(pid) || pid <= 0) return undefined;
+  const script = String.raw`$p=Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" -ErrorAction Stop; if($null -eq $p){exit 3}; [pscustomobject]@{pid=[int]$p.ProcessId; parentProcessId=[int]$p.ParentProcessId; executable=[string]$p.ExecutablePath; creationTime=$p.CreationDate.ToUniversalTime().ToString('o')} | ConvertTo-Json -Compress`;
+  try {
+    const value: unknown = JSON.parse(execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+      encoding: "utf8", timeout: Math.max(1, Math.min(5_000, timeoutMs)), windowsHide: true, stdio: ["ignore", "pipe", "ignore"],
+    }).trim());
+    if (typeof value !== "object" || value === null) return undefined;
+    const row = value as Record<string, unknown>;
+    if (row.pid !== pid || !Number.isSafeInteger(row.parentProcessId) || typeof row.executable !== "string" || !row.executable || typeof row.creationTime !== "string" || !row.creationTime) return undefined;
+    return { pid, parentProcessId: row.parentProcessId as number, executable: row.executable, creationTime: row.creationTime, profile };
+  } catch { return undefined; }
+}
+
+/** Returns every process that carries this exact temporary profile, or undefined when CIM cannot prove the set. */
+export function inspectWindowsProfileOwners(profile: string, expectedRoot?: ManagedProcessIdentity, timeoutMs = 5_000): readonly ManagedProcessIdentity[] | undefined {
+  if (process.platform !== "win32" || profile.trim().length === 0) return undefined;
+  const safeProfile = profile.replaceAll("'", "''");
+  const expectedRootCheck = expectedRoot
+    ? `$root=$all | Where-Object { $_.ProcessId -eq ${expectedRoot.pid} }; if($null -eq $root) { if(@($all | Where-Object { $_.ParentProcessId -eq ${expectedRoot.pid} }).Count -gt 0){exit 5} } elseif([string]$root.ExecutablePath -ine '${expectedRoot.executable.replaceAll("'", "''")}' -or $root.CreationDate.ToUniversalTime().ToString('o') -ne '${expectedRoot.creationTime.replaceAll("'", "''")}' -or !$roots.ContainsKey(${expectedRoot.pid})){exit 6};`
+    : "";
+  const script = String.raw`$target=[IO.Path]::GetFullPath('${safeProfile}').TrimEnd('\'); $all=@(Get-CimInstance Win32_Process -ErrorAction Stop); $roots=@{}; foreach($p in $all) { $m=[regex]::Match([string]$p.CommandLine,'(?:"--user-data-dir=([^"]+)"|--user-data-dir="([^"]+)"|--user-data-dir=(\S+))'); if($m.Success) { $value=if($m.Groups[1].Success){$m.Groups[1].Value}elseif($m.Groups[2].Success){$m.Groups[2].Value}else{$m.Groups[3].Value}; try { if([IO.Path]::GetFullPath($value).TrimEnd('\') -ieq $target) { $roots[[int]$p.ProcessId]=[string]$p.ExecutablePath } } catch {} } }; $owned=@{}; foreach($id in $roots.Keys) { $owned[[int]$id]=$roots[[int]$id] }; $changed=$true; while($changed) { $changed=$false; foreach($p in $all) { $parent=[int]$p.ParentProcessId; if(!$owned.ContainsKey([int]$p.ProcessId) -and $owned.ContainsKey($parent) -and [string]$p.ExecutablePath -ieq [string]$owned[$parent]) { $owned[[int]$p.ProcessId]=[string]$p.ExecutablePath; $changed=$true } } }; $rows=@(foreach($p in $all) { if($owned.ContainsKey([int]$p.ProcessId)) { [pscustomobject]@{pid=[int]$p.ProcessId; parentProcessId=[int]$p.ParentProcessId; executable=[string]$p.ExecutablePath; creationTime=$p.CreationDate.ToUniversalTime().ToString('o'); profile=$target} } }); ConvertTo-Json -InputObject ([pscustomobject]@{items=@($rows)}) -Compress`;
+  try {
+    const output = execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], {
+      encoding: "utf8", timeout: Math.max(1, Math.min(5_000, timeoutMs)), windowsHide: true, stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    const value: unknown = JSON.parse(output);
+    if (typeof value !== "object" || value === null || !Array.isArray((value as Record<string, unknown>).items)) return undefined;
+    const rows: ManagedProcessIdentity[] = [];
+    for (const item of (value as { items: unknown[] }).items) {
+      if (typeof item !== "object" || item === null) return undefined;
+      const row = item as Record<string, unknown>;
+      if (!Number.isSafeInteger(row.pid) || !Number.isSafeInteger(row.parentProcessId) || typeof row.executable !== "string" || !row.executable ||
+        typeof row.creationTime !== "string" || !row.creationTime || typeof row.profile !== "string" || !row.profile) return undefined;
+      rows.push({ pid: row.pid as number, parentProcessId: row.parentProcessId as number, executable: row.executable, creationTime: row.creationTime, profile: row.profile });
+    }
+    if (expectedRoot && rows.length === 0) {
+      const rootStatusScript = String.raw`$p=Get-CimInstance Win32_Process -Filter "ProcessId=${expectedRoot.pid}" -ErrorAction Stop; $result=if($null -ne $p){[pscustomobject]@{state='present';matches=([string]$p.ExecutablePath -ieq '${expectedRoot.executable.replaceAll("'", "''")}') -and ($p.CreationDate.ToUniversalTime().ToString('o') -eq '${expectedRoot.creationTime.replaceAll("'", "''")}')}}else{$children=@(Get-CimInstance Win32_Process -Filter "ParentProcessId=${expectedRoot.pid}" -ErrorAction Stop);[pscustomobject]@{state='absent';matches=$false;children=$children.Count}}; $result | ConvertTo-Json -Compress`;
+      const rootStatus: unknown = JSON.parse(execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", rootStatusScript], {
+        encoding: "utf8", timeout: Math.max(1, Math.min(5_000, timeoutMs)), windowsHide: true, stdio: ["ignore", "pipe", "ignore"],
+      }).trim());
+      if (typeof rootStatus !== "object" || rootStatus === null) return undefined;
+      const status = rootStatus as Record<string, unknown>;
+      if (!(status.state === "absent" && status.children === 0)) return undefined;
+    }
+    return rows;
+  } catch {
+    return undefined;
+  }
 }
 
 export function resolveChromeLaunch(
@@ -196,13 +297,78 @@ export function assertOwnBrowserEndpoint(
 export async function terminateOwnedChromeProcess(
   proc: ChildProcess,
   timeoutMs = OWNED_CHROME_TERMINATION_TIMEOUT_MS,
+  identity?: ManagedProcessIdentity,
+  actions: {
+    readonly platform?: NodeJS.Platform;
+    readonly inspect?: (pid: number) => ManagedProcessIdentity | undefined;
+    readonly inspectProfileOwners?: (profile: string, expectedRoot?: ManagedProcessIdentity) => readonly ManagedProcessIdentity[] | undefined;
+    readonly terminate?: (pid: number) => void;
+  } = {},
 ): Promise<void> {
-  if (
-    proc.pid === undefined ||
-    proc.exitCode !== null ||
-    proc.signalCode !== null
-  )
+  const deadline = Date.now() + timeoutMs;
+  if (proc.pid === undefined) return;
+  const isWindows = (actions.platform ?? process.platform) === "win32";
+  const inspectProfileOwners = actions.inspectProfileOwners ?? inspectWindowsProfileOwners;
+  const isExited = () => proc.exitCode !== null || proc.signalCode !== null;
+  if (isWindows) {
+    if (!identity) throw new Error("Owned Chrome identity is missing; process signal was refused");
+    const inspect = actions.inspect ?? ((pid: number) =>
+      inspectWindowsProcessRecord(pid, identity.profile, Math.max(1, deadline - Date.now())));
+    const killVerified = (candidate: ManagedProcessIdentity) => {
+      const actual = inspect(candidate.pid);
+      if (!processIdentityMatches(candidate, actual)) return false;
+      if (actions.terminate) actions.terminate(candidate.pid);
+      else {
+        const remainingMs = deadline - Date.now();
+        if (remainingMs <= 0) return false;
+        const result = spawnSync("taskkill", ["/PID", String(candidate.pid), "/F"], {
+          stdio: "ignore", timeout: remainingMs, windowsHide: true,
+        });
+        if (result.status !== 0) return false;
+      }
+      return true;
+    };
+    const owners = inspectProfileOwners(identity.profile, identity, Math.max(1, deadline - Date.now()));
+    if (owners === undefined) throw new Error("Chrome profile owners could not be inspected; cleanup remains locked");
+    const root = inspect(proc.pid);
+    const candidates = [...owners];
+    if (processIdentityMatches(identity, root) && !candidates.some((owner) => processIdentityMatches(identity, owner))) {
+      candidates.push(identity);
+    }
+    // Validate the complete profile process set before the first PID-directed action.
+    for (const owner of candidates) {
+      if (Date.now() >= deadline) throw new Error("Chrome cleanup reached its time bound before signalling owners");
+      if (!processIdentityMatches(owner, inspect(owner.pid)) ||
+        normalizedIdentityPath(owner.profile) !== normalizedIdentityPath(identity.profile)) {
+        throw new Error("A Chrome profile owner could not be verified; cleanup remains locked");
+      }
+    }
+    const ownerDepth = (row: ManagedProcessIdentity) => {
+      let depth = 0;
+      let parent = row.parentProcessId;
+      while (parent !== undefined && parent !== identity.pid && depth < candidates.length) {
+        const parentOwner = candidates.find((candidate) => candidate.pid === parent);
+        if (!parentOwner) break;
+        parent = parentOwner.parentProcessId;
+        depth += 1;
+      }
+      return row.pid === identity.pid ? 0 : depth + 1;
+    };
+    for (const owner of [...candidates].sort((left, right) => ownerDepth(right) - ownerDepth(left))) {
+      if (!killVerified(owner)) throw new Error("A Chrome profile owner could not be stopped; cleanup remains locked");
+    }
+    for (;;) {
+      const remaining = inspectProfileOwners(identity.profile, identity, Math.max(1, deadline - Date.now()));
+      if (remaining === undefined) throw new Error("Chrome profile owners could not be confirmed; cleanup remains locked");
+      if (remaining.length === 0) return;
+      if (Date.now() >= deadline) throw new Error("Chrome profile owners remain after the termination bound; cleanup remains locked");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  } else if (!isExited()) {
+    if (!killProcessTree(proc.pid)) throw new Error("Launched Chrome process group could not be stopped");
+  } else {
     return;
+  }
   let clearWait: (() => void) | undefined;
   const exited = new Promise<boolean>((resolve) => {
     let settled = false;
@@ -222,16 +388,10 @@ export async function terminateOwnedChromeProcess(
     clearWait = cleanup;
     proc.once("exit", onExit);
   });
-  if (proc.exitCode !== null || proc.signalCode !== null) {
-    clearWait?.();
-    return;
-  }
-  killProcessTree(proc.pid);
+  if (isExited()) { clearWait?.(); return; }
   const stopped = await exited;
-  if (!stopped && proc.exitCode === null && proc.signalCode === null) {
-    throw new Error(
-      `Launched Chrome process ${proc.pid} did not exit within ${timeoutMs} ms after termination was requested`,
-    );
+  if (!stopped && !isExited()) {
+    throw new Error(`Launched Chrome process ${proc.pid} did not exit within ${timeoutMs} ms after termination was requested`);
   }
 }
 
@@ -264,6 +424,21 @@ interface BrowserLockOwner {
   readonly pid: number;
   readonly startedAt: string;
   readonly lockToken?: string;
+  readonly cleanupFailed?: boolean;
+  readonly profileIntent?: string;
+  readonly processIdentity?: {
+    readonly pid: number;
+    readonly executable: string;
+    readonly creationTime: string;
+    readonly parentProcessId?: number;
+  };
+}
+
+export interface BrowserLockRelease {
+  (): void;
+  setProfileIntent(path: string): void;
+  setProcessIdentity(identity: ManagedProcessIdentity): void;
+  markCleanupFailed(): void;
 }
 
 // The owner file is JSON {pid, startedAt}. An older owner file held the bare PID; it is still read, with an unknown start.
@@ -292,10 +467,25 @@ function readBrowserLockOwner(ownerPath: string): BrowserLockOwner | undefined {
       "lockToken" in parsed && typeof parsed.lockToken === "string"
         ? parsed.lockToken
         : undefined;
+    const cleanupFailed = "cleanupFailed" in parsed && parsed.cleanupFailed === true;
+    const profileIntent = "profileIntent" in parsed && typeof parsed.profileIntent === "string"
+      ? parsed.profileIntent
+      : undefined;
+    const rawIdentity = "processIdentity" in parsed ? parsed.processIdentity : undefined;
+    const processIdentity = typeof rawIdentity === "object" && rawIdentity !== null &&
+      "pid" in rawIdentity && Number.isSafeInteger(rawIdentity.pid) &&
+      "executable" in rawIdentity && typeof rawIdentity.executable === "string" &&
+      "creationTime" in rawIdentity && typeof rawIdentity.creationTime === "string"
+      ? { pid: rawIdentity.pid as number, executable: rawIdentity.executable, creationTime: rawIdentity.creationTime,
+          ...( "parentProcessId" in rawIdentity && Number.isSafeInteger(rawIdentity.parentProcessId) ? { parentProcessId: rawIdentity.parentProcessId as number } : {}) }
+      : undefined;
     return {
       pid: parsed.pid,
       startedAt: parsed.startedAt,
       ...(lockToken ? { lockToken } : {}),
+      ...(cleanupFailed ? { cleanupFailed } : {}),
+      ...(profileIntent ? { profileIntent } : {}),
+      ...(processIdentity ? { processIdentity } : {}),
     };
   }
   const legacy = Number(text);
@@ -408,7 +598,7 @@ export function takeOverStaleLock(
 
 export async function acquireBrowserLock(
   options: BrowserLockOptions = {},
-): Promise<() => void> {
+): Promise<BrowserLockRelease> {
   const lockDir = options.lockDir ?? BROWSER_LOCK_DIR;
   const waitMs = options.waitMs ?? BROWSER_LOCK_WAIT_MS;
   const log = options.log ?? ((message: string) => console.warn(message));
@@ -465,7 +655,7 @@ export async function acquireBrowserLock(
       }, BROWSER_LOCK_HEARTBEAT_MS);
       heartbeat.unref();
       let released = false;
-      return () => {
+      const release = (() => {
         if (released) return;
         released = true;
         clearInterval(heartbeat);
@@ -482,10 +672,48 @@ export async function acquireBrowserLock(
           )
             throw error;
         }
+      }) as BrowserLockRelease;
+      release.setProfileIntent = (path) => {
+        if (!sameLockOwner(readBrowserLockOwner(ownerPath), owner)) throw new Error("Real-browser lock ownership changed before profile launch");
+        const current = readBrowserLockOwner(ownerPath);
+        writeFileSync(ownerPath, JSON.stringify({ ...current, profileIntent: path }), "utf8");
       };
+      release.setProcessIdentity = (identity) => {
+        if (!sameLockOwner(readBrowserLockOwner(ownerPath), owner)) throw new Error("Real-browser lock ownership changed after process launch");
+        const current = readBrowserLockOwner(ownerPath);
+        writeFileSync(ownerPath, JSON.stringify({ ...current,
+          processIdentity: { pid: identity.pid, executable: identity.executable, creationTime: identity.creationTime,
+            ...(identity.parentProcessId === undefined ? {} : { parentProcessId: identity.parentProcessId }) } }), "utf8");
+      };
+      release.markCleanupFailed = () => {
+        if (!sameLockOwner(readBrowserLockOwner(ownerPath), owner)) return;
+        const current = readBrowserLockOwner(ownerPath);
+        writeFileSync(ownerPath, JSON.stringify({ ...current, cleanupFailed: true }), "utf8");
+      };
+      return release;
     }
     const entry = findBrowserLockEntry(lockDir);
     const holder = entry?.owner;
+    if (holder?.cleanupFailed) {
+      if (processAlive(holder.pid)) {
+        throw new Error("The real-browser lock records failed cleanup; refusing another browser launch");
+      }
+      const recorded = holder.processIdentity;
+      if (process.platform !== "win32" || !holder.profileIntent || !recorded) {
+        throw new Error("Failed browser cleanup cannot be recovered without a verified process identity and profile");
+      }
+      const identity: ManagedProcessIdentity = { ...recorded, profile: holder.profileIntent };
+      const deadOwnerBrowser = {
+        pid: identity.pid,
+        exitCode: null,
+        signalCode: null,
+      } as ChildProcess;
+      await terminateOwnedChromeProcess(deadOwnerBrowser, OWNED_CHROME_TERMINATION_TIMEOUT_MS, identity);
+      if (!takeOverStaleLock(lockDir, entry, log, "the abandoned browser profile was verified empty after cleanup")) {
+        throw new Error("Verified browser cleanup completed, but the stale lock could not be recovered");
+      }
+      continue;
+    }
     if (holder && !processAlive(holder.pid)) {
       if (
         takeOverStaleLock(
@@ -607,6 +835,7 @@ export async function launchRealBrowser(
   const headless = options.headless ?? true;
   // Chrome picks the port (0) and records it in DevToolsActivePort inside this profile; the helper trusts only that file.
   const userDataDir = mkdtempSync(join(tmpdir(), "guest-chrome-"));
+  releaseBrowserLock.setProfileIntent(userDataDir);
 
   const args = [
     `--remote-debugging-port=0`,
@@ -643,6 +872,8 @@ export async function launchRealBrowser(
       detached: process.platform !== "win32",
     },
   );
+  const processIdentity = proc.pid === undefined ? undefined : inspectWindowsProcess(proc.pid);
+  if (processIdentity) releaseBrowserLock.setProcessIdentity(processIdentity);
   let browserExit:
     | { readonly code: number | null; readonly signal: NodeJS.Signals | null }
     | undefined;
@@ -650,7 +881,12 @@ export async function launchRealBrowser(
     browserExit = { code, signal };
   });
   const cleanupOwnedChrome = async () => {
-    await terminateOwnedChromeProcess(proc);
+    try {
+      await terminateOwnedChromeProcess(proc, OWNED_CHROME_TERMINATION_TIMEOUT_MS, processIdentity);
+    } catch (error) {
+      releaseBrowserLock.markCleanupFailed();
+      throw error;
+    }
     try {
       rmSync(userDataDir, { recursive: true, force: true });
     } catch {
@@ -1419,8 +1655,9 @@ export async function launchRealBrowser(
       }
     });
     try {
-      await terminateOwnedChromeProcess(proc);
+      await terminateOwnedChromeProcess(proc, OWNED_CHROME_TERMINATION_TIMEOUT_MS, processIdentity);
     } catch (error) {
+      releaseBrowserLock.markCleanupFailed();
       closed = false;
       throw error;
     }
