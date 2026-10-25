@@ -36,7 +36,8 @@ const SCHEMA = {
 
 function object(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === "object" && !Array.isArray(value); }
 
-export type ScopeFailureReason = "invalid_shape" | "unknown_label" | "invalid_intents" | "invalid_date" | "invalid_city" | "invalid_neighbourhood" | "invalid_count" | "scope_reason_mismatch" | "scope_intent_mismatch" | "tool_calls_returned" | "missing_text" | "invalid_json";
+/** Closed, metadata-only codes. Each names the rule that failed; none carries classifier text or values (ADR 0075). */
+export type ScopeFailureReason = "invalid_shape" | "unknown_label" | "invalid_intents" | "invalid_date" | "invalid_city" | "invalid_neighbourhood" | "invalid_count" | "scope_reason_mismatch" | "intents_missing_for_scope" | "intents_forbidden_for_scope" | "tool_calls_returned" | "missing_text" | "invalid_json" | "invalid_json_fenced" | "invalid_json_wrapped";
 export class ScopeClassificationError extends Error {
   constructor(readonly reason: ScopeFailureReason) { super(reason); this.name = "ScopeClassificationError"; }
 }
@@ -56,8 +57,8 @@ export function parseScopeAssessment(value: unknown, onInvalid?: (reason: ScopeF
   for (const key of ["bedrooms", "nights", "guests"]) if (slots[key] !== null && (typeof slots[key] !== "number" || !Number.isSafeInteger(slots[key]) || Number(slots[key]) < (key === "bedrooms" ? 0 : 1))) return invalid("invalid_count");
   const reason = { in_scope: "supported", mixed: "mixed", out_of_scope: "outside", unclear: "unclear" };
   if (reason[value.scope as keyof typeof reason] !== value.reasonCode) return invalid("scope_reason_mismatch");
-  if ((value.scope === "in_scope" || value.scope === "mixed") && value.intents.length === 0) return invalid("scope_intent_mismatch");
-  if ((value.scope === "out_of_scope" || value.scope === "unclear") && value.intents.length !== 0) return invalid("scope_intent_mismatch");
+  if ((value.scope === "in_scope" || value.scope === "mixed") && value.intents.length === 0) return invalid("intents_missing_for_scope");
+  if ((value.scope === "out_of_scope" || value.scope === "unclear") && value.intents.length !== 0) return invalid("intents_forbidden_for_scope");
   return value as unknown as ScopeAssessment;
 }
 
@@ -74,12 +75,23 @@ export class ModelScopeClassifier implements ScopeClassifier {
     if (response.toolCalls?.length) throw new ScopeClassificationError("tool_calls_returned");
     if (typeof response.text !== "string") throw new ScopeClassificationError("missing_text");
     let value: unknown;
-    try { value = JSON.parse(response.text); } catch { throw new ScopeClassificationError("invalid_json"); }
+    try { value = JSON.parse(response.text); } catch { throw new ScopeClassificationError(invalidJsonReason(response.text)); }
     let reason: ScopeFailureReason = "invalid_shape";
     const parsed = parseScopeAssessment(value, (failure) => { reason = failure; });
     if (!parsed) throw new ScopeClassificationError(reason);
     return parsed;
   }
+}
+
+/** Names the parse-failure class only. The text is inspected locally and never returned, stored or logged. */
+function invalidJsonReason(text: string): "invalid_json" | "invalid_json_fenced" | "invalid_json_wrapped" {
+  if (/^\s*```/.test(text)) return "invalid_json_fenced";
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start !== -1 && end > start) {
+    try { JSON.parse(text.slice(start, end + 1)); return "invalid_json_wrapped"; } catch { /* Not an embedded JSON object. */ }
+  }
+  return "invalid_json";
 }
 
 export async function assessScopeSafely(classifier: ScopeClassifier, text: string, context: ScopeContext, timeoutMs: number, onFailure?: (error: unknown) => void): Promise<ScopeAssessment | undefined> {
@@ -91,8 +103,11 @@ export async function assessScopeSafely(classifier: ScopeClassifier, text: strin
     try { onFailure?.(error); } catch { /* Observability cannot alter scope enforcement. */ }
   };
   try {
-    const assessment = parseScopeAssessment(await Promise.race([classifier.assess(text, context), new Promise<undefined>((resolve) => { timer = setTimeout(() => resolve(undefined), timeoutMs); })]));
-    if (!assessment) report(new Error("scope_assessment_unavailable"));
+    const value = await Promise.race([classifier.assess(text, context), new Promise<undefined>((resolve) => { timer = setTimeout(() => resolve(undefined), timeoutMs); })]);
+    // A timeout or absent verdict names no rule; a returned object reports the rule it failed.
+    const failure: { reason?: ScopeFailureReason } = {};
+    const assessment = value === undefined ? undefined : parseScopeAssessment(value, (reason) => { failure.reason = reason; });
+    if (!assessment) report(failure.reason ? new ScopeClassificationError(failure.reason) : new Error("scope_assessment_unavailable"));
     return assessment;
   } catch (error) { report(error); return undefined; } finally { if (timer) clearTimeout(timer); }
 }

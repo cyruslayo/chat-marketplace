@@ -121,7 +121,12 @@ export interface AssistantDiagnosticEvent {
   readonly outcome?: AssistantControlOutcome;
   readonly effectCode?: AssistantToolEffectCode;
   readonly scopeFailureReason?: import("./scope-classifier.js").ScopeFailureReason;
+  /** ADR 0075 / 0106: a fixed rejection code for a reply plan; the rejected text is never recorded. */
+  readonly replyPlanRejectionReason?: ReplyPlanRejectionReason;
 }
+
+export type ReplyPlanRejectionReason = "empty_text" | "unexpected_tool_calls" | "not_json" | "not_object" | "invalid_shape"
+  | "unknown_kind" | "invalid_references" | "reference_not_in_results";
 
 export interface AssistantRuntimeOptions {
   readonly onDiagnostic?: (event: AssistantDiagnosticEvent) => void;
@@ -186,17 +191,20 @@ const REPLY_PLAN_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-function parseReplyPlan(response: AssistantModelResponse, results: readonly AssistantToolResult[]): AssistantReplyPlan | undefined {
-  if (response.toolCalls?.length || !response.text) return undefined;
+/** Returns the validated plan, or the closed code for the first rule the reply failed. */
+function parseReplyPlan(response: AssistantModelResponse, results: readonly AssistantToolResult[]): AssistantReplyPlan | ReplyPlanRejectionReason {
+  if (response.toolCalls?.length) return "unexpected_tool_calls";
+  if (!response.text) return "empty_text";
   let value: unknown;
-  try { value = JSON.parse(response.text); } catch { return undefined; }
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  try { value = JSON.parse(response.text); } catch { return "not_json"; }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return "not_object";
   const record = value as Record<string, unknown>;
   const kinds: readonly AssistantReplyPlanKind[] = ["show_results", "show_details", "compare", "explain_price", "show_status", "propose_action", "clarify_stay", "redirect", "support_guidance"];
-  if (Object.keys(record).length !== 2 || typeof record.kind !== "string" || !kinds.includes(record.kind as AssistantReplyPlanKind)
-    || !Array.isArray(record.references) || !record.references.every((item) => typeof item === "string")) return undefined;
+  if (Object.keys(record).length !== 2) return "invalid_shape";
+  if (typeof record.kind !== "string" || !kinds.includes(record.kind as AssistantReplyPlanKind)) return "unknown_kind";
+  if (!Array.isArray(record.references) || !record.references.every((item) => typeof item === "string")) return "invalid_references";
   const allowed = new Set(results.filter((result) => !result.isError).map((result) => result.name));
-  if (record.references.some((reference) => !allowed.has(reference))) return undefined;
+  if (record.references.some((reference) => !allowed.has(reference))) return "reference_not_in_results";
   return { kind: record.kind as AssistantReplyPlanKind, references: record.references as string[] };
 }
 export class AssistantRuntime {
@@ -677,7 +685,11 @@ export class AssistantRuntime {
         if (!modelResponse.toolCalls || modelResponse.toolCalls.length === 0) {
           // ADR 0106: accept a validated typed plan; discard legacy prose and opaque steps.
           const latestResults = latestRawResults;
-          const plan = parseReplyPlan(modelResponse, latestResults);
+          const parsedPlan = parseReplyPlan(modelResponse, latestResults);
+          const plan = typeof parsedPlan === "string" ? undefined : parsedPlan;
+          if (typeof parsedPlan === "string") {
+            this.#diagnose({ stage: "provider_response", round, succeeded: false, failureClass: "MODEL_SELECTION_FAILURE", replyPlanRejectionReason: parsedPlan });
+          }
           if (!plan) {
             controlOutcome = "rejected_plan_fallback";
             recordOutcome(controlOutcome);
@@ -900,7 +912,11 @@ export class AssistantRuntime {
         this.#diagnose({ stage: activeStage, round, succeeded: true });
         const lastStep = candidateHistory.at(-1);
         const latestResults = latestRawResults;
-        const plan = parseReplyPlan(finalModelResponse, latestResults);
+        const parsedFinalPlan = parseReplyPlan(finalModelResponse, latestResults);
+        if (typeof parsedFinalPlan === "string") {
+          this.#diagnose({ stage: "provider_response", round, succeeded: false, failureClass: "MODEL_SELECTION_FAILURE", replyPlanRejectionReason: parsedFinalPlan });
+        }
+        const plan = typeof parsedFinalPlan === "string" ? undefined : parsedFinalPlan;
         finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "")
           ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
         candidateHistory.push({ role: "assistant", text: "Server reply delivered." });

@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
-import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
-import type { AssistantModelClient, AssistantModelRequest, AssistantToolCall } from "../apps/local-guest/src/assistant/assistant-model.js";
+import { AssistantRuntime, type AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import type { AssistantModelClient, AssistantModelRequest, AssistantModelResponse, AssistantToolCall } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { temporaryDatabasePath } from "./helpers/temporary-database.js";
 import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/scripted-assistant-model.js";
 import { parseScopeAssessment, ModelScopeClassifier, ScopeClassificationError } from "../apps/local-guest/src/assistant/scope-classifier.js";
@@ -195,10 +195,46 @@ test("Invalid classifier tuples report closed failure reasons without exposing r
   const classifier = new ModelScopeClassifier({ generate: async () => ({ text: JSON.stringify({ ...allowed, scope: "out_of_scope", reasonCode: "outside", intents: ["clarify"] }) }) });
   await assert.rejects(classifier.assess("PRIVATE_INPUT_CANARY", { domain: "shortlet", description: "Stays", hasShortlist: false, hasSelectedStay: false, hasOffer: false }), (error: unknown) => {
     assert.ok(error instanceof ScopeClassificationError);
-    assert.equal(error.reason, "scope_intent_mismatch");
+    assert.equal(error.reason, "intents_forbidden_for_scope");
     assert.doesNotMatch(error.message, /PRIVATE_|clarify|out_of_scope/);
     return true;
   });
+});
+
+test("Classifier diagnostics record one closed reason per invalid decision without classifier text or canaries", async () => {
+  const canary = "PRIVATE_CLASSIFIER_CANARY";
+  const json = (value: unknown) => JSON.stringify(value);
+  const cases: readonly (readonly [string, AssistantModelResponse])[] = [
+    ["invalid_json", { text: `not json ${canary}` }],
+    ["invalid_json_fenced", { text: "```json\n" + json(allowed) + "\n```" }],
+    ["invalid_json_wrapped", { text: `Result: ${json(allowed)} ${canary}` }],
+    ["invalid_shape", { text: json({ ...allowed, extra: canary }) }],
+    ["unknown_label", { text: json({ ...allowed, scope: "invented" }) }],
+    ["invalid_intents", { text: json({ ...allowed, intents: ["bogus"] }) }],
+    ["scope_reason_mismatch", { text: json({ ...allowed, reasonCode: "outside" }) }],
+    ["intents_missing_for_scope", { text: json({ ...allowed, intents: [] }) }],
+    ["intents_forbidden_for_scope", { text: json({ ...allowed, scope: "out_of_scope", reasonCode: "outside", intents: ["clarify"] }) }],
+    ["invalid_date", { text: json({ ...allowed, slots: { ...slots, checkIn: canary } }) }],
+    ["invalid_city", { text: json({ ...allowed, slots: { ...slots, city: "Kano" } }) }],
+    ["invalid_neighbourhood", { text: json({ ...allowed, slots: { ...slots, neighbourhood: canary.repeat(10) } }) }],
+    ["invalid_count", { text: json({ ...allowed, slots: { ...slots, nights: 0 } }) }],
+    ["missing_text", {}],
+    ["tool_calls_returned", { toolCalls: [{ id: "classifier-tool", name: "search_stays", args: {} }] }],
+  ];
+  for (const [expected, response] of cases) {
+    const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
+    const diagnostics: AssistantDiagnosticEvent[] = [];
+    try {
+      const runtime = new AssistantRuntime(environment, { generate: async (request) =>
+        request.structuredOutput?.name === "concierge_scope" ? response : { text: "{}" } }, {
+        onDiagnostic: (event) => diagnostics.push(event),
+      });
+      const result = await runtime.handleTurn(`classifier-reason-${expected}`, `Find stays ${canary}`);
+      assert.equal(result.ok, true, expected);
+      assert.deepEqual(diagnostics.filter((event) => event.scopeFailureReason !== undefined).map((event) => event.scopeFailureReason), [expected]);
+      assert.doesNotMatch(JSON.stringify({ result, diagnostics }), new RegExp(canary), expected);
+    } finally { environment.close(); }
+  }
 });
 
 const dateRoleSlots = { city: "Lagos", neighbourhood: null, bedrooms: null, nights: 2, guests: 2, checkIn: null, checkOut: null } as const;

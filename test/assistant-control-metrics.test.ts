@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AssistantRuntime, type AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
-import { ModelRequestGuardError } from "../apps/local-guest/src/assistant/assistant-model.js";
+import { ModelRequestGuardError, type AssistantToolCall } from "../apps/local-guest/src/assistant/assistant-model.js";
+import { MAX_ASSISTANT_TOOL_ROUNDS } from "../apps/local-guest/src/assistant/assistant-platform.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 
 test("AC6: classifier guard failures and quota refusals emit separate metadata-only outcomes once", async () => {
@@ -47,3 +48,52 @@ test("Date provenance failures expose a closed diagnostic class without the reje
     assert.doesNotMatch(JSON.stringify(diagnostics), /2026-09-10|PRIVATE_GUEST_CANARY/);
   } finally { environment.close(); }
 });
+
+const inScopeAssessment = { scope: "in_scope", risk: "ordinary", intents: ["search"], reasonCode: "supported",
+  slots: { city: null, neighbourhood: null, bedrooms: null, nights: null, guests: null, checkIn: null, checkOut: null } } as const;
+const searchCall: AssistantToolCall = { id: "metrics-search", name: "search_stays",
+  args: { city: "Lagos", neighbourhood: "Old Ikoyi", checkIn: null, nights: 4, guests: 2 } };
+
+test("Reply plan rejections record one closed reason on the final-text and post-tool paths without model text", async () => {
+  const canary = "PRIVATE_PLAN_CANARY";
+  const finalTextCases: readonly (readonly [string, string])[] = [
+    ["empty_text", ""],
+    ["not_json", `${canary} not json`],
+    ["not_object", "[]"],
+    ["invalid_shape", JSON.stringify({ kind: "show_results" })],
+    ["unknown_kind", JSON.stringify({ kind: canary, references: [] })],
+    ["invalid_references", JSON.stringify({ kind: "show_results", references: [1] })],
+    ["reference_not_in_results", JSON.stringify({ kind: "show_results", references: [canary] })],
+  ];
+  for (const [expected, text] of finalTextCases) {
+    const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
+    const diagnostics: AssistantDiagnosticEvent[] = [];
+    try {
+      const runtime = new AssistantRuntime(environment, { generate: async () => ({ text }) }, {
+        onDiagnostic: (event) => diagnostics.push(event), scopeClassifier: { assess: async () => inScopeAssessment },
+      });
+      const result = await runtime.handleTurn(`plan-final-${expected}`, "Show me options");
+      assert.equal(result.ok, true, expected);
+      assert.deepEqual(diagnostics.filter((event) => event.replyPlanRejectionReason !== undefined).map((event) => event.replyPlanRejectionReason), [expected]);
+      assert.doesNotMatch(JSON.stringify({ result, diagnostics }), new RegExp(canary), expected);
+    } finally { environment.close(); }
+  }
+
+  // Post-tool path: the planner keeps calling tools until the bounded rounds end, then the forced final plan is rejected.
+  const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
+  const diagnostics: AssistantDiagnosticEvent[] = [];
+  try {
+    const runtime = new AssistantRuntime(environment, { generate: async (request) => (request.tools ?? []).length === 0
+      ? { text: JSON.stringify({ kind: "show_results", references: [canary] }) }
+      : { toolCalls: [searchCall] } }, {
+      onDiagnostic: (event) => diagnostics.push(event), scopeClassifier: { assess: async () => inScopeAssessment },
+    });
+    const result = await runtime.handleTurn("plan-post-tool", "Show me options");
+    assert.equal(result.ok, true);
+    const rejected = diagnostics.filter((event) => event.replyPlanRejectionReason !== undefined);
+    assert.deepEqual(rejected.map((event) => event.replyPlanRejectionReason), ["reference_not_in_results"]);
+    assert.equal(rejected[0]?.round, MAX_ASSISTANT_TOOL_ROUNDS + 1);
+    assert.doesNotMatch(JSON.stringify({ result, diagnostics }), new RegExp(canary));
+  } finally { environment.close(); }
+});
+
