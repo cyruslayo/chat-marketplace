@@ -191,12 +191,62 @@ test("Classifier reasoning can retain provider defaults without extending its fi
   } finally { environment.close(); }
 });
 
-test("Invalid classifier tuples report closed failure reasons without exposing response content", async () => {
-  const classifier = new ModelScopeClassifier({ generate: async () => ({ text: JSON.stringify({ ...allowed, scope: "out_of_scope", reasonCode: "outside", intents: ["clarify"] }) }) });
-  await assert.rejects(classifier.assess("PRIVATE_INPUT_CANARY", { domain: "shortlet", description: "Stays", hasShortlist: false, hasSelectedStay: false, hasOffer: false }), (error: unknown) => {
+const classifierContext = { domain: "shortlet", description: "Stays", hasShortlist: false, hasSelectedStay: false, hasOffer: false };
+
+test("The classifier instruction requires empty intents for out of scope and unclear verdicts", async () => {
+  let instruction = "";
+  const classifier = new ModelScopeClassifier({ generate: async (request) => { instruction = request.systemInstruction ?? ""; return { text: JSON.stringify(allowed) }; } });
+  await classifier.assess("Write a poem", classifierContext);
+  assert.match(instruction, /For out_of_scope and unclear, intents must be an empty array\./);
+});
+
+test("Out of scope and unclear verdicts with valid intents normalize to no intents and keep their scope", async () => {
+  for (const scope of ["out_of_scope", "unclear"] as const) {
+    const reasonCode = scope === "out_of_scope" ? "outside" : "unclear";
+    const classifier = new ModelScopeClassifier({ generate: async () => ({ text: JSON.stringify({ ...allowed, scope, reasonCode, intents: ["clarify", "search"] }) }) });
+    const assessment = await classifier.assess("PRIVATE_INPUT_CANARY", classifierContext) as ScopeAssessment;
+    assert.equal(assessment.scope, scope);
+    assert.equal(assessment.reasonCode, reasonCode);
+    assert.deepEqual(assessment.intents, []);
+  }
+});
+
+test("Normalized out of scope verdicts never widen scope, expose tools, or leak intents to the runtime", async (t) => {
+  const env = LocalGuestEnvironment.openNode({ databasePath: temporaryDatabasePath("scope-normalized.sqlite") });
+  t.after(() => env.close());
+  let plannerCalls = 0;
+  for (const scope of ["out_of_scope", "unclear"] as const) {
+    const reasonCode = scope === "out_of_scope" ? "outside" : "unclear";
+    const runtime = new AssistantRuntime(env, { generate: async () => { plannerCalls++; return { text: "{}" }; } }, {
+      scopeClassifier: new ModelScopeClassifier({ generate: async () => ({ text: JSON.stringify({ ...allowed, scope, reasonCode, intents: ["search", "clarify"] }) }) }),
+    });
+    const response = await runtime.handleTurn(`scope-normalized-${scope}`, "Find me a stay SECRET-MARKER");
+    assert.equal(response.modelHandled, false);
+    assert.equal(response.controlOutcome, scope === "out_of_scope" ? "scope_redirect" : "scope_unavailable");
+    assert.doesNotMatch(JSON.stringify(runtime.getThread(`scope-normalized-${scope}`)), /SECRET-MARKER/);
+  }
+  assert.equal(plannerCalls, 0);
+});
+
+test("Invalid intent values still fail closed for out of scope and unclear verdicts", async () => {
+  for (const scope of ["out_of_scope", "unclear"] as const) {
+    const reasonCode = scope === "out_of_scope" ? "outside" : "unclear";
+    const classifier = new ModelScopeClassifier({ generate: async () => ({ text: JSON.stringify({ ...allowed, scope, reasonCode, intents: ["bogus"] }) }) });
+    await assert.rejects(classifier.assess("PRIVATE_INPUT_CANARY", classifierContext), (error: unknown) => {
+      assert.ok(error instanceof ScopeClassificationError);
+      assert.equal(error.reason, "invalid_intents");
+      assert.doesNotMatch(error.message, /PRIVATE_|bogus|clarify/);
+      return true;
+    });
+  }
+});
+
+test("In scope verdicts without intents still fail closed with a closed reason", async () => {
+  const classifier = new ModelScopeClassifier({ generate: async () => ({ text: JSON.stringify({ ...allowed, intents: [] }) }) });
+  await assert.rejects(classifier.assess("PRIVATE_INPUT_CANARY", classifierContext), (error: unknown) => {
     assert.ok(error instanceof ScopeClassificationError);
-    assert.equal(error.reason, "intents_forbidden_for_scope");
-    assert.doesNotMatch(error.message, /PRIVATE_|clarify|out_of_scope/);
+    assert.equal(error.reason, "intents_missing_for_scope");
+    assert.doesNotMatch(error.message, /PRIVATE_|search/);
     return true;
   });
 });
@@ -205,7 +255,8 @@ test("Classifier diagnostics record one closed reason per invalid decision witho
   const canary = "PRIVATE_CLASSIFIER_CANARY";
   const json = (value: unknown) => JSON.stringify(value);
   const cases: readonly (readonly [string, AssistantModelResponse])[] = [
-    ["invalid_json", { text: `not json ${canary}` }],
+    ["invalid_json_prose", { text: `Sorry, I cannot help with ${canary}` }],
+    ["invalid_json_malformed", { text: `{"scope": "in_scope", ${canary}` }],
     ["invalid_json_fenced", { text: "```json\n" + json(allowed) + "\n```" }],
     ["invalid_json_wrapped", { text: `Result: ${json(allowed)} ${canary}` }],
     ["invalid_shape", { text: json({ ...allowed, extra: canary }) }],
@@ -213,7 +264,7 @@ test("Classifier diagnostics record one closed reason per invalid decision witho
     ["invalid_intents", { text: json({ ...allowed, intents: ["bogus"] }) }],
     ["scope_reason_mismatch", { text: json({ ...allowed, reasonCode: "outside" }) }],
     ["intents_missing_for_scope", { text: json({ ...allowed, intents: [] }) }],
-    ["intents_forbidden_for_scope", { text: json({ ...allowed, scope: "out_of_scope", reasonCode: "outside", intents: ["clarify"] }) }],
+    ["invalid_intents", { text: json({ ...allowed, scope: "out_of_scope", reasonCode: "outside", intents: ["bogus"] }) }],
     ["invalid_date", { text: json({ ...allowed, slots: { ...slots, checkIn: canary } }) }],
     ["invalid_city", { text: json({ ...allowed, slots: { ...slots, city: "Kano" } }) }],
     ["invalid_neighbourhood", { text: json({ ...allowed, slots: { ...slots, neighbourhood: canary.repeat(10) } }) }],
