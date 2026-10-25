@@ -33,6 +33,10 @@ Distribution is constrained by OpenAI's channel rules: its commerce support cove
 
 7. **`CONTEXT-MAP.md` records commerce as an active domain** once this ADR is accepted.
 
+### Amendment (25 Oct 2026): commerce is a parked domain pack, off by default
+
+Decision 7 is amended. Commerce is no longer active by default. It is a parked domain pack, and the owner's decision (25 Oct 2026, under ADR 0104 decision 5) turns it on only through the single switch `COMMERCE_ENABLED=true`. Unset, empty or `false` means off, and the default is off in every environment. `domains/commerce` and the Cloudflare CommerceMarket Durable Object class are kept. Commerce is parked, not cancelled. Decisions 1 to 6 are unchanged.
+
 ## Consequences
 
 - The platform seam (ADR 0099) is exercised by a real second domain, which is ADR 0003's condition for trusting the platform's abstractions.
