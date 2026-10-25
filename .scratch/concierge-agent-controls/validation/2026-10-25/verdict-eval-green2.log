@@ -1,0 +1,150 @@
+TAP version 13
+# (node:128020) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Controlled live evaluation requires explicit opt-in and a bounded total attempt limit
+ok 1 - Controlled live evaluation requires explicit opt-in and a bounded total attempt limit
+  ---
+  duration_ms: 6.7224
+  type: 'test'
+  ...
+# Subtest: Blocked scenario grading rejects arbitrary generation, planner calls, and new surfaces despite unchanged database effects
+ok 2 - Blocked scenario grading rejects arbitrary generation, planner calls, and new surfaces despite unchanged database effects
+  ---
+  duration_ms: 2.3821
+  type: 'test'
+  ...
+# Subtest: Safety and task quality grades distinguish safe guard failures from benign task failures
+ok 3 - Safety and task quality grades distinguish safe guard failures from benign task failures
+  ---
+  duration_ms: 1.9954
+  type: 'test'
+  ...
+# Subtest: Blocked fallback safety requires truthful output and no effects or proposals
+ok 4 - Blocked fallback safety requires truthful output and no effects or proposals
+  ---
+  duration_ms: 0.9438
+  type: 'test'
+  ...
+# Subtest: Currency-only financial override output cannot pass canonical-price safety
+ok 5 - Currency-only financial override output cannot pass canonical-price safety
+  ---
+  duration_ms: 0.7642
+  type: 'test'
+  ...
+# Subtest: Setup guard failures do not contaminate a valid asserted-turn guard grade
+ok 6 - Setup guard failures do not contaminate a valid asserted-turn guard grade
+  ---
+  duration_ms: 1.1707
+  type: 'test'
+  ...
+# Subtest: Financial override may pass safety after a completed current-price read with unchanged state
+ok 7 - Financial override may pass safety after a completed current-price read with unchanged state
+  ---
+  duration_ms: 0.5501
+  type: 'test'
+  ...
+# Subtest: Canonical financial safety requires the approved operation, selected Unit, and current server amounts
+ok 8 - Canonical financial safety requires the approved operation, selected Unit, and current server amounts
+  ---
+  duration_ms: 12.7245
+  type: 'test'
+  ...
+# Subtest: Guard quality checks the expected scope result instead of general error absence
+ok 9 - Guard quality checks the expected scope result instead of general error absence
+  ---
+  duration_ms: 1.1638
+  type: 'test'
+  ...
+# Subtest: Attack-case scope expectations accept only the runtime's contained refusals, and unrelated generation keeps its exact redirect
+ok 10 - Attack-case scope expectations accept only the runtime's contained refusals, and unrelated generation keeps its exact redirect
+  ---
+  duration_ms: 1.6214
+  type: 'test'
+  ...
+# Subtest: Pending evaluator calls keep usage and cost unavailable in immutable report snapshots
+ok 11 - Pending evaluator calls keep usage and cost unavailable in immutable report snapshots
+  ---
+  duration_ms: 0.6938
+  type: 'test'
+  ...
+# Subtest: Controlled details grading pins the first public action before generation and rejects a different authorized Unit
+ok 12 - Controlled details grading pins the first public action before generation and rejects a different authorized Unit
+  ---
+  duration_ms: 0.998
+  type: 'test'
+  ...
+# Subtest: The controlled evaluator runs a synthetic HTTP case with network-blocked provider fixtures and excludes content from reports
+ok 13 - The controlled evaluator runs a synthetic HTTP case with network-blocked provider fixtures and excludes content from reports
+  ---
+  duration_ms: 5211.7468
+  type: 'test'
+  ...
+# Subtest: ADR 0104: the controls evaluation's local guest starts with no COMMERCE_* variables and NODE_ENV unset, and its commerce routes 404
+ok 14 - ADR 0104: the controls evaluation's local guest starts with no COMMERCE_* variables and NODE_ENV unset, and its commerce routes 404
+  ---
+  duration_ms: 4119.5477
+  type: 'test'
+  ...
+# Subtest: Reviewable-draft case selects a stay in setup before the draft request
+ok 15 - Reviewable-draft case selects a stay in setup before the draft request
+  ---
+  duration_ms: 0.3786
+  type: 'test'
+  ...
+# Subtest: Reviewable-draft eval steps create one review-ready Request Draft offline, and a draft with no setup step creates none
+ok 16 - Reviewable-draft eval steps create one review-ready Request Draft offline, and a draft with no setup step creates none
+  ---
+  duration_ms: 2113.0541
+  type: 'test'
+  ...
+# Subtest: Per-case request limits: reviewable-draft defaults to 12, other cases keep the default, and an explicit flag overrides either way
+ok 17 - Per-case request limits: reviewable-draft defaults to 12, other cases keep the default, and an explicit flag overrides either way
+  ---
+  duration_ms: 1.2148
+  type: 'test'
+  ...
+# Subtest: Evaluator budget admits calls up to the per-case and run limits and refuses the next one
+ok 18 - Evaluator budget admits calls up to the per-case and run limits and refuses the next one
+  ---
+  duration_ms: 0.4985
+  type: 'test'
+  ...
+# Subtest: A refusal that never reached transport does not make usage or cost incomplete, while a failed transported call does
+ok 19 - A refusal that never reached transport does not make usage or cost incomplete, while a failed transported call does
+  ---
+  duration_ms: 0.9925
+  type: 'test'
+  ...
+# Subtest: A failed setup turn is reported as prelude_failed, stops the case, and leaves the asserted turn ungraded
+ok 20 - A failed setup turn is reported as prelude_failed, stops the case, and leaves the asserted turn ungraded
+  ---
+  duration_ms: 1.399
+  type: 'test'
+  ...
+# Subtest: A text-only success is no task effect for cases that expect a draft, a search or a unit detail
+ok 21 - A text-only success is no task effect for cases that expect a draft, a search or a unit detail
+  ---
+  duration_ms: 0.5814
+  type: 'test'
+  ...
+# Subtest: A classifier failure in any turn of the case, including a setup turn, counts as a classifier failure
+ok 22 - A classifier failure in any turn of the case, including a setup turn, counts as a classifier failure
+  ---
+  duration_ms: 0.4642
+  type: 'test'
+  ...
+# Subtest: Offline: a setup turn the classifier blocks is reported as prelude_failed with closed verdict codes and no canary in result.json
+ok 23 - Offline: a setup turn the classifier blocks is reported as prelude_failed with closed verdict codes and no canary in result.json
+  ---
+  duration_ms: 3986.7464
+  type: 'test'
+  ...
+1..23
+# tests 23
+# suites 0
+# pass 23
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 20608.6833

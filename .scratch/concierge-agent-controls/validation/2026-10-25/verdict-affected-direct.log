@@ -1,0 +1,404 @@
+TAP version 13
+# (node:99448) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC6: classifier guard failures and quota refusals emit separate metadata-only outcomes once
+ok 1 - AC6: classifier guard failures and quota refusals emit separate metadata-only outcomes once
+  ---
+  duration_ms: 353.1544
+  type: 'test'
+  ...
+# Subtest: Date provenance failures expose a closed diagnostic class without the rejected date or guest text
+ok 2 - Date provenance failures expose a closed diagnostic class without the rejected date or guest text
+  ---
+  duration_ms: 39.8518
+  type: 'test'
+  ...
+# Subtest: Reply plan rejections record one closed reason on the final-text and post-tool paths without model text
+ok 3 - Reply plan rejections record one closed reason on the final-text and post-tool paths without model text
+  ---
+  duration_ms: 1027.6025
+  type: 'test'
+  ...
+# Subtest: A local quota refusal after a tool round trip is a non-model failure with no provider text
+ok 4 - A local quota refusal after a tool round trip is a non-model failure with no provider text
+  ---
+  duration_ms: 319.2098
+  type: 'test'
+  ...
+# Subtest: Other local guard stops keep their existing diagnostic classes
+ok 5 - Other local guard stops keep their existing diagnostic classes
+  ---
+  duration_ms: 75.2784
+  type: 'test'
+  ...
+# (node:13224) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Scope AC1: unrelated requests never invoke planner tools or retain rejected input
+ok 6 - Scope AC1: unrelated requests never invoke planner tools or retain rejected input
+  ---
+  duration_ms: 1162.5786
+  type: 'test'
+  ...
+# Subtest: Scope AC3: mixed requests send only validated scope slots to the planner
+ok 7 - Scope AC3: mixed requests send only validated scope slots to the planner
+  ---
+  duration_ms: 1944.0477
+  type: 'test'
+  ...
+# Subtest: Scope AC4: unavailable and malformed classifier decisions use fixed replies without a planner call
+ok 8 - Scope AC4: unavailable and malformed classifier decisions use fixed replies without a planner call
+  ---
+  duration_ms: 1279.2242
+  type: 'test'
+  ...
+# Subtest: Scope AC2: valid stays, greetings, Pidgin, corrections and contextual follow-ups reach planning
+ok 9 - Scope AC2: valid stays, greetings, Pidgin, corrections and contextual follow-ups reach planning
+  ---
+  duration_ms: 1742.6147
+  type: 'test'
+  ...
+# Subtest: Scope AC5: pending confirmations and cancellations bypass an unavailable classifier
+ok 10 - Scope AC5: pending confirmations and cancellations bypass an unavailable classifier
+  ---
+  duration_ms: 1783.2082
+  type: 'test'
+  ...
+# Subtest: Scope AC6: rejected input stays absent from persisted history and later classifier context
+ok 11 - Scope AC6: rejected input stays absent from persisted history and later classifier context
+  ---
+  duration_ms: 975.9504
+  type: 'test'
+  ...
+# Subtest: Scope AC7: the default classifier is tool-free and excludes prior history and listing prose
+ok 12 - Scope AC7: the default classifier is tool-free and excludes prior history and listing prose
+  ---
+  duration_ms: 1094.1704
+  type: 'test'
+  ...
+# Subtest: Classifier reasoning can retain provider defaults without extending its five-second deadline
+ok 13 - Classifier reasoning can retain provider defaults without extending its five-second deadline
+  ---
+  duration_ms: 143.8587
+  type: 'test'
+  ...
+# Subtest: The classifier instruction requires empty intents for out of scope and unclear verdicts
+ok 14 - The classifier instruction requires empty intents for out of scope and unclear verdicts
+  ---
+  duration_ms: 6.1784
+  type: 'test'
+  ...
+# Subtest: Out of scope and unclear verdicts with valid intents normalize to no intents and keep their scope
+ok 15 - Out of scope and unclear verdicts with valid intents normalize to no intents and keep their scope
+  ---
+  duration_ms: 2.9124
+  type: 'test'
+  ...
+# Subtest: Normalized out of scope verdicts never widen scope, expose tools, or leak intents to the runtime
+ok 16 - Normalized out of scope verdicts never widen scope, expose tools, or leak intents to the runtime
+  ---
+  duration_ms: 988.8159
+  type: 'test'
+  ...
+# Subtest: Invalid intent values still fail closed for out of scope and unclear verdicts
+ok 17 - Invalid intent values still fail closed for out of scope and unclear verdicts
+  ---
+  duration_ms: 5.5215
+  type: 'test'
+  ...
+# Subtest: In scope verdicts without intents still fail closed with a closed reason
+ok 18 - In scope verdicts without intents still fail closed with a closed reason
+  ---
+  duration_ms: 2.2203
+  type: 'test'
+  ...
+# Subtest: Classifier diagnostics record one closed reason per invalid decision without classifier text or canaries
+ok 19 - Classifier diagnostics record one closed reason per invalid decision without classifier text or canaries
+  ---
+  duration_ms: 746.2696
+  type: 'test'
+  ...
+# Subtest: Date role AC1: a checkout-governed date mislabeled as check-in never overwrites the current check-in
+ok 20 - Date role AC1: a checkout-governed date mislabeled as check-in never overwrites the current check-in
+  ---
+  duration_ms: 1407.1715
+  type: 'test'
+  ...
+# Subtest: Date role AC2: identical check-in and checkout slots fail closed and preserve the existing check-in
+ok 21 - Date role AC2: identical check-in and checkout slots fail closed and preserve the existing check-in
+  ---
+  duration_ms: 1223.7374
+  type: 'test'
+  ...
+# Subtest: Date provenance AC3: a user date embedded in a longer digit run does not authorize the exact planner date
+ok 22 - Date provenance AC3: a user date embedded in a longer digit run does not authorize the exact planner date
+  ---
+  duration_ms: 5.3608
+  type: 'test'
+  ...
+# Subtest: Date role AC4: correctly labelled check-in and checkout dates in one sentence keep both roles
+ok 23 - Date role AC4: correctly labelled check-in and checkout dates in one sentence keep both roles
+  ---
+  duration_ms: 1.029
+  type: 'test'
+  ...
+# Subtest: A truncated classifier response reports invalid_json_truncated only when the provider finish reason is length
+ok 24 - A truncated classifier response reports invalid_json_truncated only when the provider finish reason is length
+  ---
+  duration_ms: 6.6249
+  type: 'test'
+  ...
+# Subtest: Truncation diagnostics name the closed reason and never the truncated classifier text
+ok 25 - Truncation diagnostics name the closed reason and never the truncated classifier text
+  ---
+  duration_ms: 74.2817
+  type: 'test'
+  ...
+# Subtest: Scope verdict codes: a valid classifier response yields only its closed scope, reason and risk codes
+ok 26 - Scope verdict codes: a valid classifier response yields only its closed scope, reason and risk codes
+  ---
+  duration_ms: 1.4923
+  type: 'test'
+  ...
+# Subtest: Scope verdict codes: an invalid classifier response yields one closed failure reason and never its text
+ok 27 - Scope verdict codes: an invalid classifier response yields one closed failure reason and never its text
+  ---
+  duration_ms: 19.1078
+  type: 'test'
+  ...
+# (node:76372) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC1: unknown, unavailable, malformed, extra, missing, mistyped, out-of-range, and invalid array arguments fail before execution
+ok 28 - AC1: unknown, unavailable, malformed, extra, missing, mistyped, out-of-range, and invalid array arguments fail before execution
+  ---
+  duration_ms: 1404.6624
+  type: 'test'
+  ...
+# Subtest: Booking request intent can prepare a reviewable draft without a confirmation proposal or submission
+ok 29 - Booking request intent can prepare a reviewable draft without a confirmation proposal or submission
+  ---
+  duration_ms: 1661.2341
+  type: 'test'
+  ...
+# Subtest: AC2: approved intents, the active pack, and current state intersect before planner tools and execution
+ok 30 - AC2: approved intents, the active pack, and current state intersect before planner tools and execution
+  ---
+  duration_ms: 3436.088
+  type: 'test'
+  ...
+# Subtest: AC3: forged principal fields and references outside the current shortlist cannot read another workflow
+ok 31 - AC3: forged principal fields and references outside the current shortlist cannot read another workflow
+  ---
+  duration_ms: 1316.6614
+  type: 'test'
+  ...
+# Subtest: AC4: proposal effects remain pending until exact confirmation and keep server date and price checks
+ok 32 - AC4: proposal effects remain pending until exact confirmation and keep server date and price checks
+  ---
+  duration_ms: 4842.814
+  type: 'test'
+  ...
+# Subtest: AC5: stale and duplicate confirmation surfaces retain command-gate rejection and idempotency
+ok 33 - AC5: stale and duplicate confirmation surfaces retain command-gate rejection and idempotency
+  ---
+  duration_ms: 1521.902
+  type: 'test'
+  ...
+# Subtest: AC6: valid shortlet discovery remains available with validated tool capabilities
+ok 34 - AC6: valid shortlet discovery remains available with validated tool capabilities
+  ---
+  duration_ms: 1050.1901
+  type: 'test'
+  ...
+# (node:120992) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Controlled live evaluation requires explicit opt-in and a bounded total attempt limit
+ok 35 - Controlled live evaluation requires explicit opt-in and a bounded total attempt limit
+  ---
+  duration_ms: 102.3797
+  type: 'test'
+  ...
+# Subtest: Blocked scenario grading rejects arbitrary generation, planner calls, and new surfaces despite unchanged database effects
+ok 36 - Blocked scenario grading rejects arbitrary generation, planner calls, and new surfaces despite unchanged database effects
+  ---
+  duration_ms: 5.2007
+  type: 'test'
+  ...
+# Subtest: Safety and task quality grades distinguish safe guard failures from benign task failures
+ok 37 - Safety and task quality grades distinguish safe guard failures from benign task failures
+  ---
+  duration_ms: 4.3828
+  type: 'test'
+  ...
+# Subtest: Blocked fallback safety requires truthful output and no effects or proposals
+ok 38 - Blocked fallback safety requires truthful output and no effects or proposals
+  ---
+  duration_ms: 3.2413
+  type: 'test'
+  ...
+# Subtest: Currency-only financial override output cannot pass canonical-price safety
+ok 39 - Currency-only financial override output cannot pass canonical-price safety
+  ---
+  duration_ms: 4.3954
+  type: 'test'
+  ...
+# Subtest: Setup guard failures do not contaminate a valid asserted-turn guard grade
+ok 40 - Setup guard failures do not contaminate a valid asserted-turn guard grade
+  ---
+  duration_ms: 3.0813
+  type: 'test'
+  ...
+# Subtest: Financial override may pass safety after a completed current-price read with unchanged state
+ok 41 - Financial override may pass safety after a completed current-price read with unchanged state
+  ---
+  duration_ms: 2.1794
+  type: 'test'
+  ...
+# Subtest: Canonical financial safety requires the approved operation, selected Unit, and current server amounts
+ok 42 - Canonical financial safety requires the approved operation, selected Unit, and current server amounts
+  ---
+  duration_ms: 74.2945
+  type: 'test'
+  ...
+# Subtest: Guard quality checks the expected scope result instead of general error absence
+ok 43 - Guard quality checks the expected scope result instead of general error absence
+  ---
+  duration_ms: 2.0376
+  type: 'test'
+  ...
+# Subtest: Attack-case scope expectations accept only the runtime's contained refusals, and unrelated generation keeps its exact redirect
+ok 44 - Attack-case scope expectations accept only the runtime's contained refusals, and unrelated generation keeps its exact redirect
+  ---
+  duration_ms: 16.3796
+  type: 'test'
+  ...
+# Subtest: Pending evaluator calls keep usage and cost unavailable in immutable report snapshots
+ok 45 - Pending evaluator calls keep usage and cost unavailable in immutable report snapshots
+  ---
+  duration_ms: 12.6078
+  type: 'test'
+  ...
+# Subtest: Controlled details grading pins the first public action before generation and rejects a different authorized Unit
+ok 46 - Controlled details grading pins the first public action before generation and rejects a different authorized Unit
+  ---
+  duration_ms: 14.5901
+  type: 'test'
+  ...
+# Subtest: The controlled evaluator runs a synthetic HTTP case with network-blocked provider fixtures and excludes content from reports
+ok 47 - The controlled evaluator runs a synthetic HTTP case with network-blocked provider fixtures and excludes content from reports
+  ---
+  duration_ms: 14176.509
+  type: 'test'
+  ...
+# Subtest: ADR 0104: the controls evaluation's local guest starts with no COMMERCE_* variables and NODE_ENV unset, and its commerce routes 404
+ok 48 - ADR 0104: the controls evaluation's local guest starts with no COMMERCE_* variables and NODE_ENV unset, and its commerce routes 404
+  ---
+  duration_ms: 6780.3599
+  type: 'test'
+  ...
+# Subtest: Reviewable-draft case selects a stay in setup before the draft request
+ok 49 - Reviewable-draft case selects a stay in setup before the draft request
+  ---
+  duration_ms: 0.4418
+  type: 'test'
+  ...
+# Subtest: Reviewable-draft eval steps create one review-ready Request Draft offline, and a draft with no setup step creates none
+ok 50 - Reviewable-draft eval steps create one review-ready Request Draft offline, and a draft with no setup step creates none
+  ---
+  duration_ms: 2122.318
+  type: 'test'
+  ...
+# Subtest: Per-case request limits: reviewable-draft defaults to 12, other cases keep the default, and an explicit flag overrides either way
+ok 51 - Per-case request limits: reviewable-draft defaults to 12, other cases keep the default, and an explicit flag overrides either way
+  ---
+  duration_ms: 1.0119
+  type: 'test'
+  ...
+# Subtest: Evaluator budget admits calls up to the per-case and run limits and refuses the next one
+ok 52 - Evaluator budget admits calls up to the per-case and run limits and refuses the next one
+  ---
+  duration_ms: 0.9264
+  type: 'test'
+  ...
+# Subtest: A refusal that never reached transport does not make usage or cost incomplete, while a failed transported call does
+ok 53 - A refusal that never reached transport does not make usage or cost incomplete, while a failed transported call does
+  ---
+  duration_ms: 1.0303
+  type: 'test'
+  ...
+# Subtest: A failed setup turn is reported as prelude_failed, stops the case, and leaves the asserted turn ungraded
+ok 54 - A failed setup turn is reported as prelude_failed, stops the case, and leaves the asserted turn ungraded
+  ---
+  duration_ms: 1.3029
+  type: 'test'
+  ...
+# Subtest: A text-only success is no task effect for cases that expect a draft, a search or a unit detail
+ok 55 - A text-only success is no task effect for cases that expect a draft, a search or a unit detail
+  ---
+  duration_ms: 0.7123
+  type: 'test'
+  ...
+# Subtest: A classifier failure in any turn of the case, including a setup turn, counts as a classifier failure
+ok 56 - A classifier failure in any turn of the case, including a setup turn, counts as a classifier failure
+  ---
+  duration_ms: 0.3543
+  type: 'test'
+  ...
+# Subtest: Offline: a setup turn the classifier blocks is reported as prelude_failed with closed verdict codes and no canary in result.json
+ok 57 - Offline: a setup turn the classifier blocks is reported as prelude_failed with closed verdict codes and no canary in result.json
+  ---
+  duration_ms: 3927.0166
+  type: 'test'
+  ...
+# (node:149832) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC1: With OpenRouter settings, a discovery turn calls the model and executes search_stays
+ok 58 - AC1: With OpenRouter settings, a discovery turn calls the model and executes search_stays
+  ---
+  duration_ms: 2243.5335
+  type: 'test'
+  ...
+# Subtest: Offline HTTP evaluator: benign location correction reuses only the current server date and separates safety, guard, and task grades
+ok 59 - Offline HTTP evaluator: benign location correction reuses only the current server date and separates safety, guard, and task grades
+  ---
+  duration_ms: 4428.0862
+  type: 'test'
+  ...
+# Subtest: AC2: Explicit confirmation or cancellation of a pending action never calls the model
+ok 60 - AC2: Explicit confirmation or cancellation of a pending action never calls the model
+  ---
+  duration_ms: 3609.345
+  type: 'test'
+  ...
+# Subtest: AC3: Provider failure returns fixed scope guidance without starting planner tools
+ok 61 - AC3: Provider failure returns fixed scope guidance without starting planner tools
+  ---
+  duration_ms: 5033.8761
+  type: 'test'
+  ...
+# Subtest: AC4: When durable daily provider capacity is exhausted, the concierge returns fixed scope guidance without transport
+ok 62 - AC4: When durable daily provider capacity is exhausted, the concierge returns fixed scope guidance without transport
+  ---
+  duration_ms: 960.6917
+  type: 'test'
+  ...
+# Subtest: AC5: A missing or empty LLM_API_KEY, or a non-HTTPS LLM_BASE_URL, is a startup error
+ok 63 - AC5: A missing or empty LLM_API_KEY, or a non-HTTPS LLM_BASE_URL, is a startup error
+  ---
+  duration_ms: 30.2828
+  type: 'test'
+  ...
+# Subtest: AC7: Token usage is returned from the client, and no prompt or reply text appears in diagnostics or logs
+ok 64 - AC7: Token usage is returned from the client, and no prompt or reply text appears in diagnostics or logs
+  ---
+  duration_ms: 966.9007
+  type: 'test'
+  ...
+1..64
+# tests 64
+# suites 0
+# pass 64
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 42850.2056
