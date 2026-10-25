@@ -27,6 +27,7 @@ import {
   type AssistantReplyPlanKind,
 } from "./assistant-platform.js";
 import { createShortletAssistantPack } from "./shortlet-assistant-pack.js";
+import { containsExactDateToken, currentTurnDateRoles } from "./date-tokens.js";
 import { ModelScopeClassifier, ScopeClassificationError, assessScopeSafely, scopedMixedInput, type ScopeClassifier, type ScopeAssessment, type ConciergeIntent } from "./scope-classifier.js";
 import { ASSISTANT_CONTROL_COPY } from "./control-copy.js";
 import { isProviderUnavailable } from "./fallback-model-client.js";
@@ -120,13 +121,6 @@ export interface AssistantDiagnosticEvent {
   readonly outcome?: AssistantControlOutcome;
   readonly effectCode?: AssistantToolEffectCode;
   readonly scopeFailureReason?: import("./scope-classifier.js").ScopeFailureReason;
-}
-
-function containsExactDateToken(text: string, date: string): boolean {
-  const start = text.indexOf(date);
-  if (start < 0) return false;
-  const isDigit = (character: string | undefined): boolean => character !== undefined && character >= "0" && character <= "9";
-  return !isDigit(text[start - 1]) && !isDigit(text[start + date.length]);
 }
 
 export interface AssistantRuntimeOptions {
@@ -632,7 +626,7 @@ export class AssistantRuntime {
     }
     const discardUserInput = assessment.scope === "mixed";
     const validMixedLocation = assessment.slots.neighbourhood === null || packForScope.scopeLocations?.includes(assessment.slots.neighbourhood) === true;
-    if (discardUserInput && (!validMixedLocation || [assessment.slots.checkIn, assessment.slots.checkOut].some((date) => date !== null && !originalUserText.includes(date)))) {
+    if (discardUserInput && (!validMixedLocation || [assessment.slots.checkIn, assessment.slots.checkOut].some((date) => date !== null && !containsExactDateToken(originalUserText, date)))) {
       recordOutcome("scope_unavailable");
       return { ok: true, messages: [ASSISTANT_CONTROL_COPY.unavailable], surfaces: [], modelHandled: false,
         discardUserInput: true, controlOutcome: "scope_unavailable", tasks: this.getTaskRail(threadId) };
@@ -776,10 +770,8 @@ export class AssistantRuntime {
             threadId,
             taskId: candidateActiveTaskId,
             userTextHistory,
-            currentTurnDates: {
-              ...(assessment.slots.checkIn && containsExactDateToken(originalUserText, assessment.slots.checkIn) ? { checkIn: assessment.slots.checkIn } : {}),
-              ...(assessment.slots.checkOut && containsExactDateToken(originalUserText, assessment.slots.checkOut) ? { checkOut: assessment.slots.checkOut } : {}),
-            },
+            // ADR 0106: classifier date slots bind to roles only through server-side checks; ambiguous ones carry no check-in authority.
+            currentTurnDates: currentTurnDateRoles(originalUserText, assessment.slots),
             now: this.#environment.clock(),
             demoCheckIn: this.#environment.config.demoCheckIn,
           };

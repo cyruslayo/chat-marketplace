@@ -2,10 +2,13 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
-import type { AssistantModelClient, AssistantModelRequest } from "../apps/local-guest/src/assistant/assistant-model.js";
+import type { AssistantModelClient, AssistantModelRequest, AssistantToolCall } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { temporaryDatabasePath } from "./helpers/temporary-database.js";
 import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/scripted-assistant-model.js";
 import { parseScopeAssessment, ModelScopeClassifier, ScopeClassificationError } from "../apps/local-guest/src/assistant/scope-classifier.js";
+import { resolveCheckInDate } from "../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
+import { currentTurnDateRoles } from "../apps/local-guest/src/assistant/date-tokens.js";
+import type { ScopeAssessment } from "../apps/local-guest/src/assistant/scope-classifier.js";
 
 const slots = { city: null, neighbourhood: null, bedrooms: null, nights: null, guests: null, checkIn: null, checkOut: null };
 const allowed = { scope: "in_scope", risk: "ordinary", intents: ["search"], slots, reasonCode: "supported" } as const;
@@ -196,4 +199,84 @@ test("Invalid classifier tuples report closed failure reasons without exposing r
     assert.doesNotMatch(error.message, /PRIVATE_|clarify|out_of_scope/);
     return true;
   });
+});
+
+const dateRoleSlots = { city: "Lagos", neighbourhood: null, bedrooms: null, nights: 2, guests: 2, checkIn: null, checkOut: null } as const;
+
+/** One planner response per queued turn: a single scripted tool call, then an empty plan. */
+function scriptedPlanner() {
+  let pending: AssistantToolCall | undefined;
+  const client: AssistantModelClient = {
+    generate: async () => {
+      const call = pending;
+      pending = undefined;
+      return call ? { toolCalls: [call] } : { text: "{}" };
+    },
+  };
+  return { client, queue: (call: AssistantToolCall) => { pending = call; } };
+}
+
+test("Date role AC1: a checkout-governed date mislabeled as check-in never overwrites the current check-in", async (t) => {
+  const env = LocalGuestEnvironment.openNode({ databasePath: temporaryDatabasePath("date-role-checkout.sqlite") });
+  t.after(() => env.close());
+  const demoCheckIn = env.config.demoCheckIn;
+  const planner = scriptedPlanner();
+  let turnSlots: ScopeAssessment["slots"] = dateRoleSlots;
+  const runtime = new AssistantRuntime(env, planner.client, { scopeClassifier: { assess: async () => ({ ...allowed, slots: turnSlots }) } });
+
+  planner.queue({ id: "demo-search", name: "search_stays", args: { city: "Lagos", nights: 2, guests: 2 } });
+  await runtime.handleTurn("date-role-checkout", "Find Lagos stays for 2 nights for 2 guests");
+  assert.equal(runtime.getThread("date-role-checkout")?.taskState.stayIntent.checkIn, demoCheckIn);
+
+  // The classifier mislabels the checkout-only date as check-in; the planner repeats that proposal.
+  turnSlots = { ...dateRoleSlots, checkIn: "2026-11-06", checkOut: null };
+  planner.queue({ id: "checkout-as-checkin", name: "search_stays", args: { city: "Lagos", checkIn: "2026-11-06", nights: 2, guests: 2 } });
+  await runtime.handleTurn("date-role-checkout", "Change checkout to 2026-11-06; keep the current check-in.");
+  const stayIntent = runtime.getThread("date-role-checkout")?.taskState.stayIntent;
+  assert.equal(stayIntent?.checkIn, demoCheckIn, "the checkout-governed date must not become the check-in");
+  assert.equal(stayIntent?.isDemoDate, true, "the server demo check-in keeps its provenance");
+});
+
+test("Date role AC2: identical check-in and checkout slots fail closed and preserve the existing check-in", async (t) => {
+  const env = LocalGuestEnvironment.openNode({ databasePath: temporaryDatabasePath("date-role-same.sqlite") });
+  t.after(() => env.close());
+  const demoCheckIn = env.config.demoCheckIn;
+  const planner = scriptedPlanner();
+  let turnSlots: ScopeAssessment["slots"] = dateRoleSlots;
+  const runtime = new AssistantRuntime(env, planner.client, { scopeClassifier: { assess: async () => ({ ...allowed, slots: turnSlots }) } });
+
+  planner.queue({ id: "seed-search", name: "search_stays", args: { city: "Lagos", nights: 2, guests: 2 } });
+  await runtime.handleTurn("date-role-same", "Find Lagos stays for 2 nights for 2 guests");
+  assert.equal(runtime.getThread("date-role-same")?.taskState.stayIntent.checkIn, demoCheckIn);
+
+  const sameDate = "2026-11-06";
+  turnSlots = { ...dateRoleSlots, checkIn: sameDate, checkOut: sameDate };
+  planner.queue({ id: "same-date-search", name: "search_stays", args: { city: "Lagos", checkIn: sameDate, nights: 2, guests: 2 } });
+  await runtime.handleTurn("date-role-same", `Use ${sameDate} for both the check-in and checkout dates.`);
+  const stayIntent = runtime.getThread("date-role-same")?.taskState.stayIntent;
+  assert.equal(stayIntent?.checkIn, demoCheckIn, "ambiguous same-date slots must not authorize a check-in");
+  assert.equal(stayIntent?.isDemoDate, true);
+  assert.ok(!(runtime.getThread("date-role-same")?.canonicalUserFactHistory ?? []).includes(sameDate), "ambiguous dates are not guest-authored facts");
+});
+
+test("Date provenance AC3: a user date embedded in a longer digit run does not authorize the exact planner date", () => {
+  assert.throws(
+    () => resolveCheckInDate("2026-11-01", ["Find stays from 2026-11-011 for 2 nights"], "2026-09-10"),
+    /not authored by user/,
+  );
+  assert.deepEqual(
+    resolveCheckInDate("2026-11-01", ["Find stays from 2026-11-01 for 2 nights"], "2026-09-10"),
+    { checkIn: "2026-11-01", isDemoDate: false },
+  );
+});
+
+test("Date role AC4: correctly labelled check-in and checkout dates in one sentence keep both roles", () => {
+  assert.deepEqual(
+    currentTurnDateRoles("Check in 2026-11-01 and check out 2026-11-06", { checkIn: "2026-11-01", checkOut: "2026-11-06" }),
+    { checkIn: "2026-11-01", checkOut: "2026-11-06" },
+  );
+  assert.deepEqual(
+    currentTurnDateRoles("Change checkout to 2026-11-06; keep the current check-in.", { checkIn: "2026-11-06", checkOut: null }),
+    {},
+  );
 });

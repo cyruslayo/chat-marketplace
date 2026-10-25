@@ -7,6 +7,7 @@ import { LocalGuestApp } from "../apps/local-guest/src/guest-server.js";
 import { guestAction, restartFixture } from "./helpers/guest-restart.js";
 import { ModelRequestGuardError } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { ASSISTANT_CONTROL_COPY } from "../apps/local-guest/src/assistant/control-copy.js";
+import { parseGuestProjection } from "../apps/local-guest/src/guest-projection.js";
 
 const serverModel: AssistantModelClient = {
   generate: async (request) => {
@@ -216,7 +217,8 @@ test("A server demo date keeps its provenance through restart and a same-task lo
     assert.equal(correction.ok, true, correction.ok ? "" : `${correction.code}: ${correction.message}`);
     if (!correction.ok) return;
     const restored = fixture.app.assistantRuntime?.getThread(fixture.threadId);
-    assert.equal(restored?.canonicalUserFactHistory?.includes("2026-09-10") ?? false, false, "restored server demo dates must not become guest-authored facts");
+    assert.ok(restored, "the restored thread must be readable after the correction");
+    assert.equal(restored.canonicalUserFactHistory?.includes("2026-09-10") ?? false, false, "restored server demo dates must not become guest-authored facts");
     assert.equal(restored?.taskState.stayIntent.neighbourhood, "Lekki Phase 1");
     assert.equal(restored?.taskState.stayIntent.checkIn, "2026-09-10");
     assert.equal(restored?.taskState.stayIntent.isDemoDate, true);
@@ -300,9 +302,31 @@ test("A legacy restored date with unknown provenance cannot silently fall back t
     assert.equal(correction.ok, false, "unknown restored provenance must fail closed instead of selecting a new demo date");
     if (!correction.ok) assert.equal(correction.code, "CONCIERGE_UNAVAILABLE");
     const restored = fixture.app.assistantRuntime?.getThread(fixture.threadId);
-    assert.equal(restored?.taskState.stayIntent.checkIn, "2026-09-10");
-    assert.equal(restored?.taskState.stayIntent.isDemoDate, undefined);
+    assert.ok(restored, "the restored thread must be readable after the failed correction");
+    assert.equal(restored.taskState.stayIntent.checkIn, "2026-09-10");
+    assert.equal(restored.taskState.stayIntent.isDemoDate, undefined);
+    assert.equal(restored.canonicalUserFactHistory?.includes("2026-09-10") ?? false, false, "a legacy server-owned date must not be promoted into guest-authored facts");
   } finally {
     await fixture.close();
   }
+});
+
+test("A guest projection with a non-boolean isDemoDate is rejected by the parser", () => {
+  const projection = {
+    version: 1,
+    timeline: [],
+    discoverySurfaceId: "surface",
+    discoveryRevision: 0,
+    discoveryArtifact: null,
+    unitDetail: null,
+    draftId: null,
+    draftQuote: null,
+    requestId: null,
+    offerId: null,
+    activeStage: null,
+    activeSurfaceId: null,
+    assistantContext: { city: "Lagos", checkIn: "2026-09-10", isDemoDate: "false" },
+  };
+  assert.notEqual(parseGuestProjection({ ...projection, assistantContext: { ...projection.assistantContext, isDemoDate: true } }), null, "the same projection with a boolean isDemoDate must parse");
+  assert.equal(parseGuestProjection(projection), null, "a string isDemoDate must fail closed instead of being coerced");
 });

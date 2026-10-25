@@ -1,4 +1,5 @@
 import { generatePlatformId } from "../../../../packages/platform-core/src/index.js";
+import { containsExactDateToken } from "./date-tokens.js";
 import { StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
 import {
   discoveryArtifactToA2UI,
@@ -348,7 +349,7 @@ export function resolveCheckInDate(
 
   // Retain established same-thread user history when no typed current-turn role is available.
   const priorUserText = currentTurnDates === undefined ? userTextHistory : userTextHistory.slice(0, -1);
-  if (priorUserText.some((text) => text.includes(modelCheckIn))) return { checkIn: modelCheckIn, isDemoDate: false };
+  if (priorUserText.some((text) => containsExactDateToken(text, modelCheckIn))) return { checkIn: modelCheckIn, isDemoDate: false };
   throw new AssistantDateProvenanceError(`Date authority violation: model proposed date ${modelCheckIn} was not authored by user. Ask the user for explicit YYYY-MM-DD.`);
 }
 
