@@ -1526,7 +1526,7 @@ function createFailureDiagnostic(
     round,
     succeeded: false,
     ...(toolName ? { toolName } : {}),
-    errorClass: error instanceof Error && ["Error", "TypeError", "RangeError", "SyntaxError", "APIError", "APIConnectionError", "RateLimitError"].includes(error.constructor.name) ? error.constructor.name : "UNKNOWN_ERROR",
+    errorClass: error instanceof Error && ["Error", "TypeError", "RangeError", "SyntaxError", "APIError", "APIConnectionError", "RateLimitError", "AssistantDateProvenanceError"].includes(error.constructor.name) ? error.constructor.name : "UNKNOWN_ERROR",
     failureClass: classifyFailure(stage, error),
     ...(safeStatus !== undefined ? { providerStatusCode: safeStatus } : {}),
     ...(safeCode !== undefined ? { providerErrorCode: safeCode } : {}),

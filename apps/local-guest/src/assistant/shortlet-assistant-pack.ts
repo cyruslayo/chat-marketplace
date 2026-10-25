@@ -315,13 +315,16 @@ export function resolveCheckInDate(
   // Date Provenance check: verify the exact ISO date was present in user text
   const userAuthored = userTextHistory.some((text) => text.includes(modelCheckIn));
   if (!userAuthored) {
-    throw new Error(
+    throw new AssistantDateProvenanceError(
       `Date authority violation: model proposed date ${modelCheckIn} was not authored by user. Ask the user for explicit YYYY-MM-DD.`,
     );
   }
 
   return { checkIn: modelCheckIn, isDemoDate: false };
 }
+
+/** Closed diagnostic identity; the existing date-authority rule and error message remain unchanged. */
+class AssistantDateProvenanceError extends Error {}
 
 export function executeAssistantTool(
   name: string,

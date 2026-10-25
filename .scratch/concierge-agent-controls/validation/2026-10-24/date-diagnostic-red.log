@@ -1,0 +1,45 @@
+TAP version 13
+# (node:178976) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC6: classifier guard failures and quota refusals emit separate metadata-only outcomes once
+ok 1 - AC6: classifier guard failures and quota refusals emit separate metadata-only outcomes once
+  ---
+  duration_ms: 25.1778
+  type: 'test'
+  ...
+# Subtest: Date provenance failures expose a closed diagnostic class without the rejected date or guest text
+not ok 2 - Date provenance failures expose a closed diagnostic class without the rejected date or guest text
+  ---
+  duration_ms: 61.6482
+  type: 'test'
+  location: 'C:\\AI2026\\chat-marketplace-controls\\test\\assistant-control-metrics.test.ts:1:1910'
+  failureType: 'testCodeFailure'
+  error: |-
+    The expression evaluated to a falsy value:
+    
+      AssistantRuntime(environment, { generate: async () => ({ toolCalls: [
+      { id: "date-probe", name: "search_stays", args: { city: "Lagos", neighbourhood: "Old Ikoyi", checkIn: "2026-09-10", nights: 4, guests: 2 } },
+      ] }) }, { onDiagnostic: (event) => diagnostics.push(event), scopeClassifier: { assess: async () => ({
+      scope: "in_scope", risk: "ordinary", intents: ["search"], reasonCode: "supported",
+      slots: { city: null, neighbourhood: null, bedrooms: null, nights: null, guests: null, checkIn: null, checkOut: null },
+      }) } })
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\assistant-control-metrics.test.ts:46:12)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 1
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 838.9889

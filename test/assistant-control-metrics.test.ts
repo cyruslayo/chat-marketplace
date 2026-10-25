@@ -30,3 +30,20 @@ test("AC6: classifier guard failures and quota refusals emit separate metadata-o
     } finally { environment.close(); }
   }
 });
+
+test("Date provenance failures expose a closed diagnostic class without the rejected date or guest text", async () => {
+  const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
+  const diagnostics: AssistantDiagnosticEvent[] = [];
+  const runtime = new AssistantRuntime(environment, { generate: async () => ({ toolCalls: [
+    { id: "date-probe", name: "search_stays", args: { city: "Lagos", neighbourhood: "Old Ikoyi", checkIn: "2026-09-10", nights: 4, guests: 2 } },
+  ] }) }, { onDiagnostic: (event) => diagnostics.push(event), scopeClassifier: { assess: async () => ({
+    scope: "in_scope", risk: "ordinary", intents: ["search"], reasonCode: "supported",
+    slots: { city: null, neighbourhood: null, bedrooms: null, nights: null, guests: null, checkIn: null, checkOut: null },
+  }) } });
+  try {
+    const result = await runtime.handleTurn("date-diagnostic", "PRIVATE_GUEST_CANARY Find Ikoyi stays for four nights and two guests");
+    assert.equal(result.ok, false);
+    assert.ok(diagnostics.some((event) => event.errorClass === "AssistantDateProvenanceError"));
+    assert.doesNotMatch(JSON.stringify(diagnostics), /2026-09-10|PRIVATE_GUEST_CANARY/);
+  } finally { environment.close(); }
+});
