@@ -280,7 +280,7 @@ test("Reviewable-draft eval steps create one review-ready Request Draft offline,
     const before = draftsIn(withSetup);
     const result = await withSetup.send("/api/turn", { text: scenario.prompt });
     assert.equal(draftsIn(withSetup), before + 1);
-    const presentation = JSON.stringify(result.surfaces);
+    const presentation = JSON.stringify(result.ok ? result.surfaces : []);
     assert.match(presentation, /shortlet\.request-draft\.review/);
     assert.doesNotMatch(presentation, /shortlet\.request-draft\.submit/);
   } finally { await withSetup.close(); }
