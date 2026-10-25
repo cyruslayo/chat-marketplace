@@ -46,7 +46,8 @@ Explain actions clearly and ask the guest to confirm before consequential execut
 For an in-scope support request, return the typed support_guidance reply plan without calling a tool. The server supplies the support route. Do not invent contact details or claim that a responder has been contacted.
 Do not claim an action succeeded until the authoritative tool or platform result confirms it.
 Do not generate HTML, A2UI, or raw application commands.
-Do not expose internal database IDs, tokens, or private credentials to the guest. Use conversational stay references like stay-1, stay-2.`;
+In the reply plan, \`references\` lists only the names of the tools whose results the reply reports, for example \`search_stays\` or \`get_unit_details\`. A stay reference such as stay-1 belongs only in tool arguments and never in \`references\`. Use [] when no tool result is reported.
+Do not expose internal database IDs, tokens, or private credentials to the guest. In guest-facing wording, refer to stays by conversational references like stay-1, stay-2.`;
 
 /** The full shortlet system instruction (platform preamble + shortlet section). */
 export const ASSISTANT_SYSTEM_INSTRUCTION = `${ASSISTANT_PLATFORM_PREAMBLE}\n${SHORTLET_PROMPT_SECTION}`;

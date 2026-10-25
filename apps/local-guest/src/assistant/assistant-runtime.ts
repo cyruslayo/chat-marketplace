@@ -181,17 +181,26 @@ const MAX_ASSISTANT_HISTORY_STEPS = 512;
 const MAX_ASSISTANT_HISTORY_CHARACTERS = 262_144;
 const MAX_ASSISTANT_CONTEXT_ITEMS = 128;
 const MAX_ASSISTANT_REPLY_OUTPUT_TOKENS = 4096;
-const REPLY_PLAN_SCHEMA = {
-  type: "object",
-  properties: {
-    kind: { type: "string", enum: ["show_results", "show_details", "compare", "explain_price", "show_status", "propose_action", "clarify_stay", "redirect", "support_guidance"] },
-    references: { type: "array", items: { type: "string" } },
-  },
-  required: ["kind", "references"],
-  additionalProperties: false,
-} as const;
+/** ADR 0106: references name tools whose results this turn produced. The parser stays the authority; the enum only narrows the provider output. */
+function replyPlanSchema(referenceNames: readonly string[]): Record<string, unknown> {
+  const names = [...new Set(referenceNames)];
+  return {
+    type: "object",
+    properties: {
+      kind: { type: "string", enum: ["show_results", "show_details", "compare", "explain_price", "show_status", "propose_action", "clarify_stay", "redirect", "support_guidance"] },
+      // With no successful tool result yet, no name is valid; the parser then rejects any non-empty list.
+      references: { type: "array", items: names.length > 0 ? { type: "string", enum: names } : { type: "string" } },
+    },
+    required: ["kind", "references"],
+    additionalProperties: false,
+  };
+}
 
-/** Returns the validated plan, or the closed code for the first rule the reply failed. */
+function successfulToolNames(results: readonly AssistantToolResult[]): string[] {
+  return results.filter((result) => !result.isError).map((result) => result.name);
+}
+
+/** Returns the validated plan, or the closed code for the first rule the reply failed. `results` must be every successful result of the turn. */
 function parseReplyPlan(response: AssistantModelResponse, results: readonly AssistantToolResult[]): AssistantReplyPlan | ReplyPlanRejectionReason {
   if (response.toolCalls?.length) return "unexpected_tool_calls";
   if (!response.text) return "empty_text";
@@ -657,7 +666,9 @@ export class AssistantRuntime {
     let activeStage: AssistantDiagnosticStage = "provider_request";
     let activeToolName: string | undefined;
     let hasSuccessfulApplicationOperation = false;
+    // The renderer uses the latest round; reference validation accepts every successful result of this turn (ADR 0106).
     let latestRawResults: AssistantToolResult[] = [];
+    let turnRawResults: AssistantToolResult[] = [];
     let controlOutcome: AssistantControlOutcome = "successful_model_handling";
 
     try {
@@ -671,7 +682,7 @@ export class AssistantRuntime {
           tools: taskTools(),
           history: this.#boundedHistory(candidateHistory, candidatePack(), candidateTaskState),
           timeoutMs: 20_000,
-          structuredOutput: { name: "assistant_reply_plan", schema: REPLY_PLAN_SCHEMA, strict: true },
+          structuredOutput: { name: "assistant_reply_plan", schema: replyPlanSchema(successfulToolNames(turnRawResults)), strict: true },
           maxOutputTokens: this.#maxPlanningOutputTokens,
         });
         this.#diagnose({ stage: "provider_request", round, succeeded: true });
@@ -685,7 +696,7 @@ export class AssistantRuntime {
         if (!modelResponse.toolCalls || modelResponse.toolCalls.length === 0) {
           // ADR 0106: accept a validated typed plan; discard legacy prose and opaque steps.
           const latestResults = latestRawResults;
-          const parsedPlan = parseReplyPlan(modelResponse, latestResults);
+          const parsedPlan = parseReplyPlan(modelResponse, turnRawResults);
           const plan = typeof parsedPlan === "string" ? undefined : parsedPlan;
           if (typeof parsedPlan === "string") {
             this.#diagnose({ stage: "provider_response", round, succeeded: false, failureClass: "MODEL_SELECTION_FAILURE", replyPlanRejectionReason: parsedPlan });
@@ -875,6 +886,7 @@ export class AssistantRuntime {
         }
 
         latestRawResults = roundRawResults;
+        turnRawResults = [...turnRawResults, ...roundRawResults];
 
         if (acceptedCalls.length === 0 && candidateHistory.at(-1)?.role === "user") candidateHistory.pop();
         candidateHistory.push({
@@ -899,7 +911,7 @@ export class AssistantRuntime {
           systemInstruction: composeSystemInstruction(candidatePack()),
           tools: [],
           history: this.#boundedHistory(candidateHistory, candidatePack(), candidateTaskState),
-          structuredOutput: { name: "assistant_reply_plan", schema: REPLY_PLAN_SCHEMA, strict: true },
+          structuredOutput: { name: "assistant_reply_plan", schema: replyPlanSchema(successfulToolNames(turnRawResults)), strict: true },
           maxOutputTokens: this.#maxReplyOutputTokens,
         });
         this.#diagnose({ stage: "provider_request", round, succeeded: true });
@@ -908,7 +920,7 @@ export class AssistantRuntime {
         this.#diagnose({ stage: activeStage, round, succeeded: true });
         const lastStep = candidateHistory.at(-1);
         const latestResults = latestRawResults;
-        const parsedFinalPlan = parseReplyPlan(finalModelResponse, latestResults);
+        const parsedFinalPlan = parseReplyPlan(finalModelResponse, turnRawResults);
         if (typeof parsedFinalPlan === "string") {
           this.#diagnose({ stage: "provider_response", round, succeeded: false, failureClass: "MODEL_SELECTION_FAILURE", replyPlanRejectionReason: parsedFinalPlan });
         }
