@@ -17,16 +17,23 @@ export interface ShortletWebRuntimeOptions {
   readonly onServerEvent?: (event: WebServerEventHandoff) => void;
   readonly resourcePolicy?: BasicResourcePolicy;
   readonly safety?: WeaverRuntimeSafetyConfig;
+  /**
+   * Registers the commerce catalogues (ADR 0103). Off by default, so the registry refuses commerce surfaces unless the
+   * caller turns commerce on with the COMMERCE_ENABLED switch (ADR 0104). Shortlet catalogues are always registered.
+   */
+  readonly commerce?: boolean;
 }
 
 export function createShortletWebRuntime(options: ShortletWebRuntimeOptions = {}): BasicWebRuntime {
   const resourcePolicy = options.resourcePolicy ?? (() => undefined);
+  // ADR 0103 / ADR 0104: the commerce catalogues and their renderers exist only when commerce is enabled.
+  const commerceCatalogs = options.commerce === true ? COMMERCE_CATALOGS : [];
   const created = createBasicWebRuntime({
-    additionalCatalogs: [SHORTLET_DISCOVERY_CATALOG, SHORTLET_BOOKING_CATALOG, ...COMMERCE_CATALOGS],
+    additionalCatalogs: [SHORTLET_DISCOVERY_CATALOG, SHORTLET_BOOKING_CATALOG, ...commerceCatalogs],
     additionalRenderers: [
       ...createBasicCatalogRendererRegistrations({ catalogId: SHORTLET_DISCOVERY_CATALOG.catalogId, resourcePolicy }),
       ...createBasicCatalogRendererRegistrations({ catalogId: SHORTLET_BOOKING_CATALOG.catalogId, resourcePolicy }),
-      ...COMMERCE_CATALOGS.flatMap(({ catalogId }) => createBasicCatalogRendererRegistrations({ catalogId, resourcePolicy })),
+      ...commerceCatalogs.flatMap(({ catalogId }) => createBasicCatalogRendererRegistrations({ catalogId, resourcePolicy })),
       ...SHORTLET_RENDERERS,
     ],
     ...(options.safety === undefined ? {} : { runtime: { safety: options.safety } }),

@@ -39,6 +39,7 @@ import {
   type PaymentReferenceKeys,
 } from "../../../domains/commerce/src/index.js";
 import { commerceReferenceKeysFromProcessEnv } from "./commerce-reference-keys-local.js";
+import { commerceEnabledFromEnv } from "./commerce-switch-local.js";
 import { applySchemaMigrations } from "../../../packages/platform-core/src/schema-migrations.js";
 import {
   discoveryArtifactToA2UI,
@@ -2180,16 +2181,26 @@ export const GUEST_COMMERCE_COMPOSITION = {
 } as const;
 export type GuestCommerceComposition =
   (typeof GUEST_COMMERCE_COMPOSITION)[keyof typeof GUEST_COMMERCE_COMPOSITION];
-export const DEFAULT_GUEST_COMMERCE_COMPOSITION: GuestCommerceComposition =
-  GUEST_COMMERCE_COMPOSITION.local;
+/**
+ * The default composition follows the single commerce switch (ADR 0104). Off unless COMMERCE_ENABLED is exactly "true".
+ * An unrecognised switch value throws here, at startup, and names the variable. Hosts that pass no environment (Workers)
+ * read no process environment and so take "disabled".
+ */
+function defaultGuestCommerceComposition(): GuestCommerceComposition {
+  const env: Readonly<Record<string, string | undefined>> =
+    typeof process === "undefined" ? {} : process.env;
+  return commerceEnabledFromEnv(env)
+    ? GUEST_COMMERCE_COMPOSITION.local
+    : GUEST_COMMERCE_COMPOSITION.disabled;
+}
 /** The commerce pack's domain id (domains/commerce/src/index.ts), which the disabled composition refuses. */
 const COMMERCE_DOMAIN_PACK_ID = "commerce";
 
-/** Fails closed: a missing value takes the default; any other value that is not a known composition throws. */
+/** Fails closed: a missing value takes the switch-driven default; any other value that is not a known composition throws. */
 function resolveGuestCommerceComposition(
   value: unknown,
 ): GuestCommerceComposition {
-  if (value === undefined) return DEFAULT_GUEST_COMMERCE_COMPOSITION;
+  if (value === undefined) return defaultGuestCommerceComposition();
   if (
     value === GUEST_COMMERCE_COMPOSITION.local ||
     value === GUEST_COMMERCE_COMPOSITION.disabled
@@ -2202,7 +2213,7 @@ export interface GuestRequestHandlerOptions {
   /** Payment reference keys for the commerce pack (user decision 18 Oct 2026). Omitted: read from the environment (see commerce-reference-keys-local). */
   paymentReferenceKeys?: PaymentReferenceKeys;
   environment?: LocalGuestEnvironment;
-  /** Commerce composition on this handler's database. Default: "local". The Shortlet Worker passes "disabled" (ADR 0101). */
+  /** Commerce composition on this handler's database. Default: "local" only when COMMERCE_ENABLED is "true", otherwise "disabled" (ADR 0104). The Shortlet Worker passes "disabled" (ADR 0101). */
   commerce?: GuestCommerceComposition;
   clientScriptPath?: string;
   /** Slice 09a: the bundles/CSS the handler serves; the Node default is `nodeAssetLoader()` (no import-time reads). */

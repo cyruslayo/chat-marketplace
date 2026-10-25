@@ -12,17 +12,6 @@ export const LOCAL_TEST_ONLY_COMMERCE_REFERENCE_KEYS: PaymentReferenceKeys = {
 /** The explicit opt-in for the test-only key. NODE_ENV=test alone is not enough (final review F1). */
 const TEST_KEY_OPT_IN = "COMMERCE_REFERENCE_TEST_KEY";
 
-/** The two variables a deployment or live run must set for the payment reference key pair (ADR 0075). Names only. */
-export const COMMERCE_REFERENCE_KEY_VARIABLES = ["COMMERCE_REFERENCE_HMAC_KEY", "COMMERCE_REFERENCE_HMAC_KEY_ID"] as const;
-
-/**
- * The names of the key-pair variables that are missing or empty, using the same falsy rule as the loader below. Never returns
- * a value. A caller that must fail closed before any provider call (ADR 0075) checks this instead of the test-only fallback.
- */
-export function missingCommerceReferenceKeyVariables(env: Readonly<Record<string, string | undefined>>): readonly string[] {
-  return COMMERCE_REFERENCE_KEY_VARIABLES.filter((name) => !env[name]);
-}
-
 /**
  * The local guest's payment reference keys (user decision 18 Oct 2026). The environment variables win. Without them, the
  * test-only key is used only when BOTH the explicit opt-in COMMERCE_REFERENCE_TEST_KEY=allow and NODE_ENV=test are set.

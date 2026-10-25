@@ -13,7 +13,6 @@ import { createStayQuote } from "../domains/shortlet/src/index.js";
 import { authoritativePriceFacts, hasUnsupportedPriceOrConfirmation, requestedUnitMatches } from "./pilot-agent-smoke-grading.js";
 import { parseOpenRouterModelPrice } from "./pilot-agent-smoke-metrics.js";
 import { ASSISTANT_CONFIRM_ACTION_EVENT } from "../apps/local-guest/src/assistant/pending-action-a2ui.js";
-import { missingCommerceReferenceKeyVariables } from "../apps/local-guest/src/commerce-reference-keys-local.js";
 
 const MODEL = "openai/gpt-6-luna";
 const SEARCH = "Find apartments in Old Ikoyi, Lagos, for 4 nights and 2 guests.";
@@ -233,50 +232,21 @@ export function controlsEvaluationOptions(args: readonly string[]): { readonly r
 }
 
 /** The first stage that failed, with the error name only. Never a message from a provider, a credential path or a fixture. */
-interface EvaluationFailure { readonly stage: string; readonly errorClass: string; readonly missingVariables?: readonly string[]; }
+interface EvaluationFailure { readonly stage: string; readonly errorClass: string; }
 let evaluationFailure: EvaluationFailure | undefined;
-
-/** Names the missing key-pair variables. The message contains variable names and the ADR reference, never values. */
-class MissingCommerceKeyError extends Error {
-  readonly missingVariables: readonly string[];
-  constructor(missingVariables: readonly string[]) {
-    super(`Missing ${missingVariables.join(", ")}: set the commerce reference key pair before a live run (ADR 0075). Values are never printed.`);
-    this.name = "MissingCommerceKeyError";
-    this.missingVariables = missingVariables;
-  }
-}
 
 /** Runs setup work and records the stage it belongs to if it fails. The first failing stage is kept. */
 async function atStage<T>(stage: string, work: () => Promise<T>): Promise<T> {
   try { return await work(); } catch (error) {
-    evaluationFailure ??= { stage, errorClass: error instanceof Error ? error.name : "NonError",
-      ...(error instanceof MissingCommerceKeyError ? { missingVariables: error.missingVariables } : {}) };
+    evaluationFailure ??= { stage, errorClass: error instanceof Error ? error.name : "NonError" };
     throw error;
   }
-}
-
-async function writeStartupFailureReport(directory: string, requestLimit: number): Promise<void> {
-  await writeFile(resolve(directory, "result.json"), JSON.stringify({
-    model: MODEL, mode: "live synthetic local HTTP", requestLimit,
-    evaluationReservations: 0, actualTransportStarts: 0, failure: evaluationFailure ?? null, scenarios: [],
-  }, null, 2));
 }
 
 async function run(): Promise<void> {
   const options = controlsEvaluationOptions(process.argv.slice(2));
   const directory = resolve(".scratch/concierge-agent-controls/validation", `live-${new Date().toISOString().replace(/[:.]/g, "-")}-${crypto.randomUUID().slice(0, 8)}`);
   await mkdir(directory, { recursive: true });
-  // ADR 0075: a live run needs the real key pair. Checked by name before any credential, catalogue or provider call. The
-  // test-only fallback is not consulted here, so a live run cannot start on it.
-  try {
-    await atStage("preflight", async () => {
-      const missing = missingCommerceReferenceKeyVariables(process.env);
-      if (missing.length > 0) throw new MissingCommerceKeyError(missing);
-    });
-  } catch (error) {
-    await writeStartupFailureReport(directory, options.requestLimit);
-    throw error;
-  }
   const key = process.env.LLM_API_KEY;
   if (!key?.trim()) throw new Error("Approved evaluation credential unavailable");
   const { before, price } = await atStage("catalogue", async () => {
@@ -382,7 +352,8 @@ async function run(): Promise<void> {
           }
         },
       };
-      const fixture = await atStage("fixture-startup", () => restartFixture({}, { conciergeMode: "openai-compatible", modelClient: client, onAssistantDiagnostic: (event) => diagnostics.push(event) }));
+      // ADR 0104: the evaluation runs with commerce off and no payment reference key pair, whatever the environment says.
+      const fixture = await atStage("fixture-startup", () => restartFixture({}, { conciergeMode: "openai-compatible", modelClient: client, onAssistantDiagnostic: (event) => diagnostics.push(event), commerce: "disabled" }));
       let prompt = scenario.prompt;
       try {
         if (scenario.injectedNarrative) {
@@ -541,8 +512,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     // Print the stage and error name only. Setup errors from providers or fixtures are not printed.
     const stage = evaluationFailure?.stage ?? "unknown";
     const errorClass = evaluationFailure?.errorClass ?? (error instanceof Error ? error.name : "NonError");
-    const detail = error instanceof MissingCommerceKeyError ? ` ${error.message}` : "";
-    console.error(`Controlled evaluation stopped at stage "${stage}" (${errorClass}).${detail} Inspect the metadata-only report; no credential or provider response was logged.`);
+    console.error(`Controlled evaluation stopped at stage "${stage}" (${errorClass}). Inspect the metadata-only report; no credential or provider response was logged.`);
     process.exitCode = 1;
   });
 }

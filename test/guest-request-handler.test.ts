@@ -409,12 +409,13 @@ test("ADR 0101: a handler composed with commerce disabled leaves the Shortlet da
   }
 });
 
-test("ADR 0101: a handler composed with the default commerce option creates the commerce tables and ledger rows", async () => {
-  // Control for the test above: the same probe must find commerce artifacts when commerce is composed locally.
+test("ADR 0101: a handler composed with commerce locally creates the commerce tables and ledger rows", async () => {
+  // Control for the test above: the same probe must find commerce artifacts when commerce is composed locally. The
+  // local composition is opted into explicitly, because the default is off without COMMERCE_ENABLED=true (ADR 0104).
   const directory = await mkdtemp(join(tmpdir(), "guest-handler-local-commerce-"));
   const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite") });
   try {
-    const handler = createGuestRequestHandler({ environment, fixtureRoutes: false, sessionScopedGuestPrincipals: true });
+    const handler = createGuestRequestHandler({ environment, fixtureRoutes: false, sessionScopedGuestPrincipals: true, commerce: GUEST_COMMERCE_COMPOSITION.local });
     try {
       const transport = fakeTransport(handler);
       const response = await transport.request("GET", "/");

@@ -150,7 +150,8 @@ test("AC3: commerce surfaces use only the owner-approved registered commerce cat
   assert.equal((commerceDiscoverySurface([], "d")[0] as { createSurface: { catalogId: string } }).createSurface.catalogId, COMMERCE_CATALOGS[0].catalogId);
   assert.equal((commerceCartSurface({ storeId: "s", storeName: "Store", lines: [] }, "c")[0] as { createSurface: { catalogId: string } }).createSurface.catalogId, COMMERCE_CATALOGS[1].catalogId);
   assert.equal((commerceOrderSurface({ publicCode: "ORD-1", status: "Processing", updatedAt: "2026-10-16" }, "o")[0] as { createSurface: { catalogId: string } }).createSurface.catalogId, COMMERCE_CATALOGS[2].catalogId);
-  const runtime = createShortletWebRuntime();
+  // ADR 0104: a commerce surface needs the commerce switch on, which registers the commerce catalogues (ADR 0103).
+  const runtime = createShortletWebRuntime({ commerce: true });
   const window = new Window();
   for (const [index, messages] of [
     commerceDiscoverySurface([], "commerce-discovery"),
@@ -168,7 +169,8 @@ test("AC3 scripted assistant: discovery, cart and order surfaces all validate an
   const cart = await fixture.assistant.handleTurn(fixture.threadId, "Add this product to my cart");
   const order = await fixture.assistant.handleTurn(fixture.threadId, "Track my order");
   const surfaces = [...(discovered.surfaces ?? []), ...(cart.surfaces ?? []), ...(order.surfaces ?? [])];
-  const runtime = createShortletWebRuntime();
+  // ADR 0104: a commerce surface needs the commerce switch on, which registers the commerce catalogues (ADR 0103).
+  const runtime = createShortletWebRuntime({ commerce: true });
   const window = new Window();
   for (const surface of surfaces) {
     const createMessage = surface.a2uiMessages[0] as { createSurface?: { catalogId?: string } };
