@@ -104,7 +104,9 @@ export type AssistantFailureClass =
   | "APPLICATION_OPERATION_FAILURE"
   | "PROJECTION_FAILURE"
   | "A2UI_FAILURE"
-  | "WEAVER_FAILURE";
+  | "WEAVER_FAILURE"
+  /** ADR 0106: a local product quota refusal, reported as a control outcome and never as a model or provider fault. */
+  | "QUOTA_REFUSED";
 
 export type AssistantToolEffectCode = "request_draft_created_availability_checked_not_reserved";
 
@@ -1555,7 +1557,7 @@ function createFailureDiagnostic(
     round,
     succeeded: false,
     ...(toolName ? { toolName } : {}),
-    errorClass: error instanceof Error && ["Error", "TypeError", "RangeError", "SyntaxError", "APIError", "APIConnectionError", "RateLimitError", "AssistantDateProvenanceError"].includes(error.constructor.name) ? error.constructor.name : "UNKNOWN_ERROR",
+    errorClass: error instanceof Error && ["Error", "TypeError", "RangeError", "SyntaxError", "APIError", "APIConnectionError", "RateLimitError", "AssistantDateProvenanceError", "ModelRequestGuardError"].includes(error.constructor.name) ? error.constructor.name : "UNKNOWN_ERROR",
     failureClass: classifyFailure(stage, error),
     ...(safeStatus !== undefined ? { providerStatusCode: safeStatus } : {}),
     ...(safeCode !== undefined ? { providerErrorCode: safeCode } : {}),
@@ -1563,6 +1565,8 @@ function createFailureDiagnostic(
 }
 
 function classifyFailure(stage: AssistantDiagnosticStage, error: unknown): AssistantFailureClass {
+  // ADR 0106: a local quota refusal stopped the call before transport; it is neither a model selection nor a provider fault.
+  if (error instanceof ModelRequestGuardError && error.code === "quota_denied") return "QUOTA_REFUSED";
   const errorClass = error instanceof Error ? error.constructor.name : "";
   const providerStatus = typeof error === "object" && error !== null && "status" in error
     && typeof error.status === "number";

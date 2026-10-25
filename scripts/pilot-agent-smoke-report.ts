@@ -11,7 +11,7 @@ export interface SmokeScenarioReport {
   readonly surfaceSelected: string | null;
   readonly authoritativeEntities: readonly string[];
   readonly semanticResult: "PASS" | "FAIL" | "NOT_RUN";
-  readonly failureClassification?: "PROVIDER_RATE_LIMITED" | "PROVIDER_REQUEST_BUDGET_EXCEEDED" | "PROVIDER_TRANSPORT_FAILURE" | "MODEL_SELECTION_FAILURE" | "INVALID_TOOL_FOR_STATE" | "APPLICATION_OPERATION_FAILURE" | "PROJECTION_FAILURE" | "A2UI_FAILURE" | "WEAVER_FAILURE" | "FABRICATION_FAILURE" | "AUTHORITY_FAILURE";
+  readonly failureClassification?: "PROVIDER_RATE_LIMITED" | "PROVIDER_REQUEST_BUDGET_EXCEEDED" | "PROVIDER_TRANSPORT_FAILURE" | "MODEL_SELECTION_FAILURE" | "INVALID_TOOL_FOR_STATE" | "APPLICATION_OPERATION_FAILURE" | "PROJECTION_FAILURE" | "A2UI_FAILURE" | "WEAVER_FAILURE" | "FABRICATION_FAILURE" | "AUTHORITY_FAILURE" | "QUOTA_REFUSED";
   readonly note?: string;
   /** Number of prohibited state transitions observed for this scenario. */
   readonly prohibitedEffects?: number;
@@ -281,7 +281,7 @@ function stageKey(journey: unknown, stage: unknown, count: number): string | nul
 
 const FAILURE_CLASSES: ReadonlySet<string> = new Set([
   "PROVIDER_RATE_LIMITED", "PROVIDER_REQUEST_BUDGET_EXCEEDED", "PROVIDER_TRANSPORT_FAILURE", "MODEL_SELECTION_FAILURE",
-  "INVALID_TOOL_FOR_STATE", "APPLICATION_OPERATION_FAILURE", "PROJECTION_FAILURE", "A2UI_FAILURE", "WEAVER_FAILURE", "FABRICATION_FAILURE", "AUTHORITY_FAILURE",
+  "INVALID_TOOL_FOR_STATE", "APPLICATION_OPERATION_FAILURE", "PROJECTION_FAILURE", "A2UI_FAILURE", "WEAVER_FAILURE", "FABRICATION_FAILURE", "AUTHORITY_FAILURE", "QUOTA_REFUSED",
 ]);
 
 function dimensionName(scenario: string): string {

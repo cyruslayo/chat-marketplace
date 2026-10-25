@@ -97,3 +97,37 @@ test("Reply plan rejections record one closed reason on the final-text and post-
   } finally { environment.close(); }
 });
 
+
+test("A local quota refusal after a tool round trip is a non-model failure with no provider text", async () => {
+  const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
+  const diagnostics: AssistantDiagnosticEvent[] = [];
+  try {
+    const runtime = new AssistantRuntime(environment, { generate: async (request) => (request.tools ?? []).length === 0
+      ? (() => { throw new ModelRequestGuardError("quota_denied"); })()
+      : { toolCalls: [searchCall] } }, {
+      onDiagnostic: (event) => diagnostics.push(event), scopeClassifier: { assess: async () => inScopeAssessment },
+    });
+    const result = await runtime.handleTurn("quota-round-trip", "Find stays in Old Ikoyi");
+    assert.equal(result.ok, true);
+    const failure = diagnostics.find((event) => event.stage === "function_result_round_trip" && !event.succeeded);
+    assert.equal(failure?.errorClass, "ModelRequestGuardError");
+    assert.equal(failure?.failureClass, "QUOTA_REFUSED");
+    assert.doesNotMatch(JSON.stringify(diagnostics), /quota_denied|PRIVATE_/);
+  } finally { environment.close(); }
+});
+
+test("Other local guard stops keep their existing diagnostic classes", async () => {
+  for (const code of ["quota_unavailable", "deadline_exceeded"] as const) {
+    const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
+    const diagnostics: AssistantDiagnosticEvent[] = [];
+    try {
+      const runtime = new AssistantRuntime(environment, { generate: async () => { throw new ModelRequestGuardError(code); } }, {
+        onDiagnostic: (event) => diagnostics.push(event), scopeClassifier: { assess: async () => inScopeAssessment },
+      });
+      await runtime.handleTurn(`guard-${code}`, "Find stays in Old Ikoyi");
+      const failure = diagnostics.find((event) => !event.succeeded);
+      assert.equal(failure?.errorClass, "ModelRequestGuardError", code);
+      assert.equal(failure?.failureClass, "MODEL_SELECTION_FAILURE", code);
+    } finally { environment.close(); }
+  }
+});
