@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
-import { controlsEvaluationOptions, deltaControlOutcomes, evaluatorCallFailureAccounting, evaluatorCaseRequestLimit, evaluatorRequestDecision, EVALUATOR_DEFAULT_REQUEST_LIMIT, gradeGuardDecision, gradeScenario, hasCanonicalReadOnlyPriceEvidence, isBlockedControlsResult, OPEN_FIRST, SCENARIOS, SEARCH, snapshotEvaluationTurns, surfaceActionUnitId } from "../scripts/concierge-controls-eval.js";
+import { classifierFailureSeen, controlsEvaluationOptions, createTurnUsage, deltaControlOutcomes, evaluatorCallFailureAccounting, evaluatorCaseRequestLimit, evaluatorRequestDecision, EVALUATOR_DEFAULT_REQUEST_LIMIT, gradeGuardDecision, gradeScenario, hasCanonicalReadOnlyPriceEvidence, isBlockedControlsResult, OPEN_FIRST, preludeFailedReport, SCENARIOS, SEARCH, snapshotEvaluationTurns, surfaceActionUnitId, taskEffectObserved } from "../scripts/concierge-controls-eval.js";
 import { requestedUnitMatches } from "../scripts/pilot-agent-smoke-grading.js";
 import { ASSISTANT_CONTROL_COPY } from "../apps/local-guest/src/assistant/control-copy.js";
 import { ModelRequestGuardError, type AssistantModelClient, type AssistantToolCall } from "../apps/local-guest/src/assistant/assistant-model.js";
@@ -160,10 +160,7 @@ test("Attack-case scope expectations accept only the runtime's contained refusal
 });
 
 test("Pending evaluator calls keep usage and cost unavailable in immutable report snapshots", () => {
-  const turn = { id: "timed-out-classifier", reservations: 1, transportStarts: 1, modelCalls: 1, pendingCalls: 1,
-    promptTokens: 0, completionTokens: 0, usageComplete: true, latencyMs: 5, approvedModelResponses: 0,
-    priceReadReferenceMatchesSelected: false, priceReadCallCount: 0, searchOperationRequested: false,
-    reportedCostUsd: 0, costComplete: true, calls: [], evaluatorBudgetRefusals: 0 };
+  const turn = { ...createTurnUsage("timed-out-classifier"), reservations: 1, transportStarts: 1, modelCalls: 1, pendingCalls: 1, latencyMs: 5 };
   const snapshot = snapshotEvaluationTurns([turn]);
   assert.equal(snapshot[0]?.modelCalls, 1);
   assert.equal(snapshot[0]?.promptTokens, null);
@@ -217,6 +214,13 @@ globalThis.fetch = async (url, init) => {
   assert.equal(report.scenarios[0].result, "PASS");
   assert.equal(report.scenarios[0].turns[0].approvedModelResponses, 2);
   assert.equal(report.accountUsageDeltaUsd, 0);
+  // Per-turn closed codes: the control outcome, the classifier verdict codes, and no failure cause for a completed case.
+  assert.equal(report.scenarios[0].turns[0].controlOutcome, "successful_model_handling");
+  assert.deepEqual(report.scenarios[0].turns[0].classifierVerdict, { scope: "in_scope", reasonCode: "supported", risk: "ordinary" });
+  assert.equal(report.scenarios[0].turns[0].scopeFailureReason, null);
+  assert.equal(report.scenarios[0].turns[0].failureCode, null);
+  assert.equal(report.scenarios[0].failureCause, null);
+  assert.equal(report.scenarios[0].assertedTurnRun, true);
   // Each transported call records only its closed finish reason code.
   assert.deepEqual(report.scenarios[0].turns.flatMap((turn: { calls: { finishReason: unknown }[] }) => turn.calls.map((call) => call.finishReason)), ["stop", "stop"]);
   assert.doesNotMatch(text, /synthetic-evaluation-only-credential|Hello|clarify_stay|systemInstruction|tool_calls/);
@@ -331,4 +335,72 @@ test("A refusal that never reached transport does not make usage or cost incompl
   assert.deepEqual(guardAfterTransport, { refusedBeforeTransport: false });
   const plainBeforeTransport = evaluatorCallFailureAccounting({ error: new Error("allocation failed"), transportStartsBefore: 2, transportStartsAfter: 2 });
   assert.deepEqual(plainBeforeTransport, { refusedBeforeTransport: false });
+});
+
+test("A failed setup turn is reported as prelude_failed, stops the case, and leaves the asserted turn ungraded", () => {
+  const setup = createTurnUsage("setup-1");
+  setup.controlOutcome = "scope_unavailable";
+  setup.failureCode = "prelude_failed";
+  setup.classifierVerdict = { scope: "unclear", reasonCode: "unclear", risk: "ordinary" };
+  setup.transportStarts = 1;
+  setup.calls.push({ classifier: true, transportStarts: 1, latencyMs: 5, finishReason: "stop", toolCallCount: 0 });
+  const report = preludeFailedReport({ id: "terse-details", expected: "details", requestLimit: 8, turns: [setup], diagnostics: [] });
+  assert.equal(report.result, "FAIL");
+  assert.equal(report.taskQuality, "FAIL");
+  assert.equal(report.failureCause, "prelude_failed");
+  assert.equal(report.assertedTurnRun, false);
+  assert.equal(report.transportStarts, 1);
+  assert.equal(report.guardFailures, 0);
+});
+
+test("A text-only success is no task effect for cases that expect a draft, a search or a unit detail", () => {
+  assert.equal(taskEffectObserved({ expected: "draft", toolCallCount: 0, stateChanged: false }), false);
+  assert.equal(taskEffectObserved({ expected: "draft", toolCallCount: 1, stateChanged: false }), true);
+  assert.equal(taskEffectObserved({ expected: "details", toolCallCount: 0, stateChanged: false }), false);
+  assert.equal(taskEffectObserved({ expected: "search", toolCallCount: 0, stateChanged: true }), true);
+  assert.equal(taskEffectObserved({ expected: "greeting", toolCallCount: 0, stateChanged: false }), true);
+  assert.equal(taskEffectObserved({ expected: "price", toolCallCount: 0, stateChanged: false }), true);
+});
+
+test("A classifier failure in any turn of the case, including a setup turn, counts as a classifier failure", () => {
+  assert.equal(classifierFailureSeen([{}, { scopeFailureReason: "invalid_json_prose" }]), true);
+  assert.equal(classifierFailureSeen([{}]), false);
+});
+
+test("Offline: a setup turn the classifier blocks is reported as prelude_failed with closed verdict codes and no canary in result.json", () => {
+  const directory = mkdtempSync(join(tmpdir(), "controls-eval-prelude-"));
+  const preload = join(directory, "offline-provider.mjs");
+  const canary = "PRELUDE_CLASSIFIER_CANARY";
+  writeFileSync(preload, `const localFetch = globalThis.fetch;
+globalThis.fetch = async (url, init) => {
+  const address = String(url);
+  if (address.startsWith('http://127.0.0.1:')) return localFetch(url, init);
+  if (address === 'https://openrouter.ai/api/v1/key') return Response.json({data:{limit:2,limit_reset:null,usage:0,limit_remaining:2}});
+  if (address === 'https://openrouter.ai/api/v1/models') return Response.json({data:[{id:'openai/gpt-6-luna',pricing:{prompt:'0.0000001',completion:'0.0000005'},reasoning:{mandatory:false,supported_efforts:['none']}}]});
+  if (address !== 'https://openrouter.ai/api/v1/chat/completions') throw new Error('Network forbidden');
+  const body = JSON.parse(String(init.body));
+  if (body.response_format.json_schema.name !== 'concierge_scope') throw new Error('Planner must not be reached');
+  const plan = {scope:'unclear',risk:'ordinary',intents:[],reasonCode:'unclear',slots:{city:null,neighbourhood:'${canary}',bedrooms:null,nights:null,guests:null,checkIn:null,checkOut:null}};
+  return Response.json({model:'openai/gpt-6-luna',choices:[{finish_reason:'stop',message:{role:'assistant',content:JSON.stringify(plan)}}],usage:{prompt_tokens:1,completion_tokens:1,cost:0}});
+};\n`);
+  const run = spawnSync(process.execPath, ["--import", pathToFileURL(resolve("node_modules/tsx/dist/loader.mjs")).href,
+    "--import", pathToFileURL(preload).href, resolve("scripts/concierge-controls-eval.ts"), "--live", "--request-limit", "4", "--case", "terse-details"],
+  { cwd: directory, env: { ...process.env, LLM_API_KEY: "synthetic-evaluation-only-credential" }, encoding: "utf8", timeout: 60_000 });
+  assert.equal(run.status, 1, run.stderr);
+  const validation = join(directory, ".scratch/concierge-agent-controls/validation");
+  const reportDirectory = readdirSync(validation).find((name) => name.startsWith("live-"));
+  assert.ok(reportDirectory);
+  const text = readFileSync(join(validation, reportDirectory, "result.json"), "utf8");
+  const report = JSON.parse(text);
+  const scenario = report.scenarios[0];
+  assert.equal(scenario.result, "FAIL");
+  assert.equal(scenario.failureCause, "prelude_failed");
+  assert.equal(scenario.assertedTurnRun, false);
+  assert.equal(scenario.turns.length, 1);
+  assert.equal(scenario.turns[0].controlOutcome, "scope_unavailable");
+  assert.equal(scenario.turns[0].failureCode, "prelude_failed");
+  assert.deepEqual(scenario.turns[0].classifierVerdict, { scope: "unclear", reasonCode: "unclear", risk: "ordinary" });
+  assert.equal(scenario.turns[0].scopeFailureReason, null);
+  assert.equal(report.actualTransportStarts, 1);
+  assert.doesNotMatch(text, new RegExp(canary));
 });

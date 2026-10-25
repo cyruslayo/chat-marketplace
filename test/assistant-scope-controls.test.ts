@@ -5,7 +5,7 @@ import { AssistantRuntime, type AssistantDiagnosticEvent } from "../apps/local-g
 import type { AssistantModelClient, AssistantModelRequest, AssistantModelResponse, AssistantToolCall } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { temporaryDatabasePath } from "./helpers/temporary-database.js";
 import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/scripted-assistant-model.js";
-import { parseScopeAssessment, ModelScopeClassifier, ScopeClassificationError } from "../apps/local-guest/src/assistant/scope-classifier.js";
+import { parseScopeAssessment, ModelScopeClassifier, ScopeClassificationError, scopeVerdictCodes } from "../apps/local-guest/src/assistant/scope-classifier.js";
 import { resolveCheckInDate } from "../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
 import { currentTurnDateRoles } from "../apps/local-guest/src/assistant/date-tokens.js";
 import type { ScopeAssessment } from "../apps/local-guest/src/assistant/scope-classifier.js";
@@ -405,4 +405,27 @@ test("Truncation diagnostics name the closed reason and never the truncated clas
     assert.deepEqual(diagnostics.filter((event) => event.scopeFailureReason !== undefined).map((event) => event.scopeFailureReason), ["invalid_json_truncated"]);
     assert.doesNotMatch(JSON.stringify({ result, diagnostics }), new RegExp(canary));
   } finally { environment.close(); }
+});
+
+test("Scope verdict codes: a valid classifier response yields only its closed scope, reason and risk codes", () => {
+  const canary = "CLASSIFIER_VERDICT_CANARY";
+  const response = { text: JSON.stringify({ scope: "unclear", risk: "ordinary", intents: [], reasonCode: "unclear", slots: { ...slots, neighbourhood: canary } }) };
+  const codes = scopeVerdictCodes(response);
+  assert.deepEqual(codes, { scope: "unclear", reasonCode: "unclear", risk: "ordinary" });
+  assert.doesNotMatch(JSON.stringify(codes), new RegExp(canary));
+});
+
+test("Scope verdict codes: an invalid classifier response yields one closed failure reason and never its text", () => {
+  const canary = "CLASSIFIER_PROSE_CANARY";
+  const cases = [
+    [{ text: `Sorry ${canary}` }, "invalid_json_prose"],
+    [{ text: `{"scope": "${canary}"`, finishReason: "length" }, "invalid_json_truncated"],
+    [{ text: "{}", toolCalls: [{ id: "call-1", name: "search_stays", args: {} }] }, "tool_calls_returned"],
+    [{}, "missing_text"],
+  ] as const;
+  for (const [response, reason] of cases) {
+    const codes = scopeVerdictCodes(response);
+    assert.deepEqual(codes, { scopeFailureReason: reason });
+    assert.doesNotMatch(JSON.stringify(codes), new RegExp(canary));
+  }
 });

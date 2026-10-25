@@ -1,4 +1,4 @@
-import type { AssistantFinishReason, AssistantModelClient } from "./assistant-model.js";
+import type { AssistantFinishReason, AssistantModelClient, AssistantModelResponse } from "./assistant-model.js";
 
 export const CONCIERGE_INTENTS = ["search", "details", "compare", "price", "status", "offer", "draft", "request", "accept", "payment", "support", "clarify", "greet", "task_switch"] as const;
 export type ConciergeIntent = typeof CONCIERGE_INTENTS[number];
@@ -73,15 +73,32 @@ export class ModelScopeClassifier implements ScopeClassifier {
       ...(this.reasoningEffort === "none" ? { reasoningEffort: "none" as const } : {}),
       maxOutputTokens: this.maxOutputTokens, structuredOutput: { name: "concierge_scope", schema: SCHEMA, strict: true },
     });
-    if (response.toolCalls?.length) throw new ScopeClassificationError("tool_calls_returned");
-    if (typeof response.text !== "string") throw new ScopeClassificationError("missing_text");
-    let value: unknown;
-    try { value = JSON.parse(response.text); } catch { throw new ScopeClassificationError(invalidJsonReason(response.text, response.finishReason)); }
-    let reason: ScopeFailureReason = "invalid_shape";
-    const parsed = parseScopeAssessment(value, (failure) => { reason = failure; });
-    if (!parsed) throw new ScopeClassificationError(reason);
-    return parsed;
+    const result = assessScopeResponse(response);
+    if ("failure" in result) throw new ScopeClassificationError(result.failure);
+    return result.assessment;
   }
+}
+
+/** Validates one classifier response into a verdict or one closed failure reason. Response text is never returned or logged. */
+export function assessScopeResponse(response: Pick<AssistantModelResponse, "text" | "toolCalls" | "finishReason">): { readonly assessment: ScopeAssessment } | { readonly failure: ScopeFailureReason } {
+  if (response.toolCalls?.length) return { failure: "tool_calls_returned" };
+  if (typeof response.text !== "string") return { failure: "missing_text" };
+  let value: unknown;
+  try { value = JSON.parse(response.text); } catch { return { failure: invalidJsonReason(response.text, response.finishReason) }; }
+  let reason: ScopeFailureReason = "invalid_shape";
+  const parsed = parseScopeAssessment(value, (failure) => { reason = failure; });
+  return parsed ? { assessment: parsed } : { failure: reason };
+}
+
+/** Closed verdict codes for the evaluator's per-turn record (ADR 0075, 0106). Every field is an enum value, never model text. */
+export type ScopeVerdictCodes =
+  | { readonly scope: ScopeAssessment["scope"]; readonly reasonCode: ScopeAssessment["reasonCode"]; readonly risk: ScopeAssessment["risk"] }
+  | { readonly scopeFailureReason: ScopeFailureReason };
+
+export function scopeVerdictCodes(response: Pick<AssistantModelResponse, "text" | "toolCalls" | "finishReason">): ScopeVerdictCodes {
+  const result = assessScopeResponse(response);
+  if ("failure" in result) return { scopeFailureReason: result.failure };
+  return { scope: result.assessment.scope, reasonCode: result.assessment.reasonCode, risk: result.assessment.risk };
 }
 
 /** Names the parse-failure class only. The text is inspected locally and never returned, stored or logged. */
