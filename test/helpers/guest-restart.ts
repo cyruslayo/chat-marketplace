@@ -23,10 +23,28 @@ type GuestServerOptions = Omit<NonNullable<Parameters<typeof startLocalGuestServ
 
 export async function restartFixture(config: Partial<LocalGuestFixtureConfig> = {}, serverOptions: GuestServerOptions = {}) {
   const directory = mkdtempSync(join(tmpdir(), "guest-restart-"));
+  try {
+    return await openRestartFixture(directory, config, serverOptions);
+  } catch (error) {
+    // A startup that throws never reaches close(), so the temporary directory is removed here before the error is rethrown.
+    rmSync(directory, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+async function openRestartFixture(directory: string, config: Partial<LocalGuestFixtureConfig>, serverOptions: GuestServerOptions) {
   // A caller may point several environments at one database file (two devices of one tenant, ADR 0004).
   const databasePath = config.databasePath ?? join(directory, "guest.sqlite");
   let now = new Date("2026-09-03T10:00:00Z");
-  let server = startLocalGuestServer({ ...serverOptions, port: 0, environment: LocalGuestEnvironment.openNode({ ...config, databasePath, clock: () => now }) });
+  const environment = LocalGuestEnvironment.openNode({ ...config, databasePath, clock: () => now });
+  let server: ReturnType<typeof startLocalGuestServer>;
+  try {
+    server = startLocalGuestServer({ ...serverOptions, port: 0, environment });
+  } catch (error) {
+    // The environment already holds the database handle. Release it so the caller can remove the directory on Windows.
+    environment.close();
+    throw error;
+  }
   let base = `http://127.0.0.1:${await server.listen()}`;
   const home = await fetch(base);
   const cookie = home.headers.get("set-cookie")?.split(";")[0];

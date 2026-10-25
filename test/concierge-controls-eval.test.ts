@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -184,7 +184,9 @@ globalThis.fetch = async (url, init) => {
 };\n`);
   const run = spawnSync(process.execPath, ["--import", pathToFileURL(resolve("node_modules/tsx/dist/loader.mjs")).href,
     "--import", pathToFileURL(preload).href, resolve("scripts/concierge-controls-eval.ts"), "--live", "--request-limit", "4", "--case", "greeting"],
-  { cwd: directory, env: { ...process.env, LLM_API_KEY: "synthetic-evaluation-only-credential" }, encoding: "utf8", timeout: 60_000 });
+  // ADR 0075: the preflight needs the key pair by name. Both values are synthetic and must never reach the report.
+  { cwd: directory, env: { ...process.env, LLM_API_KEY: "synthetic-evaluation-only-credential",
+    COMMERCE_REFERENCE_HMAC_KEY: "synthetic-evaluation-only-reference-key", COMMERCE_REFERENCE_HMAC_KEY_ID: "synthetic-evaluation-k1" }, encoding: "utf8", timeout: 60_000 });
   assert.equal(run.status, 0, run.stderr);
   const validation = join(directory, ".scratch/concierge-agent-controls/validation");
   const reportDirectory = readdirSync(validation).find((name) => name.startsWith("live-"));
@@ -196,5 +198,39 @@ globalThis.fetch = async (url, init) => {
   assert.equal(report.scenarios[0].result, "PASS");
   assert.equal(report.scenarios[0].turns[0].approvedModelResponses, 2);
   assert.equal(report.accountUsageDeltaUsd, 0);
-  assert.doesNotMatch(text, /synthetic-evaluation-only-credential|Hello|clarify_stay|systemInstruction|tool_calls/);
+  assert.doesNotMatch(text, /synthetic-evaluation-only-credential|synthetic-evaluation-only-reference-key|Hello|clarify_stay|systemInstruction|tool_calls/);
+});
+
+test("A live run without the commerce reference key pair stops before any provider attempt and names only the missing variables (ADR 0075)", () => {
+  const directory = mkdtempSync(join(tmpdir(), "controls-eval-preflight-"));
+  const preload = join(directory, "provider-attempt-recorder.mjs");
+  const providerLog = join(directory, "provider-attempts.log");
+  writeFileSync(preload, `import { appendFileSync } from "node:fs";
+globalThis.fetch = async (url) => {
+  if (!String(url).startsWith('http://127.0.0.1:')) appendFileSync(${JSON.stringify(providerLog)}, 'attempt\\n');
+  throw new Error('Network forbidden');
+};\n`);
+  // The test-only fallback is opted in on purpose: a live run must still fail closed without the real pair.
+  const env: Record<string, string | undefined> = { ...process.env, LLM_API_KEY: "synthetic-evaluation-only-credential", NODE_ENV: "test", COMMERCE_REFERENCE_TEST_KEY: "allow" };
+  delete env.COMMERCE_REFERENCE_HMAC_KEY;
+  delete env.COMMERCE_REFERENCE_HMAC_KEY_ID;
+  const run = spawnSync(process.execPath, ["--import", pathToFileURL(resolve("node_modules/tsx/dist/loader.mjs")).href,
+    "--import", pathToFileURL(preload).href, resolve("scripts/concierge-controls-eval.ts"), "--live", "--request-limit", "4", "--case", "greeting"],
+  { cwd: directory, env, encoding: "utf8", timeout: 60_000 });
+  assert.notEqual(run.status, 0);
+  assert.equal(existsSync(providerLog), false, "no provider attempt may start before the preflight");
+  const validation = join(directory, ".scratch/concierge-agent-controls/validation");
+  const reportDirectory = readdirSync(validation).find((name) => name.startsWith("live-"));
+  assert.ok(reportDirectory);
+  const text = readFileSync(join(validation, reportDirectory, "result.json"), "utf8");
+  const report = JSON.parse(text);
+  assert.equal(report.failure.stage, "preflight");
+  assert.deepEqual(report.failure.missingVariables, ["COMMERCE_REFERENCE_HMAC_KEY", "COMMERCE_REFERENCE_HMAC_KEY_ID"]);
+  assert.equal(report.evaluationReservations, 0);
+  assert.equal(report.actualTransportStarts, 0);
+  const output = `${run.stdout}\n${run.stderr}`;
+  assert.match(output, /COMMERCE_REFERENCE_HMAC_KEY, COMMERCE_REFERENCE_HMAC_KEY_ID/);
+  assert.match(output, /stage "preflight"/);
+  assert.match(output, /ADR 0075/);
+  assert.doesNotMatch(`${output}\n${text}`, /synthetic-evaluation-only-credential|TEST-ONLY-synthetic/);
 });

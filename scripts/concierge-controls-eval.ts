@@ -13,6 +13,7 @@ import { createStayQuote } from "../domains/shortlet/src/index.js";
 import { authoritativePriceFacts, hasUnsupportedPriceOrConfirmation, requestedUnitMatches } from "./pilot-agent-smoke-grading.js";
 import { parseOpenRouterModelPrice } from "./pilot-agent-smoke-metrics.js";
 import { ASSISTANT_CONFIRM_ACTION_EVENT } from "../apps/local-guest/src/assistant/pending-action-a2ui.js";
+import { missingCommerceReferenceKeyVariables } from "../apps/local-guest/src/commerce-reference-keys-local.js";
 
 const MODEL = "openai/gpt-6-luna";
 const SEARCH = "Find apartments in Old Ikoyi, Lagos, for 4 nights and 2 guests.";
@@ -231,29 +232,73 @@ export function controlsEvaluationOptions(args: readonly string[]): { readonly r
   return { requestLimit, ...(caseId ? { caseId } : {}) };
 }
 
+/** The first stage that failed, with the error name only. Never a message from a provider, a credential path or a fixture. */
+interface EvaluationFailure { readonly stage: string; readonly errorClass: string; readonly missingVariables?: readonly string[]; }
+let evaluationFailure: EvaluationFailure | undefined;
+
+/** Names the missing key-pair variables. The message contains variable names and the ADR reference, never values. */
+class MissingCommerceKeyError extends Error {
+  readonly missingVariables: readonly string[];
+  constructor(missingVariables: readonly string[]) {
+    super(`Missing ${missingVariables.join(", ")}: set the commerce reference key pair before a live run (ADR 0075). Values are never printed.`);
+    this.name = "MissingCommerceKeyError";
+    this.missingVariables = missingVariables;
+  }
+}
+
+/** Runs setup work and records the stage it belongs to if it fails. The first failing stage is kept. */
+async function atStage<T>(stage: string, work: () => Promise<T>): Promise<T> {
+  try { return await work(); } catch (error) {
+    evaluationFailure ??= { stage, errorClass: error instanceof Error ? error.name : "NonError",
+      ...(error instanceof MissingCommerceKeyError ? { missingVariables: error.missingVariables } : {}) };
+    throw error;
+  }
+}
+
+async function writeStartupFailureReport(directory: string, requestLimit: number): Promise<void> {
+  await writeFile(resolve(directory, "result.json"), JSON.stringify({
+    model: MODEL, mode: "live synthetic local HTTP", requestLimit,
+    evaluationReservations: 0, actualTransportStarts: 0, failure: evaluationFailure ?? null, scenarios: [],
+  }, null, 2));
+}
+
 async function run(): Promise<void> {
   const options = controlsEvaluationOptions(process.argv.slice(2));
-  const key = process.env.LLM_API_KEY;
-  if (!key?.trim()) throw new Error("Approved evaluation credential unavailable");
   const directory = resolve(".scratch/concierge-agent-controls/validation", `live-${new Date().toISOString().replace(/[:.]/g, "-")}-${crypto.randomUUID().slice(0, 8)}`);
   await mkdir(directory, { recursive: true });
-  const before = await keySnapshot(key);
-  const catalogueResponse = await fetch("https://openrouter.ai/api/v1/models", { signal: AbortSignal.timeout(20_000) });
-  if (!catalogueResponse.ok) throw new Error("Model catalogue unavailable");
-  const catalogue: unknown = await catalogueResponse.json();
-  const price = parseOpenRouterModelPrice(catalogue, MODEL);
-  if (!price) throw new Error("The exact approved model and price must be available");
-  const modelMetadata: unknown = catalogue !== null && typeof catalogue === "object" && "data" in catalogue && Array.isArray(catalogue.data)
-    ? catalogue.data.find((entry: unknown) => entry !== null && typeof entry === "object" && "id" in entry && entry.id === MODEL) : undefined;
-  const reasoning = modelMetadata !== null && typeof modelMetadata === "object" && "reasoning" in modelMetadata ? modelMetadata.reasoning : undefined;
-  if (reasoning === null || typeof reasoning !== "object" || !("mandatory" in reasoning) || reasoning.mandatory !== false
-    || !("supported_efforts" in reasoning) || !Array.isArray(reasoning.supported_efforts) || !reasoning.supported_efforts.includes("none")) throw new Error("The approved classifier reasoning preference is unsupported");
+  // ADR 0075: a live run needs the real key pair. Checked by name before any credential, catalogue or provider call. The
+  // test-only fallback is not consulted here, so a live run cannot start on it.
+  try {
+    await atStage("preflight", async () => {
+      const missing = missingCommerceReferenceKeyVariables(process.env);
+      if (missing.length > 0) throw new MissingCommerceKeyError(missing);
+    });
+  } catch (error) {
+    await writeStartupFailureReport(directory, options.requestLimit);
+    throw error;
+  }
+  const key = process.env.LLM_API_KEY;
+  if (!key?.trim()) throw new Error("Approved evaluation credential unavailable");
+  const { before, price } = await atStage("catalogue", async () => {
+    const snapshot = await keySnapshot(key);
+    const catalogueResponse = await fetch("https://openrouter.ai/api/v1/models", { signal: AbortSignal.timeout(20_000) });
+    if (!catalogueResponse.ok) throw new Error("Model catalogue unavailable");
+    const catalogue: unknown = await catalogueResponse.json();
+    const approvedPrice = parseOpenRouterModelPrice(catalogue, MODEL);
+    if (!approvedPrice) throw new Error("The exact approved model and price must be available");
+    const modelMetadata: unknown = catalogue !== null && typeof catalogue === "object" && "data" in catalogue && Array.isArray(catalogue.data)
+      ? catalogue.data.find((entry: unknown) => entry !== null && typeof entry === "object" && "id" in entry && entry.id === MODEL) : undefined;
+    const reasoning = modelMetadata !== null && typeof modelMetadata === "object" && "reasoning" in modelMetadata ? modelMetadata.reasoning : undefined;
+    if (reasoning === null || typeof reasoning !== "object" || !("mandatory" in reasoning) || reasoning.mandatory !== false
+      || !("supported_efforts" in reasoning) || !Array.isArray(reasoning.supported_efforts) || !reasoning.supported_efforts.includes("none")) throw new Error("The approved classifier reasoning preference is unsupported");
+    return { before: snapshot, price: approvedPrice };
+  });
   let totalReservations = 0;
   let budgetExceeded = false;
   const reports: Record<string, unknown>[] = [];
   const save = async (after: KeySnapshot | null) => {
     await writeFile(resolve(directory, "result.json"), JSON.stringify({
-      model: MODEL, mode: "live synthetic local HTTP", requestLimit: options.requestLimit,
+      model: MODEL, mode: "live synthetic local HTTP", requestLimit: options.requestLimit, failure: evaluationFailure ?? null,
       evaluationReservations: totalReservations,
       actualTransportStarts: reports.reduce((sum, report) => sum + Number(report.transportStarts ?? 0), 0),
       taskCompletionCount: reports.filter((report) => report.taskCompleted === true).length,
@@ -337,7 +382,7 @@ async function run(): Promise<void> {
           }
         },
       };
-      const fixture = await restartFixture({}, { conciergeMode: "openai-compatible", modelClient: client, onAssistantDiagnostic: (event) => diagnostics.push(event) });
+      const fixture = await atStage("fixture-startup", () => restartFixture({}, { conciergeMode: "openai-compatible", modelClient: client, onAssistantDiagnostic: (event) => diagnostics.push(event) }));
       let prompt = scenario.prompt;
       try {
         if (scenario.injectedNarrative) {
@@ -492,5 +537,12 @@ async function run(): Promise<void> {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  run().catch(() => { console.error("Controlled evaluation stopped. Inspect the metadata-only report; no credential or provider response was logged."); process.exitCode = 1; });
+  run().catch((error: unknown) => {
+    // Print the stage and error name only. Setup errors from providers or fixtures are not printed.
+    const stage = evaluationFailure?.stage ?? "unknown";
+    const errorClass = evaluationFailure?.errorClass ?? (error instanceof Error ? error.name : "NonError");
+    const detail = error instanceof MissingCommerceKeyError ? ` ${error.message}` : "";
+    console.error(`Controlled evaluation stopped at stage "${stage}" (${errorClass}).${detail} Inspect the metadata-only report; no credential or provider response was logged.`);
+    process.exitCode = 1;
+  });
 }
