@@ -163,7 +163,7 @@ test("Pending evaluator calls keep usage and cost unavailable in immutable repor
   const turn = { id: "timed-out-classifier", reservations: 1, transportStarts: 1, modelCalls: 1, pendingCalls: 1,
     promptTokens: 0, completionTokens: 0, usageComplete: true, latencyMs: 5, approvedModelResponses: 0,
     priceReadReferenceMatchesSelected: false, priceReadCallCount: 0, searchOperationRequested: false,
-    reportedCostUsd: 0, costComplete: true, calls: [] };
+    reportedCostUsd: 0, costComplete: true, calls: [], evaluatorBudgetRefusals: 0 };
   const snapshot = snapshotEvaluationTurns([turn]);
   assert.equal(snapshot[0]?.modelCalls, 1);
   assert.equal(snapshot[0]?.promptTokens, null);
@@ -201,7 +201,7 @@ globalThis.fetch = async (url, init) => {
   const plan = body.response_format.json_schema.name === 'concierge_scope'
     ? {scope:'in_scope',risk:'ordinary',intents:['greet'],reasonCode:'supported',slots:{city:null,neighbourhood:null,bedrooms:null,nights:null,guests:null,checkIn:null,checkOut:null}}
     : {kind:'clarify_stay',references:[]};
-  return Response.json({model:'openai/gpt-6-luna',choices:[{message:{role:'assistant',content:JSON.stringify(plan)}}],usage:{prompt_tokens:1,completion_tokens:1,cost:0}});
+  return Response.json({model:'openai/gpt-6-luna',choices:[{finish_reason:'stop',message:{role:'assistant',content:JSON.stringify(plan)}}],usage:{prompt_tokens:1,completion_tokens:1,cost:0}});
 };\n`);
   const run = spawnSync(process.execPath, ["--import", pathToFileURL(resolve("node_modules/tsx/dist/loader.mjs")).href,
     "--import", pathToFileURL(preload).href, resolve("scripts/concierge-controls-eval.ts"), "--live", "--request-limit", "4", "--case", "greeting"],
@@ -217,6 +217,8 @@ globalThis.fetch = async (url, init) => {
   assert.equal(report.scenarios[0].result, "PASS");
   assert.equal(report.scenarios[0].turns[0].approvedModelResponses, 2);
   assert.equal(report.accountUsageDeltaUsd, 0);
+  // Each transported call records only its closed finish reason code.
+  assert.deepEqual(report.scenarios[0].turns.flatMap((turn: { calls: { finishReason: unknown }[] }) => turn.calls.map((call) => call.finishReason)), ["stop", "stop"]);
   assert.doesNotMatch(text, /synthetic-evaluation-only-credential|Hello|clarify_stay|systemInstruction|tool_calls/);
 });
 

@@ -1,4 +1,4 @@
-import type { AssistantModelClient } from "./assistant-model.js";
+import type { AssistantFinishReason, AssistantModelClient } from "./assistant-model.js";
 
 export const CONCIERGE_INTENTS = ["search", "details", "compare", "price", "status", "offer", "draft", "request", "accept", "payment", "support", "clarify", "greet", "task_switch"] as const;
 export type ConciergeIntent = typeof CONCIERGE_INTENTS[number];
@@ -37,7 +37,7 @@ const SCHEMA = {
 function object(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === "object" && !Array.isArray(value); }
 
 /** Closed, metadata-only codes. Each names the rule that failed; none carries classifier text or values (ADR 0075). */
-export type ScopeFailureReason = "invalid_shape" | "unknown_label" | "invalid_intents" | "invalid_date" | "invalid_city" | "invalid_neighbourhood" | "invalid_count" | "scope_reason_mismatch" | "intents_missing_for_scope" | "tool_calls_returned" | "missing_text" | "invalid_json_prose" | "invalid_json_malformed" | "invalid_json_fenced" | "invalid_json_wrapped";
+export type ScopeFailureReason = "invalid_shape" | "unknown_label" | "invalid_intents" | "invalid_date" | "invalid_city" | "invalid_neighbourhood" | "invalid_count" | "scope_reason_mismatch" | "intents_missing_for_scope" | "tool_calls_returned" | "missing_text" | "invalid_json_prose" | "invalid_json_malformed" | "invalid_json_truncated" | "invalid_json_fenced" | "invalid_json_wrapped";
 export class ScopeClassificationError extends Error {
   constructor(readonly reason: ScopeFailureReason) { super(reason); this.name = "ScopeClassificationError"; }
 }
@@ -76,7 +76,7 @@ export class ModelScopeClassifier implements ScopeClassifier {
     if (response.toolCalls?.length) throw new ScopeClassificationError("tool_calls_returned");
     if (typeof response.text !== "string") throw new ScopeClassificationError("missing_text");
     let value: unknown;
-    try { value = JSON.parse(response.text); } catch { throw new ScopeClassificationError(invalidJsonReason(response.text)); }
+    try { value = JSON.parse(response.text); } catch { throw new ScopeClassificationError(invalidJsonReason(response.text, response.finishReason)); }
     let reason: ScopeFailureReason = "invalid_shape";
     const parsed = parseScopeAssessment(value, (failure) => { reason = failure; });
     if (!parsed) throw new ScopeClassificationError(reason);
@@ -85,13 +85,15 @@ export class ModelScopeClassifier implements ScopeClassifier {
 }
 
 /** Names the parse-failure class only. The text is inspected locally and never returned, stored or logged. */
-function invalidJsonReason(text: string): "invalid_json_prose" | "invalid_json_malformed" | "invalid_json_fenced" | "invalid_json_wrapped" {
+function invalidJsonReason(text: string, finishReason: AssistantFinishReason | undefined): "invalid_json_prose" | "invalid_json_malformed" | "invalid_json_truncated" | "invalid_json_fenced" | "invalid_json_wrapped" {
   if (/^\s*```/.test(text)) return "invalid_json_fenced";
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
   if (start !== -1 && end > start) {
     try { JSON.parse(text.slice(start, end + 1)); return "invalid_json_wrapped"; } catch { /* Not an embedded JSON object. */ }
   }
+  // The provider stopped at the output-token cap: the text is cut short, not wrong. No retry is made here (ADR 0106).
+  if (finishReason === "length") return "invalid_json_truncated";
   // Text that opens like JSON but does not parse is malformed; anything else is prose.
   return /^\s*[{[]/.test(text) ? "invalid_json_malformed" : "invalid_json_prose";
 }

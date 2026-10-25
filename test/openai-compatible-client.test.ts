@@ -203,3 +203,26 @@ test("The adapter refuses to construct without an API key, a model, or an HTTPS 
   assert.throws(() => new OpenAiCompatibleClient({ ...base, baseUrl: "https://user:pass@api.deepseek.com" }), /LLM_BASE_URL/);
   assert.throws(() => new OpenAiCompatibleClient({ ...base, baseUrl: "https://api.deepseek.com?key=1" }), /LLM_BASE_URL/);
 });
+
+test("finish_reason is surfaced as a closed AssistantFinishReason; unknown values map to other and an absent value stays undefined", async () => {
+  const expectations: readonly (readonly [unknown, string | undefined])[] = [
+    ["stop", "stop"], ["length", "length"], ["tool_calls", "tool_calls"], ["content_filter", "content_filter"],
+    ["function_call", "other"], ["provider_specific_stop", "other"], [42, "other"], [null, undefined], [undefined, undefined],
+  ];
+  for (const [raw, expected] of expectations) {
+    const choice: Record<string, unknown> = { index: 0, message: { role: "assistant", content: "Hello" } };
+    if (raw !== undefined) choice.finish_reason = raw;
+    const { client } = clientWith(() => jsonResponse(200, { id: "cmpl-finish", choices: [choice] }));
+    const response = await client.generate({ ...request, tools: [] });
+    assert.equal(response.finishReason, expected, String(raw));
+    assert.equal(response.text, "Hello");
+  }
+});
+
+test("finish_reason surfacing never copies provider or model text into the response metadata", async () => {
+  const canary = "PRIVATE_FINISH_CANARY";
+  const { client } = clientWith(() => jsonResponse(200, { id: "cmpl-canary", choices: [{ index: 0, message: { role: "assistant", content: `{"scope": "${canary}` }, finish_reason: canary }] }));
+  const response = await client.generate({ ...request, tools: [] });
+  assert.equal(response.finishReason, "other");
+  assert.doesNotMatch(JSON.stringify({ finishReason: response.finishReason }), new RegExp(canary));
+});

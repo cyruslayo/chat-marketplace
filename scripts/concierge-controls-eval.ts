@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { performance } from "node:perf_hooks";
 import { createHash } from "node:crypto";
-import { ModelRequestGuardError, type AssistantModelClient } from "../apps/local-guest/src/assistant/assistant-model.js";
+import { ModelRequestGuardError, type AssistantFinishReason, type AssistantModelClient } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { ASSISTANT_CONTROL_OUTCOMES, type AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 import { OpenAiCompatibleClient } from "../apps/local-guest/src/assistant/openai-compatible-client.js";
 import { ASSISTANT_CONTROL_COPY } from "../apps/local-guest/src/assistant/control-copy.js";
@@ -75,7 +75,8 @@ interface TurnUsage {
   searchOperationRequested: boolean;
   reportedCostUsd: number;
   costComplete: boolean;
-  readonly calls: { readonly classifier: boolean; readonly transportStarts: number; readonly latencyMs: number; readonly errorClass?: string; readonly evaluatorBudgetRefusal?: true }[];
+  /** Closed metadata only (ADR 0075): the provider finish reason code, never response text. */
+  readonly calls: { readonly classifier: boolean; readonly transportStarts: number; readonly latencyMs: number; readonly finishReason?: AssistantFinishReason | null; readonly errorClass?: string; readonly evaluatorBudgetRefusal?: true }[];
   evaluatorBudgetRefusals: number;
 }
 interface KeySnapshot { readonly limitUsd: number; readonly usageUsd: number; readonly remainingUsd: number; }
@@ -379,7 +380,7 @@ async function run(): Promise<void> {
             if (!approvedResponseModel) throw new Error("The provider did not confirm the approved model");
             if (response.usage) { turn.promptTokens += response.usage.promptTokens; turn.completionTokens += response.usage.completionTokens; }
             else turn.usageComplete = false;
-            turn.calls.push({ classifier: request.structuredOutput?.name === "concierge_scope", transportStarts: turn.transportStarts - transportStartsBefore, latencyMs: Math.round(performance.now() - started) });
+            turn.calls.push({ classifier: request.structuredOutput?.name === "concierge_scope", transportStarts: turn.transportStarts - transportStartsBefore, latencyMs: Math.round(performance.now() - started), finishReason: response.finishReason ?? null });
             return response;
           } catch (error) {
             // A refusal before transport has no provider usage to lose; only a transported call leaves usage or cost unknown.

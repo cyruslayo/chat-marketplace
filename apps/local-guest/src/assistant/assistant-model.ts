@@ -79,9 +79,14 @@ export class ModelRequestGuardError extends Error {
   }
 }
 
+/** Closed provider finish reasons. Any provider value outside the four named ones is `other`. */
+export type AssistantFinishReason = "stop" | "length" | "tool_calls" | "content_filter" | "other";
+
 export interface AssistantModelResponse {
   readonly text?: string;
   readonly toolCalls?: readonly AssistantToolCall[];
+  /** Why the provider stopped generating; absent when the provider supplied no finish reason. Never carries provider prose. */
+  readonly finishReason?: AssistantFinishReason;
   /** Optional opaque provider-specific representation preserved across tool turns. */
   readonly rawStep?: unknown;
   /** Provider-neutral token counts; absent means the provider supplied no valid usage. */

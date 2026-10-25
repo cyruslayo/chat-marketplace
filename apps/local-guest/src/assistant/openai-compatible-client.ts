@@ -1,5 +1,6 @@
 import {
   ModelRequestGuardError,
+  type AssistantFinishReason,
   type AssistantModelClient,
   type AssistantModelRequest,
   type AssistantModelResponse,
@@ -243,11 +244,25 @@ function parseCompletion(payload: unknown): AssistantModelResponse {
   }
   const toolCalls: AssistantToolCall[] = (rawCalls ?? []).map(parseToolCall);
   const usage = parseUsage(isPlainRecord(payload) ? payload.usage : undefined);
+  const finishReason = parseFinishReason(isPlainRecord(choice) ? choice.finish_reason : undefined);
   return {
     ...(text !== undefined ? { text } : {}),
     ...(toolCalls.length > 0 ? { toolCalls } : {}),
     ...(usage === undefined ? {} : { usage }),
+    ...(finishReason === undefined ? {} : { finishReason }),
   };
+}
+
+/** Absent stays undefined; a named provider value maps to its closed code; anything else is `other`. */
+function parseFinishReason(value: unknown): AssistantFinishReason | undefined {
+  if (value === undefined || value === null) return undefined;
+  switch (value) {
+    case "stop": return "stop";
+    case "length": return "length";
+    case "tool_calls": return "tool_calls";
+    case "content_filter": return "content_filter";
+    default: return "other";
+  }
 }
 
 function parseUsage(value: unknown): AssistantModelResponse["usage"] {

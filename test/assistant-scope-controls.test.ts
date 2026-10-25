@@ -367,3 +367,42 @@ test("Date role AC4: correctly labelled check-in and checkout dates in one sente
     {},
   );
 });
+
+test("A truncated classifier response reports invalid_json_truncated only when the provider finish reason is length", async () => {
+  const canary = "PRIVATE_TRUNCATION_CANARY";
+  const truncated = `{"scope": "in_scope", "risk": "${canary}`;
+  const cases: readonly (readonly [string, AssistantModelResponse])[] = [
+    ["invalid_json_truncated", { text: truncated, finishReason: "length" }],
+    ["invalid_json_truncated", { text: `Sorry ${canary}`, finishReason: "length" }],
+    ["invalid_json_malformed", { text: truncated, finishReason: "stop" }],
+    ["invalid_json_malformed", { text: truncated, finishReason: "other" }],
+    ["invalid_json_malformed", { text: truncated }],
+    ["invalid_json_prose", { text: `Sorry ${canary}`, finishReason: "stop" }],
+    ["invalid_json_fenced", { text: "```json\n" + truncated, finishReason: "length" }],
+  ];
+  for (const [expected, response] of cases) {
+    const classifier = new ModelScopeClassifier({ generate: async () => response });
+    await assert.rejects(classifier.assess("PRIVATE_INPUT_CANARY", classifierContext), (error: unknown) => {
+      assert.ok(error instanceof ScopeClassificationError, expected);
+      assert.equal(error.reason, expected);
+      assert.doesNotMatch(error.message, new RegExp(`${canary}|PRIVATE_INPUT_CANARY`));
+      return true;
+    });
+  }
+});
+
+test("Truncation diagnostics name the closed reason and never the truncated classifier text", async () => {
+  const canary = "PRIVATE_TRUNCATED_CLASSIFIER_CANARY";
+  const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
+  const diagnostics: AssistantDiagnosticEvent[] = [];
+  try {
+    const runtime = new AssistantRuntime(environment, { generate: async (request) =>
+      request.structuredOutput?.name === "concierge_scope" ? { text: `{"scope": "${canary}`, finishReason: "length" } : { text: "{}" } }, {
+      onDiagnostic: (event) => diagnostics.push(event),
+    });
+    const result = await runtime.handleTurn("classifier-truncated", "Find stays in Lagos");
+    assert.equal(result.ok, true);
+    assert.deepEqual(diagnostics.filter((event) => event.scopeFailureReason !== undefined).map((event) => event.scopeFailureReason), ["invalid_json_truncated"]);
+    assert.doesNotMatch(JSON.stringify({ result, diagnostics }), new RegExp(canary));
+  } finally { environment.close(); }
+});
