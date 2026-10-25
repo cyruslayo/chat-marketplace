@@ -21,7 +21,7 @@ test("AC6: classifier guard failures and quota refusals emit separate metadata-o
       const result = await runtime.handleTurn(`metrics-${failure}`, "PRIVATE_GUEST_INPUT_CANARY");
       assert.equal(result.ok, true);
       const events = environment.telemetry.events().filter((event) => event.type === "assistant.control.outcome.v1");
-      assert.deepEqual(events.map((event) => event.outcome), [failure === "quota" ? "quota_refusal" : "guard_failure", "scope_unavailable"]);
+      assert.deepEqual(events.map((event) => event.outcome), [failure === "quota" ? "quota_refusal" : "guard_failure"]);
       assert.ok(events.every((event) => typeof event.elapsedMs === "number" && Number.isSafeInteger(event.elapsedMs) && event.elapsedMs >= 0));
       assert.doesNotMatch(JSON.stringify(events), /PRIVATE_|guestId|tenantId|prompt|reply/);
       assert.equal(diagnostics.length, 1);

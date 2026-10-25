@@ -233,7 +233,7 @@ test('AC3: Provider failure returns fixed scope guidance without starting planne
       assert.deepEqual(result.surfaces, [], "a classifier outage does not start planner tools");
       assert.equal(stub.requests.length, 1);
       const outcomes = f.environment.telemetry.events().filter((event) => event.type === "assistant.control.outcome.v1").map((event) => event.outcome);
-      assert.deepEqual(outcomes, ["guard_failure", "scope_unavailable"]);
+      assert.deepEqual(outcomes, ["guard_failure"]);
       assert.equal(diagnostics[0]?.round, 0);
     } finally { f.close(); }
   }
@@ -251,7 +251,7 @@ test('AC4: When durable daily provider capacity is exhausted, the concierge retu
     assert.ok(result.ok);
     assert.deepEqual(result.messages, [ASSISTANT_CONTROL_COPY.unavailable]);
     assert.equal(stub.requests.length, 0);
-    assert.deepEqual(f.environment.telemetry.events().filter((event) => event.type === "assistant.control.outcome.v1").map((event) => event.outcome), ["quota_refusal", "scope_unavailable"]);
+    assert.deepEqual(f.environment.telemetry.events().filter((event) => event.type === "assistant.control.outcome.v1").map((event) => event.outcome), ["quota_refusal"]);
   } finally { f.close(); }
 });
 

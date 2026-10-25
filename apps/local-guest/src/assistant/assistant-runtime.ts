@@ -623,12 +623,12 @@ export class AssistantRuntime {
       this.#diagnose({ ...createFailureDiagnostic("provider_request", 0, undefined, error),
         ...(error instanceof ScopeClassificationError ? { scopeFailureReason: error.reason } : {}) });
       scopeFailureOutcome = error instanceof ModelRequestGuardError && error.code === "quota_denied" ? "quota_refusal" : "guard_failure";
-      recordOutcome(scopeFailureOutcome);
     });
     if (!assessment || assessment.scope === "unclear" || assessment.scope === "out_of_scope" || assessment.risk === "policy_override" || assessment.risk === "unauthorized_data" || assessment.risk === "unknown") {
       const scopeOutcome = assessment?.scope === "out_of_scope" ? "scope_redirect" : "scope_unavailable";
       const controlOutcome = scopeFailureOutcome ?? scopeOutcome;
-      recordOutcome(scopeOutcome);
+      // One count per turn: the outcome this turn returns (ADR 0106 telemetry, closed codes only).
+      recordOutcome(controlOutcome);
       return { ok: true, messages: [controlOutcome === "scope_redirect" ? ASSISTANT_CONTROL_COPY.redirect : ASSISTANT_CONTROL_COPY.unavailable],
         surfaces: [], modelHandled: false, discardUserInput: true, controlOutcome, tasks: this.getTaskRail(threadId) };
     }
@@ -692,14 +692,11 @@ export class AssistantRuntime {
           }
           if (!plan) {
             controlOutcome = "rejected_plan_fallback";
-            recordOutcome(controlOutcome);
           } else if (plan.kind === "support_guidance") {
             controlOutcome = "support_guidance";
-            recordOutcome(controlOutcome);
           }
           if (latestResults.some((result) => result.name === "get_booking_status" && result.result.status === "no_active_booking")) {
             controlOutcome = "no_current_booking";
-            recordOutcome(controlOutcome);
           }
           finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "")
             ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
@@ -737,7 +734,6 @@ export class AssistantRuntime {
             : malformedArguments ?? precondition ?? stateUnavailable;
           if (invalidCall) {
             controlOutcome = "tool_denial";
-            recordOutcome(controlOutcome);
             this.#diagnose({
               stage: "tool_execution",
               round,
@@ -933,7 +929,7 @@ export class AssistantRuntime {
       thread.discoveryArtifactId = candidateDiscoveryArtifactId;
       thread.discoveryArtifact = candidateDiscoveryArtifact;
       this.#syncActiveTask(thread);
-      recordOutcome("successful_model_handling");
+      recordOutcome(controlOutcome);
 
       return {
         ok: true,
@@ -952,10 +948,11 @@ export class AssistantRuntime {
       } else {
         controlOutcome = "model_handling_failure";
       }
-      recordOutcome(controlOutcome);
       this.#diagnose(createFailureDiagnostic(activeStage, round, activeToolName, error));
       if (hasSuccessfulApplicationOperation && candidateSurfaces.length > 0) {
-        recordOutcome("rejected_plan_fallback");
+        // The fallback replaces the failure outcome, so this turn is counted once as the fallback.
+        controlOutcome = "rejected_plan_fallback";
+        recordOutcome(controlOutcome);
         const message = fallbackForProjectedOperation(candidateSurfaces[0]?.surfaceId ?? "");
         candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
         thread.taskState = candidateTaskState;
@@ -970,6 +967,7 @@ export class AssistantRuntime {
         this.#syncActiveTask(thread);
         return { ok: true, messages: [message], surfaces: candidateSurfaces, tasks: this.getTaskRail(threadId), modelHandled: true, discardUserInput, controlOutcome: "rejected_plan_fallback" };
       }
+      recordOutcome(controlOutcome);
       // Rollback: thread is not mutated on error
       if (discardUserInput) {
         return { ok: true, messages: [ASSISTANT_CONTROL_COPY.unavailable], surfaces: [],

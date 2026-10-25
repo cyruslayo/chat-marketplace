@@ -76,6 +76,6 @@ test("Support intent returns server-owned Active-Stay guidance for access emerge
   assert.deepEqual(requests[0]?.tools, []);
   assert.equal(requests[0]?.structuredOutput?.name, "assistant_reply_plan");
   const events = env.telemetry.events().filter((event) => event.type === "assistant.control.outcome.v1");
-  assert.deepEqual(events.map((event) => event.outcome), ["support_guidance", "successful_model_handling"]);
+  assert.deepEqual(events.map((event) => event.outcome), ["support_guidance"]);
   assert.doesNotMatch(JSON.stringify(events), /locked out of my stay|I am locked out/);
 });
