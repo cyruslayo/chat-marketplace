@@ -13,6 +13,7 @@ import {
   ASSISTANT_CANCEL_ACTION_EVENT,
 } from "../apps/local-guest/src/assistant/pending-action-a2ui.js";
 import { ASSISTANT_SYSTEM_INSTRUCTION } from "../apps/local-guest/src/assistant/assistant-tools.js";
+import { resolveCheckInDate } from "../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
 
 function setupHarness() {
   const window = new Window();
@@ -695,6 +696,21 @@ test("Eval 17: Model proposing date not authored by user fails closed", async ()
   const res = await runtime.handleTurn("g-eval-17", "Find a place in Ikoyi for 3 nights for 2");
   assert.equal(res.ok, false);
   assert.equal(res.code, "CONCIERGE_UNAVAILABLE");
+});
+
+test("Date provenance reuses only the current task date and preserves its server demo flag", () => {
+  const demoDate = "2026-11-01";
+  assert.deepEqual(resolveCheckInDate(demoDate, ["Find a stay in Ikoyi."], demoDate, { checkIn: demoDate, isDemoDate: true }),
+    { checkIn: demoDate, isDemoDate: true });
+  assert.deepEqual(resolveCheckInDate(null, ["Move to Lekki."], demoDate, { checkIn: demoDate, isDemoDate: false }),
+    { checkIn: demoDate, isDemoDate: false });
+  assert.deepEqual(resolveCheckInDate("2026-12-15", ["Move check-in to 2026-12-15."], demoDate, { checkIn: demoDate, isDemoDate: true }),
+    { checkIn: "2026-12-15", isDemoDate: false });
+  assert.deepEqual(resolveCheckInDate("2026-12-15", ["Move check-in to 2026-12-15."], demoDate,
+    { checkIn: "2026-10-30", isDemoDate: false }), { checkIn: "2026-12-15", isDemoDate: false });
+  assert.deepEqual(resolveCheckInDate(demoDate, ["An older turn used 2026-11-01."], demoDate), { checkIn: demoDate, isDemoDate: false });
+  assert.throws(() => resolveCheckInDate("2026-12-15", ["Find a stay in Ikoyi."], demoDate,
+    { checkIn: demoDate, isDemoDate: true }), /does not match the current task's server-owned date/);
 });
 
 // 18. Relative date inquiry asks for explicit YYYY-MM-DD

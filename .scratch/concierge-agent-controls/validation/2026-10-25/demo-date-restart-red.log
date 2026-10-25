@@ -1,0 +1,36 @@
+TAP version 13
+# (node:190220) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: A server demo date keeps its provenance through restart and a same-task location correction
+not ok 1 - A server demo date keeps its provenance through restart and a same-task location correction
+  ---
+  duration_ms: 1270.909
+  type: 'test'
+  location: 'C:\\AI2026\\chat-marketplace-controls\\test\\assistant-persistent-continuity.test.ts:1:10791'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + undefined
+    - true
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\assistant-persistent-continuity.test.ts:212:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5322.3464

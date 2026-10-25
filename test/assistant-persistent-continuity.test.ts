@@ -186,3 +186,86 @@ test("Assistant Shortlet search, detail, and draft continuity survive authentica
     await fixture.close();
   }
 });
+
+test("A server demo date keeps its provenance through restart and a same-task location correction", async () => {
+  const correctionModel: AssistantModelClient = {
+    generate: async (request) => {
+      const latestUser = [...request.history].reverse().find((step) => step.role === "user");
+      if (request.structuredOutput?.name === "concierge_scope" && latestUser?.role === "user" && latestUser.text.includes("Ignore Ikoyi")) {
+        return { text: JSON.stringify({ scope: "in_scope", risk: "ordinary", intents: ["search"], reasonCode: "supported", slots: { city: "Lagos", neighbourhood: "Lekki Phase 1", bedrooms: null, nights: 4, guests: 2, checkIn: null, checkOut: null } }) };
+      }
+      if (request.structuredOutput?.name !== "concierge_scope" && latestUser?.role === "user" && latestUser.text.includes("Ignore Ikoyi")) {
+        return { toolCalls: [{ id: "corrected-search", name: "search_stays", args: { city: "Lagos", neighbourhood: "Lekki Phase 1", checkIn: "2026-09-10", nights: 4, guests: 2 } }] };
+      }
+      return serverModel.generate(request);
+    },
+  };
+  const fixture = await restartFixture({}, { modelClient: correctionModel, conciergeMode: "assistant-offline" });
+  try {
+    const search = await fixture.send("/api/turn", { text: "Find Ikoyi stays for four nights for two guests" });
+    assert.equal(search.ok, true);
+    if (!search.ok) return;
+    const stored = fixture.environment.interactionStore.findThread(fixture.threadId);
+    assert.ok(stored);
+    const beforeRestart = JSON.parse(stored!.threadJson) as { readonly assistantContext?: { readonly checkIn?: string; readonly isDemoDate?: boolean } };
+    assert.equal(beforeRestart.assistantContext?.checkIn, "2026-09-10");
+    assert.equal(beforeRestart.assistantContext?.isDemoDate, true);
+
+    await fixture.restart();
+    const correction = await fixture.send("/api/turn", { text: "Ignore Ikoyi. Change the location to Lekki Phase 1 in Lagos. Keep 4 nights and 2 guests." });
+    assert.equal(correction.ok, true, correction.ok ? "" : `${correction.code}: ${correction.message}`);
+    if (!correction.ok) return;
+    const restored = fixture.app.assistantRuntime?.getThread(fixture.threadId);
+    assert.equal(restored?.canonicalUserFactHistory?.includes("2026-09-10") ?? false, false, "restored server demo dates must not become guest-authored facts");
+    assert.equal(restored?.taskState.stayIntent.neighbourhood, "Lekki Phase 1");
+    assert.equal(restored?.taskState.stayIntent.checkIn, "2026-09-10");
+    assert.equal(restored?.taskState.stayIntent.isDemoDate, true);
+    assert.equal(restored?.taskState.stayIntent.nights, 4);
+    assert.equal(restored?.taskState.stayIntent.partySize, 2);
+    assert.match(JSON.stringify(correction.surfaces[0]), /Lekki Phase 1/, "the corrected discovery surface must reflect current criteria");
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("A guest-authored date remains guest-authored through restart and a same-task location correction", async () => {
+  const authoredCheckIn = "2026-09-15";
+  const authoredDateModel: AssistantModelClient = {
+    generate: async (request) => {
+      const latestUser = [...request.history].reverse().find((step) => step.role === "user");
+      const isCorrection = latestUser?.role === "user" && latestUser.text.includes("Ignore Ikoyi");
+      if (request.structuredOutput?.name === "concierge_scope" && latestUser?.role === "user") {
+        return { text: JSON.stringify({ scope: "in_scope", risk: "ordinary", intents: ["search"], reasonCode: "supported", slots: { city: "Lagos", neighbourhood: isCorrection ? "Lekki Phase 1" : "Old Ikoyi", bedrooms: null, nights: 4, guests: 2, checkIn: authoredCheckIn, checkOut: null } }) };
+      }
+      if (request.structuredOutput?.name !== "concierge_scope" && latestUser?.role === "user") {
+        return { toolCalls: [{ id: "authored-date-search", name: "search_stays", args: { city: "Lagos", neighbourhood: isCorrection ? "Lekki Phase 1" : "Old Ikoyi", checkIn: authoredCheckIn, nights: 4, guests: 2 } }] };
+      }
+      return serverModel.generate(request);
+    },
+  };
+  const fixture = await restartFixture({}, { modelClient: authoredDateModel, conciergeMode: "assistant-offline" });
+  try {
+    const search = await fixture.send("/api/turn", { text: `Find Ikoyi stays from ${authoredCheckIn} for four nights for two guests` });
+    assert.equal(search.ok, true);
+    if (!search.ok) return;
+    const stored = fixture.environment.interactionStore.findThread(fixture.threadId);
+    assert.ok(stored);
+    const beforeRestart = JSON.parse(stored!.threadJson) as { readonly assistantContext?: { readonly checkIn?: string; readonly isDemoDate?: boolean } };
+    assert.equal(beforeRestart.assistantContext?.checkIn, authoredCheckIn);
+    assert.equal(beforeRestart.assistantContext?.isDemoDate, false);
+
+    await fixture.restart();
+    const correction = await fixture.send("/api/turn", { text: "Ignore Ikoyi. Change the location to Lekki Phase 1 in Lagos. Keep 4 nights and 2 guests." });
+    assert.equal(correction.ok, true, correction.ok ? "" : `${correction.code}: ${correction.message}`);
+    if (!correction.ok) return;
+    const restored = fixture.app.assistantRuntime?.getThread(fixture.threadId);
+    assert.equal(restored?.canonicalUserFactHistory?.includes(authoredCheckIn) ?? false, true, "restored guest-authored dates remain authorized facts");
+    assert.equal(restored?.taskState.stayIntent.neighbourhood, "Lekki Phase 1");
+    assert.equal(restored?.taskState.stayIntent.checkIn, authoredCheckIn);
+    assert.equal(restored?.taskState.stayIntent.isDemoDate, false);
+    assert.equal(restored?.taskState.stayIntent.nights, 4);
+    assert.equal(restored?.taskState.stayIntent.partySize, 2);
+  } finally {
+    await fixture.close();
+  }
+});

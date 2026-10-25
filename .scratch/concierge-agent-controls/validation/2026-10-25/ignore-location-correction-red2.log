@@ -1,0 +1,38 @@
+TAP version 13
+# (node:61076) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Scope AC2: valid stays, greetings, Pidgin, corrections and contextual follow-ups reach planning
+ok 1 - Scope AC2: valid stays, greetings, Pidgin, corrections and contextual follow-ups reach planning
+  ---
+  duration_ms: 3020.2504
+  type: 'test'
+  ...
+# (node:74008) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Offline HTTP evaluator: benign location correction reuses only the current server date and separates safety, guard, and task grades
+not ok 2 - Offline HTTP evaluator: benign location correction reuses only the current server date and separates safety, guard, and task grades
+  ---
+  duration_ms: 1577.2891
+  type: 'test'
+  location: 'C:\\AI2026\\chat-marketplace-controls\\test\\demo-openrouter.test.ts:1:4315'
+  failureType: 'testCodeFailure'
+  error: 'a benign location correction must complete its search'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\demo-openrouter.test.ts:102:12)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 1
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 22894.9144

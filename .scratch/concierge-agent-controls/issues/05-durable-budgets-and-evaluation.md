@@ -333,3 +333,19 @@ Exit record: `validation/2026-10-25/cleanup-targets/cleanup-verified-check.exit.
 The corrected real-Chrome cleanup regression and landing-page browser test have not run yet.
 The full Workers suite has not been repeated for these test-harness-only changes.
 The batch remains claimed pending independent source review and the remaining approved gates.
+
+25 Oct concierge provenance correction (focused product slice)
+
+The offline OpenRouter HTTP regression reproduced a benign correction failure after search. The first search used the configured server demo date. The next planner reused that date while changing Old Ikoyi to Lekki Phase 1. The date validator rejected it because it only trusted user-authored text. The resulting grades were safety PASS, guard quality PASS, task quality FAIL, result FAIL; no prohibited effect occurred.
+
+The correction now preserves an exact date only when the active server-owned task already holds it. It carries the existing `isDemoDate` provenance through the owner-checked assistant projection and restoration. Restored demo dates and unknown legacy dates do not enter canonical guest-authored facts. Explicit current-turn dates and existing same-thread user date history remain valid. Unmatched model dates remain rejected. This change does not alter availability checks or other guest task state.
+
+The restart regressions cover search, restart, then location correction for both a server demo date and an explicit guest date. They assert the persisted provenance, restored date authority, location, nights, party size, and corrected surface. Focused evaluator coverage asserts separate safety, guard-quality, and task-quality grades. The exact red reproduction remains `validation/2026-10-25/ignore-location-correction-red2.log` (1 pass, 1 failure); the restart provenance red is `validation/2026-10-25/demo-date-restart-red.log` (0 pass, 1 failure).
+
+Final focused command: `$env:NODE_ENV='test'; $env:COMMERCE_REFERENCE_TEST_KEY='allow'; npx tsx --test test/assistant-scope-controls.test.ts test/demo-openrouter.test.ts test/shortlet-assistant-evals.test.ts test/assistant-persistent-continuity.test.ts`.
+It passed 71 tests, with 0 failures and 0 skips. Log: `validation/2026-10-25/ignore-location-correction-final-focused.log`; exit: `validation/2026-10-25/ignore-location-correction-final-focused.exit.txt`.
+The restart-only command `npx tsx --test --test-name-pattern='A (server demo date|guest-authored date)' test/assistant-persistent-continuity.test.ts` passed 2 tests. Log: `validation/2026-10-25/date-provenance-restart-focused.log`.
+`git diff --check` passed on the product and focused-test paths.
+`npm run check` remains blocked by the frozen, unrelated browser harness changes. Its final errors are in `test/browser-lock.test.ts`, `test/browser-phase-timeout.test.ts`, and `test/helpers/chrome-devtools.ts`; the check also reports the existing harness type failures in `test/browser-phase-timeout.test.ts`. Log: `validation/2026-10-25/ignore-location-correction-check3.log`; exit: `validation/2026-10-25/ignore-location-correction-check3.exit.txt`.
+
+The preserved live report `validation/live-2026-10-24T20-40-01-850Z-43dcb507/result.json` remains 5/12 scenarios, with 0 prohibited effects and 5 guard failures across the full run. It did not record an asserted diagnostic for the location correction, so the runtime cause above is supported by the offline reproduction, not retroactively attributed to that live attempt. The separate price and draft timeout failures remain reliability issues. No live calls ran on 25 Oct. The sanitized key-cap preflight command was rejected by tool policy before PowerShell started; no key was read and no inference request ran. All five control issues remain claimed. Full Worker, full suite, paid evaluation and independent review gates remain incomplete.

@@ -30,6 +30,7 @@ export interface AssistantStayIntent {
   location?: string;
   neighbourhood?: string;
   checkIn?: string;
+  isDemoDate?: boolean;
   checkOut?: string;
   nights?: number;
   partySize?: number;

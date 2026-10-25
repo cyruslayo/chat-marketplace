@@ -2928,6 +2928,7 @@ export class LocalGuestApp {
       city,
       ...(neighbourhood && knownNeighbourhoods.has(neighbourhood) ? { neighbourhood } : {}),
       ...(state.stayIntent.checkIn && /^\d{4}-\d{2}-\d{2}$/.test(state.stayIntent.checkIn) ? { checkIn: state.stayIntent.checkIn } : {}),
+      ...(typeof state.stayIntent.isDemoDate === "boolean" ? { isDemoDate: state.stayIntent.isDemoDate } : {}),
       ...(state.stayIntent.checkOut && /^\d{4}-\d{2}-\d{2}$/.test(state.stayIntent.checkOut) ? { checkOut: state.stayIntent.checkOut } : {}),
       ...(Number.isSafeInteger(state.stayIntent.nights) && (state.stayIntent.nights ?? 0) > 0 ? { nights: state.stayIntent.nights } : {}),
       ...(Number.isSafeInteger(state.stayIntent.partySize) && (state.stayIntent.partySize ?? 0) > 0 ? { partySize: state.stayIntent.partySize } : {}),
@@ -3047,6 +3048,7 @@ export class LocalGuestApp {
         location: context.city,
         ...(context.neighbourhood ? { neighbourhood: context.neighbourhood } : {}),
         ...(context.checkIn ? { checkIn: context.checkIn } : {}),
+        ...(typeof context.isDemoDate === "boolean" ? { isDemoDate: context.isDemoDate } : {}),
         ...(context.checkOut ? { checkOut: context.checkOut } : {}),
         ...(context.nights === undefined ? {} : { nights: context.nights }),
         ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
@@ -3063,7 +3065,9 @@ export class LocalGuestApp {
       ...(currentContractId ? { currentContractId } : {}),
       pendingAction: null,
     };
-    const canonicalUserFacts = [context.checkIn, context.checkOut].filter((fact): fact is string => typeof fact === "string");
+    const canonicalUserFacts = context.isDemoDate === false
+      ? [context.checkIn, context.checkOut].filter((fact): fact is string => typeof fact === "string")
+      : [];
     runtime.restoreShortletState(threadId, { principalId: this.#environment.guestPrincipal().id, tenantId: this.#environment.config.tenantId, taskState: state, canonicalUserFacts });
   }
 

@@ -303,8 +303,15 @@ export function resolveCheckInDate(
   modelCheckIn: string | null | undefined,
   userTextHistory: readonly string[],
   demoCheckIn: string,
+  currentCriteriaDate?: { readonly checkIn: string; readonly isDemoDate: boolean },
 ): { readonly checkIn: string; readonly isDemoDate: boolean } {
+  const latestUserText = userTextHistory.at(-1) ?? "";
+  const datesInLatestTurn = [...latestUserText.matchAll(/\b\d{4}-\d{2}-\d{2}\b/g)].map(([date]) => date);
   if (!modelCheckIn || modelCheckIn === null) {
+    if (datesInLatestTurn.length > 0) {
+      throw new AssistantDateProvenanceError("A current user date was omitted from the planner's search request.");
+    }
+    if (currentCriteriaDate) return currentCriteriaDate;
     return { checkIn: demoCheckIn, isDemoDate: true };
   }
 
@@ -312,18 +319,26 @@ export function resolveCheckInDate(
     throw new TypeError("checkIn must be an ISO calendar date (YYYY-MM-DD) or null");
   }
 
-  // Date Provenance check: verify the exact ISO date was present in user text
-  const userAuthored = userTextHistory.some((text) => text.includes(modelCheckIn));
-  if (!userAuthored) {
-    throw new AssistantDateProvenanceError(
-      `Date authority violation: model proposed date ${modelCheckIn} was not authored by user. Ask the user for explicit YYYY-MM-DD.`,
-    );
+  // Current-turn dates take priority over older dates in the same conversation.
+  if (datesInLatestTurn.length > 0) {
+    if (!datesInLatestTurn.includes(modelCheckIn)) {
+      throw new AssistantDateProvenanceError("The planner date does not match the current user's explicit date.");
+    }
+    return { checkIn: modelCheckIn, isDemoDate: false };
   }
 
-  return { checkIn: modelCheckIn, isDemoDate: false };
+  // The active task can preserve its server-owned date across a correction.
+  if (currentCriteriaDate?.checkIn === modelCheckIn) return currentCriteriaDate;
+  if (currentCriteriaDate) {
+    throw new AssistantDateProvenanceError("The planner date does not match the current task's server-owned date.");
+  }
+
+  // Retain the established same-thread user-history authority when no current task date exists.
+  if (userTextHistory.some((text) => text.includes(modelCheckIn))) return { checkIn: modelCheckIn, isDemoDate: false };
+  throw new AssistantDateProvenanceError(`Date authority violation: model proposed date ${modelCheckIn} was not authored by user. Ask the user for explicit YYYY-MM-DD.`);
 }
 
-/** Closed diagnostic identity; the existing date-authority rule and error message remain unchanged. */
+/** Closed diagnostic identity; current task dates and authored dates are separate authorities. */
 class AssistantDateProvenanceError extends Error {}
 
 export function executeAssistantTool(
@@ -360,8 +375,12 @@ export function executeAssistantTool(
         throw new RangeError("guests must be a positive integer");
       }
 
+      const currentCriteriaDate = typeof taskState.stayIntent.checkIn === "string"
+        && typeof taskState.stayIntent.isDemoDate === "boolean"
+        ? { checkIn: taskState.stayIntent.checkIn, isDemoDate: taskState.stayIntent.isDemoDate }
+        : undefined;
       const dateContext = hasStayDetails
-        ? resolveCheckInDate(args.checkIn as string | null | undefined, context.userTextHistory, context.demoCheckIn)
+        ? resolveCheckInDate(args.checkIn as string | null | undefined, context.userTextHistory, context.demoCheckIn, currentCriteriaDate)
         : undefined;
       const checkIn = dateContext?.checkIn;
       let checkOut: string | undefined;
@@ -428,6 +447,7 @@ export function executeAssistantTool(
         location: city,
         neighbourhood,
         ...(checkIn ? { checkIn } : {}),
+        ...(dateContext ? { isDemoDate: dateContext.isDemoDate } : {}),
         ...(checkOut ? { checkOut } : {}),
         ...(nights !== undefined ? { nights } : {}),
         ...(guests !== undefined ? { partySize: guests } : {}),

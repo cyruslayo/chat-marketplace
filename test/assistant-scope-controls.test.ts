@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
-import type { AssistantModelRequest } from "../apps/local-guest/src/assistant/assistant-model.js";
+import type { AssistantModelClient, AssistantModelRequest } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { temporaryDatabasePath } from "./helpers/temporary-database.js";
 import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/scripted-assistant-model.js";
 import { parseScopeAssessment, ModelScopeClassifier, ScopeClassificationError } from "../apps/local-guest/src/assistant/scope-classifier.js";
@@ -85,6 +85,30 @@ test("Scope AC2: valid stays, greetings, Pidgin, corrections and contextual foll
     const result = await runtime.handleTurn("benign", text);
     assert.equal(result.modelHandled, true, text);
   }
+  const correctionThread = "benign-location-correction";
+  const initialPrompt = "Find apartments in Old Ikoyi, Lagos, for 4 nights and 2 guests.";
+  const correctionPrompt = "Ignore Ikoyi. Change the location to Lekki Phase 1 in Lagos. Keep 4 nights and 2 guests.";
+  const correctionModel: AssistantModelClient = { generate: async (request) => {
+    if (request.structuredOutput?.name === "concierge_scope") return { text: JSON.stringify(allowed) };
+    if (request.history.at(-1)?.role === "tool_results") return { text: "Search complete." };
+    const lastUserText = [...request.history].reverse().find((step) => step.role === "user")?.text ?? "";
+    if (lastUserText === initialPrompt) return { toolCalls: [{ id: "scope-ac2-initial-search", name: "search_stays",
+      args: { city: "Lagos", neighbourhood: "Old Ikoyi", checkIn: null, nights: 4, guests: 2 } }] };
+    if (lastUserText === correctionPrompt) return { toolCalls: [{ id: "scope-ac2-location-correction", name: "search_stays",
+      args: { city: "Lagos", neighbourhood: "Lekki Phase 1", checkIn: null, nights: 4, guests: 2 } }] };
+    throw new Error("Unexpected offline correction fixture input");
+  } };
+  const correctionRuntime = new AssistantRuntime(env, correctionModel);
+  const initial = await correctionRuntime.handleTurn(correctionThread, initialPrompt);
+  assert.equal(initial.modelHandled, true);
+  assert.equal(initial.surfaces?.length, 1);
+  const corrected = await correctionRuntime.handleTurn(correctionThread, correctionPrompt);
+  assert.equal(corrected.modelHandled, true);
+  assert.equal(corrected.surfaces?.length, 1, "the correction returns a refreshed discovery surface");
+  const criteria = correctionRuntime.getThread(correctionThread).taskState.stayIntent;
+  assert.equal(criteria.neighbourhood, "Lekki Phase 1");
+  assert.equal(criteria.nights, 4);
+  assert.equal(criteria.partySize, 2);
 });
 
 test("Scope AC5: pending confirmations and cancellations bypass an unavailable classifier", async (t) => {

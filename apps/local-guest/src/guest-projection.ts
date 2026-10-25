@@ -40,6 +40,8 @@ export interface PersistedAssistantContext {
   readonly city: "Lagos" | "Abuja";
   readonly neighbourhood?: string;
   readonly checkIn?: string;
+  /** Provenance for the server-selected fallback date; absent means unknown. */
+  readonly isDemoDate?: boolean;
   readonly checkOut?: string;
   readonly nights?: number;
   readonly partySize?: number;
@@ -72,9 +74,10 @@ function isUnitDetail(value: unknown): value is { readonly unitId: string; reado
 
 function parseAssistantContext(value: unknown): PersistedAssistantContext | null {
   if (!isRecord(value) || (value.city !== "Lagos" && value.city !== "Abuja")) return null;
-  const allowed = new Set(["city", "neighbourhood", "checkIn", "checkOut", "nights", "partySize", "bedrooms", "maxBudgetKobo", "requiredAmenities", "selectedUnitId"]);
+  const allowed = new Set(["city", "neighbourhood", "checkIn", "isDemoDate", "checkOut", "nights", "partySize", "bedrooms", "maxBudgetKobo", "requiredAmenities", "selectedUnitId"]);
   if (Object.keys(value).some((key) => !allowed.has(key))) return null;
   if (value.neighbourhood !== undefined && (typeof value.neighbourhood !== "string" || value.neighbourhood.length > 100)) return null;
+  if (value.isDemoDate !== undefined && typeof value.isDemoDate !== "boolean") return null;
   for (const key of ["checkIn", "checkOut"] as const) {
     const candidate = value[key];
     if (candidate !== undefined && (typeof candidate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(candidate) || Number.isNaN(Date.parse(`${candidate}T00:00:00Z`)))) return null;
@@ -89,6 +92,7 @@ function parseAssistantContext(value: unknown): PersistedAssistantContext | null
     city: value.city,
     ...(typeof value.neighbourhood === "string" ? { neighbourhood: value.neighbourhood } : {}),
     ...(typeof value.checkIn === "string" ? { checkIn: value.checkIn } : {}),
+    ...(typeof value.isDemoDate === "boolean" ? { isDemoDate: value.isDemoDate } : {}),
     ...(typeof value.checkOut === "string" ? { checkOut: value.checkOut } : {}),
     ...(typeof value.nights === "number" ? { nights: value.nights } : {}),
     ...(typeof value.partySize === "number" ? { partySize: value.partySize } : {}),
