@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
-import { classifierFailureSeen, controlsEvaluationOptions, createTurnUsage, deltaControlOutcomes, evaluatorCallFailureAccounting, evaluatorCaseRequestLimit, evaluatorRequestDecision, EVALUATOR_DEFAULT_REQUEST_LIMIT, gradeGuardDecision, gradeScenario, hasCanonicalReadOnlyPriceEvidence, isBlockedControlsResult, OPEN_FIRST, preludeFailedReport, SCENARIOS, SEARCH, snapshotEvaluationTurns, surfaceActionUnitId, taskEffectObserved } from "../scripts/concierge-controls-eval.js";
+import { classifierFailureSeen, controlsEvaluationOptions, createTurnUsage, deltaControlOutcomes, evaluatorCallFailureAccounting, evaluatorCaseRequestLimit, evaluatorRequestDecision, EVALUATOR_DEFAULT_REQUEST_LIMIT, gradeGuardDecision, gradeScenario, hasCanonicalReadOnlyPriceEvidence, isBlockedControlsResult, OPEN_FIRST, draftUnitIdFromSurfaces, draftUnitObservation, preludeFailedReport, SCENARIOS, SEARCH, snapshotEvaluationTurns, surfaceActionUnitId, taskEffectObserved } from "../scripts/concierge-controls-eval.js";
 import { requestedUnitMatches } from "../scripts/pilot-agent-smoke-grading.js";
 import { ASSISTANT_CONTROL_COPY } from "../apps/local-guest/src/assistant/control-copy.js";
 import { ModelRequestGuardError, type AssistantModelClient, type AssistantToolCall } from "../apps/local-guest/src/assistant/assistant-model.js";
@@ -300,6 +300,51 @@ test("Reviewable-draft eval steps create one review-ready Request Draft offline,
     await withoutSetup.send("/api/turn", { text: scenario.prompt });
     assert.equal(draftsIn(withoutSetup), before, "prepare_request_draft needs a selected stay");
   } finally { await withoutSetup.close(); }
+});
+
+test("Draft unit is read from the authoritative draft when the assistant surface has no conventionalRoute", async () => {
+  const scenario = SCENARIOS.find((candidate) => candidate.id === "reviewable-draft");
+  assert.ok(scenario);
+  const fixture = await restartFixture({}, { conciergeMode: "openai-compatible", modelClient: reviewableDraftModel(scenario.prompt), commerce: "disabled" });
+  try {
+    let expectedFirstUnitId: string | undefined;
+    for (const prelude of scenario.prelude ?? []) {
+      const setup = await fixture.send("/api/turn", { text: prelude });
+      assert.ok(setup.ok, prelude);
+      if (prelude === SEARCH) expectedFirstUnitId = surfaceActionUnitId(setup.surfaces.find((surface) => /:discovery:/.test(surface.surfaceId)), "shortlet.discovery.view-unit");
+    }
+    assert.equal(expectedFirstUnitId, "unit-lagos-ikoyi-001");
+    const result = await fixture.send("/api/turn", { text: scenario.prompt });
+    assert.ok(result.ok);
+    const draftSurface = result.surfaces.find((surface) => /:request:draft:/.test(surface.surfaceId));
+    assert.ok(draftSurface);
+    assert.equal(draftSurface.conventionalRoute, undefined, "assistant draft surfaces carry no route");
+    const actualUnitId = draftUnitIdFromSurfaces(result.surfaces, (draftId) => fixture.environment.bookingRequestApp.getDraft(draftId));
+    assert.equal(actualUnitId, "unit-lagos-ikoyi-001");
+    assert.equal(requestedUnitMatches(expectedFirstUnitId, actualUnitId), true);
+    assert.equal(draftUnitObservation({ expected: "draft", expectedFirstUnitId, actualUnitId }), "matched");
+  } finally { await fixture.close(); }
+});
+
+test("Draft unit helper returns undefined without throwing for non-draft surfaces, missing surfaces and unknown drafts", () => {
+  const missingDraft = (draftId: string): { readonly unitId: string } => { throw new Error(`no draft ${draftId}`); };
+  assert.equal(draftUnitIdFromSurfaces([{ surfaceId: "thread-1:discovery:1" }], missingDraft), undefined);
+  assert.equal(draftUnitIdFromSurfaces([], missingDraft), undefined);
+  assert.equal(draftUnitIdFromSurfaces([{ surfaceId: "thread-1:request:draft:unknown" }], missingDraft), undefined);
+  assert.equal(draftUnitIdFromSurfaces([{ surfaceId: "thread-1:request:draft:unknown" }], () => undefined), undefined);
+  assert.equal(draftUnitIdFromSurfaces([{ surfaceId: "thread-1:request:draft:d1" }], (draftId) => ({ unitId: `unit-for-${draftId}` })), "unit-for-d1");
+  // A draft surface whose id carries no draft id falls back to the route's last segment, and only when a route is present.
+  assert.equal(draftUnitIdFromSurfaces([{ surfaceId: "thread-1:request:draft:", conventionalRoute: "/requests/d2" }], (draftId) => ({ unitId: `unit-for-${draftId}` })), "unit-for-d2");
+});
+
+test("Draft unit observation distinguishes matched, mismatched and missing draft units and reports other cases as not applicable", () => {
+  assert.equal(draftUnitObservation({ expected: "draft", expectedFirstUnitId: "unit-a", actualUnitId: "unit-a" }), "matched");
+  // A mismatch is loud and still fails the case: requestedUnitMatched is false, which taskCompleted requires for draft.
+  assert.equal(draftUnitObservation({ expected: "draft", expectedFirstUnitId: "unit-a", actualUnitId: "unit-b" }), "mismatched");
+  assert.equal(requestedUnitMatches("unit-a", "unit-b"), false);
+  assert.equal(draftUnitObservation({ expected: "draft", expectedFirstUnitId: "unit-a", actualUnitId: undefined }), "missing");
+  assert.equal(draftUnitObservation({ expected: "draft", expectedFirstUnitId: undefined, actualUnitId: "unit-a" }), "missing");
+  assert.equal(draftUnitObservation({ expected: "details", expectedFirstUnitId: "unit-a", actualUnitId: "unit-a" }), "not_applicable");
 });
 
 test("Per-case request limits: reviewable-draft defaults to 12, other cases keep the default, and an explicit flag overrides either way", () => {
