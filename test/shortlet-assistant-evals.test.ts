@@ -704,13 +704,39 @@ test("Date provenance reuses only the current task date and preserves its server
     { checkIn: demoDate, isDemoDate: true });
   assert.deepEqual(resolveCheckInDate(null, ["Move to Lekki."], demoDate, { checkIn: demoDate, isDemoDate: false }),
     { checkIn: demoDate, isDemoDate: false });
-  assert.deepEqual(resolveCheckInDate("2026-12-15", ["Move check-in to 2026-12-15."], demoDate, { checkIn: demoDate, isDemoDate: true }),
+  assert.deepEqual(resolveCheckInDate("2026-12-15", ["Move check-in to 2026-12-15."], demoDate, { checkIn: demoDate, isDemoDate: true }, { checkIn: "2026-12-15" }),
     { checkIn: "2026-12-15", isDemoDate: false });
   assert.deepEqual(resolveCheckInDate("2026-12-15", ["Move check-in to 2026-12-15."], demoDate,
-    { checkIn: "2026-10-30", isDemoDate: false }), { checkIn: "2026-12-15", isDemoDate: false });
+    { checkIn: "2026-10-30", isDemoDate: false }, { checkIn: "2026-12-15" }), { checkIn: "2026-12-15", isDemoDate: false });
   assert.deepEqual(resolveCheckInDate(demoDate, ["An older turn used 2026-11-01."], demoDate), { checkIn: demoDate, isDemoDate: false });
   assert.throws(() => resolveCheckInDate("2026-12-15", ["Find a stay in Ikoyi."], demoDate,
     { checkIn: demoDate, isDemoDate: true }), /does not match the current task's server-owned date/);
+});
+
+test("Date provenance treats checkout-only and unrelated ISO dates separately from check-in", () => {
+  const criteria = { checkIn: "2026-11-01", isDemoDate: true } as const;
+  const history = ["Find a stay in Ikoyi from 2026-11-01."];
+  assert.deepEqual(resolveCheckInDate(criteria.checkIn, [...history, "Change checkout to 2026-11-06; keep the check-in."], "2026-09-10", criteria, { checkOut: "2026-11-06" }), criteria,
+    "a checkout-only edit must preserve the current check-in");
+  assert.deepEqual(resolveCheckInDate(null, [...history, "Change checkout to 2026-11-06; keep the check-in."], "2026-09-10", criteria, { checkOut: "2026-11-06" }), criteria,
+    "a null planner date must preserve the current check-in during a checkout-only edit");
+  assert.deepEqual(resolveCheckInDate(criteria.checkIn, [...history, "Keep the current check-in; the reference number is 2026-11-06."], "2026-09-10", criteria), criteria,
+    "an unrelated ISO date must not replace the current check-in");
+  assert.deepEqual(resolveCheckInDate("2026-11-08", [...history, "Change check-in to 2026-11-08; checkout is 2026-11-12."], "2026-09-10", criteria, { checkIn: "2026-11-08", checkOut: "2026-11-12" }),
+    { checkIn: "2026-11-08", isDemoDate: false }, "an explicit check-in date remains guest-authoritative");
+  assert.throws(() => resolveCheckInDate("2026-11-06", ["Change checkout to 2026-11-06."], "2026-09-10", undefined, { checkOut: "2026-11-06" }), /checkout date cannot authorize/,
+    "a checkout date cannot authorize a new task's check-in");
+  assert.throws(() => resolveCheckInDate(null, ["Change checkout to 2026-11-06."], "2026-09-10", undefined, { checkOut: "2026-11-06" }), /checkout date cannot authorize/,
+    "a checkout-only turn must not silently default to the demo check-in when no current date exists");
+  assert.throws(() => resolveCheckInDate("2026-11-06", ["Find a stay; reference 2026-11-06."], "2026-09-10", undefined, {}), /not authored by user/,
+    "an unrelated current-turn date cannot authorize a new check-in");
+});
+
+test("Date provenance fails closed when restored current criteria has unknown provenance", () => {
+  assert.throws(() => resolveCheckInDate(null, ["Move to Lekki."], "2026-09-10", undefined, {}, "2026-11-01"), /unknown provenance/);
+  assert.throws(() => resolveCheckInDate("2026-11-01", ["Move to Lekki."], "2026-09-10", undefined, {}, "2026-11-01"), /unknown provenance/);
+  assert.deepEqual(resolveCheckInDate("2026-12-15", ["Change check-in to 2026-12-15."], "2026-09-10", undefined,
+    { checkIn: "2026-12-15" }, "2026-11-01"), { checkIn: "2026-12-15", isDemoDate: false });
 });
 
 // 18. Relative date inquiry asks for explicit YYYY-MM-DD

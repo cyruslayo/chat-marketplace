@@ -122,6 +122,13 @@ export interface AssistantDiagnosticEvent {
   readonly scopeFailureReason?: import("./scope-classifier.js").ScopeFailureReason;
 }
 
+function containsExactDateToken(text: string, date: string): boolean {
+  const start = text.indexOf(date);
+  if (start < 0) return false;
+  const isDigit = (character: string | undefined): boolean => character !== undefined && character >= "0" && character <= "9";
+  return !isDigit(text[start - 1]) && !isDigit(text[start + date.length]);
+}
+
 export interface AssistantRuntimeOptions {
   readonly onDiagnostic?: (event: AssistantDiagnosticEvent) => void;
   /** Additional domain packs to register (used by hosts that host more than one domain). */
@@ -769,6 +776,10 @@ export class AssistantRuntime {
             threadId,
             taskId: candidateActiveTaskId,
             userTextHistory,
+            currentTurnDates: {
+              ...(assessment.slots.checkIn && containsExactDateToken(originalUserText, assessment.slots.checkIn) ? { checkIn: assessment.slots.checkIn } : {}),
+              ...(assessment.slots.checkOut && containsExactDateToken(originalUserText, assessment.slots.checkOut) ? { checkOut: assessment.slots.checkOut } : {}),
+            },
             now: this.#environment.clock(),
             demoCheckIn: this.#environment.config.demoCheckIn,
           };

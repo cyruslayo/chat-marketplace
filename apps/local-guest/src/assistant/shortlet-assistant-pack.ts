@@ -304,14 +304,21 @@ export function resolveCheckInDate(
   userTextHistory: readonly string[],
   demoCheckIn: string,
   currentCriteriaDate?: { readonly checkIn: string; readonly isDemoDate: boolean },
+  currentTurnDates?: { readonly checkIn?: string; readonly checkOut?: string },
+  unknownCurrentCriteriaDate?: string,
 ): { readonly checkIn: string; readonly isDemoDate: boolean } {
-  const latestUserText = userTextHistory.at(-1) ?? "";
-  const datesInLatestTurn = [...latestUserText.matchAll(/\b\d{4}-\d{2}-\d{2}\b/g)].map(([date]) => date);
+  const currentCheckIn = currentTurnDates?.checkIn;
   if (!modelCheckIn || modelCheckIn === null) {
-    if (datesInLatestTurn.length > 0) {
+    if (currentCheckIn) {
       throw new AssistantDateProvenanceError("A current user date was omitted from the planner's search request.");
     }
     if (currentCriteriaDate) return currentCriteriaDate;
+    if (unknownCurrentCriteriaDate) {
+      throw new AssistantDateProvenanceError("The current task date has unknown provenance and cannot be reused.");
+    }
+    if (currentTurnDates?.checkOut) {
+      throw new AssistantDateProvenanceError("A checkout date cannot authorize a new check-in date.");
+    }
     return { checkIn: demoCheckIn, isDemoDate: true };
   }
 
@@ -319,9 +326,9 @@ export function resolveCheckInDate(
     throw new TypeError("checkIn must be an ISO calendar date (YYYY-MM-DD) or null");
   }
 
-  // Current-turn dates take priority over older dates in the same conversation.
-  if (datesInLatestTurn.length > 0) {
-    if (!datesInLatestTurn.includes(modelCheckIn)) {
+  // Current typed scope slots bind explicit guest dates to their check-in/check-out roles.
+  if (currentCheckIn) {
+    if (currentCheckIn !== modelCheckIn) {
       throw new AssistantDateProvenanceError("The planner date does not match the current user's explicit date.");
     }
     return { checkIn: modelCheckIn, isDemoDate: false };
@@ -332,9 +339,16 @@ export function resolveCheckInDate(
   if (currentCriteriaDate) {
     throw new AssistantDateProvenanceError("The planner date does not match the current task's server-owned date.");
   }
+  if (unknownCurrentCriteriaDate) {
+    throw new AssistantDateProvenanceError("The current task date has unknown provenance and cannot be reused.");
+  }
+  if (currentTurnDates?.checkOut) {
+    throw new AssistantDateProvenanceError("A checkout date cannot authorize a new check-in date.");
+  }
 
-  // Retain the established same-thread user-history authority when no current task date exists.
-  if (userTextHistory.some((text) => text.includes(modelCheckIn))) return { checkIn: modelCheckIn, isDemoDate: false };
+  // Retain established same-thread user history when no typed current-turn role is available.
+  const priorUserText = currentTurnDates === undefined ? userTextHistory : userTextHistory.slice(0, -1);
+  if (priorUserText.some((text) => text.includes(modelCheckIn))) return { checkIn: modelCheckIn, isDemoDate: false };
   throw new AssistantDateProvenanceError(`Date authority violation: model proposed date ${modelCheckIn} was not authored by user. Ask the user for explicit YYYY-MM-DD.`);
 }
 
@@ -379,8 +393,12 @@ export function executeAssistantTool(
         && typeof taskState.stayIntent.isDemoDate === "boolean"
         ? { checkIn: taskState.stayIntent.checkIn, isDemoDate: taskState.stayIntent.isDemoDate }
         : undefined;
+      const unknownCurrentCriteriaDate = typeof taskState.stayIntent.checkIn === "string"
+        && typeof taskState.stayIntent.isDemoDate !== "boolean"
+        ? taskState.stayIntent.checkIn
+        : undefined;
       const dateContext = hasStayDetails
-        ? resolveCheckInDate(args.checkIn as string | null | undefined, context.userTextHistory, context.demoCheckIn, currentCriteriaDate)
+        ? resolveCheckInDate(args.checkIn as string | null | undefined, context.userTextHistory, context.demoCheckIn, currentCriteriaDate, context.currentTurnDates, unknownCurrentCriteriaDate)
         : undefined;
       const checkIn = dateContext?.checkIn;
       let checkOut: string | undefined;

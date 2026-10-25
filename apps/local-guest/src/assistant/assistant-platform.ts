@@ -30,6 +30,7 @@ export interface AssistantToolContext {
   readonly threadId: string;
   readonly taskId: string;
   readonly userTextHistory: readonly string[];
+  readonly currentTurnDates?: { readonly checkIn?: string; readonly checkOut?: string };
   readonly now: Date;
   readonly demoCheckIn: string;
   readonly onSearchExecuted?: (filters: {

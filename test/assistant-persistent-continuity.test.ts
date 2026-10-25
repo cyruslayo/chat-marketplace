@@ -269,3 +269,40 @@ test("A guest-authored date remains guest-authored through restart and a same-ta
     await fixture.close();
   }
 });
+
+test("A legacy restored date with unknown provenance cannot silently fall back to the demo date", async () => {
+  const correctionModel: AssistantModelClient = {
+    generate: async (request) => {
+      const latestUser = [...request.history].reverse().find((step) => step.role === "user");
+      if (request.structuredOutput?.name === "concierge_scope" && latestUser?.role === "user" && latestUser.text.includes("Ignore Ikoyi")) {
+        return { text: JSON.stringify({ scope: "in_scope", risk: "ordinary", intents: ["search"], reasonCode: "supported", slots: { city: "Lagos", neighbourhood: "Lekki Phase 1", bedrooms: null, nights: 4, guests: 2, checkIn: null, checkOut: null } }) };
+      }
+      if (request.structuredOutput?.name !== "concierge_scope" && latestUser?.role === "user" && latestUser.text.includes("Ignore Ikoyi")) {
+        return { toolCalls: [{ id: "legacy-correction", name: "search_stays", args: { city: "Lagos", neighbourhood: "Lekki Phase 1", checkIn: null, nights: 4, guests: 2 } }] };
+      }
+      return serverModel.generate(request);
+    },
+  };
+  const fixture = await restartFixture({}, { modelClient: correctionModel, conciergeMode: "assistant-offline" });
+  try {
+    const search = await fixture.send("/api/turn", { text: "Find Ikoyi stays for four nights for two guests" });
+    assert.equal(search.ok, true);
+    if (!search.ok) return;
+    const stored = fixture.environment.interactionStore.findThread(fixture.threadId);
+    assert.ok(stored);
+    const projection = JSON.parse(stored!.threadJson) as { readonly assistantContext?: Record<string, unknown> };
+    assert.ok(projection.assistantContext);
+    delete projection.assistantContext.isDemoDate;
+    fixture.environment.interactionStore.saveThread({ ...stored!, threadJson: JSON.stringify(projection) });
+
+    await fixture.restart();
+    const correction = await fixture.send("/api/turn", { text: "Ignore Ikoyi. Change the location to Lekki Phase 1 in Lagos. Keep 4 nights and 2 guests." });
+    assert.equal(correction.ok, false, "unknown restored provenance must fail closed instead of selecting a new demo date");
+    if (!correction.ok) assert.equal(correction.code, "CONCIERGE_UNAVAILABLE");
+    const restored = fixture.app.assistantRuntime?.getThread(fixture.threadId);
+    assert.equal(restored?.taskState.stayIntent.checkIn, "2026-09-10");
+    assert.equal(restored?.taskState.stayIntent.isDemoDate, undefined);
+  } finally {
+    await fixture.close();
+  }
+});

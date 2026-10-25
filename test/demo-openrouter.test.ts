@@ -36,7 +36,7 @@ function fixture(model: AssistantModelClient, diagnostics?: AssistantDiagnosticE
 
 test('AC1: With OpenRouter settings, a discovery turn calls the model and executes search_stays', async () => {
   const scope = { scope: "in_scope", risk: "ordinary", intents: ["search"], reasonCode: "supported",
-    slots: { city: null, neighbourhood: null, bedrooms: null, nights: null, guests: null, checkIn: null, checkOut: null } };
+    slots: { city: null, neighbourhood: null, bedrooms: null, nights: null, guests: null, checkIn: "2026-11-01", checkOut: null } };
   const stub = clientWith((request, attempt) => attempt === 1
     ? completion({ content: JSON.stringify(scope) })
     : attempt === 2
@@ -71,13 +71,28 @@ test("Offline HTTP evaluator: benign location correction reuses only the current
   const authoredDateInitial = "Find apartments in Old Ikoyi, Lagos, from 2026-11-01 for 4 nights and 2 guests.";
   const authoredDateCorrection = "Change the location to Lekki Phase 1. Keep 4 nights and 2 guests.";
   const dateCorrection = "Change the check-in date to 2026-12-15. Keep Lekki Phase 1, 4 nights, and 2 guests.";
-  const unrelatedDatePrompt = "Find apartments in Lekki Phase 1, Lagos, for 4 nights and 2 guests.";
+  const checkoutOnlyPrompt = "Change checkout to 2026-12-15; keep the current check-in, 4 nights, and 2 guests.";
+  const checkoutAsStartPrompt = "Change checkout to 2026-12-15.";
+  const explicitStartPrompt = "Change check-in to 2026-10-30. Keep Lekki Phase 1, 4 nights, and 2 guests.";
+  const unrelatedDatePrompt = "Find apartments in Lekki Phase 1, Lagos, for 4 nights and 2 guests. Reference 2026-12-15.";
+  const typedCheckInSlotValues: string[] = [];
+  const dateDiagnostics: AssistantDiagnosticEvent[] = [];
   const stub = clientWith((request) => {
     const format = request.body.response_format as { json_schema?: { name?: string } } | undefined;
-    if (format?.json_schema?.name === "concierge_scope") return completion({ content: JSON.stringify(scope) });
     const messages = request.body.messages as readonly { readonly role: string; readonly content?: unknown }[];
-    if (messages.at(-1)?.role === "tool") return completion({ content: "Search complete." });
     const latestUserText = messages.filter((message) => message.role === "user").at(-1)?.content;
+    if (format?.json_schema?.name === "concierge_scope") {
+      const classifierInput = typeof latestUserText === "string" ? latestUserText : JSON.stringify(latestUserText ?? "");
+      const slots = { ...scope.slots,
+        ...(classifierInput.includes(authoredDateInitial) ? { checkIn: "2026-11-01" } : {}),
+        ...(classifierInput.includes("check-in to 2026-10-30") ? { checkIn: "2026-10-30" } : {}),
+        ...(classifierInput.includes("Change the check-in date to 2026-12-15") ? { checkIn: "2026-12-15" } : {}),
+        ...(classifierInput.includes("checkout to 2026-12-15") ? { checkOut: "2026-12-15" } : {}),
+      };
+      if (typeof slots.checkIn === "string") typedCheckInSlotValues.push(slots.checkIn);
+      return completion({ content: JSON.stringify({ ...scope, slots }) });
+    }
+    if (messages.at(-1)?.role === "tool") return completion({ content: "Search complete." });
     if (typeof latestUserText !== "string") throw new Error("Offline HTTP fixture requires a current user message");
     if (latestUserText === initialPrompt) return completion({ tool_calls: [{ id: "initial-search", type: "function", function: {
       name: "search_stays", arguments: JSON.stringify({ city: "Lagos", neighbourhood: "Old Ikoyi", checkIn: null, nights: 4, guests: 2 }),
@@ -91,6 +106,15 @@ test("Offline HTTP evaluator: benign location correction reuses only the current
     if (latestUserText === locationCorrection) return completion({ tool_calls: [{ id: "location-correction", type: "function", function: {
       name: "search_stays", arguments: JSON.stringify({ city: "Lagos", neighbourhood: "Lekki Phase 1", checkIn: serverDemoDate, nights: 4, guests: 2 }),
     } }] });
+    if (latestUserText === checkoutOnlyPrompt) return completion({ tool_calls: [{ id: "checkout-only", type: "function", function: {
+      name: "search_stays", arguments: JSON.stringify({ city: "Lagos", neighbourhood: "Old Ikoyi", checkIn: serverDemoDate, nights: 4, guests: 2 }),
+    } }] });
+    if (latestUserText === checkoutAsStartPrompt) return completion({ tool_calls: [{ id: "checkout-as-start", type: "function", function: {
+      name: "search_stays", arguments: JSON.stringify({ city: "Lagos", neighbourhood: "Old Ikoyi", checkIn: "2026-12-15", nights: 4, guests: 2 }),
+    } }] });
+    if (latestUserText === explicitStartPrompt) return completion({ tool_calls: [{ id: "explicit-start", type: "function", function: {
+      name: "search_stays", arguments: JSON.stringify({ city: "Lagos", neighbourhood: "Lekki Phase 1", checkIn: "2026-10-30", nights: 4, guests: 2 }),
+    } }] });
     if (latestUserText === dateCorrection) return completion({ tool_calls: [{ id: "ignored-date-change", type: "function", function: {
       name: "search_stays", arguments: JSON.stringify({ city: "Lagos", neighbourhood: "Lekki Phase 1", checkIn: serverDemoDate, nights: 4, guests: 2 }),
     } }] });
@@ -99,7 +123,7 @@ test("Offline HTTP evaluator: benign location correction reuses only the current
     } }] });
     throw new Error("Unexpected offline HTTP fixture user turn");
   }, openRouter);
-  const f = fixture(stub.client);
+  const f = fixture(stub.client, dateDiagnostics);
   try {
     serverDemoDate = f.environment.config.demoCheckIn;
     const threadId = "g-deadbeef10";
@@ -124,6 +148,26 @@ test("Offline HTTP evaluator: benign location correction reuses only the current
     assert.equal(f.runtime.getThread(threadId).taskState.stayIntent.nights, 4);
     assert.equal(f.runtime.getThread(threadId).taskState.stayIntent.partySize, 2);
     assert.equal(f.runtime.getThread(threadId).taskState.stayIntent.isDemoDate, true, "the server demo-date provenance remains marked as demo");
+
+    const checkoutOnlyThread = "g-deadbeef14";
+    assert.ok((await f.app.handleTurn(checkoutOnlyThread, initialPrompt)).ok);
+    const checkoutOnlyResult = await f.app.handleTurn(checkoutOnlyThread, checkoutOnlyPrompt);
+    assert.ok(checkoutOnlyResult.ok, "a checkout-only change preserves the current check-in");
+    assert.equal(f.runtime.getThread(checkoutOnlyThread).taskState.stayIntent.checkIn, serverDemoDate);
+    assert.equal(f.runtime.getThread(checkoutOnlyThread).taskState.stayIntent.isDemoDate, true);
+
+    const checkoutCannotStartThread = "g-deadbeef15";
+    const checkoutCannotStart = await f.app.handleTurn(checkoutCannotStartThread, checkoutAsStartPrompt);
+    assert.equal(checkoutCannotStart.ok, false, "a typed checkout cannot authorize a new task's check-in");
+    assert.equal(checkoutCannotStart.code, "CONCIERGE_UNAVAILABLE");
+
+    const explicitStartThread = "g-deadbeef16";
+    assert.ok((await f.app.handleTurn(explicitStartThread, initialPrompt)).ok);
+    const explicitStart = await f.app.handleTurn(explicitStartThread, explicitStartPrompt);
+    assert.equal(typedCheckInSlotValues.at(-1), "2026-10-30", "the offline evaluator supplies a typed check-in slot for the explicit current date");
+    assert.ok(explicitStart.ok, `an explicit typed check-in can replace the current date: ${explicitStart.ok ? "ok" : `${explicitStart.code}: ${explicitStart.message}; ${dateDiagnostics.filter((event) => !event.succeeded).at(-1)?.errorClass ?? "no diagnostic"}`}`);
+    assert.equal(f.runtime.getThread(explicitStartThread).taskState.stayIntent.checkIn, "2026-10-30");
+    assert.equal(f.runtime.getThread(explicitStartThread).taskState.stayIntent.isDemoDate, false);
 
     const authoredDateThread = "g-deadbeef13";
     const authoredDateResult = await f.app.handleTurn(authoredDateThread, authoredDateInitial);
