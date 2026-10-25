@@ -5,17 +5,19 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
-import { controlsEvaluationOptions, deltaControlOutcomes, gradeGuardDecision, gradeScenario, hasCanonicalReadOnlyPriceEvidence, isBlockedControlsResult, OPEN_FIRST, SCENARIOS, SEARCH, snapshotEvaluationTurns, surfaceActionUnitId } from "../scripts/concierge-controls-eval.js";
+import { controlsEvaluationOptions, deltaControlOutcomes, evaluatorCallFailureAccounting, evaluatorCaseRequestLimit, evaluatorRequestDecision, EVALUATOR_DEFAULT_REQUEST_LIMIT, gradeGuardDecision, gradeScenario, hasCanonicalReadOnlyPriceEvidence, isBlockedControlsResult, OPEN_FIRST, SCENARIOS, SEARCH, snapshotEvaluationTurns, surfaceActionUnitId } from "../scripts/concierge-controls-eval.js";
 import { requestedUnitMatches } from "../scripts/pilot-agent-smoke-grading.js";
 import { ASSISTANT_CONTROL_COPY } from "../apps/local-guest/src/assistant/control-copy.js";
-import type { AssistantModelClient, AssistantToolCall } from "../apps/local-guest/src/assistant/assistant-model.js";
+import { ModelRequestGuardError, type AssistantModelClient, type AssistantToolCall } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { restartFixture } from "./helpers/guest-restart.js";
 
 test("Controlled live evaluation requires explicit opt-in and a bounded total attempt limit", () => {
   assert.deepEqual(controlsEvaluationOptions(["--live", "--request-limit", "64"]), { requestLimit: 64 });
+  // Without the flag each case uses its own default (evaluatorCaseRequestLimit), so the flag is optional.
+  assert.deepEqual(controlsEvaluationOptions(["--live"]), {});
   assert.deepEqual(controlsEvaluationOptions(["--live", "--request-limit", "6", "--case", "other-guest-data"]), { requestLimit: 6, caseId: "other-guest-data" });
   for (const args of [
-    [], ["--request-limit", "64"], ["--live"], ["--live", "--request-limit", "0"],
+    [], ["--request-limit", "64"], ["--live", "--request-limit", "0"],
     ["--live", "--request-limit", "65"], ["--live", "--request-limit", "1.5"],
     ["--live", "--request-limit", "2", "--request-limit", "3"],
     ["--live", "--live", "--request-limit", "2"],
@@ -292,4 +294,39 @@ test("Reviewable-draft eval steps create one review-ready Request Draft offline,
     await withoutSetup.send("/api/turn", { text: scenario.prompt });
     assert.equal(draftsIn(withoutSetup), before, "prepare_request_draft needs a selected stay");
   } finally { await withoutSetup.close(); }
+});
+
+test("Per-case request limits: reviewable-draft defaults to 12, other cases keep the default, and an explicit flag overrides either way", () => {
+  const byId = new Map(SCENARIOS.map((scenario) => [scenario.id, scenario]));
+  // Arithmetic: each turn is one classifier call plus two planner calls (one tool round, then the final plan).
+  // Three turns (setup-1, setup-2, asserted-turn) need 3 x 3 = 9 calls; 3 spare calls cover connection retries.
+  const draftMinimum = 3 * (1 + 2);
+  assert.equal(byId.get("reviewable-draft")?.requestLimit, 12);
+  assert.ok(evaluatorCaseRequestLimit(byId.get("reviewable-draft")!, undefined) >= draftMinimum);
+  assert.equal(evaluatorCaseRequestLimit(byId.get("reviewable-draft")!, undefined), 12);
+  assert.equal(evaluatorCaseRequestLimit(byId.get("reviewable-draft")!, 6), 6);
+  assert.equal(evaluatorCaseRequestLimit(byId.get("reviewable-draft")!, 20), 20);
+  for (const scenario of SCENARIOS.filter((candidate) => candidate.id !== "reviewable-draft")) {
+    assert.equal(scenario.requestLimit, undefined, scenario.id);
+    assert.equal(evaluatorCaseRequestLimit(scenario, undefined), EVALUATOR_DEFAULT_REQUEST_LIMIT, scenario.id);
+    assert.equal(evaluatorCaseRequestLimit(scenario, 3), 3, scenario.id);
+  }
+  assert.equal(EVALUATOR_DEFAULT_REQUEST_LIMIT, 8);
+});
+
+test("Evaluator budget admits calls up to the per-case and run limits and refuses the next one", () => {
+  assert.equal(evaluatorRequestDecision({ caseReservations: 11, caseLimit: 12, runReservations: 11, runLimit: 20 }), "allow");
+  assert.equal(evaluatorRequestDecision({ caseReservations: 12, caseLimit: 12, runReservations: 12, runLimit: 20 }), "refuse");
+  assert.equal(evaluatorRequestDecision({ caseReservations: 1, caseLimit: 12, runReservations: 20, runLimit: 20 }), "refuse");
+});
+
+test("A refusal that never reached transport does not make usage or cost incomplete, while a failed transported call does", () => {
+  const refused = evaluatorCallFailureAccounting({ error: new ModelRequestGuardError("quota_denied"), transportStartsBefore: 2, transportStartsAfter: 2 });
+  assert.deepEqual(refused, { refusedBeforeTransport: true });
+  const transported = evaluatorCallFailureAccounting({ error: new Error("provider failed"), transportStartsBefore: 2, transportStartsAfter: 3 });
+  assert.deepEqual(transported, { refusedBeforeTransport: false });
+  const guardAfterTransport = evaluatorCallFailureAccounting({ error: new ModelRequestGuardError("quota_denied"), transportStartsBefore: 2, transportStartsAfter: 3 });
+  assert.deepEqual(guardAfterTransport, { refusedBeforeTransport: false });
+  const plainBeforeTransport = evaluatorCallFailureAccounting({ error: new Error("allocation failed"), transportStartsBefore: 2, transportStartsAfter: 2 });
+  assert.deepEqual(plainBeforeTransport, { refusedBeforeTransport: false });
 });
