@@ -406,3 +406,24 @@ Commands and counts:
 Not run: the full `npm test`, `npm run test:workers`, the real-Chrome files and any live evaluation. Those remain for the batch pre-merge gate.
 
 Open: the case definition for `reviewable-draft` is not changed. The live setup-2 verdict remains unproven until a separately approved paid rerun records the new codes. The owner decision on the quota-versus-fallback precedence is unchanged.
+
+26 Oct 2026 reviewable-draft unit-observation correction (offline, no live run):
+
+Earlier live `reviewable-draft` results reported `requestedUnitMatched: false` in every run that reached a draft. The cause was an evaluator defect, not a product result. The grader read the draft Unit only from the draft surface's `conventionalRoute`. Assistant draft surfaces never carry that route, so the Unit was always undefined. Investigation: `.scratch/concierge-agent-controls/validation/2026-10-26/requested-unit-mismatch-investigation.md`.
+
+No wrong-unit binding was observed. The offline repro showed the authoritative draft Unit equal to the search's first Unit. The earlier live draft Unit ids were not recorded, so that match is inferred from the code path, not observed live.
+
+The fix reads the Unit from the authoritative draft store, using the draft id in the surface id (`scripts/concierge-controls-eval.ts`, `draftUnitIdFromSurfaces`). It returns undefined, and never throws, for a missing, non-draft or unknown draft. The per-scenario report records a closed `unitObservation` code: `matched`, `mismatched`, `missing` or `not_applicable`. A `mismatched` draft fails the case as a task failure and is safety-relevant. It logs one stderr line with the case id only. The report records the closed code only, not unit ids or prose. The `details` path is unchanged.
+
+Red: `NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test test/concierge-controls-eval.test.ts` failed to load with `does not provide an export named 'draftUnitIdFromSurfaces'`: `# pass 0`, `# fail 1`. Log: `validation/2026-10-26/unit-observation-red.log`.
+
+Green, same command: `# tests 26`, `# pass 26`, `# fail 0`, exit 0. Log: `validation/2026-10-26/unit-observation-green.log`.
+
+Affected files, same environment variables:
+- `npx tsx --test test/assistant-control-metrics.test.ts`: 5 pass, 0 fail, exit 0.
+- `npx tsx --test test/assistant-scope-controls.test.ts`: 22 pass, 0 fail, exit 0.
+- `npx tsx --test test/demo-openrouter.test.ts` (imports the evaluator): 7 pass, 0 fail, exit 0.
+- `npm run check`: exit 1. Errors only in the frozen harness: `test/browser-lock.test.ts` (1), `test/browser-phase-timeout.test.ts` (4), `test/helpers/chrome-devtools.ts` (1). No other error. Log: `validation/2026-10-26/check.log`.
+
+Not run: any live evaluation, the full `npm test`, and `npm run test:workers`. Those remain for the batch pre-merge gate. The six earlier live `result.json` files keep their recorded `requestedUnitMatched: false` values; they are not re-graded.
+Open: the setup-2 classifier question in the 25 Oct entries is unchanged. A separately approved paid rerun is needed to see whether `reviewable-draft` passes.

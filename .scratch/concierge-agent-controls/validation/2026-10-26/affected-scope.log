@@ -1,0 +1,144 @@
+TAP version 13
+# (node:151376) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Scope AC1: unrelated requests never invoke planner tools or retain rejected input
+ok 1 - Scope AC1: unrelated requests never invoke planner tools or retain rejected input
+  ---
+  duration_ms: 524.9769
+  type: 'test'
+  ...
+# Subtest: Scope AC3: mixed requests send only validated scope slots to the planner
+ok 2 - Scope AC3: mixed requests send only validated scope slots to the planner
+  ---
+  duration_ms: 696.1736
+  type: 'test'
+  ...
+# Subtest: Scope AC4: unavailable and malformed classifier decisions use fixed replies without a planner call
+ok 3 - Scope AC4: unavailable and malformed classifier decisions use fixed replies without a planner call
+  ---
+  duration_ms: 656.611
+  type: 'test'
+  ...
+# Subtest: Scope AC2: valid stays, greetings, Pidgin, corrections and contextual follow-ups reach planning
+ok 4 - Scope AC2: valid stays, greetings, Pidgin, corrections and contextual follow-ups reach planning
+  ---
+  duration_ms: 698.5358
+  type: 'test'
+  ...
+# Subtest: Scope AC5: pending confirmations and cancellations bypass an unavailable classifier
+ok 5 - Scope AC5: pending confirmations and cancellations bypass an unavailable classifier
+  ---
+  duration_ms: 832.6951
+  type: 'test'
+  ...
+# Subtest: Scope AC6: rejected input stays absent from persisted history and later classifier context
+ok 6 - Scope AC6: rejected input stays absent from persisted history and later classifier context
+  ---
+  duration_ms: 516.937
+  type: 'test'
+  ...
+# Subtest: Scope AC7: the default classifier is tool-free and excludes prior history and listing prose
+ok 7 - Scope AC7: the default classifier is tool-free and excludes prior history and listing prose
+  ---
+  duration_ms: 530.5821
+  type: 'test'
+  ...
+# Subtest: Classifier reasoning can retain provider defaults without extending its five-second deadline
+ok 8 - Classifier reasoning can retain provider defaults without extending its five-second deadline
+  ---
+  duration_ms: 16.5631
+  type: 'test'
+  ...
+# Subtest: The classifier instruction requires empty intents for out of scope and unclear verdicts
+ok 9 - The classifier instruction requires empty intents for out of scope and unclear verdicts
+  ---
+  duration_ms: 0.7865
+  type: 'test'
+  ...
+# Subtest: Out of scope and unclear verdicts with valid intents normalize to no intents and keep their scope
+ok 10 - Out of scope and unclear verdicts with valid intents normalize to no intents and keep their scope
+  ---
+  duration_ms: 1.0674
+  type: 'test'
+  ...
+# Subtest: Normalized out of scope verdicts never widen scope, expose tools, or leak intents to the runtime
+ok 11 - Normalized out of scope verdicts never widen scope, expose tools, or leak intents to the runtime
+  ---
+  duration_ms: 588.2259
+  type: 'test'
+  ...
+# Subtest: Invalid intent values still fail closed for out of scope and unclear verdicts
+ok 12 - Invalid intent values still fail closed for out of scope and unclear verdicts
+  ---
+  duration_ms: 2.7344
+  type: 'test'
+  ...
+# Subtest: In scope verdicts without intents still fail closed with a closed reason
+ok 13 - In scope verdicts without intents still fail closed with a closed reason
+  ---
+  duration_ms: 1.6016
+  type: 'test'
+  ...
+# Subtest: Classifier diagnostics record one closed reason per invalid decision without classifier text or canaries
+ok 14 - Classifier diagnostics record one closed reason per invalid decision without classifier text or canaries
+  ---
+  duration_ms: 223.2782
+  type: 'test'
+  ...
+# Subtest: Date role AC1: a checkout-governed date mislabeled as check-in never overwrites the current check-in
+ok 15 - Date role AC1: a checkout-governed date mislabeled as check-in never overwrites the current check-in
+  ---
+  duration_ms: 535.335
+  type: 'test'
+  ...
+# Subtest: Date role AC2: identical check-in and checkout slots fail closed and preserve the existing check-in
+ok 16 - Date role AC2: identical check-in and checkout slots fail closed and preserve the existing check-in
+  ---
+  duration_ms: 634.3189
+  type: 'test'
+  ...
+# Subtest: Date provenance AC3: a user date embedded in a longer digit run does not authorize the exact planner date
+ok 17 - Date provenance AC3: a user date embedded in a longer digit run does not authorize the exact planner date
+  ---
+  duration_ms: 1.1238
+  type: 'test'
+  ...
+# Subtest: Date role AC4: correctly labelled check-in and checkout dates in one sentence keep both roles
+ok 18 - Date role AC4: correctly labelled check-in and checkout dates in one sentence keep both roles
+  ---
+  duration_ms: 0.6912
+  type: 'test'
+  ...
+# Subtest: A truncated classifier response reports invalid_json_truncated only when the provider finish reason is length
+ok 19 - A truncated classifier response reports invalid_json_truncated only when the provider finish reason is length
+  ---
+  duration_ms: 6.8678
+  type: 'test'
+  ...
+# Subtest: Truncation diagnostics name the closed reason and never the truncated classifier text
+ok 20 - Truncation diagnostics name the closed reason and never the truncated classifier text
+  ---
+  duration_ms: 58.95
+  type: 'test'
+  ...
+# Subtest: Scope verdict codes: a valid classifier response yields only its closed scope, reason and risk codes
+ok 21 - Scope verdict codes: a valid classifier response yields only its closed scope, reason and risk codes
+  ---
+  duration_ms: 1.0271
+  type: 'test'
+  ...
+# Subtest: Scope verdict codes: an invalid classifier response yields one closed failure reason and never its text
+ok 22 - Scope verdict codes: an invalid classifier response yields one closed failure reason and never its text
+  ---
+  duration_ms: 1.5756
+  type: 'test'
+  ...
+1..22
+# tests 22
+# suites 0
+# pass 22
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9059.2947
