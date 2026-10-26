@@ -1,4 +1,4 @@
-import type { PaymentReferenceKeys } from "../../../domains/commerce/src/index.js";
+import type { PaymentReferenceKeys } from "./commerce-port.js";
 
 /**
  * TEST ONLY. A synthetic payment reference key for test runs and for the walkthrough fixture. The id and the value both say

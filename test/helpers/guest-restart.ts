@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { A2UIServerMessage } from "@cylayo/weaver-core";
 import { LocalGuestEnvironment, type LocalGuestFixtureConfig } from "../../apps/local-guest/src/fixture.js";
 import { startLocalGuestServer, type GuestStateSnapshot, type GuestSurfacePayload, type GuestTurnResult, type GuestTurnSuccess } from "../../apps/local-guest/src/guest-server.js";
+import { LOCAL_COMMERCE_MODULE } from "../../apps/local-guest/src/commerce-module-local.js";
 
 /** The surface's first action button, or the one that sends `name`. */
 export function guestAction(surface: GuestSurfacePayload, name?: string) {
@@ -21,10 +22,15 @@ export type RestartStage = typeof stages[number];
 
 type GuestServerOptions = Omit<NonNullable<Parameters<typeof startLocalGuestServer>[0]>, "port" | "environment">;
 
+/**
+ * Starts a restartable local guest. The dev demo's commerce module is injected by default (ADR 0104 decision 6), so the
+ * COMMERCE_ENABLED switch alone decides composition. A test that needs the switch on with no module passes
+ * `commerceModule: undefined` explicitly.
+ */
 export async function restartFixture(config: Partial<LocalGuestFixtureConfig> = {}, serverOptions: GuestServerOptions = {}) {
   const directory = mkdtempSync(join(tmpdir(), "guest-restart-"));
   try {
-    return await openRestartFixture(directory, config, serverOptions);
+    return await openRestartFixture(directory, config, { commerceModule: LOCAL_COMMERCE_MODULE, ...serverOptions });
   } catch (error) {
     // A startup that throws never reaches close(), so the temporary directory is removed here before the error is rethrown.
     rmSync(directory, { recursive: true, force: true });

@@ -51,6 +51,15 @@ test("ADR 0075: COMMERCE_ENABLED=true without the key pair fails the start and n
   });
 });
 
+test("ADR 0104 decision 6: COMMERCE_ENABLED=true with no injected commerce module fails closed, names COMMERCE_ENABLED and never echoes a value", async () => {
+  await withProcessEnv({ COMMERCE_ENABLED: "true", NODE_ENV: undefined, COMMERCE_REFERENCE_TEST_KEY: undefined, ...COMMERCE_SYNTHETIC_KEYS }, async () => {
+    await assert.rejects(restartFixture({}, { commerceModule: undefined }), (error: unknown) => {
+      const message = error instanceof Error ? error.message : "";
+      return message.includes("COMMERCE_ENABLED") && !message.includes(COMMERCE_SYNTHETIC_KEYS.COMMERCE_REFERENCE_HMAC_KEY) && !message.includes("true");
+    });
+  });
+});
+
 test("COMMERCE_ENABLED=true with the key pair mounts the commerce routes", async () => {
   await withProcessEnv({ COMMERCE_ENABLED: "true", NODE_ENV: undefined, COMMERCE_REFERENCE_TEST_KEY: undefined, ...COMMERCE_SYNTHETIC_KEYS }, async () => {
     const fixture = await restartFixture();

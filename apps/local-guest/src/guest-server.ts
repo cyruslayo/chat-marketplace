@@ -28,17 +28,12 @@ import { billingPeriodStatusText, extendedStayUnitFacts } from "../../web-agent/
 import { formatBookingMoney } from "../../web-agent/src/booking-presentation.js";
 import { formatGuestDate } from "../../web-agent/src/guest-content.js";
 import type { BillingPeriodProjection } from "../../../domains/shortlet/src/index.js";
-import { createGuestShell, type StaticAsset } from "./guest-shell.js";
-import { createCommerceRouteModule } from "./commerce-route-module.js";
+import { createGuestShell, type RouteModule, type StaticAsset } from "./guest-shell.js";
+import type { GuestCommerceModule, PaymentReferenceKeys } from "./commerce-port.js";
 import { MAX_TURN_TEXT_LENGTH } from "./turn-limits.js";
 import { createLandingRouteModule } from "./landing-route-module.js";
 import { nodeLandingAssetLoader } from "./node-landing-assets.js";
 import type { LandingBinaryAssetLoader } from "./landing-assets.js";
-import {
-  createCommercePack,
-  type PaymentReferenceKeys,
-} from "../../../domains/commerce/src/index.js";
-import { commerceReferenceKeysFromProcessEnv } from "./commerce-reference-keys-local.js";
 import { commerceEnabledFromEnv } from "../../../packages/commerce-switch/src/commerce-switch.js";
 import { applySchemaMigrations } from "../../../packages/platform-core/src/schema-migrations.js";
 import {
@@ -2196,6 +2191,19 @@ function defaultGuestCommerceComposition(): GuestCommerceComposition {
 /** The commerce pack's domain id (domains/commerce/src/index.ts), which the disabled composition refuses. */
 const COMMERCE_DOMAIN_PACK_ID = "commerce";
 
+/**
+ * Fails closed: the local composition needs the commerce module from its composition root (ADR 0104 decision 6). The
+ * message names the variable and never echoes a value.
+ */
+function requireCommerceModule(module: GuestCommerceModule | undefined): GuestCommerceModule {
+  if (module === undefined) {
+    throw new Error(
+      'COMMERCE_ENABLED is on, but no commerce module is injected: commerce composition "local" needs the commerce module from its composition root (ADR 0104 decision 6). The guest server refuses to start without it.',
+    );
+  }
+  return module;
+}
+
 /** Fails closed: a missing value takes the switch-driven default; any other value that is not a known composition throws. */
 function resolveGuestCommerceComposition(
   value: unknown,
@@ -2210,11 +2218,16 @@ function resolveGuestCommerceComposition(
 }
 
 export interface GuestRequestHandlerOptions {
-  /** Payment reference keys for the commerce pack (user decision 18 Oct 2026). Omitted: read from the environment (see commerce-reference-keys-local). */
+  /** Payment reference keys for the commerce pack (user decision 18 Oct 2026). Omitted: the injected module reads them from the environment. */
   paymentReferenceKeys?: PaymentReferenceKeys;
   environment?: LocalGuestEnvironment;
   /** Commerce composition on this handler's database. Default: "local" only when COMMERCE_ENABLED is "true", otherwise "disabled" (ADR 0104). The Shortlet Worker passes "disabled" (ADR 0101). */
   commerce?: GuestCommerceComposition;
+  /**
+   * The commerce domain, injected by a composition root that ships commerce (ADR 0104 decision 6). Default: none. With the
+   * composition "local" and no module, the handler refuses to start. With the composition "disabled" the module is unused.
+   */
+  commerceModule?: GuestCommerceModule;
   clientScriptPath?: string;
   /** Slice 09a: the bundles/CSS the handler serves; the Node default is `nodeAssetLoader()` (no import-time reads). */
   assets?: AssetLoader;
@@ -2304,6 +2317,11 @@ export function createGuestRequestHandler(
     );
   }
   const commerceComposition = resolveGuestCommerceComposition(options.commerce);
+  // ADR 0104 decision 6: a composition that is on needs the injected module. Fail closed here, before any state is opened.
+  const commerceModule =
+    commerceComposition === GUEST_COMMERCE_COMPOSITION.local
+      ? requireCommerceModule(options.commerceModule)
+      : undefined;
   // ADR 0101: a handler that composes no commerce must not be given the commerce pack either.
   if (
     commerceComposition === GUEST_COMMERCE_COMPOSITION.disabled &&
@@ -5495,23 +5513,20 @@ export function createGuestRequestHandler(
 
   // Local composition only. Commerce public routes read the tracking-attempts table, which only the commerce migrations
   // create (issue 27). The Shortlet Worker passes commerce: "disabled", so its object never runs the commerce ledger (ADR 0101).
-  const commerceRouteModules: ReturnType<typeof createCommerceRouteModule>[] =
-    [];
-  if (commerceComposition === GUEST_COMMERCE_COMPOSITION.local) {
+  const commerceRouteModules: RouteModule[] = [];
+  if (commerceModule !== undefined) {
     const commerceClock = () => defaultApp.environment.clock();
-    const commercePack = createCommercePack({
+    const commerce = commerceModule.compose({
       database: defaultApp.environment.database,
       clock: commerceClock,
-      paymentReferenceKeys:
-        options.paymentReferenceKeys ??
-        commerceReferenceKeysFromProcessEnv(process.env, process.env.NODE_ENV),
+      paymentReferenceKeys: options.paymentReferenceKeys,
     });
     applySchemaMigrations(
       defaultApp.environment.database,
-      commercePack.migrations,
+      commerce.migrations,
       commerceClock().toISOString(),
     );
-    commerceRouteModules.push(createCommerceRouteModule(commercePack));
+    commerceRouteModules.push(commerce.routeModule);
   }
   const shell = createGuestShell({
     assets,
