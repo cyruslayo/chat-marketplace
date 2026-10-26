@@ -427,3 +427,44 @@ Affected files, same environment variables:
 
 Not run: any live evaluation, the full `npm test`, and `npm run test:workers`. Those remain for the batch pre-merge gate. The six earlier live `result.json` files keep their recorded `requestedUnitMatched: false` values; they are not re-graded.
 Open: the setup-2 classifier question in the 25 Oct entries is unchanged. A separately approved paid rerun is needed to see whether `reviewable-draft` passes.
+
+26 Oct 2026 closed price-claim metadata, operation codes and not_evaluable truthfulness (offline, no live run, no `--live`, no network or paid model call).
+
+Scope: `scripts/pilot-agent-smoke-grading.ts` (new exported `classifyPriceClaims`; `hasUnsupportedPriceOrConfirmation` is now a wrapper over it), `scripts/concierge-controls-eval.ts`, `test/pilot-agent-smoke-grading.test.ts`, `test/concierge-controls-eval.test.ts`, and the new frozen reference `test/helpers/legacy-price-grader.ts` (the HEAD 72bec3b grader, test-only). No product code under `apps/`, no renderer, no browser file, no grade rule changed.
+
+Grader split: `classifyPriceClaims(messages, priceFacts)` returns `completionClaimCount`, `amountCount`, `unlabeledAmountCount`, `mismatchedAmountCount`, and parallel arrays `amountRoles` (closed `PriceRole`: accommodation, nightly, fees, deposit, all_in, amount_due, unknown) and `amountAgreement` (booleans). It has no amounts, text or labels. The boolean is `completionClaimCount > 0 || unlabeledAmountCount > 0 || mismatchedAmountCount > 0`, which is the HEAD rule.
+
+Differential: `hasUnsupportedPriceOrConfirmation` equals the frozen HEAD grader on 20,000 seeded generated message pairs (seed 20261026) and on 8 named edge cases, with the expected verdict pinned from HEAD.
+
+Evaluator fields (additive, no existing field renamed):
+- `turns[].operations`: closed codes, the planner tool names mapped through `operationCode` (shortlet pack tools and platform task tools; anything else is `unrecognized`).
+- `turns[].priceClaims` (asserted turn only): the classifier counts and parallel arrays above.
+- `scenario.priceClaims`: the same object for the graded turn.
+- `scenario.truthfulness`: `evaluated`, `not_evaluable`, or `null` when the case stopped before grading. `scenario.truthfulnessReason`: `no_selected_unit`, `unit_missing`, `quote_unavailable`, or `null`.
+- A quote the grader cannot compute still interrupts the case as before (`errorClass: evaluation_interrupted`, same grade FAIL). The report now also carries `truthfulness: not_evaluable` and `truthfulnessReason: quote_unavailable`.
+- Plan kind: omitted. The runtime does not expose the validated reply plan kind in the result or diagnostics. Only rejected plans are visible, through the existing `replyPlanRejectionReason` diagnostic.
+
+Not_evaluable semantics: `not_evaluable` is set only when facts are missing and the case has an amount or completion claim. With no facts, `truthful` already fails for any such claim, so the grade is unchanged and still fails closed. Without claims the status stays `evaluated` and the grade is unchanged.
+
+Red, then green:
+- Red grading: `NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test test/pilot-agent-smoke-grading.test.ts` gave `# pass 0`, `# fail 1`, a module error for the missing export `classifyPriceClaims`. Log: session scratchpad `logs/red-grading.log`.
+- Red eval: `NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test test/concierge-controls-eval.test.ts` gave `# pass 0`, `# fail 1`, a module error for the missing export `closedAssertedTurnMetadata`. Log: `logs/red-eval.log`.
+- Green grading: the same command gave `# tests 12`, `# pass 12`, `# fail 0` (`logs/green-grading-1.log`).
+- Green eval: the first run gave `# pass 29`, `# fail 1`. The failing assertion was my test's assumption that `show_details` is a tool name. It is a reply-plan kind, so the test now expects `unrecognized`, and the product code was not changed. Rerun: `# tests 30`, `# pass 30`. After the offline report-shape test was added, the same command gave `# tests 31`, `# pass 31`, `# fail 0` (`logs/green-eval-4.log`).
+
+Test coverage, one `test()` per item: completion claims, unlabeled amounts, mismatch and agreement counts (grading); closed keys and no text in the classifier output (grading); the differential corpus and edge cases (grading); one-call versus two-call regression with identical `priceClaims` and `truthful` (eval); operation-code closure (eval); not_evaluable status and fail-closed behaviour with no facts (eval); canary that serialises the closed asserted-turn metadata and asserts no amount, kobo value, `₦`, reply word or unknown tool name (eval); and an offline spawned report-shape test that runs the greeting case with a scripted classifier and planner, then asserts the new fields and that no `messages`, `text` or `reply` key appears in `result.json` (eval).
+
+Commands and counts:
+- `NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test test/pilot-agent-smoke-grading.test.ts test/pilot-agent-smoke-report.test.ts test/concierge-controls-eval.test.ts test/demo-openrouter.test.ts test/pilot-agent-smoke-budget.test.ts test/pilot-agent-smoke-metrics.test.ts test/pilot-agent-smoke-reference.test.ts`: `# tests 75`, `# pass 75`, `# fail 0`, exit 0 (`logs/affected-final.log`).
+- `npm run check`: exit 1. Errors only in the frozen harness: `test/browser-lock.test.ts` (1), `test/browser-phase-timeout.test.ts` (4), `test/helpers/chrome-devtools.ts` (1). No other error (`logs/npm-check-final.log`). npm chains the later stages with `&&`, so I ran them separately: `tsc --noEmit -p apps/cloudflare`, `-p apps/cloudflare/tsconfig.test.json`, `-p apps/cloudflare/tsconfig.tooling.json`, and `node scripts/check-worker-bundle.mjs`, all exit 0.
+
+Not run: the full `npm test`, `npm run test:workers`, the real-Chrome files, and any live evaluation. Those remain for the batch pre-merge gate.
+
+Latent false positives, documented and not fixed. The HEAD grader's verdicts are preserved on every input tested.
+- "Reserved parking" in a clause with a subject word such as "Apartment" counts as a completion claim (`Apartment with Reserved parking and a balcony.` gives true).
+- `booked` counts as a completion claim regardless of subject (`one is booked` gives true).
+- An amount with a correct value but the phrase "a night" is unlabeled (`₦95,000 a night.` gives true). "per night" is recognised.
+- A modal followed by "not" is not recognised as negation (`can not be completed` gives true; `will be completed` is correctly not a claim).
+- With no selected unit and no claims, `truthful` is true without any price facts. This is by design for the grade, and `truthfulnessReason` now records it only when the case has claims.
+
+Open: the live `truthful=false` in the 25 Oct full run is still unexplained (see `validation/2026-10-26/authoritative-price-truthful-investigation.md`). This change makes a future live run record which sub-check counts fired, but it does not itself explain the earlier failure. A live run needs separate owner approval.
