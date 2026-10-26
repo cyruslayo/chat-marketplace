@@ -495,3 +495,23 @@ Decisions and gaps:
 - The exact `latencyMs` on failed classifier calls is still persisted, as it was for all calls before this change. Only the new fields are bucketed. Removing it would change the shape of existing reports. Owner to confirm.
 - `invalid_json_wrapped` still covers a BOM-prefixed object, and a valid object followed by an unclosed second object. Both come from the unchanged wrapped precedence and are documented here, not relabelled.
 - Whether the new codes reduce the live failure rate is not established. That needs a paid run with owner approval. Options (b) and (c) from the investigation stay open.
+
+### 2026-10-26: commerce import boundary fix and deterministic latency case (offline, no live run)
+
+Fix 1 (commit 56bbea1): the commerce object's runtime closure reached `apps/local-guest/src/commerce-switch-local.ts` through `apps/cloudflare/src/commerce-switch.ts`, which `test/commerce-ops-import-boundary.test.ts` forbids. The `COMMERCE_ENABLED` parser moved, unchanged in behaviour, to `domains/commerce/src/commerce-switch.ts` (the commerce object may import the domain; the forbidden list names no commerce path). The old file was deleted with no shim, and every importer now uses the domain path. ADR 0104 decision 5 and ADR 0100 name no file path, so no ADR text changed. Red before the move: `test/commerce-ops-import-boundary.test.ts` 5 pass, 1 fail (closure contained `apps/local-guest/src/commerce-switch-local.ts`). Green after: the boundary test passes 6 of 6.
+
+Fix 2 (commit after 56bbea1): the `Offline: a failed classifier call` case in `test/concierge-controls-eval.test.ts` asserted `latencyBucket: "<1s"` from a real `performance.now()` in an evaluator subprocess. Its preload now replaces `performance.now` with a fake clock that the provider mock advances by a fixed 250 ms, so the bucket is `<1s` under any load. Production code is unchanged. Red: a temporary copy of the original test with 1.2 s of real delay injected into the provider mock failed with `latencyBucket: '1-2s'` (expected `'<1s'`). Green: the same injected copy of the fixed test passes, and the fixed file passes under artificial CPU load (eight busy processes).
+
+Commands and counts (all with `NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow`, `LLM_API_KEY` unset):
+- `npx tsx --test test/commerce-ops-import-boundary.test.ts test/commerce-switch-*.test.ts test/cloudflare-config.test.ts test/guest-restart-helper.test.ts`: 38 pass, 0 fail (before the fix, the boundary test was 5 of 6).
+- `npx tsx --test test/concierge-controls-eval.test.ts`: 34 pass, 0 fail, and 34 of 34 again with eight busy processes running. The targeted names (`Offline: a failed classifier call|Latency buckets`) passed 5 of 5 runs under load.
+- Final combined run (boundary, switch, cloudflare-config, guest-restart-helper, concierge-controls-eval): 72 pass, 0 fail.
+- `npm run check` (root): exit 1, 6 errors, all in frozen files: `test/browser-lock.test.ts` (1), `test/browser-phase-timeout.test.ts` (4), `test/helpers/chrome-devtools.ts` (1). No other errors.
+- `tsc --noEmit -p apps/cloudflare`, `-p apps/cloudflare/tsconfig.test.json`, `-p apps/cloudflare/tsconfig.tooling.json`, `node scripts/check-worker-bundle.mjs`: all exit 0.
+- `npm run test:workers -- apps/cloudflare/test/commerce-switch.spec.ts`: 7 pass; `shortlet-ops-commerce-isolation.spec.ts`: 10 pass; `commerce-market.spec.ts`: 40 pass (each run solo, exit 0).
+
+Not verified: the real `cf/config` loader. Plain Node 22 and `tsx` both reject the `with { type: "cf-worker" }` attribute on the Worker entrypoint in `cloudflare.config.ts`, so the config could not be loaded outside the cf toolchain on this machine. The exact-specifier test in `test/cloudflare-config.test.ts` (which passes) is the proof of resolution, and it checks the new `domains/commerce/src/commerce-switch.ts` specifier. The known Windows cf-vite ENOENT was not re-run.
+
+Not run: `npm test`, the browser phase, real-Chrome files, any live evaluation.
+
+Observation, not changed: `test/model-quota-host-recovery.test.ts` (#1499) has no explicit timers. It uses the wall clock only through `new Date()` in quota reservations (hour and day windows) and pending-action expiry (15 minutes), so neither is a plausible sub-second flake. The failing subtest name was not kept in any saved log, so the load-only failure is unexplained. The next step is to capture the subtest name from the next failing run.

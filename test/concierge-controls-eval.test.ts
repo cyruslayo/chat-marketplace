@@ -555,6 +555,10 @@ test("Offline: a failed classifier call records its closed reason and buckets, w
   const plan = {scope:'unclear',risk:'ordinary',intents:[],reasonCode:'unclear',slots:{city:null,neighbourhood:null,bedrooms:null,nights:null,guests:null,checkIn:null,checkOut:null}};
   const malformed = `${JSON.stringify(plan)}{"note":"${canary}"}`;
   writeFileSync(preload, `const localFetch = globalThis.fetch;
+// Fake clock: the evaluator times each call with performance.now(). Only the provider call below advances this clock, by a fixed
+// 250 ms, so the latency bucket is "<1s" whatever the machine load (a real clock made this case fail under load).
+let fakeNowMs = 0;
+performance.now = () => fakeNowMs;
 globalThis.fetch = async (url, init) => {
   const address = String(url);
   if (address.startsWith('http://127.0.0.1:')) return localFetch(url, init);
@@ -563,6 +567,7 @@ globalThis.fetch = async (url, init) => {
   if (address !== 'https://openrouter.ai/api/v1/chat/completions') throw new Error('Network forbidden');
   const body = JSON.parse(String(init.body));
   if (body.response_format.json_schema.name !== 'concierge_scope') throw new Error('Planner must not be reached');
+  fakeNowMs += 250;
   return Response.json({model:'openai/gpt-6-luna',choices:[{finish_reason:'stop',message:{role:'assistant',content:${JSON.stringify(malformed)}}}],usage:{prompt_tokens:1,completion_tokens:150,cost:0}});
 };\n`);
   const run = spawnSync(process.execPath, ["--import", pathToFileURL(resolve("node_modules/tsx/dist/loader.mjs")).href,
