@@ -1,5 +1,5 @@
 import type { PaymentReferenceKeys } from "../../../domains/commerce/src/index.js";
-import { COMMERCE_ENABLED_VARIABLE, commerceEnabledFromEnv } from "../../local-guest/src/commerce-switch-local.js";
+import { COMMERCE_ENABLED_VARIABLE, commerceEnabledFromEnv } from "../../../domains/commerce/src/commerce-switch.js";
 
 /**
  * The merchant back office starts only when commerce is ON (ADR 0104), and then needs the payment reference key pair

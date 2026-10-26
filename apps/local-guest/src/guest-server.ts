@@ -39,7 +39,7 @@ import {
   type PaymentReferenceKeys,
 } from "../../../domains/commerce/src/index.js";
 import { commerceReferenceKeysFromProcessEnv } from "./commerce-reference-keys-local.js";
-import { commerceEnabledFromEnv } from "./commerce-switch-local.js";
+import { commerceEnabledFromEnv } from "../../../domains/commerce/src/commerce-switch.js";
 import { applySchemaMigrations } from "../../../packages/platform-core/src/schema-migrations.js";
 import {
   discoveryArtifactToA2UI,

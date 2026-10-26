@@ -3,7 +3,8 @@
  * COMMERCE_ENABLED to exactly "true". Unset, empty or exactly "false" is OFF. Any other value throws, so a typo can never
  * switch commerce on silently. The error names the variable and never echoes the rejected value.
  *
- * This is the only parser. Hosts that need the switch import it from here.
+ * This is the only parser. It lives in the commerce domain, which the commerce object may import (ADR 0099, ADR 0101);
+ * a host reads it from here, so no runtime closure of the commerce object reaches a local app.
  */
 export const COMMERCE_ENABLED_VARIABLE = "COMMERCE_ENABLED";
 

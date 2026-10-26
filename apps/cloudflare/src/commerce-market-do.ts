@@ -6,7 +6,8 @@ import { CommerceReferenceKeyError, COMMERCE_REFERENCE_KEY_INVALID, paymentRefer
 import { commerceAlarmPlan } from "./commerce-alarm.js";
 import { applySchemaMigrations } from "../../../packages/platform-core/src/schema-migrations.js";
 import { checksumTables, sha256OfBytes } from "../../../packages/platform-core/src/data-migration.js";
-import { COMMERCE_DISABLED, COMMERCE_ENABLED_INVALID, commerceEnabledFromEnv, commerceRowCount, commerceTableExists } from "./commerce-switch.js";
+import { commerceEnabledFromEnv } from "../../../domains/commerce/src/commerce-switch.js";
+import { COMMERCE_DISABLED, COMMERCE_ENABLED_INVALID, commerceRowCount, commerceTableExists } from "./commerce-switch.js";
 import { schemaVersion } from "../../../packages/platform-core/src/schema-migrations.js";
 import { DurableObjectSqlDatabase } from "./do-sql-database.js";
 import { commerceMigrationsWithCutover } from "./commerce-migrations.js";

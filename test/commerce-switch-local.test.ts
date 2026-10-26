@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { COMMERCE_ENABLED_VARIABLE, commerceEnabledFromEnv } from "../apps/local-guest/src/commerce-switch-local.js";
+import { COMMERCE_ENABLED_VARIABLE, commerceEnabledFromEnv } from "../domains/commerce/src/commerce-switch.js";
 
 // ADR 0104 / owner decision: one fail-closed switch. Unset, empty or exactly "false" is OFF; exactly "true" is ON;
 // any other value throws at startup and names the variable. Nothing is ever silently on.

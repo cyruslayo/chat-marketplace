@@ -1,12 +1,11 @@
-import { commerceEnabledFromEnv } from "../../local-guest/src/commerce-switch-local.js";
+import { commerceEnabledFromEnv } from "../../../domains/commerce/src/commerce-switch.js";
 import { CUTOVER_STATE_TABLE, SCHEMA_MIGRATIONS_TABLE } from "../../../packages/platform-core/src/data-migration.js";
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 
 /**
  * The one commerce switch (ADR 0104 decision 5), read by the Worker and by the commerce object through the single parser in
- * apps/local-guest/src/commerce-switch-local.ts. Unset, empty or "false" is off; exactly "true" is on; any other value throws.
+ * domains/commerce/src/commerce-switch.ts. Unset, empty or "false" is off; exactly "true" is on; any other value throws.
  */
-export { commerceEnabledFromEnv, COMMERCE_ENABLED_VARIABLE } from "../../local-guest/src/commerce-switch-local.js";
 
 /** Fixed code for an invalid COMMERCE_ENABLED value on the commerce object. The value is never returned or logged. */
 export const COMMERCE_ENABLED_INVALID = "COMMERCE_ENABLED_INVALID";

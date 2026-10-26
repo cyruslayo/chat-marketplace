@@ -1,7 +1,7 @@
 import { bindings, defineConfig, defineWorker, exports } from "cf/config";
 import * as entrypoint from "./src/worker.ts" with { type: "cf-worker" };
 // The config loader is plain Node ESM and does not map .js to .ts, so the specifier names the source file exactly (as ./src/worker.ts does).
-import { commerceEnabledFromEnv } from "../local-guest/src/commerce-switch-local.ts";
+import { commerceEnabledFromEnv } from "../../domains/commerce/src/commerce-switch.ts";
 
 /**
  * Typed Cloudflare configuration for the Shortlet pilot (slice 10b).
