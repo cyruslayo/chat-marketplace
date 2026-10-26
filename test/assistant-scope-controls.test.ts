@@ -10,6 +10,7 @@ import { resolveCheckInDate } from "../apps/local-guest/src/assistant/shortlet-a
 import { currentTurnDateRoles } from "../apps/local-guest/src/assistant/date-tokens.js";
 import type { ScopeAssessment } from "../apps/local-guest/src/assistant/scope-classifier.js";
 import { APIConnectionError } from "../apps/local-guest/src/assistant/openai-compatible-client.js";
+import { SCOPE_RETRY_ELIGIBLE_REASONS } from "../apps/local-guest/src/assistant/scope-classifier-retry.js";
 import { ModelQuotaGuardClient } from "../apps/local-guest/src/assistant/model-quota-guard.js";
 import { ModelRequestGuardError } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { FakeClock, ScriptedClassifierModel, ScriptedQuotaPort, TRAILING_TEXT_CLASSIFIER_TEXT, MULTIPLE_VALUES_CLASSIFIER_TEXT, VALID_CLASSIFIER_TEXT, classifierRequestShape, type ScriptedClassifierStep } from "./helpers/scope-classifier-retry-fixtures.js";
@@ -604,6 +605,22 @@ test("Classifier retry AC10: a recovered retry reports one closed first-attempt 
   assert.equal(retried[0]?.succeeded, true);
   assert.equal(retried[0]?.firstAttemptScopeFailureReason, "invalid_json_trailing_text");
   assert.equal(diagnostics.some((event) => event.scopeFailureReason !== undefined), false);
+});
+
+test("Classifier retry AC11: a length-stopped wrapped first attempt stays retry-eligible and records its finish reason, while a length-stopped truncated attempt is not retried", async (t) => {
+  // ADR 0106 amendment: the eligible set is closed by shape code. finishReason is metadata only and never changes eligibility.
+  assert.ok(SCOPE_RETRY_ELIGIBLE_REASONS.includes("invalid_json_wrapped"));
+  assert.equal(SCOPE_RETRY_ELIGIBLE_REASONS.includes("invalid_json_truncated"), false);
+  const wrapped = await retryTurn(t, "retry-ac11-wrapped", [{ response: { text: `${VALID_CLASSIFIER_TEXT} Note: done.`, finishReason: "length" } }, { response: { text: VALID_CLASSIFIER_TEXT } }]);
+  assert.equal(wrapped.model.classifierRequests.length, 2);
+  assert.equal(wrapped.result.controlOutcome, "successful_model_handling");
+  assert.equal(wrapped.diagnostics.find((event) => event.classifierAttempts === 2)?.firstAttemptScopeFailureReason, "invalid_json_wrapped");
+  assert.equal(wrapped.diagnostics.find((event) => event.classifierAttempts === 2)?.firstAttemptFinishReason, "length");
+  const truncated = await retryTurn(t, "retry-ac11-truncated", [{ response: { text: `{"scope":"in_scope","risk":"ordinary",`, finishReason: "length" } }, { response: { text: VALID_CLASSIFIER_TEXT } }]);
+  assert.equal(truncated.model.classifierRequests.length, 1);
+  assert.equal(truncated.result.controlOutcome, "guard_failure");
+  assert.equal(truncated.diagnostics.find((event) => event.scopeFailureReason !== undefined)?.scopeFailureReason, "invalid_json_truncated");
+  assert.equal(truncated.diagnostics.find((event) => event.scopeFailureReason !== undefined)?.finishReason, "length");
 });
 
 test("Classifier retry canary: the retry path persists no raw classifier text, prompt text, or canary in diagnostics, telemetry, errors, thread state, or the result", async (t) => {

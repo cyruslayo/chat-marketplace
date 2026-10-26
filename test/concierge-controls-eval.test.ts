@@ -12,6 +12,8 @@ import { authoritativePriceFacts, hasUnsupportedPriceOrConfirmation, requestedUn
 import { ASSISTANT_CONTROL_COPY } from "../apps/local-guest/src/assistant/control-copy.js";
 import { ModelRequestGuardError, type AssistantModelClient, type AssistantToolCall } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { restartFixture } from "./helpers/guest-restart.js";
+import { OTHER_UNIT_ID, PRICED_MESSAGE, RESOLVED_PRICE_FACTS, SETUP_FIRST_UNIT_ID, pricedUnitInput } from "./helpers/price-unit-fixtures.js";
+import { pricedUnit } from "../scripts/concierge-controls-eval.js";
 import type { AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 
 test("Controlled live evaluation requires explicit opt-in and a bounded total attempt limit", () => {
@@ -650,4 +652,33 @@ globalThis.fetch = async (url, init) => {
   assert.equal(turn.classifierAttempts, 2);
   assert.equal(turn.recoveredByRetry, false);
   assert.doesNotMatch(text, new RegExp(canary));
+});
+
+test("Authoritative price grading prices the setup first card when the asserted turn opened its details", () => {
+  assert.deepEqual(pricedUnit(pricedUnitInput()), { unitId: SETUP_FIRST_UNIT_ID, source: "setup_first_card", gap: null });
+  assert.deepEqual(pricedUnit(pricedUnitInput({ priceCallCount: 2 })), { unitId: SETUP_FIRST_UNIT_ID, source: "setup_first_card", gap: null });
+});
+
+test("Authoritative price grading keeps a post-turn discovery card as the priced unit (precedence)", () => {
+  assert.deepEqual(pricedUnit(pricedUnitInput({ currentUnitId: OTHER_UNIT_ID })), { unitId: OTHER_UNIT_ID, source: "post_turn_discovery", gap: null });
+  assert.deepEqual(pricedUnit(pricedUnitInput({ currentUnitId: OTHER_UNIT_ID, priceCallCount: 0 })), { unitId: OTHER_UNIT_ID, source: "post_turn_discovery", gap: null });
+});
+
+test("Authoritative price grading fails closed when the priced stay is not the setup first card", () => {
+  const failClosed = { unitId: undefined, source: "none", gap: "no_selected_unit" };
+  assert.deepEqual(pricedUnit(pricedUnitInput({ pricedStayRefsMatchFirst: false })), failClosed);
+  assert.deepEqual(pricedUnit(pricedUnitInput({ pricedStayRefsMatchFirst: false, priceCallCount: 3 })), failClosed);
+  // Without a known setup first card there is nothing to match, so the grader cannot price the case.
+  assert.deepEqual(pricedUnit(pricedUnitInput({ expectedFirstUnitId: undefined })), failClosed);
+});
+
+test("Authoritative price grading reports no_selected_unit when no price call and no discovery surface", () => {
+  assert.deepEqual(pricedUnit(pricedUnitInput({ priceCallCount: 0 })), { unitId: undefined, source: "none", gap: "no_selected_unit" });
+});
+
+test("Authoritative price amounts with resolved facts are truthful and keep the case evaluated", () => {
+  const priced = pricedUnit(pricedUnitInput());
+  assert.equal(priced.gap, null);
+  assert.equal(hasUnsupportedPriceOrConfirmation([PRICED_MESSAGE], RESOLVED_PRICE_FACTS), false);
+  assert.deepEqual(truthfulnessStatus({ gap: priced.gap ?? undefined, priceClaimed: true }), { truthfulness: "evaluated", truthfulnessReason: null });
 });

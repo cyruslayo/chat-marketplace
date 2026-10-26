@@ -1,4 +1,4 @@
-import { ModelRequestGuardError } from "./assistant-model.js";
+import { ModelRequestGuardError, type AssistantFinishReason } from "./assistant-model.js";
 import { ScopeClassificationError, type ScopeClassifier, type ScopeContext, type ScopeFailureReason } from "./scope-classifier.js";
 
 /**
@@ -26,6 +26,8 @@ export interface ScopeClassifierRetryEvent {
   readonly classifierAttempts: 1 | 2;
   readonly firstAttemptScopeFailureReason: ScopeFailureReason;
   readonly classifierRetryResult: ScopeClassifierRetryResult;
+  /** Metadata only: the closed finish reason of the first failed attempt, when the provider reported one. Never changes eligibility. */
+  readonly firstAttemptFinishReason?: AssistantFinishReason | undefined;
 }
 
 /**
@@ -37,6 +39,7 @@ export class ScopeClassifierRetryError extends Error {
   readonly classifierAttempts: 1 | 2;
   readonly firstAttemptScopeFailureReason: ScopeFailureReason;
   readonly classifierRetryResult: ScopeClassifierRetryResult;
+  readonly firstAttemptFinishReason?: AssistantFinishReason | undefined;
   constructor(failure: unknown, event: ScopeClassifierRetryEvent) {
     super("scope_classifier_failed");
     this.name = "ScopeClassifierRetryError";
@@ -44,6 +47,7 @@ export class ScopeClassifierRetryError extends Error {
     this.classifierAttempts = event.classifierAttempts;
     this.firstAttemptScopeFailureReason = event.firstAttemptScopeFailureReason;
     this.classifierRetryResult = event.classifierRetryResult;
+    this.firstAttemptFinishReason = event.firstAttemptFinishReason;
   }
 }
 
@@ -96,8 +100,9 @@ export class RetryingScopeClassifier implements ScopeClassifier {
       firstFailure = error;
     }
     const first = firstFailure.reason;
+    const firstFinish = firstFailure.finishReason;
     const fail = (failure: unknown, classifierAttempts: 1 | 2, classifierRetryResult: ScopeClassifierRetryResult): never => {
-      const event = { recovered: false, classifierAttempts, firstAttemptScopeFailureReason: first, classifierRetryResult } as const;
+      const event = { recovered: false, classifierAttempts, firstAttemptScopeFailureReason: first, classifierRetryResult, firstAttemptFinishReason: firstFinish } as const;
       this.#report(event);
       throw new ScopeClassifierRetryError(failure, event);
     };
@@ -115,7 +120,7 @@ export class RetryingScopeClassifier implements ScopeClassifier {
       if (error instanceof ScopeClassificationError) return fail(error, 2, "second_failed");
       return fail(error, 2, "second_transport_failed");
     }
-    this.#report({ recovered: true, classifierAttempts: 2, firstAttemptScopeFailureReason: first, classifierRetryResult: "recovered" });
+    this.#report({ recovered: true, classifierAttempts: 2, firstAttemptScopeFailureReason: first, classifierRetryResult: "recovered", firstAttemptFinishReason: firstFinish });
     return value;
   }
 

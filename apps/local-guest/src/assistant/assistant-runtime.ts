@@ -130,6 +130,10 @@ export interface AssistantDiagnosticEvent {
   readonly firstAttemptScopeFailureReason?: import("./scope-classifier.js").ScopeFailureReason;
   /** ADR 0106 amendment: how the retry stage ended. Present only when a first attempt failed validation. */
   readonly classifierRetryResult?: ScopeClassifierRetryResult;
+  /** ADR 0106 amendment, metadata only: the closed finish reason of the failed classifier response, recorded beside its code. Never changes acceptance or retry. */
+  readonly finishReason?: import("./assistant-model.js").AssistantFinishReason;
+  /** Metadata only: the closed finish reason of the first failed classifier attempt when a retry stage ran. */
+  readonly firstAttemptFinishReason?: import("./assistant-model.js").AssistantFinishReason;
   /** ADR 0075 / 0106: a fixed rejection code for a reply plan; the rejected text is never recorded. */
   readonly replyPlanRejectionReason?: ReplyPlanRejectionReason;
 }
@@ -650,8 +654,9 @@ export class AssistantRuntime {
       // A retry failure carries the stage's decisive error; the first failure's outcome stands for refused or skipped retries (ADR 0106 amendment).
       const cause = error instanceof ScopeClassifierRetryError ? error.failure : error;
       this.#diagnose({ ...createFailureDiagnostic("provider_request", 0, undefined, cause),
-        ...(cause instanceof ScopeClassificationError ? { scopeFailureReason: cause.reason } : {}),
-        ...(error instanceof ScopeClassifierRetryError ? { classifierAttempts: error.classifierAttempts, firstAttemptScopeFailureReason: error.firstAttemptScopeFailureReason, classifierRetryResult: error.classifierRetryResult } : {}) });
+        ...(cause instanceof ScopeClassificationError ? { scopeFailureReason: cause.reason, ...(cause.finishReason ? { finishReason: cause.finishReason } : {}) } : {}),
+        ...(error instanceof ScopeClassifierRetryError ? { classifierAttempts: error.classifierAttempts, firstAttemptScopeFailureReason: error.firstAttemptScopeFailureReason, classifierRetryResult: error.classifierRetryResult,
+          ...(error.firstAttemptFinishReason ? { firstAttemptFinishReason: error.firstAttemptFinishReason } : {}) } : {}) });
       scopeFailureOutcome = cause instanceof ModelRequestGuardError && cause.code === "quota_denied" ? "quota_refusal" : "guard_failure";
     });
     if (!assessment || assessment.scope === "unclear" || assessment.scope === "out_of_scope" || assessment.risk === "policy_override" || assessment.risk === "unauthorized_data" || assessment.risk === "unknown") {
@@ -1045,7 +1050,8 @@ export class AssistantRuntime {
     }
     if (event.recovered) {
       this.#diagnose({ stage: "provider_request", round: 0, succeeded: true, classifierAttempts: 2,
-        firstAttemptScopeFailureReason: event.firstAttemptScopeFailureReason, classifierRetryResult: "recovered" });
+        firstAttemptScopeFailureReason: event.firstAttemptScopeFailureReason, classifierRetryResult: "recovered",
+        ...(event.firstAttemptFinishReason ? { firstAttemptFinishReason: event.firstAttemptFinishReason } : {}) });
     }
   }
 

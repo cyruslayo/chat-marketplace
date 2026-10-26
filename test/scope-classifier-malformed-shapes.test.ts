@@ -6,6 +6,7 @@ import { ModelScopeClassifier, ScopeClassificationError, assessScopeResponse, pa
 import { clientWith, jsonResponse } from "./helpers/openai-compatible-client.js";
 import { MALFORMED_REPLACEMENT_CODES, MALFORMED_SHAPES, NAMED_EDGE_CASES, SCOPE_ALLOWED, SCOPE_ALLOWED_JSON, legacyScopeOutcome, seededScopeCorpus } from "./helpers/scope-classifier-corpus.js";
 import { temporaryDatabasePath } from "./helpers/temporary-database.js";
+import { SCOPE_RETRY_ELIGIBLE_REASONS } from "../apps/local-guest/src/assistant/scope-classifier-retry.js";
 
 const CONTEXT: ScopeContext = { domain: "shortlet", description: "Lagos and Abuja short-let stays", hasShortlist: true, hasSelectedStay: false, hasOffer: false };
 const MESSAGE = "What is included in the price for the first one?";
@@ -111,4 +112,47 @@ test("Differential: the named edge cases keep their earlier labels where the sha
   assert.equal(failureOf("[" + SCOPE_ALLOWED_JSON + "]"), "invalid_shape");
   assert.notEqual(parseScopeAssessment(SCOPE_ALLOWED), undefined);
   assert.equal(parseScopeAssessment({ ...SCOPE_ALLOWED, extra: 1 }), undefined);
+});
+
+// ADR 0106 amendment: pin the length-stop classification that decides retry eligibility. Shape codes, not prose, drive the retry.
+test("length-stopped complete object followed by text is wrapped and retry-eligible", () => {
+  const result = assessScopeResponse({ text: `${SCOPE_ALLOWED_JSON} Note: done.`, finishReason: "length" });
+  assert.deepEqual(result, { failure: "invalid_json_wrapped" });
+  assert.ok(SCOPE_RETRY_ELIGIBLE_REASONS.includes("invalid_json_wrapped"));
+});
+
+test("length-stopped unterminated object is truncated and not retried", () => {
+  const result = assessScopeResponse({ text: `{"scope":"in_scope","risk":"ordinary",`, finishReason: "length" });
+  assert.deepEqual(result, { failure: "invalid_json_truncated" });
+  assert.equal(SCOPE_RETRY_ELIGIBLE_REASONS.includes("invalid_json_truncated"), false);
+});
+
+test("Scope failure finishReason is recorded alongside the shape code, and acceptance and retry eligibility are unchanged", async (t) => {
+  const truncated = `{"scope":"in_scope","risk":"ordinary",`;
+  // The classifier error carries the closed finish reason next to the same code the validator returned without it.
+  const { client } = clientWith(() => jsonResponse(200, {
+    id: "cmpl-finish", choices: [{ index: 0, message: { role: "assistant", content: truncated }, finish_reason: "length" }], usage: { prompt_tokens: 443, completion_tokens: 512 },
+  }));
+  await assert.rejects(new ModelScopeClassifier(client).assess(MESSAGE, CONTEXT), (error: unknown) => {
+    assert.ok(error instanceof ScopeClassificationError);
+    assert.equal(error.reason, "invalid_json_truncated");
+    assert.equal(error.finishReason, "length");
+    return true;
+  });
+  assert.deepEqual(assessScopeResponse({ text: truncated, finishReason: "length" }), { failure: "invalid_json_truncated" });
+  // Acceptance is unchanged: a valid verdict is still accepted whatever its finish reason.
+  assert.ok("assessment" in assessScopeResponse({ text: SCOPE_ALLOWED_JSON, finishReason: "length" }));
+  // Runtime diagnostics record the same closed pair and no classifier text.
+  const environment = LocalGuestEnvironment.openNode({ databasePath: temporaryDatabasePath("scope-finish-reason.sqlite") });
+  t.after(() => environment.close());
+  const diagnostics: AssistantDiagnosticEvent[] = [];
+  const runtime = new AssistantRuntime(environment, { generate: async (request) =>
+    request.structuredOutput?.name === "concierge_scope" ? { text: truncated, finishReason: "length" } : { text: "{}" } }, {
+    onDiagnostic: (event) => diagnostics.push(event),
+  });
+  const result = await runtime.handleTurn("scope-finish-reason", "Find stays in Lagos");
+  assert.equal(result.ok, true);
+  assert.deepEqual(diagnostics.filter((event) => event.scopeFailureReason !== undefined).map((event) => [event.scopeFailureReason, event.finishReason]),
+    [["invalid_json_truncated", "length"]]);
+  assert.doesNotMatch(JSON.stringify({ result, diagnostics }), /in_scope/);
 });

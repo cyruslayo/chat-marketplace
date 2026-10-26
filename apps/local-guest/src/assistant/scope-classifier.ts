@@ -38,8 +38,16 @@ function object(value: unknown): value is Record<string, unknown> { return value
 
 /** Closed, metadata-only codes. Each names the rule that failed; none carries classifier text or values (ADR 0075). */
 export type ScopeFailureReason = "invalid_shape" | "unknown_label" | "invalid_intents" | "invalid_date" | "invalid_city" | "invalid_neighbourhood" | "invalid_count" | "scope_reason_mismatch" | "intents_missing_for_scope" | "tool_calls_returned" | "missing_text" | "invalid_json_prose" | "invalid_json_multiple_values" | "invalid_json_trailing_text" | "invalid_json_unterminated" | "invalid_json_syntax" | "invalid_json_truncated" | "invalid_json_fenced" | "invalid_json_wrapped";
+const ASSISTANT_FINISH_REASONS: readonly AssistantFinishReason[] = ["stop", "length", "tool_calls", "content_filter", "other"];
+
+/** Reduces a provider finish reason to the closed enum, or undefined. Metadata only: it never changes the verdict (ADR 0075, 0106). */
+export function closedFinishReason(value: unknown): AssistantFinishReason | undefined {
+  return ASSISTANT_FINISH_REASONS.find((reason) => reason === value);
+}
+
 export class ScopeClassificationError extends Error {
-  constructor(readonly reason: ScopeFailureReason) { super(reason); this.name = "ScopeClassificationError"; }
+  /** The closed finish reason of the response that failed validation, when the provider reported one. Recorded beside the code only. */
+  constructor(readonly reason: ScopeFailureReason, readonly finishReason?: AssistantFinishReason | undefined) { super(reason); this.name = "ScopeClassificationError"; }
 }
 
 export function parseScopeAssessment(value: unknown, onInvalid?: (reason: ScopeFailureReason) => void): ScopeAssessment | undefined {
@@ -74,7 +82,7 @@ export class ModelScopeClassifier implements ScopeClassifier {
       maxOutputTokens: this.maxOutputTokens, structuredOutput: { name: "concierge_scope", schema: SCHEMA, strict: true },
     });
     const result = assessScopeResponse(response);
-    if ("failure" in result) throw new ScopeClassificationError(result.failure);
+    if ("failure" in result) throw new ScopeClassificationError(result.failure, closedFinishReason(response.finishReason));
     return result.assessment;
   }
 }
