@@ -7,11 +7,12 @@ import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { ASSISTANT_TOOL_DEFINITIONS } from "../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
 const PLANNER_TOOL_NAMES: readonly string[] = ASSISTANT_TOOL_DEFINITIONS.map((tool) => tool.name);
-import { classifierFailureSeen, closedAssertedTurnMetadata, completionTokensBucket, latencyBucket, controlsEvaluationOptions, operationCode, truthfulnessStatus, createTurnUsage, deltaControlOutcomes, evaluatorCallFailureAccounting, evaluatorCaseRequestLimit, evaluatorRequestDecision, EVALUATOR_DEFAULT_REQUEST_LIMIT, gradeGuardDecision, gradeScenario, hasCanonicalReadOnlyPriceEvidence, isBlockedControlsResult, OPEN_FIRST, draftUnitIdFromSurfaces, draftUnitObservation, preludeFailedReport, SCENARIOS, SEARCH, snapshotEvaluationTurns, surfaceActionUnitId, taskEffectObserved } from "../scripts/concierge-controls-eval.js";
+import { classifierFailureSeen, closedAssertedTurnMetadata, completionTokensBucket, latencyBucket, controlsEvaluationOptions, operationCode, truthfulnessStatus, createTurnUsage, deltaControlOutcomes, evaluatorCallFailureAccounting, evaluatorCaseRequestLimit, evaluatorRequestDecision, gradeGuardDecision, gradeScenario, hasCanonicalReadOnlyPriceEvidence, isBlockedControlsResult, OPEN_FIRST, draftUnitIdFromSurfaces, draftUnitObservation, preludeFailedReport, SCENARIOS, SEARCH, snapshotEvaluationTurns, surfaceActionUnitId, taskEffectObserved } from "../scripts/concierge-controls-eval.js";
 import { authoritativePriceFacts, hasUnsupportedPriceOrConfirmation, requestedUnitMatches } from "../scripts/pilot-agent-smoke-grading.js";
 import { ASSISTANT_CONTROL_COPY } from "../apps/local-guest/src/assistant/control-copy.js";
 import { ModelRequestGuardError, type AssistantModelClient, type AssistantToolCall } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { restartFixture } from "./helpers/guest-restart.js";
+import type { AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 
 test("Controlled live evaluation requires explicit opt-in and a bounded total attempt limit", () => {
   assert.deepEqual(controlsEvaluationOptions(["--live", "--request-limit", "64"]), { requestLimit: 64 });
@@ -349,22 +350,73 @@ test("Draft unit observation distinguishes matched, mismatched and missing draft
   assert.equal(draftUnitObservation({ expected: "details", expectedFirstUnitId: "unit-a", actualUnitId: "unit-a" }), "not_applicable");
 });
 
-test("Per-case request limits: reviewable-draft defaults to 12, other cases keep the default, and an explicit flag overrides either way", () => {
-  const byId = new Map(SCENARIOS.map((scenario) => [scenario.id, scenario]));
-  // Arithmetic: each turn is one classifier call plus two planner calls (one tool round, then the final plan).
-  // Three turns (setup-1, setup-2, asserted-turn) need 3 x 3 = 9 calls; 3 spare calls cover connection retries.
+test("Eval allowance: the per-turn formula gives 5 calls per turn, reviewable-draft gets 15, and the run ceiling is 90", async () => {
+  const evaluator = await import("../scripts/concierge-controls-eval.js");
+  const byId = new Map(evaluator.SCENARIOS.map((scenario) => [scenario.id, scenario]));
+  assert.equal(evaluator.EVALUATOR_REQUEST_LIMIT_PER_TURN, 5);
+  // Turns per case: each setup step plus the asserted turn. Counted from SCENARIOS: 18 turns in total.
+  assert.equal(evaluator.SCENARIOS.reduce((sum, scenario) => sum + evaluator.scenarioTurnCount(scenario), 0), 18);
+  // Arithmetic: each turn is up to two classifier calls (ADR 0106 retry), two planner calls and one spare.
+  // Three turns need 3 x 3 = 9 calls with no retry; 15 leaves room for a retry on each turn and a connection spare.
   const draftMinimum = 3 * (1 + 2);
-  assert.equal(byId.get("reviewable-draft")?.requestLimit, 12);
-  assert.ok(evaluatorCaseRequestLimit(byId.get("reviewable-draft")!, undefined) >= draftMinimum);
-  assert.equal(evaluatorCaseRequestLimit(byId.get("reviewable-draft")!, undefined), 12);
-  assert.equal(evaluatorCaseRequestLimit(byId.get("reviewable-draft")!, 6), 6);
-  assert.equal(evaluatorCaseRequestLimit(byId.get("reviewable-draft")!, 20), 20);
-  for (const scenario of SCENARIOS.filter((candidate) => candidate.id !== "reviewable-draft")) {
-    assert.equal(scenario.requestLimit, undefined, scenario.id);
-    assert.equal(evaluatorCaseRequestLimit(scenario, undefined), EVALUATOR_DEFAULT_REQUEST_LIMIT, scenario.id);
-    assert.equal(evaluatorCaseRequestLimit(scenario, 3), 3, scenario.id);
+  assert.ok(evaluator.evaluatorCaseRequestLimit(byId.get("reviewable-draft")!, undefined) >= draftMinimum);
+  assert.equal(evaluator.evaluatorCaseRequestLimit(byId.get("reviewable-draft")!, undefined), 15);
+  assert.equal(evaluator.evaluatorCaseRequestLimit(byId.get("greeting")!, undefined), 5);
+  assert.equal(evaluator.evaluatorCaseRequestLimit(byId.get("ignore-location-correction")!, undefined), 10);
+  for (const scenario of evaluator.SCENARIOS) {
+    assert.equal(evaluator.evaluatorCaseRequestLimit(scenario, undefined), evaluator.scenarioTurnCount(scenario) * 5, scenario.id);
+    assert.equal(evaluator.evaluatorCaseRequestLimit(scenario, 3), 3, scenario.id);
   }
-  assert.equal(EVALUATOR_DEFAULT_REQUEST_LIMIT, 8);
+  // Run ceiling: the sum of case allowances (11 cases x 5 turns of 1 or 2, plus 15 for the draft case): 90.
+  assert.equal(evaluator.evaluatorRunRequestLimit(evaluator.SCENARIOS), 90);
+  assert.equal(evaluator.evaluatorRunRequestLimit(evaluator.SCENARIOS, "reviewable-draft"), 15);
+});
+
+test("Eval recovered retry: a valid second verdict keeps guard quality PASS, counts the recovery, and prints the first-attempt code", async () => {
+  const evaluator = await import("../scripts/concierge-controls-eval.js");
+  const { scopeVerdictCodes } = await import("../apps/local-guest/src/assistant/scope-classifier.js");
+  const { TRAILING_TEXT_CLASSIFIER_TEXT, VALID_CLASSIFIER_TEXT } = await import("./helpers/scope-classifier-retry-fixtures.js");
+  const turn = evaluator.createTurnUsage("asserted-turn");
+  evaluator.recordClassifierResponseOnTurn(turn, evaluator.recordClassifierCallOnTurn(turn), scopeVerdictCodes({ text: TRAILING_TEXT_CLASSIFIER_TEXT }));
+  const retryAttempt = evaluator.recordClassifierCallOnTurn(turn);
+  evaluator.recordClassifierResponseOnTurn(turn, retryAttempt, scopeVerdictCodes({ text: VALID_CLASSIFIER_TEXT }));
+  assert.deepEqual(evaluator.classifierCaseRecord([turn]), { classifierAttempts: 2, firstAttemptScopeFailureReason: "invalid_json_trailing_text", recoveredByRetry: true });
+  // The recovered retry emits a succeeded diagnostic with no scopeFailureReason, so guard quality grades as before.
+  const diagnostics: AssistantDiagnosticEvent[] = [{ stage: "provider_request", round: 0, succeeded: true, classifierAttempts: 2, firstAttemptScopeFailureReason: "invalid_json_trailing_text", classifierRetryResult: "recovered" }];
+  assert.equal(evaluator.classifierFailureSeen(diagnostics), false);
+  assert.equal(evaluator.gradeGuardDecision({ actualClassifierTransport: true, guardFailureCount: 0, quotaRefusalCount: 0,
+    classifierFailureDiagnostic: evaluator.classifierFailureSeen(diagnostics), actualControlOutcome: "successful_model_handling" }), "PASS");
+  const summary = evaluator.formatControlledEvaluationSummary({ passed: 1, total: 1, reserved: 6, limit: 15, recoveredCount: 1, firstAttemptFailureCodes: ["invalid_json_trailing_text"] });
+  assert.match(summary, /1 recovered by classifier retry/);
+  assert.match(summary, /invalid_json_trailing_text/);
+});
+
+test("Eval unrecovered retry: a second failure fails guard quality and counts both attempts in the case record", async () => {
+  const evaluator = await import("../scripts/concierge-controls-eval.js");
+  const { scopeVerdictCodes } = await import("../apps/local-guest/src/assistant/scope-classifier.js");
+  const { TRAILING_TEXT_CLASSIFIER_TEXT, MULTIPLE_VALUES_CLASSIFIER_TEXT } = await import("./helpers/scope-classifier-retry-fixtures.js");
+  const turn = evaluator.createTurnUsage("asserted-turn");
+  evaluator.recordClassifierResponseOnTurn(turn, evaluator.recordClassifierCallOnTurn(turn), scopeVerdictCodes({ text: TRAILING_TEXT_CLASSIFIER_TEXT }));
+  evaluator.recordClassifierResponseOnTurn(turn, evaluator.recordClassifierCallOnTurn(turn), scopeVerdictCodes({ text: MULTIPLE_VALUES_CLASSIFIER_TEXT }));
+  assert.deepEqual(evaluator.classifierCaseRecord([turn]), { classifierAttempts: 2, firstAttemptScopeFailureReason: "invalid_json_trailing_text", recoveredByRetry: false });
+  assert.equal(turn.scopeFailureReason, "invalid_json_multiple_values");
+  const diagnostics: AssistantDiagnosticEvent[] = [{ stage: "provider_request", round: 0, succeeded: false, scopeFailureReason: "invalid_json_multiple_values", classifierAttempts: 2, firstAttemptScopeFailureReason: "invalid_json_trailing_text", classifierRetryResult: "second_failed" }];
+  assert.equal(evaluator.classifierFailureSeen(diagnostics), true);
+  assert.equal(evaluator.gradeGuardDecision({ actualClassifierTransport: true, guardFailureCount: 1, quotaRefusalCount: 0,
+    classifierFailureDiagnostic: evaluator.classifierFailureSeen(diagnostics), actualControlOutcome: "guard_failure" }), "FAIL");
+});
+
+test("Eval report canary: the classifier attempt record and turn snapshot carry no classifier text after a retried failure", async () => {
+  const evaluator = await import("../scripts/concierge-controls-eval.js");
+  const { scopeVerdictCodes } = await import("../apps/local-guest/src/assistant/scope-classifier.js");
+  const { VALID_CLASSIFIER_TEXT } = await import("./helpers/scope-classifier-retry-fixtures.js");
+  const canary = "EVAL_RETRY_CANARY_TEXT";
+  const turn = evaluator.createTurnUsage("asserted-turn");
+  evaluator.recordClassifierResponseOnTurn(turn, evaluator.recordClassifierCallOnTurn(turn), scopeVerdictCodes({ text: `${VALID_CLASSIFIER_TEXT} ${canary} {"x": 1}` }));
+  evaluator.recordClassifierResponseOnTurn(turn, evaluator.recordClassifierCallOnTurn(turn), scopeVerdictCodes({ text: VALID_CLASSIFIER_TEXT }));
+  const report = JSON.stringify({ record: evaluator.classifierCaseRecord([turn]), turns: evaluator.snapshotEvaluationTurns([turn]) });
+  assert.doesNotMatch(report, new RegExp(canary));
+  assert.equal(evaluator.classifierCaseRecord([turn]).firstAttemptScopeFailureReason, "invalid_json_trailing_text");
 });
 
 test("Evaluator budget admits calls up to the per-case and run limits and refuses the next one", () => {
@@ -581,11 +633,21 @@ globalThis.fetch = async (url, init) => {
   const report = JSON.parse(text);
   const turn = report.scenarios[0].turns[0];
   const failed = turn.calls.filter((call: { scopeFailureReason?: string }) => call.scopeFailureReason !== undefined);
-  assert.equal(failed.length, 1);
+  // ADR 0106 amendment: the malformed verdict is retried once with the identical request. The provider fails it the same way,
+  // so both classifier calls record the closed reason, and the turn keeps the first attempt's code as well as the final one.
+  assert.equal(failed.length, 2);
+  assert.deepEqual(failed.map((call: { classifierAttempt?: number }) => call.classifierAttempt), [1, 2]);
   assert.deepEqual(failed[0], {
-    classifier: true, transportStarts: 1, latencyMs: failed[0].latencyMs, finishReason: "stop", toolCallCount: 0,
+    classifier: true, classifierAttempt: 1, transportStarts: 1, latencyMs: failed[0].latencyMs, finishReason: "stop", toolCallCount: 0,
+    scopeFailureReason: "invalid_json_multiple_values", completionTokensBucket: "128-255", latencyBucket: "<1s",
+  });
+  assert.deepEqual(failed[1], {
+    classifier: true, classifierAttempt: 2, transportStarts: 1, latencyMs: failed[1].latencyMs, finishReason: "stop", toolCallCount: 0,
     scopeFailureReason: "invalid_json_multiple_values", completionTokensBucket: "128-255", latencyBucket: "<1s",
   });
   assert.equal(turn.scopeFailureReason, "invalid_json_multiple_values");
+  assert.equal(turn.firstAttemptScopeFailureReason, "invalid_json_multiple_values");
+  assert.equal(turn.classifierAttempts, 2);
+  assert.equal(turn.recoveredByRetry, false);
   assert.doesNotMatch(text, new RegExp(canary));
 });

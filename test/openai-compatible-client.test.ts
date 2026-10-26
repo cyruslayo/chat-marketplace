@@ -226,3 +226,27 @@ test("finish_reason surfacing never copies provider or model text into the respo
   assert.equal(response.finishReason, "other");
   assert.doesNotMatch(JSON.stringify({ finishReason: response.finishReason }), new RegExp(canary));
 });
+
+test("The adapter's connection retry is not added to the scope retry (design section 14.5)", async () => {
+  const { RetryingScopeClassifier } = await import("../apps/local-guest/src/assistant/scope-classifier-retry.js");
+  const { ModelScopeClassifier } = await import("../apps/local-guest/src/assistant/scope-classifier.js");
+  const valid = JSON.stringify({ scope: "in_scope", risk: "ordinary", intents: ["search"], reasonCode: "supported",
+    slots: { city: null, neighbourhood: null, bedrooms: null, nights: null, guests: null, checkIn: null, checkOut: null } });
+  const completion = (content: string) => new Response(JSON.stringify({ id: "cmpl-retry", choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }] }),
+    { status: 200, headers: { "content-type": "application/json" } });
+  const classify = async (fetchImpl: (input: string, init: RequestInit) => Promise<Response>) => {
+    let transports = 0;
+    const client = new OpenAiCompatibleClient({ apiKey: "test-key-not-real", baseUrl: "https://example.invalid/v1", model: "test-model",
+      fetch: async (input, init) => { transports++; return fetchImpl(input, init); } });
+    const classifier = new RetryingScopeClassifier({ createAttempt: (timeoutMs: number) => new ModelScopeClassifier(client, timeoutMs) });
+    const outcome = await classifier.assess("Find a stay", { domain: "shortlet", description: "Stays", hasShortlist: false, hasSelectedStay: false, hasOffer: false }).then(() => "accepted", () => "rejected");
+    return { transports, outcome };
+  };
+  // The adapter retries one connection failure itself: two transports, one accepted verdict, and no scope-level third send.
+  let calls = 0;
+  const recovered = await classify(async () => { calls++; if (calls === 1) throw new TypeError("network down"); return completion(valid); });
+  assert.deepEqual(recovered, { transports: 2, outcome: "accepted" });
+  // Two connection failures exhaust the adapter's single retry. The scope retry adds no third transport.
+  const exhausted = await classify(async () => { throw new TypeError("network down"); });
+  assert.deepEqual(exhausted, { transports: 2, outcome: "rejected" });
+});

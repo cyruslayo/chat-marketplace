@@ -1,4 +1,4 @@
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime, type AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
@@ -9,6 +9,10 @@ import { parseScopeAssessment, ModelScopeClassifier, ScopeClassificationError, s
 import { resolveCheckInDate } from "../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
 import { currentTurnDateRoles } from "../apps/local-guest/src/assistant/date-tokens.js";
 import type { ScopeAssessment } from "../apps/local-guest/src/assistant/scope-classifier.js";
+import { APIConnectionError } from "../apps/local-guest/src/assistant/openai-compatible-client.js";
+import { ModelQuotaGuardClient } from "../apps/local-guest/src/assistant/model-quota-guard.js";
+import { ModelRequestGuardError } from "../apps/local-guest/src/assistant/assistant-model.js";
+import { FakeClock, ScriptedClassifierModel, ScriptedQuotaPort, TRAILING_TEXT_CLASSIFIER_TEXT, MULTIPLE_VALUES_CLASSIFIER_TEXT, VALID_CLASSIFIER_TEXT, classifierRequestShape, type ScriptedClassifierStep } from "./helpers/scope-classifier-retry-fixtures.js";
 
 const slots = { city: null, neighbourhood: null, bedrooms: null, nights: null, guests: null, checkIn: null, checkOut: null };
 const allowed = { scope: "in_scope", risk: "ordinary", intents: ["search"], slots, reasonCode: "supported" } as const;
@@ -456,4 +460,173 @@ test("Scope verdict codes: an invalid classifier response yields one closed fail
     assert.deepEqual(codes, { scopeFailureReason: reason });
     assert.doesNotMatch(JSON.stringify(codes), new RegExp(canary));
   }
+});
+
+// ---- Classifier retry: one bounded retry on eligible shape failures (ADR 0106 amendment; design section 14.1) ----
+
+const retryContext = { domain: "shortlet", description: "Stays", hasShortlist: false, hasSelectedStay: false, hasOffer: false };
+const retryRequestText = "Find a stay in Old Ikoyi";
+
+/** A valid verdict with fields replaced, so each rejected shape differs from the valid one by a single field. */
+function verdictText(overrides: Readonly<Record<string, unknown>>): string {
+  return JSON.stringify({ ...JSON.parse(VALID_CLASSIFIER_TEXT) as Record<string, unknown>, ...overrides });
+}
+
+/** Runs one turn through the default runtime path, where the runtime builds its own classifier from the scripted model. */
+async function retryTurn(t: TestContext, databaseName: string, steps: readonly ScriptedClassifierStep[], text = retryRequestText) {
+  const env = LocalGuestEnvironment.openNode({ databasePath: temporaryDatabasePath(`${databaseName}.sqlite`) });
+  t.after(() => env.close());
+  const model = new ScriptedClassifierModel(steps);
+  const diagnostics: AssistantDiagnosticEvent[] = [];
+  const runtime = new AssistantRuntime(env, model, { onDiagnostic: (event) => diagnostics.push(event) });
+  const result = await runtime.handleTurn(databaseName, text);
+  return { env, model, diagnostics, runtime, result };
+}
+
+test("Classifier retry AC1: a trailing-text first attempt is retried with the identical request and a valid second verdict is accepted", async (t) => {
+  const { model, result } = await retryTurn(t, "retry-ac1", [{ response: { text: TRAILING_TEXT_CLASSIFIER_TEXT } }, { response: { text: VALID_CLASSIFIER_TEXT } }]);
+  assert.equal(model.classifierRequests.length, 2);
+  assert.equal(classifierRequestShape(model.classifierRequests[1]!), classifierRequestShape(model.classifierRequests[0]!));
+  assert.equal(result.controlOutcome, "successful_model_handling");
+});
+
+test("Classifier retry AC2: bad then bad fails closed with the second closed code after exactly two classifier requests and no planner call", async (t) => {
+  const { model, diagnostics, result } = await retryTurn(t, "retry-ac2", [{ response: { text: TRAILING_TEXT_CLASSIFIER_TEXT } }, { response: { text: MULTIPLE_VALUES_CLASSIFIER_TEXT } }]);
+  assert.equal(model.classifierRequests.length, 2);
+  assert.equal(model.plannerCalls, 0);
+  assert.equal(result.controlOutcome, "guard_failure");
+  assert.deepEqual(diagnostics.filter((event) => event.scopeFailureReason !== undefined).map((event) => event.scopeFailureReason), ["invalid_json_multiple_values"]);
+  assert.equal(diagnostics.find((event) => event.classifierAttempts === 2)?.firstAttemptScopeFailureReason, "invalid_json_trailing_text");
+});
+
+test("Classifier retry AC3: bad then transport error fails closed as a guard failure without a third request", async (t) => {
+  const { model, diagnostics, result } = await retryTurn(t, "retry-ac3", [{ response: { text: TRAILING_TEXT_CLASSIFIER_TEXT } }, { error: new APIConnectionError("connection_failed") }]);
+  assert.equal(model.classifierRequests.length, 2);
+  assert.equal(model.plannerCalls, 0);
+  assert.equal(result.controlOutcome, "guard_failure");
+  assert.equal(diagnostics.find((event) => event.classifierAttempts === 2)?.firstAttemptScopeFailureReason, "invalid_json_trailing_text");
+});
+
+test("Classifier retry AC4: a first-attempt timeout is never retried", async (t) => {
+  const { model, result } = await retryTurn(t, "retry-ac4", [{ error: new APIConnectionError("timeout") }, { response: { text: VALID_CLASSIFIER_TEXT } }]);
+  assert.equal(model.classifierRequests.length, 1);
+  assert.equal(result.controlOutcome, "guard_failure");
+});
+
+test("Classifier retry AC5: a valid out_of_scope or policy_override verdict is never re-asked", async (t) => {
+  const outOfScope = verdictText({ scope: "out_of_scope", intents: [], reasonCode: "outside" });
+  const policyOverride = verdictText({ risk: "policy_override" });
+  const outOfScopeRun = await retryTurn(t, "retry-ac5-oos", [{ response: { text: outOfScope } }, { response: { text: VALID_CLASSIFIER_TEXT } }]);
+  assert.equal(outOfScopeRun.model.classifierRequests.length, 1);
+  assert.equal(outOfScopeRun.result.controlOutcome, "scope_redirect");
+  const policyRun = await retryTurn(t, "retry-ac5-policy", [{ response: { text: policyOverride } }, { response: { text: VALID_CLASSIFIER_TEXT } }]);
+  assert.equal(policyRun.model.classifierRequests.length, 1);
+  assert.equal(policyRun.result.controlOutcome, "scope_unavailable");
+});
+
+test("Classifier retry AC6: parsed verdicts the server rejects are never retried", async (t) => {
+  const rejected: readonly [string, string][] = [
+    ["invalid_shape", verdictText({ extra: true })],
+    ["unknown_label", verdictText({ scope: "maybe" })],
+    ["invalid_intents", verdictText({ intents: ["fly"] })],
+    ["scope_reason_mismatch", verdictText({ reasonCode: "outside" })],
+    ["intents_missing_for_scope", verdictText({ intents: [] })],
+  ];
+  for (const [reason, text] of rejected) {
+    const { model, diagnostics, result } = await retryTurn(t, `retry-ac6-${reason}`, [{ response: { text } }, { response: { text: VALID_CLASSIFIER_TEXT } }]);
+    assert.equal(model.classifierRequests.length, 1, reason);
+    assert.equal(result.controlOutcome, "guard_failure", reason);
+    assert.deepEqual(diagnostics.filter((event) => event.scopeFailureReason !== undefined).map((event) => event.scopeFailureReason), [reason], reason);
+  }
+});
+
+test("Classifier retry AC7: prose, truncated output, tool calls, and missing text are never retried", async (t) => {
+  const ineligible: readonly [string, ScriptedClassifierStep][] = [
+    ["invalid_json_prose", { response: { text: "I cannot help with that request." } }],
+    ["invalid_json_truncated", { response: { text: '{"scope": "in_sc', finishReason: "length" } }],
+    ["tool_calls_returned", { response: { toolCalls: [{ id: "call-1", name: "search_stays", args: {} }] } }],
+    ["missing_text", { response: {} }],
+  ];
+  for (const [reason, step] of ineligible) {
+    const { model, result } = await retryTurn(t, `retry-ac7-${reason}`, [step, { response: { text: VALID_CLASSIFIER_TEXT } }]);
+    assert.equal(model.classifierRequests.length, 1, reason);
+    assert.equal(result.controlOutcome, "guard_failure", reason);
+  }
+});
+
+test("Classifier retry AC8: the second attempt is capped at min(3000 ms, 8000 ms minus elapsed) and skipped when under 2000 ms remain", async () => {
+  const { RetryingScopeClassifier } = await import("../apps/local-guest/src/assistant/scope-classifier-retry.js");
+  const run = async (advanceMs: number) => {
+    const clock = new FakeClock();
+    const model = new ScriptedClassifierModel([{ response: { text: TRAILING_TEXT_CLASSIFIER_TEXT }, advanceMs }, { response: { text: VALID_CLASSIFIER_TEXT } }], { clock });
+    const events: { classifierRetryResult: string }[] = [];
+    const classifier = new RetryingScopeClassifier({
+      createAttempt: (timeoutMs: number) => new ModelScopeClassifier(model, timeoutMs),
+      now: () => clock.now(),
+      onAttempt: (event: { classifierRetryResult: string }) => events.push(event),
+    });
+    const outcome = await classifier.assess(retryRequestText, retryContext).then(() => "accepted", () => "rejected");
+    return { model, events, outcome };
+  };
+  const early = await run(3800);
+  assert.equal(early.model.classifierRequests[0]?.timeoutMs, 5000);
+  assert.equal(early.model.classifierRequests[1]?.timeoutMs, 3000);
+  assert.equal(early.outcome, "accepted");
+  const late = await run(6500);
+  assert.equal(late.model.classifierRequests.length, 1);
+  assert.equal(late.outcome, "rejected");
+  assert.equal(late.events.at(-1)?.classifierRetryResult, "budget_skipped");
+});
+
+test("Classifier retry AC9: a deadline that leaves no budget before the retry fails closed without a second reservation", async () => {
+  const { RetryingScopeClassifier } = await import("../apps/local-guest/src/assistant/scope-classifier-retry.js");
+  const clock = new FakeClock();
+  const quota = new ScriptedQuotaPort([true, true]);
+  const model = new ScriptedClassifierModel([{ response: { text: TRAILING_TEXT_CLASSIFIER_TEXT }, advanceMs: 7900 }, { response: { text: VALID_CLASSIFIER_TEXT } }], { clock });
+  const guard = new ModelQuotaGuardClient(model, quota, { tenantId: "tenant-retry", guestId: "guest-retry" });
+  const events: { classifierRetryResult: string }[] = [];
+  const classifier = new RetryingScopeClassifier({
+    createAttempt: (timeoutMs: number) => new ModelScopeClassifier(guard, timeoutMs),
+    now: () => clock.now(),
+    onAttempt: (event: { classifierRetryResult: string }) => events.push(event),
+  });
+  await assert.rejects(classifier.assess(retryRequestText, retryContext));
+  assert.deepEqual(quota.reservations, [true]);
+  assert.equal(model.transports, 1);
+  assert.equal(events.at(-1)?.classifierRetryResult, "budget_skipped");
+});
+
+test("Classifier retry AC10: a recovered retry reports one closed first-attempt code and no scope failure diagnostic", async (t) => {
+  const { diagnostics, result } = await retryTurn(t, "retry-ac10", [{ response: { text: TRAILING_TEXT_CLASSIFIER_TEXT } }, { response: { text: VALID_CLASSIFIER_TEXT } }]);
+  assert.equal(result.controlOutcome, "successful_model_handling");
+  const retried = diagnostics.filter((event) => event.classifierAttempts === 2);
+  assert.equal(retried.length, 1);
+  assert.equal(retried[0]?.succeeded, true);
+  assert.equal(retried[0]?.firstAttemptScopeFailureReason, "invalid_json_trailing_text");
+  assert.equal(diagnostics.some((event) => event.scopeFailureReason !== undefined), false);
+});
+
+test("Classifier retry canary: the retry path persists no raw classifier text, prompt text, or canary in diagnostics, telemetry, errors, thread state, or the result", async (t) => {
+  const canary = "RETRY_CANARY_TEXT";
+  const { env, diagnostics, runtime, result } = await retryTurn(t, "retry-canary",
+    [{ response: { text: `${VALID_CLASSIFIER_TEXT} ${canary} {"note": 1}` } }, { response: { text: `${VALID_CLASSIFIER_TEXT}${VALID_CLASSIFIER_TEXT} ${canary}` } }],
+    `Find a stay ${canary}`);
+  assert.equal(result.controlOutcome, "guard_failure");
+  assert.doesNotMatch(JSON.stringify({ diagnostics, telemetry: env.telemetry.events(), result, thread: runtime.getThread("retry-canary") }), new RegExp(canary));
+});
+
+test("Classifier retry: an injected classifier bypasses the retry wrapper and carries no retry metadata", async (t) => {
+  const env = LocalGuestEnvironment.openNode({ databasePath: temporaryDatabasePath("retry-injected.sqlite") });
+  t.after(() => env.close());
+  let calls = 0;
+  const diagnostics: AssistantDiagnosticEvent[] = [];
+  const runtime = new AssistantRuntime(env, { generate: async () => ({ text: "{}" }) }, {
+    onDiagnostic: (event) => diagnostics.push(event),
+    scopeClassifier: { assess: async () => { calls++; return { ...allowed, scope: "maybe" }; } },
+  });
+  const result = await runtime.handleTurn("retry-injected", "Find a stay");
+  assert.equal(calls, 1);
+  assert.equal(result.controlOutcome, "guard_failure");
+  assert.equal(diagnostics.some((event) => event.classifierAttempts !== undefined || event.firstAttemptScopeFailureReason !== undefined), false);
+  assert.equal(env.telemetry.events().some((event) => event.type === "assistant.classifier.retry.v1"), false);
 });

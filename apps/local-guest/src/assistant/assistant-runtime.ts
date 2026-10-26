@@ -29,6 +29,7 @@ import {
 import { createShortletAssistantPack } from "./shortlet-assistant-pack.js";
 import { containsExactDateToken, currentTurnDateRoles } from "./date-tokens.js";
 import { ModelScopeClassifier, ScopeClassificationError, assessScopeSafely, scopedMixedInput, type ScopeClassifier, type ScopeAssessment, type ConciergeIntent } from "./scope-classifier.js";
+import { RetryingScopeClassifier, ScopeClassifierRetryError, SCOPE_TOTAL_BUDGET_MS, type ScopeClassifierRetryEvent, type ScopeClassifierRetryResult } from "./scope-classifier-retry.js";
 import { ASSISTANT_CONTROL_COPY } from "./control-copy.js";
 import { isProviderUnavailable } from "./fallback-model-client.js";
 import {
@@ -123,6 +124,12 @@ export interface AssistantDiagnosticEvent {
   readonly outcome?: AssistantControlOutcome;
   readonly effectCode?: AssistantToolEffectCode;
   readonly scopeFailureReason?: import("./scope-classifier.js").ScopeFailureReason;
+  /** ADR 0106 amendment: classifier attempts that started for this stage (1 or 2). Closed count only. */
+  readonly classifierAttempts?: 1 | 2;
+  /** ADR 0106 amendment: the closed code of the first classifier attempt when it failed validation. Never classifier text. */
+  readonly firstAttemptScopeFailureReason?: import("./scope-classifier.js").ScopeFailureReason;
+  /** ADR 0106 amendment: how the retry stage ended. Present only when a first attempt failed validation. */
+  readonly classifierRetryResult?: ScopeClassifierRetryResult;
   /** ADR 0075 / 0106: a fixed rejection code for a reply plan; the rejected text is never recorded. */
   readonly replyPlanRejectionReason?: ReplyPlanRejectionReason;
 }
@@ -226,6 +233,8 @@ export class AssistantRuntime {
   readonly #maxPlanningOutputTokens: number;
   readonly #scopeClassifier: ScopeClassifier;
   readonly #scopeTimeoutMs: number;
+  /** The classifier stage's outer race: the per-attempt cap for an injected classifier, the 8 s total for the default retrying path. */
+  readonly #scopeOuterTimeoutMs: number;
   readonly #maxInputCharacters: number;
   readonly #maxHistorySteps: number;
   readonly #maxHistoryCharacters: number;
@@ -255,7 +264,14 @@ export class AssistantRuntime {
       || !Number.isSafeInteger(this.#maxHistoryCharacters) || this.#maxHistoryCharacters < 256 || this.#maxHistoryCharacters > MAX_ASSISTANT_HISTORY_CHARACTERS) throw new Error("Scope and history engineering limits are outside configured bounds");
     if (!Number.isSafeInteger(this.#maxContextItems) || this.#maxContextItems < 1 || this.#maxContextItems > MAX_ASSISTANT_CONTEXT_ITEMS) throw new Error("maxContextItems is outside configured bounds");
     if (options.scopeReasoningEffort !== undefined && options.scopeReasoningEffort !== "none" && options.scopeReasoningEffort !== "provider_default") throw new Error("Invalid scope reasoning effort");
-    this.#scopeClassifier = options.scopeClassifier ?? new ModelScopeClassifier(modelClient, this.#scopeTimeoutMs, undefined, options.scopeReasoningEffort);
+    // ADR 0106 amendment: the default path retries an eligible JSON-shape failure once with an identical request.
+    // Injected classifiers keep their single attempt and the scope timeout as before.
+    this.#scopeClassifier = options.scopeClassifier ?? new RetryingScopeClassifier({
+      createAttempt: (timeoutMs) => new ModelScopeClassifier(modelClient, timeoutMs, undefined, options.scopeReasoningEffort),
+      firstAttemptTimeoutMs: this.#scopeTimeoutMs,
+      onAttempt: (event) => this.#recordClassifierRetry(event),
+    });
+    this.#scopeOuterTimeoutMs = options.scopeClassifier ? this.#scopeTimeoutMs : SCOPE_TOTAL_BUDGET_MS;
     this.#packs.register(createShortletAssistantPack(environment));
     for (const pack of options.additionalPacks ?? []) this.#packs.register(pack);
   }
@@ -630,10 +646,13 @@ export class AssistantRuntime {
     const assessment = text.length > this.#maxInputCharacters ? undefined : await assessScopeSafely(this.#scopeClassifier, safeUserText, {
       domain: packForScope.id, description: packForScope.scopeDescription ?? packForScope.label,
       hasShortlist: candidateTaskState.shortlist.length > 0, hasSelectedStay: Boolean(candidateTaskState.selectedStayRef), hasOffer: Boolean(candidateTaskState.currentOfferId),
-    }, this.#scopeTimeoutMs, (error) => {
-      this.#diagnose({ ...createFailureDiagnostic("provider_request", 0, undefined, error),
-        ...(error instanceof ScopeClassificationError ? { scopeFailureReason: error.reason } : {}) });
-      scopeFailureOutcome = error instanceof ModelRequestGuardError && error.code === "quota_denied" ? "quota_refusal" : "guard_failure";
+    }, this.#scopeOuterTimeoutMs, (error) => {
+      // A retry failure carries the stage's decisive error; the first failure's outcome stands for refused or skipped retries (ADR 0106 amendment).
+      const cause = error instanceof ScopeClassifierRetryError ? error.failure : error;
+      this.#diagnose({ ...createFailureDiagnostic("provider_request", 0, undefined, cause),
+        ...(cause instanceof ScopeClassificationError ? { scopeFailureReason: cause.reason } : {}),
+        ...(error instanceof ScopeClassifierRetryError ? { classifierAttempts: error.classifierAttempts, firstAttemptScopeFailureReason: error.firstAttemptScopeFailureReason, classifierRetryResult: error.classifierRetryResult } : {}) });
+      scopeFailureOutcome = cause instanceof ModelRequestGuardError && cause.code === "quota_denied" ? "quota_refusal" : "guard_failure";
     });
     if (!assessment || assessment.scope === "unclear" || assessment.scope === "out_of_scope" || assessment.risk === "policy_override" || assessment.risk === "unauthorized_data" || assessment.risk === "unknown") {
       const scopeOutcome = assessment?.scope === "out_of_scope" ? "scope_redirect" : "scope_unavailable";
@@ -1013,6 +1032,20 @@ export class AssistantRuntime {
       this.#onDiagnostic?.(event);
     } catch {
       // Diagnostics are observational and must never affect the authoritative flow.
+    }
+  }
+
+  /** ADR 0106 amendment: closed retry metadata only. A recovered retry adds a succeeded stage diagnostic and no scope failure. */
+  #recordClassifierRetry(event: ScopeClassifierRetryEvent): void {
+    try {
+      this.#environment.telemetry.track({ type: "assistant.classifier.retry.v1", recovered: event.recovered, classifierAttempts: event.classifierAttempts,
+        firstAttemptScopeFailureReason: event.firstAttemptScopeFailureReason, classifierRetryResult: event.classifierRetryResult });
+    } catch {
+      // Telemetry must never affect the authoritative workflow.
+    }
+    if (event.recovered) {
+      this.#diagnose({ stage: "provider_request", round: 0, succeeded: true, classifierAttempts: 2,
+        firstAttemptScopeFailureReason: event.firstAttemptScopeFailureReason, classifierRetryResult: "recovered" });
     }
   }
 

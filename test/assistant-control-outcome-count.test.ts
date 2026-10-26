@@ -44,3 +44,23 @@ test("Each turn records exactly one control outcome, equal to the outcome it ret
     } finally { environment.close(); }
   }
 });
+
+test("A recovered classifier retry records one control outcome for the turn it returns", async () => {
+  const { ScriptedClassifierModel, TRAILING_TEXT_CLASSIFIER_TEXT, MULTIPLE_VALUES_CLASSIFIER_TEXT, VALID_CLASSIFIER_TEXT } = await import("./helpers/scope-classifier-retry-fixtures.js");
+  const cases: readonly { readonly expected: string; readonly steps: ConstructorParameters<typeof ScriptedClassifierModel>[0] }[] = [
+    { expected: "successful_model_handling", steps: [{ response: { text: TRAILING_TEXT_CLASSIFIER_TEXT } }, { response: { text: VALID_CLASSIFIER_TEXT } }] },
+    { expected: "guard_failure", steps: [{ response: { text: TRAILING_TEXT_CLASSIFIER_TEXT } }, { response: { text: MULTIPLE_VALUES_CLASSIFIER_TEXT } }] },
+    { expected: "guard_failure", steps: [{ response: { text: TRAILING_TEXT_CLASSIFIER_TEXT } }, { error: new ModelRequestGuardError("quota_denied") }] },
+    { expected: "quota_refusal", steps: [{ error: new ModelRequestGuardError("quota_denied") }] },
+  ];
+  for (const [index, scenario] of cases.entries()) {
+    const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
+    try {
+      const runtime = new AssistantRuntime(environment, new ScriptedClassifierModel(scenario.steps), {});
+      const result = await runtime.handleTurn(`retry-count-${index}`, "A benign request");
+      const counted = environment.telemetry.events().filter((event) => event.type === "assistant.control.outcome.v1").map((event) => event.outcome);
+      assert.equal(result.controlOutcome, scenario.expected, scenario.expected);
+      assert.deepEqual(counted, [scenario.expected], scenario.expected);
+    } finally { environment.close(); }
+  }
+});

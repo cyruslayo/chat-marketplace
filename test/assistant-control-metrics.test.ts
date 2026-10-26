@@ -131,3 +131,24 @@ test("Other local guard stops keep their existing diagnostic classes", async () 
     } finally { environment.close(); }
   }
 });
+
+test("AC6 retry: classifier retry telemetry is metadata-only and separate from the control outcome count", async () => {
+  const { ScriptedClassifierModel, TRAILING_TEXT_CLASSIFIER_TEXT, VALID_CLASSIFIER_TEXT } = await import("./helpers/scope-classifier-retry-fixtures.js");
+  const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
+  const diagnostics: AssistantDiagnosticEvent[] = [];
+  try {
+    const model = new ScriptedClassifierModel([{ response: { text: `${TRAILING_TEXT_CLASSIFIER_TEXT} PRIVATE_RETRY_METRICS_CANARY` } }, { response: { text: VALID_CLASSIFIER_TEXT } }]);
+    const runtime = new AssistantRuntime(environment, model, { onDiagnostic: (event) => diagnostics.push(event) });
+    const result = await runtime.handleTurn("metrics-retry", "PRIVATE_RETRY_INPUT_CANARY Find a stay");
+    assert.equal(result.controlOutcome, "successful_model_handling");
+    const retry = environment.telemetry.events().filter((event) => event.type === "assistant.classifier.retry.v1");
+    assert.equal(retry.length, 1);
+    // The telemetry store adds its own recordedAt timestamp; the retry fields themselves must be exactly the closed set.
+    const { recordedAt: _recordedAt, ...closed } = retry[0] ?? {};
+    assert.deepEqual(Object.keys(closed).sort(), ["classifierAttempts", "classifierRetryResult", "firstAttemptScopeFailureReason", "recovered", "type"]);
+    assert.deepEqual(closed, { type: "assistant.classifier.retry.v1", classifierAttempts: 2, classifierRetryResult: "recovered", firstAttemptScopeFailureReason: "invalid_json_trailing_text", recovered: true });
+    const outcomes = environment.telemetry.events().filter((event) => event.type === "assistant.control.outcome.v1");
+    assert.deepEqual(outcomes.map((event) => event.outcome), ["successful_model_handling"]);
+    assert.doesNotMatch(JSON.stringify({ retry, outcomes, diagnostics }), /PRIVATE_/);
+  } finally { environment.close(); }
+});
