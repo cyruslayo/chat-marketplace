@@ -33,6 +33,19 @@ Commerce checkout is blocked on provider/legal decisions (multi-domain slice 04)
    - Domain code (`domains/commerce`) and the Cloudflare CommerceMarket Durable Object class are kept. Commerce is parked, not cancelled.
    - Turning the switch on in a public deployment remains subject to decision 3.
 
+### Amendment (26 Oct 2026): where the switch parser lives
+
+Decision 5 is unchanged. This amendment fixes only where its one parser (`commerceEnabledFromEnv`, with `COMMERCE_ENABLED_VARIABLE`) is kept.
+
+6. **The parser lives in `packages/commerce-switch/src/commerce-switch.ts`, outside `domains/commerce`.** Reasons:
+   - Shortlet and apartment code read the switch, and shortlet never imports commerce (ADR 0099 and ADR 0100 decision 1). Keeping the parser in the commerce domain made every host that reads the flag depend on the domain, and `test/domain-boundary.test.ts` AC4 then failed for five files that deep-import it.
+   - The owner has decided that commerce will not ship. Apartment code must therefore read the flag without importing the commerce domain at all. Decision 2 ("parked, not cancelled") is not reworded here; the owner should confirm whether that wording still holds.
+   - The Cloudflare config loader is plain Node ESM with an exact-specifier rule and no `.js` to `.ts` mapping. `apps/cloudflare/cloudflare.config.ts` names the parser by its real `.ts` path, and `test/cloudflare-config.test.ts` checks that the file is in the config's import graph.
+   - The parser is dependency-free. It imports nothing from `apps/` or `domains/`, and `test/commerce-switch-placement.test.ts` enforces that.
+   - The commerce object still reads the same parser, so the switch is one implementation, with its behaviour unchanged. The commerce object's own runtime closure does not reach `domains/commerce/src/commerce-switch.ts`, because that file no longer exists.
+
+Decision 5 still stands for every environment. The move changes no behaviour and no environment's default.
+
 ## Consequences
 
 - [Pilot readiness 27](../../.scratch/pilot-launch-readiness/issues/27-disable-commerce-on-node-pilot-hosts.md) is the Node composition change. No domain pack, transaction model or shared platform interface changes (ADR 0099).

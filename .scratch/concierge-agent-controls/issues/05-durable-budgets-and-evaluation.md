@@ -515,3 +515,28 @@ Not verified: the real `cf/config` loader. Plain Node 22 and `tsx` both reject t
 Not run: `npm test`, the browser phase, real-Chrome files, any live evaluation.
 
 Observation, not changed: `test/model-quota-host-recovery.test.ts` (#1499) has no explicit timers. It uses the wall clock only through `new Date()` in quota reservations (hour and day windows) and pending-action expiry (15 minutes), so neither is a plausible sub-second flake. The failing subtest name was not kept in any saved log, so the load-only failure is unexplained. The next step is to capture the subtest name from the next failing run.
+
+### 2026-10-26: COMMERCE_ENABLED parser moved to packages/commerce-switch (offline, no live run)
+
+Placement: the single parser moved from `domains/commerce/src/commerce-switch.ts` to `packages/commerce-switch/src/commerce-switch.ts` (`git mv`, history kept). The file imports nothing from `apps/` or `domains/`. Apartment and shortlet code reads the switch without importing the commerce domain (ADR 0099, ADR 0100 decision 1). The config loader names the real `.ts` path. Recorded in ADR 0104 amendment (decision 6).
+
+Why this entry: commit 56bbea1's verification missed `test/domain-boundary.test.ts`, so its AC4 went red for five deep imports of `domains/commerce/src/commerce-switch`. Those five importers now use the packages path. `test/domain-boundary.test.ts` AC4 and `test/commerce-ops-import-boundary.test.ts` both pass. The allow-list and the boundary tests are unchanged.
+
+Commands (all with `NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow`, `LLM_API_KEY` unset):
+- Red before the move: `npx tsx --test test/commerce-switch-placement.test.ts` failed at import (module missing). `npx tsx --test test/cloudflare-config.test.ts`: 7 pass, 1 fail (the graph assertion, test 8).
+- Green after the move: `npx tsx --test test/commerce-switch-placement.test.ts test/domain-boundary.test.ts test/commerce-ops-import-boundary.test.ts test/cloudflare-config.test.ts test/commerce-switch-local.test.ts test/commerce-switch-guest.test.ts test/commerce-switch-merchant.test.ts`: 40 tests, 40 pass, 0 fail.
+- Affected non-browser set (72 files, `npx tsx --test <files>`): 730 tests, 696 pass, 33 fail, 1 skipped. The failures are in `test/pilot-local.test.ts` (real Chromium): about 30 are the frozen browser-lock harness ("Dead browser lock cleanup cannot be verified"), and AC4 is classified below.
+- `npx tsc --noEmit` (root): 6 errors, all frozen browser files (browser-lock 1, browser-phase-timeout 4, helpers/chrome-devtools 1).
+- `npx tsc --noEmit -p apps/cloudflare`, `-p apps/cloudflare/tsconfig.test.json`, `-p apps/cloudflare/tsconfig.tooling.json`: exit 0 each. `node scripts/check-worker-bundle.mjs`: exit 0.
+- Workers, each run solo with `npm run test:workers -- <spec>`: `apps/cloudflare/test/commerce-switch.spec.ts` 7 of 7 pass; `apps/cloudflare/test/shortlet-ops-commerce-isolation.spec.ts` 10 of 10 pass; `apps/cloudflare/test/commerce-market.spec.ts` 40 of 40 pass.
+
+AC4 pilot-start timeout (`test/pilot-local.test.ts`, "AC4 — Production pilot:start still fails without required Paystack credentials"): the test spawns `apps/pilot/src/cli-start.ts` with a 10 s `spawnSync` timeout, and the child fails with `spawnSync ... ETIMEDOUT`. Classification: pre-existing load timeout, not caused by the move.
+- Controls checkout (this change), `npx tsx --test test/pilot-local.test.ts` solo, three runs: run 1 AC4 fail (ETIMEDOUT), 109 s; run 2 AC4 fail (ETIMEDOUT), 90 s; run 3 AC4 pass, 73 s.
+- Baseline worktree at dbb1760 (detached, outside the repo), same command, three runs: AC4 fail (ETIMEDOUT) in all three, 148 s, 66 s and 67 s.
+- So AC4 passes once here (a load flake) and fails on the baseline too. The worktree was removed and pruned afterwards.
+
+Not fixed, and not enforced by any test: the shortlet pilot DO's runtime closure still contains about 20 `domains/commerce/src/*` files, reached through `apps/local-guest/src/guest-server.ts` (for example `commerce-route-module.ts` and `domains/commerce/src/index.ts`). That conflicts with ADR 0099 and ADR 0100 decision 1 ("shortlet never imports commerce"). The new placement test checks only the parser itself, which is outside that closure. Fixing the rest needs a decision on guest-server's commerce composition.
+
+ADR 0104 decision 2 ("parked, not cancelled") was not reworded in the amendment. The owner should confirm that wording, since the owner has also decided that commerce will not ship.
+
+Not run: `npm test`, the browser phase, real-Chrome files as a suite, any live evaluation. The real `cf/config` loader was not run; the exact-specifier test resolves the new `.ts` path.
