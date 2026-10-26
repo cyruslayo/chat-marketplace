@@ -468,3 +468,30 @@ Latent false positives, documented and not fixed. The HEAD grader's verdicts are
 - With no selected unit and no claims, `truthful` is true without any price facts. This is by design for the grade, and `truthfulnessReason` now records it only when the case has claims.
 
 Open: the live `truthful=false` in the 25 Oct full run is still unexplained (see `validation/2026-10-26/authoritative-price-truthful-investigation.md`). This change makes a future live run record which sub-check counts fired, but it does not itself explain the earlier failure. A live run needs separate owner approval.
+
+### 2026-10-26: classifier malformed-JSON shape codes and failed-call metadata (offline, no live run)
+
+Scope: `validation/2026-10-26/classifier-malformed-json-investigation.md`, option (a). No prompt, schema, max tokens, provider setting, retry or fail-closed rule changed. No `--live` run and no network model call.
+
+What changed:
+- `invalid_json_malformed` is removed from `ScopeFailureReason`. Text that opens like JSON and does not parse now gets one of four closed codes from a linear grammar walk (no backtracking regex): `invalid_json_unterminated` (input ends before the value closes), `invalid_json_multiple_values` (a second object or array follows a complete value), `invalid_json_trailing_text` (a complete value followed by other text), `invalid_json_syntax` (any other grammar violation). The walk only names the defect. Acceptance is still `JSON.parse` followed by `parseScopeAssessment`.
+- Precedence is unchanged and documented in code: fenced, then wrapped (first `{` to last `}` parses), then length-stopped (`invalid_json_truncated`), then the shape codes, then prose.
+- Evaluator (`scripts/concierge-controls-eval.ts`): every classifier call that fails its validator gains `scopeFailureReason`, `completionTokensBucket` and `latencyBucket` in `turns[].calls[]`. `finishReason` was already recorded. The completion-token count comes from the per-call `response.usage` in the existing evaluator hook, so no client or model-path change was needed. Buckets: completion tokens `<64`, `64-127`, `128-255`, `256-511`, `>=512` (null when the provider reported none); latency `<1s`, `1-2s`, `2-4s`, `4-5s`, `>=5s` (null when the measurement is not finite). Valid classifier calls and planner calls carry none of the three fields. The existing per-call `latencyMs` stays, as before, for every call. The earlier exact turn-level `completionTokens` stays too.
+
+Red first (before any implementation change):
+- `NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test test/scope-classifier-malformed-shapes.test.ts test/assistant-scope-controls.test.ts`: 44 tests, 23 pass, 21 fail. The 21 fails were the 17 per-shape tests, the runtime-diagnostics shape test, the differential test (no replacement codes yet), and two existing rows that were updated to the new codes (the diagnostics table row and a truncation-table row).
+- `NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test test/concierge-controls-eval.test.ts`: the file failed to load (`does not provide an export named 'completionTokensBucket'`), so no eval test ran.
+
+Green after implementation:
+- `NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test test/scope-classifier-malformed-shapes.test.ts test/assistant-scope-controls.test.ts test/concierge-controls-eval.test.ts`: 78 tests, 78 pass, 0 fail. Includes 17 per-shape tests through the OpenAI-compatible client helper, the canary tests, the 20,101-input differential, the bucket boundary tests and the offline failed-call report.
+- Required set: `NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test test/assistant-scope-controls.test.ts test/openai-compatible-client.test.ts test/concierge-controls-eval.test.ts test/assistant-control-metrics.test.ts test/scope-classifier-malformed-shapes.test.ts test/pilot-agent-smoke-*.test.ts test/demo-openrouter.test.ts test/assistant-tool-authorization.test.ts`: 145 tests, 145 pass, 0 fail.
+- Differential (before and after, production modules): the HEAD `scope-classifier.ts` and the new one were run over the same 20,101 inputs (seeded corpus, named edge cases with both finish reasons, and the shape table). Result: 167 accepted before and 167 after, 0 accept/reject changes, 0 changed assessments, 0 label changes except former `invalid_json_malformed` (547 to multiple_values, 2,714 to trailing_text, 3,896 to syntax, 3,179 to unterminated). The in-repo test repeats this against a frozen copy of the previous labeller.
+
+Checks:
+- `npm run check` (root `tsc --noEmit`): errors only in `test/browser-lock.test.ts` (1), `test/browser-phase-timeout.test.ts` (4) and `test/helpers/chrome-devtools.ts` (1). No other errors. The chain stops at the root step, so the Cloudflare steps were run separately: `tsc --noEmit -p apps/cloudflare`, `-p apps/cloudflare/tsconfig.test.json`, `-p apps/cloudflare/tsconfig.tooling.json` and `node scripts/check-worker-bundle.mjs`, all exit 0.
+- Not run: `npm test`, `npm run test:workers`, real-Chrome files, and any live evaluation.
+
+Decisions and gaps:
+- The exact `latencyMs` on failed classifier calls is still persisted, as it was for all calls before this change. Only the new fields are bucketed. Removing it would change the shape of existing reports. Owner to confirm.
+- `invalid_json_wrapped` still covers a BOM-prefixed object, and a valid object followed by an unclosed second object. Both come from the unchanged wrapped precedence and are documented here, not relabelled.
+- Whether the new codes reduce the live failure rate is not established. That needs a paid run with owner approval. Options (b) and (c) from the investigation stay open.
