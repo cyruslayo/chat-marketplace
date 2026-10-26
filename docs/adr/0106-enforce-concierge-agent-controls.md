@@ -69,6 +69,20 @@ Evaluate benign completion, false refusal, attacks, guard outages, history conta
 Retain failed live evidence. Use synthetic data and the existing approved key limit for paid evaluation.
 Passing a finite evaluation does not establish complete prompt-injection resistance.
 
+### Amendment (26 Oct 2026): one bounded scope-classifier retry
+
+The default classifier path makes at most two attempts for one user message. A second attempt is made only when the first attempt returns a response that the classifier validator rejects with one of these closed codes: `invalid_json_trailing_text`, `invalid_json_multiple_values`, `invalid_json_syntax`, `invalid_json_unterminated`, `invalid_json_fenced`, or `invalid_json_wrapped`. Timeouts, transport failures, rate limits, quota or deadline refusals, truncation, prose, and any parsed verdict that the server rejects are not retried. A valid verdict of any scope, including `out_of_scope` or `policy_override`, is never re-asked.
+
+Each attempt reserves model-request capacity immediately before its own provider request (this section extends the reservation rule above). A denied second reservation, or a second attempt stopped by its deadline or the guard, ends the classifier stage with the first failure's fail-closed outcome, so the first failure's existing codes and outcome stand. No reservation is refunded or replayed.
+
+The second attempt uses the identical classifier request: the same system instruction, history, tools, structured output, and token limit. It contains no previous model output, no parse failure detail, and no guest text beyond the original request. Only its request timeout is smaller.
+
+Classifier wall-clock budget: 8 seconds in total. The first attempt keeps the 5-second cap. A second attempt starts only if at least 2 seconds remain, and is capped at 3 seconds or the remaining budget, whichever is smaller. These values are configurable engineering settings under this ADR. The total must be at least the sum of the two attempt caps.
+
+Diagnostics and telemetry record only closed codes and counts: the number of attempts started, the first attempt's closed failure code, and how the retry stage ended (recovered, not eligible, budget skipped, quota denied, or a second failure). A recovered retry is reported separately from the turn's single control outcome, which is still counted once. Evaluation reports keep the first failure visible even when the second attempt is valid, and a recovered retry does not by itself fail guard quality.
+
+This amendment does not change the verdict's authority, tool gating, the fail-closed rule in the existing text above, or the approved model and provider defaults (ADR 0105).
+
 ## Constraints retained
 
 ADRs 0015, 0068–0080, 0089, 0099, 0101, 0102, and 0105 remain in force.
