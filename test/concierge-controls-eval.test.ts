@@ -5,8 +5,10 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
-import { classifierFailureSeen, controlsEvaluationOptions, createTurnUsage, deltaControlOutcomes, evaluatorCallFailureAccounting, evaluatorCaseRequestLimit, evaluatorRequestDecision, EVALUATOR_DEFAULT_REQUEST_LIMIT, gradeGuardDecision, gradeScenario, hasCanonicalReadOnlyPriceEvidence, isBlockedControlsResult, OPEN_FIRST, draftUnitIdFromSurfaces, draftUnitObservation, preludeFailedReport, SCENARIOS, SEARCH, snapshotEvaluationTurns, surfaceActionUnitId, taskEffectObserved } from "../scripts/concierge-controls-eval.js";
-import { requestedUnitMatches } from "../scripts/pilot-agent-smoke-grading.js";
+import { ASSISTANT_TOOL_DEFINITIONS } from "../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
+const PLANNER_TOOL_NAMES: readonly string[] = ASSISTANT_TOOL_DEFINITIONS.map((tool) => tool.name);
+import { classifierFailureSeen, closedAssertedTurnMetadata, controlsEvaluationOptions, operationCode, truthfulnessStatus, createTurnUsage, deltaControlOutcomes, evaluatorCallFailureAccounting, evaluatorCaseRequestLimit, evaluatorRequestDecision, EVALUATOR_DEFAULT_REQUEST_LIMIT, gradeGuardDecision, gradeScenario, hasCanonicalReadOnlyPriceEvidence, isBlockedControlsResult, OPEN_FIRST, draftUnitIdFromSurfaces, draftUnitObservation, preludeFailedReport, SCENARIOS, SEARCH, snapshotEvaluationTurns, surfaceActionUnitId, taskEffectObserved } from "../scripts/concierge-controls-eval.js";
+import { authoritativePriceFacts, hasUnsupportedPriceOrConfirmation, requestedUnitMatches } from "../scripts/pilot-agent-smoke-grading.js";
 import { ASSISTANT_CONTROL_COPY } from "../apps/local-guest/src/assistant/control-copy.js";
 import { ModelRequestGuardError, type AssistantModelClient, type AssistantToolCall } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { restartFixture } from "./helpers/guest-restart.js";
@@ -448,4 +450,82 @@ globalThis.fetch = async (url, init) => {
   assert.equal(scenario.turns[0].scopeFailureReason, null);
   assert.equal(report.actualTransportStarts, 1);
   assert.doesNotMatch(text, new RegExp(canary));
+});
+
+test("Closed operation codes keep known tool names and reduce any other name to unrecognized (ADR 0075, 0106)", () => {
+  assert.equal(operationCode("explain_stay_price"), "explain_stay_price");
+  assert.equal(operationCode("search_stays"), "search_stays");
+  assert.equal(operationCode("get_unit_details"), "get_unit_details");
+  // show_details is a reply-plan kind, not a planner tool, so it is not in the closed tool set.
+  assert.equal(operationCode("show_details"), "unrecognized");
+  assert.equal(operationCode("CANARY_TOOL_NAME_NOT_IN_SET"), "unrecognized");
+  assert.equal(operationCode(""), "unrecognized");
+  assert.deepEqual(createTurnUsage("asserted-turn").operations, []);
+});
+
+test("A not_evaluable truthfulness is explicit, fails closed when the case has price claims, and stays evaluated when it has none", () => {
+  assert.deepEqual(truthfulnessStatus({ priceClaimed: false }), { truthfulness: "evaluated", truthfulnessReason: null });
+  assert.deepEqual(truthfulnessStatus({ gap: "no_selected_unit", priceClaimed: false }), { truthfulness: "evaluated", truthfulnessReason: null });
+  assert.deepEqual(truthfulnessStatus({ gap: "no_selected_unit", priceClaimed: true }), { truthfulness: "not_evaluable", truthfulnessReason: "no_selected_unit" });
+  assert.deepEqual(truthfulnessStatus({ gap: "quote_unavailable", priceClaimed: false }), { truthfulness: "not_evaluable", truthfulnessReason: "quote_unavailable" });
+  // The grade is unchanged: with no facts, any amount or completion claim is untruthful, so the case still fails closed.
+  assert.equal(hasUnsupportedPriceOrConfirmation(["The total is ₦202,000."], []), true);
+  assert.equal(hasUnsupportedPriceOrConfirmation(["Your booking is confirmed."], []), true);
+});
+
+test("One planner call and two planner calls with the same reply give identical price claims and truthfulness", () => {
+  const messages = ["The total is ₦202,000 for the stay."];
+  const facts = [authoritativePriceFacts({ allInStayTotalKobo: 20_200_000 })];
+  const oneCall = closedAssertedTurnMetadata({ messages, priceFacts: facts, operations: ["explain_stay_price"] });
+  const twoCalls = closedAssertedTurnMetadata({ messages, priceFacts: facts, operations: ["get_unit_details", "explain_stay_price"] });
+  assert.deepEqual(twoCalls.priceClaims, oneCall.priceClaims);
+  assert.deepEqual(oneCall.operations, ["explain_stay_price"]);
+  assert.deepEqual(twoCalls.operations, ["get_unit_details", "explain_stay_price"]);
+  assert.equal(hasUnsupportedPriceOrConfirmation(messages, facts), false);
+});
+
+test("Canary: closed asserted-turn metadata serialises no reply text, amount, kobo value or unknown tool name", () => {
+  const canary = "CANARY_REPLY_TEXT 202,000 naira 20200000 kobo";
+  const metadata = closedAssertedTurnMetadata({ messages: [`The total is ₦202,000. ${canary}. Your booking is confirmed.`],
+    priceFacts: [authoritativePriceFacts({ allInStayTotalKobo: 20_200_000 })], operations: ["CANARY_TOOL_NAME"] });
+  const text = JSON.stringify(metadata);
+  for (const forbidden of ["CANARY", "202", "20200000", "₦", "naira", "kobo", "booking", "confirmed", "total"]) assert.ok(!text.includes(forbidden), forbidden);
+  assert.deepEqual(metadata.operations, ["unrecognized"]);
+});
+
+test("Offline report shape: an asserted turn records closed price claims, operation codes and evaluated truthfulness, with no reply text", () => {
+  const directory = mkdtempSync(join(tmpdir(), "controls-eval-shape-"));
+  const preload = join(directory, "offline-provider.mjs");
+  const scopeAnswer = { scope: "supported", risk: "ordinary", intents: ["greet"], reasonCode: "supported", slots: { city: null, neighbourhood: null, bedrooms: null, nights: null, guests: null, checkIn: null, checkOut: null } };
+  const planAnswer = { kind: "clarify_stay", references: [] };
+  writeFileSync(preload, `const localFetch = globalThis.fetch;
+globalThis.fetch = async (url, init) => {
+  const address = String(url);
+  if (address.startsWith('http://127.0.0.1:')) return localFetch(url, init);
+  if (address === 'https://openrouter.ai/api/v1/key') return Response.json({data:{limit:2,limit_reset:null,usage:0,limit_remaining:2}});
+  if (address === 'https://openrouter.ai/api/v1/models') return Response.json({data:[{id:'openai/gpt-6-luna',pricing:{prompt:'0.0000001',completion:'0.0000005'},reasoning:{mandatory:false,supported_efforts:['none']}}]});
+  if (address !== 'https://openrouter.ai/api/v1/chat/completions') throw new Error('Network forbidden');
+  const body = JSON.parse(String(init.body));
+  const answer = body.response_format?.json_schema?.name === 'concierge_scope' ? ${JSON.stringify(JSON.stringify(scopeAnswer))} : ${JSON.stringify(JSON.stringify(planAnswer))};
+  return Response.json({model:'openai/gpt-6-luna',choices:[{finish_reason:'stop',message:{role:'assistant',content:answer}}],usage:{prompt_tokens:1,completion_tokens:1,cost:0}});
+};\n`);
+  const run = spawnSync(process.execPath, ["--import", pathToFileURL(resolve("node_modules/tsx/dist/loader.mjs")).href,
+    "--import", pathToFileURL(preload).href, resolve("scripts/concierge-controls-eval.ts"), "--live", "--request-limit", "4", "--case", "greeting"],
+  { cwd: directory, env: { ...process.env, LLM_API_KEY: "synthetic-evaluation-only-credential" }, encoding: "utf8", timeout: 60_000 });
+  const validation = join(directory, ".scratch/concierge-agent-controls/validation");
+  const reportDirectory = readdirSync(validation).find((name) => name.startsWith("live-"));
+  assert.ok(reportDirectory, run.stderr);
+  const text = readFileSync(join(validation, reportDirectory, "result.json"), "utf8");
+  const report = JSON.parse(text);
+  const scenario = report.scenarios[0];
+  assert.equal(scenario.failureCause, null);
+  assert.equal(scenario.assertedTurnRun, true);
+  assert.equal(scenario.truthfulness, "evaluated");
+  assert.equal(scenario.truthfulnessReason, null);
+  assert.deepEqual(Object.keys(scenario.priceClaims).sort(), ["amountAgreement", "amountCount", "amountRoles", "completionClaimCount", "mismatchedAmountCount", "unlabeledAmountCount"]);
+  const asserted = scenario.turns.at(-1);
+  assert.equal(asserted.id, "asserted-turn");
+  assert.deepEqual(asserted.priceClaims, scenario.priceClaims);
+  for (const name of asserted.operations) assert.ok(name === "unrecognized" || PLANNER_TOOL_NAMES.includes(name), name);
+  assert.doesNotMatch(text, /"(?:messages|text|reply)"\s*:/);
 });
