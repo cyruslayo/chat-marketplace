@@ -46,6 +46,17 @@ Decision 5 is unchanged. This amendment fixes only where its one parser (`commer
 
 Decision 5 still stands for every environment. The move changes no behaviour and no environment's default.
 
+### Amendment (26 Oct 2026): decision 6 extended to commerce injection
+
+Decision 6's placement stands. This amendment adds how the commerce domain is composed, so that an apartment host's closure stays free of `domains/commerce`:
+
+- **Injection, default none.** `apps/local-guest/src/guest-server.ts` takes the commerce domain by injection (`commerceModule`, typed by the neutral port in `apps/local-guest/src/commerce-port.ts`). It no longer imports `domains/commerce`, its route module, or its reference-key reader. Its default is no module.
+- **Fail closed.** With the composition "local" (the switch is on, `COMMERCE_ENABLED=true`) and no module injected, the guest server refuses to start, with an error that names `COMMERCE_ENABLED` and echoes no value. The switch is never silently treated as off. An invalid switch value still throws as before. The composition "disabled" wins over the switch and ignores any module.
+- **What composition roots inject.** Only a composition root that ships commerce injects the module. Today that is the local dev demo, `apps/local-guest/src/cli-start.ts`, which injects `LOCAL_COMMERCE_MODULE` from `apps/local-guest/src/commerce-module-local.ts` (decision 4). The Shortlet Worker (`apps/cloudflare/src/shortlet-pilot-do.ts`), both Node pilot hosts (`apps/pilot/src/pilot-server.ts`, `apps/pilot/src/local-pilot-server.ts`) and the browser client inject nothing and pass composition "disabled".
+- **Enforcement.** `test/apartment-commerce-free-closure.test.ts` checks the runtime-and-type import closure (ADR 0099 and 0100 decision 1) of the Shortlet Worker object, the guest server and both Node pilot hosts for `domains/commerce` files. The dev demo may reach `domains/commerce` only through `commerce-*` composition files. The Worker's `CommerceMarket` re-export is the documented exception in ADR 0101, so the Worker's closure still contains commerce.
+
+Decision 5 still stands for every environment.
+
 ## Consequences
 
 - [Pilot readiness 27](../../.scratch/pilot-launch-readiness/issues/27-disable-commerce-on-node-pilot-hosts.md) is the Node composition change. No domain pack, transaction model or shared platform interface changes (ADR 0099).

@@ -16,6 +16,8 @@ Distribution is constrained by OpenAI's channel rules: its commerce support cove
 
 1. **Commerce is the second domain pack, at `domains/commerce`.** It registers against the Concierge Platform through the `DomainPack` interface (ADR 0099) and never imports shortlet, and shortlet never imports commerce. The two domains share platform infrastructure only.
 
+*Note (26 Oct 2026):* "imports" covers type-only edges, dynamic `import()` and side-effect imports. `test/apartment-commerce-free-closure.test.ts` enforces this for the Shortlet Worker object, the guest server and both Node pilot hosts, which compose commerce only by injection (ADR 0104 decision 6). The Worker's `CommerceMarket` re-export is the documented exception (ADR 0101).
+
 2. **One platform, several front doors.**
    - **Own app** (web/PWA, and WhatsApp later): hosts Stays and Shop under one concierge.
    - **ChatGPT app** (remote MCP server, slice 29): **commerce-only**, because OpenAI permits commerce for physical goods and services such as stays do not qualify. It links back to our checkout and order tracking.

@@ -540,3 +540,47 @@ Not fixed, and not enforced by any test: the shortlet pilot DO's runtime closure
 ADR 0104 decision 2 ("parked, not cancelled") was not reworded in the amendment. The owner should confirm that wording, since the owner has also decided that commerce will not ship.
 
 Not run: `npm test`, the browser phase, real-Chrome files as a suite, any live evaluation. The real `cf/config` loader was not run; the exact-specifier test resolves the new `.ts` path.
+
+### 2026-10-26: commerce injected into guest-server; apartment closure test (offline, no live run)
+
+The gap in the entry above is closed for the apartment hosts. `guest-server.ts` no longer imports `domains/commerce`, and the commerce composition is injected from the composition root (ADR 0104 decision 6, amended 26 Oct 2026).
+
+- Neutral port: `apps/local-guest/src/commerce-port.ts` (`GuestCommerceModule`, `PaymentReferenceKeys`, no `domains/commerce` import). `commerce-reference-keys-local.ts` uses the port's key type.
+- Composition: `apps/local-guest/src/commerce-module-local.ts` (`LOCAL_COMMERCE_MODULE`) holds the only value import of `createCommercePack` outside the domain. `apps/local-guest/src/cli-start.ts` (the dev demo) injects it. Nothing else injects it.
+- `guest-server.ts`: option `commerceModule`, default none. Switch on (`local`) with no module throws at construction, naming `COMMERCE_ENABLED`, echoing no value. `disabled` ignores a module. Invalid values still throw.
+- Shortlet DO and both pilot hosts still pass `disabled` and inject nothing.
+- Worker: the `CommerceMarket` re-export (`apps/cloudflare/src/worker.ts:6`) stays as the documented exception (ADR 0101). Not changed.
+- Owner decision applied: the brief's closure list includes `apps/local-guest` cli-start as commerce-free, but its other instructions say the dev demo keeps commerce on by injecting the factory. Both cannot hold, because the injection has to be imported somewhere. The test asserts the dev demo reaches `domains/commerce` only through `apps/local-guest/src/commerce-*` files. Owner to confirm.
+
+Closure counts (`importClosure`, runtime and type edges, `domains/commerce` files; before, from the entry above, then after):
+
+| Entry | Closure before | Commerce before | Closure after | Commerce after |
+|---|---|---|---|---|
+| `apps/cloudflare/src/shortlet-pilot-do.ts` | 308 | 13 | 294 | 0 |
+| `apps/local-guest/src/guest-server.ts` | 276 | 13 | 262 | 0 |
+| `apps/pilot/src/cli-start.ts` | 289 | 13 | 275 | 0 |
+| `apps/pilot/src/cli-local-start.ts` | 286 | 13 | 272 | 0 |
+| `apps/local-guest/src/cli-start.ts` (dev demo) | 277 | 13 | 279 | 13 (via `commerce-module-local.ts`) |
+| `apps/cloudflare/src/worker.ts` (exempt) | 315 | 13 | 314 | 13 |
+| `apps/cloudflare/src/commerce-market-do.ts` (sanity) | 29 | 13 | 29 | 13 |
+
+Red first: `test/apartment-commerce-free-closure.test.ts` failed 5 of 7 before the change (the four apartment entries and the dev-demo assertion). The sanity and Worker-exception tests passed.
+
+Commands (`env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test ...`):
+- Closure and boundary set: `test/apartment-commerce-free-closure.test.ts test/commerce-ops-import-boundary.test.ts test/commerce-switch-placement.test.ts test/domain-boundary.test.ts test/cloudflare-config.test.ts test/guest-restart-helper.test.ts`: 34 tests, 34 pass, 0 fail (after the final fix).
+- Commerce switch and guest set (earlier run, 13 files): 82 tests, 81 pass; the one failure was the dev-demo assertion, fixed in the test (it counted commerce's own internal imports).
+- Non-browser importers of guest-server or the commerce modules (73 files, excluding chromium and real-browser files): 850 tests, 817 pass, 32 fail. One fail was the dev-demo assertion (fixed). The other 31 are all in `test/pilot-local.test.ts`: AC4 `spawnSync ETIMEDOUT` and the real-Chromium and browser-lock cases, the frozen browser harness noted in the brief. Not compared against a baseline worktree. Not rerun after the final fix.
+- Concierge and pilot-agent-smoke: `test/assistant-scope-controls.test.ts test/concierge-controls-eval.test.ts test/demo-openrouter.test.ts test/pilot-agent-smoke-*.test.ts`: 100 tests, 100 pass.
+- `npm run check` stages: root `tsc --noEmit` shows only the frozen six errors (`browser-lock` 1, `browser-phase-timeout` 4, `chrome-devtools` 1). `tsc -p apps/cloudflare`, `-p apps/cloudflare/tsconfig.test.json`, `-p apps/cloudflare/tsconfig.tooling.json`: exit 0. `node scripts/check-worker-bundle.mjs`: exit 0.
+- Workers, solo (`npm run test:workers -- apps/cloudflare/test/<spec>`): `commerce-switch.spec.ts` 7/7; `shortlet-ops-commerce-isolation.spec.ts` 10/10; `commerce-market.spec.ts` 40/40; `platform-routing.spec.ts` 10/10; `export-owner-sweep.spec.ts` 4/4; `restore-from-export.spec.ts` 4/4.
+
+Tests changed:
+- New: `test/apartment-commerce-free-closure.test.ts` (7 tests), `test/helpers/import-closure.ts` (shared reader: static, side-effect, re-export, literal `import()`, type-only).
+- `test/commerce-ops-import-boundary.test.ts` and `test/commerce-switch-placement.test.ts`: use the shared reader; their local `runtimeClosure` is removed. Assertions unchanged.
+- `test/commerce-switch-guest.test.ts`: one new test, the switch on with no module fails closed and names `COMMERCE_ENABLED`.
+- `test/guest-request-handler.test.ts`: the local-composition control injects the module; one new test, a local composition with no module fails closed and creates no commerce tables.
+- `test/helpers/guest-restart.ts`: injects the dev module by default. A test passes `commerceModule: undefined` to test the no-module case.
+
+Owner note (not an action, not changed): `apps/cloudflare/.cloudflare/output/v0/workers/default/worker.config.json`, dated 25 Oct 2026 and under the production worker name `shortlet-pilot-production`, declares `COMMERCE_ENABLED` as `"true"`. Whether that is what is deployed is unconfirmed. The build output and the Cloudflare config were not changed.
+
+Still open: ADR 0104 decision 2 wording (owner), `CommerceMarket` Worker decision (the exception stays), `cf build`, workerd and the real config loader not run.
