@@ -148,5 +148,5 @@ test("The cloudflare config's relative imports resolve to existing files under t
   };
   visit(resolve("apps/cloudflare/cloudflare.config.ts"));
   assert.deepEqual(unresolved, []);
-  assert.ok([...reached].some(file => file.replace(/\\/g, "/").endsWith("/domains/commerce/src/commerce-switch.ts")), "the commerce switch parser is in the config's import graph");
+  assert.ok([...reached].some(file => file.replace(/\\/g, "/").endsWith("/packages/commerce-switch/src/commerce-switch.ts")), "the commerce switch parser is in the config's import graph");
 });

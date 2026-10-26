@@ -1,4 +1,4 @@
-import { commerceEnabledFromEnv } from "../../../domains/commerce/src/commerce-switch.js";
+import { commerceEnabledFromEnv } from "../../../packages/commerce-switch/src/commerce-switch.js";
 import { CUTOVER_STATE_TABLE, SCHEMA_MIGRATIONS_TABLE } from "../../../packages/platform-core/src/data-migration.js";
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 
