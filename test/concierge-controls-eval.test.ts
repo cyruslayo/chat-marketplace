@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 import { ASSISTANT_TOOL_DEFINITIONS } from "../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
 const PLANNER_TOOL_NAMES: readonly string[] = ASSISTANT_TOOL_DEFINITIONS.map((tool) => tool.name);
-import { classifierFailureSeen, closedAssertedTurnMetadata, controlsEvaluationOptions, operationCode, truthfulnessStatus, createTurnUsage, deltaControlOutcomes, evaluatorCallFailureAccounting, evaluatorCaseRequestLimit, evaluatorRequestDecision, EVALUATOR_DEFAULT_REQUEST_LIMIT, gradeGuardDecision, gradeScenario, hasCanonicalReadOnlyPriceEvidence, isBlockedControlsResult, OPEN_FIRST, draftUnitIdFromSurfaces, draftUnitObservation, preludeFailedReport, SCENARIOS, SEARCH, snapshotEvaluationTurns, surfaceActionUnitId, taskEffectObserved } from "../scripts/concierge-controls-eval.js";
+import { classifierFailureSeen, closedAssertedTurnMetadata, completionTokensBucket, latencyBucket, controlsEvaluationOptions, operationCode, truthfulnessStatus, createTurnUsage, deltaControlOutcomes, evaluatorCallFailureAccounting, evaluatorCaseRequestLimit, evaluatorRequestDecision, EVALUATOR_DEFAULT_REQUEST_LIMIT, gradeGuardDecision, gradeScenario, hasCanonicalReadOnlyPriceEvidence, isBlockedControlsResult, OPEN_FIRST, draftUnitIdFromSurfaces, draftUnitObservation, preludeFailedReport, SCENARIOS, SEARCH, snapshotEvaluationTurns, surfaceActionUnitId, taskEffectObserved } from "../scripts/concierge-controls-eval.js";
 import { authoritativePriceFacts, hasUnsupportedPriceOrConfirmation, requestedUnitMatches } from "../scripts/pilot-agent-smoke-grading.js";
 import { ASSISTANT_CONTROL_COPY } from "../apps/local-guest/src/assistant/control-copy.js";
 import { ModelRequestGuardError, type AssistantModelClient, type AssistantToolCall } from "../apps/local-guest/src/assistant/assistant-model.js";
@@ -528,4 +528,59 @@ globalThis.fetch = async (url, init) => {
   assert.deepEqual(asserted.priceClaims, scenario.priceClaims);
   for (const name of asserted.operations) assert.ok(name === "unrecognized" || PLANNER_TOOL_NAMES.includes(name), name);
   assert.doesNotMatch(text, /"(?:messages|text|reply)"\s*:/);
+});
+
+test("Completion-token buckets are closed and change exactly at 64, 128, 256 and 512 tokens", () => {
+  const cases: readonly [number | undefined, string | null][] = [
+    [0, "<64"], [63, "<64"], [64, "64-127"], [127, "64-127"], [128, "128-255"], [255, "128-255"],
+    [256, "256-511"], [511, "256-511"], [512, ">=512"], [100_000, ">=512"],
+    [undefined, null], [-1, null], [1.5, null], [Number.NaN, null],
+  ];
+  for (const [tokens, bucket] of cases) assert.equal(completionTokensBucket(tokens), bucket, String(tokens));
+});
+
+test("Latency buckets are closed and change exactly at 1, 2, 4 and 5 seconds", () => {
+  const cases: readonly [number, string | null][] = [
+    [0, "<1s"], [999, "<1s"], [1000, "1-2s"], [1999, "1-2s"], [2000, "2-4s"], [3999, "2-4s"],
+    [4000, "4-5s"], [4999, "4-5s"], [5000, ">=5s"], [60_000, ">=5s"],
+    [-1, null], [Number.NaN, null], [Number.POSITIVE_INFINITY, null],
+  ];
+  for (const [ms, bucket] of cases) assert.equal(latencyBucket(ms), bucket, String(ms));
+});
+
+test("Offline: a failed classifier call records its closed reason and buckets, with no canary and no exact token count in result.json", () => {
+  const directory = mkdtempSync(join(tmpdir(), "controls-eval-failed-call-"));
+  const preload = join(directory, "offline-provider.mjs");
+  const canary = "FAILED_CALL_CANARY_9c1e";
+  const plan = {scope:'unclear',risk:'ordinary',intents:[],reasonCode:'unclear',slots:{city:null,neighbourhood:null,bedrooms:null,nights:null,guests:null,checkIn:null,checkOut:null}};
+  const malformed = `${JSON.stringify(plan)}{"note":"${canary}"}`;
+  writeFileSync(preload, `const localFetch = globalThis.fetch;
+globalThis.fetch = async (url, init) => {
+  const address = String(url);
+  if (address.startsWith('http://127.0.0.1:')) return localFetch(url, init);
+  if (address === 'https://openrouter.ai/api/v1/key') return Response.json({data:{limit:2,limit_reset:null,usage:0,limit_remaining:2}});
+  if (address === 'https://openrouter.ai/api/v1/models') return Response.json({data:[{id:'openai/gpt-6-luna',pricing:{prompt:'0.0000001',completion:'0.0000005'},reasoning:{mandatory:false,supported_efforts:['none']}}]});
+  if (address !== 'https://openrouter.ai/api/v1/chat/completions') throw new Error('Network forbidden');
+  const body = JSON.parse(String(init.body));
+  if (body.response_format.json_schema.name !== 'concierge_scope') throw new Error('Planner must not be reached');
+  return Response.json({model:'openai/gpt-6-luna',choices:[{finish_reason:'stop',message:{role:'assistant',content:${JSON.stringify(malformed)}}}],usage:{prompt_tokens:1,completion_tokens:150,cost:0}});
+};\n`);
+  const run = spawnSync(process.execPath, ["--import", pathToFileURL(resolve("node_modules/tsx/dist/loader.mjs")).href,
+    "--import", pathToFileURL(preload).href, resolve("scripts/concierge-controls-eval.ts"), "--live", "--request-limit", "4", "--case", "terse-details"],
+  { cwd: directory, env: { ...process.env, LLM_API_KEY: "synthetic-evaluation-only-credential" }, encoding: "utf8", timeout: 60_000 });
+  assert.equal(run.status, 1, run.stderr);
+  const validation = join(directory, ".scratch/concierge-agent-controls/validation");
+  const reportDirectory = readdirSync(validation).find((name) => name.startsWith("live-"));
+  assert.ok(reportDirectory);
+  const text = readFileSync(join(validation, reportDirectory, "result.json"), "utf8");
+  const report = JSON.parse(text);
+  const turn = report.scenarios[0].turns[0];
+  const failed = turn.calls.filter((call: { scopeFailureReason?: string }) => call.scopeFailureReason !== undefined);
+  assert.equal(failed.length, 1);
+  assert.deepEqual(failed[0], {
+    classifier: true, transportStarts: 1, latencyMs: failed[0].latencyMs, finishReason: "stop", toolCallCount: 0,
+    scopeFailureReason: "invalid_json_multiple_values", completionTokensBucket: "128-255", latencyBucket: "<1s",
+  });
+  assert.equal(turn.scopeFailureReason, "invalid_json_multiple_values");
+  assert.doesNotMatch(text, new RegExp(canary));
 });

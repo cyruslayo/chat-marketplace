@@ -256,7 +256,7 @@ test("Classifier diagnostics record one closed reason per invalid decision witho
   const json = (value: unknown) => JSON.stringify(value);
   const cases: readonly (readonly [string, AssistantModelResponse])[] = [
     ["invalid_json_prose", { text: `Sorry, I cannot help with ${canary}` }],
-    ["invalid_json_malformed", { text: `{"scope": "in_scope", ${canary}` }],
+    ["invalid_json_syntax", { text: `{"scope": "in_scope", ${canary}` }],
     ["invalid_json_fenced", { text: "```json\n" + json(allowed) + "\n```" }],
     ["invalid_json_wrapped", { text: `Result: ${json(allowed)} ${canary}` }],
     ["invalid_shape", { text: json({ ...allowed, extra: canary }) }],
@@ -374,9 +374,9 @@ test("A truncated classifier response reports invalid_json_truncated only when t
   const cases: readonly (readonly [string, AssistantModelResponse])[] = [
     ["invalid_json_truncated", { text: truncated, finishReason: "length" }],
     ["invalid_json_truncated", { text: `Sorry ${canary}`, finishReason: "length" }],
-    ["invalid_json_malformed", { text: truncated, finishReason: "stop" }],
-    ["invalid_json_malformed", { text: truncated, finishReason: "other" }],
-    ["invalid_json_malformed", { text: truncated }],
+    ["invalid_json_unterminated", { text: truncated, finishReason: "stop" }],
+    ["invalid_json_unterminated", { text: truncated, finishReason: "other" }],
+    ["invalid_json_unterminated", { text: truncated }],
     ["invalid_json_prose", { text: `Sorry ${canary}`, finishReason: "stop" }],
     ["invalid_json_fenced", { text: "```json\n" + truncated, finishReason: "length" }],
   ];

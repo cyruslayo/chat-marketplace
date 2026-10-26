@@ -37,7 +37,7 @@ const SCHEMA = {
 function object(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === "object" && !Array.isArray(value); }
 
 /** Closed, metadata-only codes. Each names the rule that failed; none carries classifier text or values (ADR 0075). */
-export type ScopeFailureReason = "invalid_shape" | "unknown_label" | "invalid_intents" | "invalid_date" | "invalid_city" | "invalid_neighbourhood" | "invalid_count" | "scope_reason_mismatch" | "intents_missing_for_scope" | "tool_calls_returned" | "missing_text" | "invalid_json_prose" | "invalid_json_malformed" | "invalid_json_truncated" | "invalid_json_fenced" | "invalid_json_wrapped";
+export type ScopeFailureReason = "invalid_shape" | "unknown_label" | "invalid_intents" | "invalid_date" | "invalid_city" | "invalid_neighbourhood" | "invalid_count" | "scope_reason_mismatch" | "intents_missing_for_scope" | "tool_calls_returned" | "missing_text" | "invalid_json_prose" | "invalid_json_multiple_values" | "invalid_json_trailing_text" | "invalid_json_unterminated" | "invalid_json_syntax" | "invalid_json_truncated" | "invalid_json_fenced" | "invalid_json_wrapped";
 export class ScopeClassificationError extends Error {
   constructor(readonly reason: ScopeFailureReason) { super(reason); this.name = "ScopeClassificationError"; }
 }
@@ -102,7 +102,7 @@ export function scopeVerdictCodes(response: Pick<AssistantModelResponse, "text" 
 }
 
 /** Names the parse-failure class only. The text is inspected locally and never returned, stored or logged. */
-function invalidJsonReason(text: string, finishReason: AssistantFinishReason | undefined): "invalid_json_prose" | "invalid_json_malformed" | "invalid_json_truncated" | "invalid_json_fenced" | "invalid_json_wrapped" {
+function invalidJsonReason(text: string, finishReason: AssistantFinishReason | undefined): "invalid_json_prose" | "invalid_json_multiple_values" | "invalid_json_trailing_text" | "invalid_json_unterminated" | "invalid_json_syntax" | "invalid_json_truncated" | "invalid_json_fenced" | "invalid_json_wrapped" {
   if (/^\s*```/.test(text)) return "invalid_json_fenced";
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
@@ -111,8 +111,126 @@ function invalidJsonReason(text: string, finishReason: AssistantFinishReason | u
   }
   // The provider stopped at the output-token cap: the text is cut short, not wrong. No retry is made here (ADR 0106).
   if (finishReason === "length") return "invalid_json_truncated";
-  // Text that opens like JSON but does not parse is malformed; anything else is prose.
-  return /^\s*[{[]/.test(text) ? "invalid_json_malformed" : "invalid_json_prose";
+  // Text that opens like JSON but does not parse gets the shape code that names its defect; anything else is prose.
+  return /^\s*[{[]/.test(text) ? malformedJsonShape(text) : "invalid_json_prose";
+}
+
+type JsonScan = { readonly kind: "complete"; readonly end: number } | { readonly kind: "open" } | { readonly kind: "syntax" };
+type JsonStringScan = { readonly end: number } | "open" | "syntax";
+type JsonExpectation = "value" | "valueOrClose" | "keyOrClose" | "key" | "colon" | "after";
+
+const JSON_WHITESPACE = " \t\n\r";
+const JSON_SCALAR_CHAR = /^[0-9A-Za-z+.-]$/;
+const JSON_SCALAR_TOKEN = /^(?:true|false|null|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)$/;
+const JSON_ESCAPE_HEX = /^[0-9a-fA-F]*$/;
+
+/**
+ * Scans one JSON string that opens at `start`. Linear, with no regex over the whole input.
+ * Returns the index after the closing quote, "open" when the input ends first, or "syntax" for an invalid escape or a raw control character.
+ */
+function scanJsonString(text: string, start: number): JsonStringScan {
+  for (let index = start + 1; index < text.length; index++) {
+    const code = text.charCodeAt(index);
+    if (code === 0x22) return { end: index + 1 };
+    if (code < 0x20) return "syntax";
+    if (code !== 0x5c) continue;
+    const escape = text.slice(index + 1, index + 6);
+    if (escape.length === 0) return "open";
+    if (escape[0] === "u") {
+      const hex = escape.slice(1);
+      if (!JSON_ESCAPE_HEX.test(hex)) return "syntax";
+      if (hex.length < 4) return "open";
+      index += 5;
+      continue;
+    }
+    if (!"\"\\/bfnrt".includes(escape[0] as string)) return "syntax";
+    index += 1;
+  }
+  return "open";
+}
+
+/** Scans one JSON number, true, false or null token that opens at `start`. */
+function scanJsonScalar(text: string, start: number): { readonly end: number } | "open" | "syntax" {
+  let end = start;
+  while (end < text.length && JSON_SCALAR_CHAR.test(text[end] as string)) end++;
+  if (end === start) return "syntax";
+  if (end === text.length) return "open";
+  return JSON_SCALAR_TOKEN.test(text.slice(start, end)) ? { end } : "syntax";
+}
+
+/**
+ * A single-pass JSON grammar walk from `start` that stops at the end of the first complete value.
+ * It only names the defect; it never decides acceptance, which stays with JSON.parse.
+ */
+function scanJsonValue(text: string, start: number): JsonScan {
+  const stack: ("{" | "[")[] = [];
+  let expect: JsonExpectation = "value";
+  let index = start;
+  for (;;) {
+    while (index < text.length && JSON_WHITESPACE.includes(text[index] as string)) index++;
+    if (index >= text.length) return { kind: "open" };
+    const char = text[index] as string;
+    const top = stack.at(-1);
+    const closes = (char === "}" && top === "{" && (expect === "after" || expect === "keyOrClose"))
+      || (char === "]" && top === "[" && (expect === "after" || expect === "valueOrClose"));
+    if (closes) {
+      stack.pop();
+      index += 1;
+      if (stack.length === 0) return { kind: "complete", end: index };
+      expect = "after";
+      continue;
+    }
+    if (expect === "value" || expect === "valueOrClose") {
+      if (char === "{" || char === "[") {
+        stack.push(char);
+        index += 1;
+        expect = char === "{" ? "keyOrClose" : "valueOrClose";
+        continue;
+      }
+      const scanned = char === "\"" ? scanJsonString(text, index) : scanJsonScalar(text, index);
+      if (scanned === "open") return { kind: "open" };
+      if (scanned === "syntax") return { kind: "syntax" };
+      index = scanned.end;
+      if (stack.length === 0) return { kind: "complete", end: index };
+      expect = "after";
+      continue;
+    }
+    if (expect === "keyOrClose" || expect === "key") {
+      if (char !== "\"") return { kind: "syntax" };
+      const scanned = scanJsonString(text, index);
+      if (scanned === "open") return { kind: "open" };
+      if (scanned === "syntax") return { kind: "syntax" };
+      index = scanned.end;
+      expect = "colon";
+      continue;
+    }
+    if (expect === "colon") {
+      if (char !== ":") return { kind: "syntax" };
+      index += 1;
+      expect = "value";
+      continue;
+    }
+    if (char !== ",") return { kind: "syntax" };
+    index += 1;
+    expect = stack.at(-1) === "{" ? "key" : "value";
+  }
+}
+
+/**
+ * Names the defect in text that opens like JSON and does not parse. Closed codes only:
+ * unterminated (input ends before the value closes), multiple_values (a second object or array follows a complete value),
+ * trailing_text (a complete value followed by other text), and syntax (any other grammar violation).
+ */
+function malformedJsonShape(text: string): "invalid_json_multiple_values" | "invalid_json_trailing_text" | "invalid_json_unterminated" | "invalid_json_syntax" {
+  const first = scanJsonValue(text, 0);
+  if (first.kind === "open") return "invalid_json_unterminated";
+  if (first.kind === "syntax") return "invalid_json_syntax";
+  let index = first.end;
+  while (index < text.length && JSON_WHITESPACE.includes(text[index] as string)) index++;
+  // A complete value that JSON.parse still rejects has no further defect the scanner can name.
+  if (index >= text.length) return "invalid_json_syntax";
+  if ((text[index] === "{" || text[index] === "[") && scanJsonValue(text, index).kind !== "syntax") return "invalid_json_multiple_values";
+  return "invalid_json_trailing_text";
 }
 
 export async function assessScopeSafely(classifier: ScopeClassifier, text: string, context: ScopeContext, timeoutMs: number, onFailure?: (error: unknown) => void): Promise<ScopeAssessment | undefined> {

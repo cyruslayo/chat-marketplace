@@ -62,6 +62,31 @@ export function evaluatorCallFailureAccounting(input: { readonly error: unknown;
   return { refusedBeforeTransport: input.error instanceof ModelRequestGuardError && input.transportStartsAfter === input.transportStartsBefore };
 }
 
+/** Closed completion-token buckets for failed classifier calls (ADR 0075). Bounds are inclusive below and exclusive above. */
+export type CompletionTokensBucket = "<64" | "64-127" | "128-255" | "256-511" | ">=512";
+/** Closed latency buckets for failed classifier calls (ADR 0075). Bounds are inclusive below and exclusive above. */
+export type LatencyBucket = "<1s" | "1-2s" | "2-4s" | "4-5s" | ">=5s";
+
+/** Buckets a provider-reported completion-token count. Absent or non-integer or negative input has no bucket, so it returns null. */
+export function completionTokensBucket(tokens: number | undefined): CompletionTokensBucket | null {
+  if (tokens === undefined || !Number.isInteger(tokens) || tokens < 0) return null;
+  if (tokens < 64) return "<64";
+  if (tokens < 128) return "64-127";
+  if (tokens < 256) return "128-255";
+  if (tokens < 512) return "256-511";
+  return ">=512";
+}
+
+/** Buckets a wall-clock latency in milliseconds. Non-finite or negative input has no bucket, so it returns null. */
+export function latencyBucket(ms: number): LatencyBucket | null {
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  if (ms < 1000) return "<1s";
+  if (ms < 2000) return "1-2s";
+  if (ms < 4000) return "2-4s";
+  if (ms < 5000) return "4-5s";
+  return ">=5s";
+}
+
 /** A classifier verdict reduced to closed enum codes (ADR 0075, 0106). Never the model's text or slot values. */
 export type ScopeVerdict = Exclude<ScopeVerdictCodes, { readonly scopeFailureReason: ScopeFailureReason }>;
 export interface TurnUsage {
@@ -82,7 +107,13 @@ export interface TurnUsage {
   costComplete: boolean;
   /** Closed metadata only (ADR 0075): the provider finish reason code, never response text. */
   /** Closed metadata only: a count of planner tool calls returned, never their names' arguments or text. */
-  readonly calls: { readonly classifier: boolean; readonly transportStarts: number; readonly latencyMs: number; readonly finishReason?: AssistantFinishReason | null; readonly errorClass?: string; readonly evaluatorBudgetRefusal?: true; readonly toolCallCount?: number }[];
+  readonly calls: { readonly classifier: boolean; readonly transportStarts: number; readonly latencyMs: number; readonly finishReason?: AssistantFinishReason | null; readonly errorClass?: string; readonly evaluatorBudgetRefusal?: true; readonly toolCallCount?: number;
+    /** Set only on a classifier call that failed its validator: the closed reason, never the response text. */
+    readonly scopeFailureReason?: ScopeFailureReason;
+    /** Set only with scopeFailureReason: a closed bucket of the provider-reported completion tokens, or null when the provider reported none. Exact counts are not kept for failed calls. */
+    readonly completionTokensBucket?: CompletionTokensBucket | null;
+    /** Set only with scopeFailureReason: a closed bucket of the call's wall-clock latency, or null when the measurement is not finite. */
+    readonly latencyBucket?: LatencyBucket | null }[];
   evaluatorBudgetRefusals: number;
   /** Per-turn closed codes (ADR 0106): the runtime's control outcome, the classifier verdict or its failure reason, and a setup failure. */
   controlOutcome: string | null;
@@ -496,13 +527,17 @@ async function run(): Promise<void> {
             if (response.usage) { turn.promptTokens += response.usage.promptTokens; turn.completionTokens += response.usage.completionTokens; }
             else turn.usageComplete = false;
             const classifier = request.structuredOutput?.name === "concierge_scope";
-            if (classifier && turn.classifierVerdict === null && turn.scopeFailureReason === null) {
-              // Closed codes only: the verdict is reduced by the classifier's own validator before anything is stored (ADR 0075, 0106).
-              const codes = scopeVerdictCodes(response);
+            // Closed codes only: the verdict is reduced by the classifier's own validator before anything is stored (ADR 0075, 0106).
+            const codes = classifier ? scopeVerdictCodes(response) : undefined;
+            if (codes && turn.classifierVerdict === null && turn.scopeFailureReason === null) {
               if ("scopeFailureReason" in codes) turn.scopeFailureReason = codes.scopeFailureReason;
               else turn.classifierVerdict = codes;
             }
-            turn.calls.push({ classifier, transportStarts: turn.transportStarts - transportStartsBefore, latencyMs: Math.round(performance.now() - started), finishReason: response.finishReason ?? null, toolCallCount: classifier ? 0 : response.toolCalls?.length ?? 0 });
+            const latencyMs = Math.round(performance.now() - started);
+            // Per call, only a classifier response that failed its validator carries closed failure metadata: its reason, a completion-token bucket and a latency bucket (ADR 0075).
+            const failedValidation = codes !== undefined && "scopeFailureReason" in codes ? codes.scopeFailureReason : undefined;
+            turn.calls.push({ classifier, transportStarts: turn.transportStarts - transportStartsBefore, latencyMs, finishReason: response.finishReason ?? null, toolCallCount: classifier ? 0 : response.toolCalls?.length ?? 0,
+              ...(failedValidation === undefined ? {} : { scopeFailureReason: failedValidation, completionTokensBucket: completionTokensBucket(response.usage?.completionTokens), latencyBucket: latencyBucket(latencyMs) }) });
             return response;
           } catch (error) {
             // A refusal before transport has no provider usage to lose; only a transported call leaves usage or cost unknown.
