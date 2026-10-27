@@ -2,6 +2,8 @@ import { loadPaystackConfiguration, type PaystackConfiguration, type PaystackEnv
 import { normalizeContactEmail } from "../../../domains/shortlet/src/index.js";
 import type { ManualTransferAccount } from "../../../domains/shortlet/src/index.js";
 import { loadConciergeConfiguration, type ConciergeConfiguration, type ConciergeEnvironmentSource } from "../../local-guest/src/assistant/concierge-configuration.js";
+import { DEFAULT_MODEL_REQUEST_QUOTA_LIMITS } from "../../../packages/platform-core/src/model-request-quota.js";
+import { modelRequestQuotaLimitsFromEnvironment } from "../../../packages/platform-core/src/model-request-quota-config.js";
 
 export interface PilotEnvironmentSource extends PaystackEnvironmentSource, ConciergeEnvironmentSource {
   readonly SHORTLET_PUBLIC_ORIGIN?: string;
@@ -69,12 +71,12 @@ export function notificationConfiguration(source: PilotEnvironmentSource): Pilot
 
 /** Existing issue-19 operational guardrails; override per deployment. */
 export const PILOT_LIMIT_DEFAULTS = Object.freeze({
-  chatTurnsPerSessionPerHour: 60,
+  chatTurnsPerSessionPerHour: DEFAULT_MODEL_REQUEST_QUOTA_LIMITS.guestHourly,
   chatTurnsPerAddressPerHour: 600,
   newSessionsPerAddressPerHour: 120,
   operatorLoginsPerAddressPerHour: 10,
   sessionRuntimeIdleMinutes: 30,
-  dailyModelCallCap: 3000,
+  dailyModelCallCap: DEFAULT_MODEL_REQUEST_QUOTA_LIMITS.tenantDaily,
 });
 export type PilotLimits = { readonly [Key in keyof typeof PILOT_LIMIT_DEFAULTS]: number };
 
@@ -86,13 +88,14 @@ function positiveWholeNumber(value: string | undefined, key: string, fallback: n
 }
 
 export function pilotLimits(source: PilotEnvironmentSource): PilotLimits {
+  const requestQuota = modelRequestQuotaLimitsFromEnvironment(source);
   return Object.freeze({
-    chatTurnsPerSessionPerHour: positiveWholeNumber(source.SHORTLET_CHAT_TURNS_PER_SESSION_PER_HOUR, "SHORTLET_CHAT_TURNS_PER_SESSION_PER_HOUR", PILOT_LIMIT_DEFAULTS.chatTurnsPerSessionPerHour),
+    chatTurnsPerSessionPerHour: requestQuota.hourlyGuestLimit,
     chatTurnsPerAddressPerHour: positiveWholeNumber(source.SHORTLET_CHAT_TURNS_PER_ADDRESS_PER_HOUR, "SHORTLET_CHAT_TURNS_PER_ADDRESS_PER_HOUR", PILOT_LIMIT_DEFAULTS.chatTurnsPerAddressPerHour),
     newSessionsPerAddressPerHour: positiveWholeNumber(source.SHORTLET_NEW_SESSIONS_PER_ADDRESS_PER_HOUR, "SHORTLET_NEW_SESSIONS_PER_ADDRESS_PER_HOUR", PILOT_LIMIT_DEFAULTS.newSessionsPerAddressPerHour),
     operatorLoginsPerAddressPerHour: positiveWholeNumber(source.SHORTLET_OPERATOR_LOGINS_PER_ADDRESS_PER_HOUR, "SHORTLET_OPERATOR_LOGINS_PER_ADDRESS_PER_HOUR", PILOT_LIMIT_DEFAULTS.operatorLoginsPerAddressPerHour),
     sessionRuntimeIdleMinutes: positiveWholeNumber(source.SHORTLET_GUEST_RUNTIME_IDLE_MINUTES, "SHORTLET_GUEST_RUNTIME_IDLE_MINUTES", PILOT_LIMIT_DEFAULTS.sessionRuntimeIdleMinutes),
-    dailyModelCallCap: positiveWholeNumber(source.CONCIERGE_DAILY_MODEL_CALL_CAP, "CONCIERGE_DAILY_MODEL_CALL_CAP", PILOT_LIMIT_DEFAULTS.dailyModelCallCap),
+    dailyModelCallCap: requestQuota.dailyTenantLimit,
   });
 }
 

@@ -1,4 +1,5 @@
 import { generatePlatformId } from "../../../../packages/platform-core/src/index.js";
+import { containsExactDateToken } from "./date-tokens.js";
 import { StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
 import {
   discoveryArtifactToA2UI,
@@ -13,6 +14,7 @@ import { unitDetailArtifactFromProjection } from "../../../web/src/unit-detail-a
 import { requestDraftArtifactFromProjection } from "../../../web/src/request-draft-artifact.js";
 import { requestDraftArtifactToA2UI } from "../../../web-agent/src/request-draft-a2ui.js";
 import { extendedStayDraftFacts } from "../../../web-agent/src/extended-stay-presentation.js";
+import { GUEST_ASSISTANT_COPY } from "../../../web-agent/src/guest-content.js";
 import type { LocalGuestEnvironment } from "../fixture.js";
 import type { AssistantToolDefinition } from "./assistant-model.js";
 import type {
@@ -28,7 +30,9 @@ import {
   type AssistantToolContext,
   type AssistantToolExecutionResult,
   type AssistantToolPreconditionFailure,
+  type AssistantReplyPlan,
 } from "./assistant-platform.js";
+import type { AssistantToolResult } from "./assistant-model.js";
 
 /** The domain prompt section for the shortlet pack; the runtime prefixes the platform preamble. */
 export const SHORTLET_PROMPT_SECTION = `The Shortlet platform and tools are authoritative.
@@ -39,9 +43,11 @@ For discovery-only requests, location and optional filters suffice. Do not inven
 Never fill unknown search fields with zero or one. Omit unknown nights, guests, and bedrooms, or pass null. Preserve prior guest constraints when refining a search. Zero bedrooms means an explicitly requested studio, not an unknown bedroom count.
 For booking intent, call prepare_request_draft to create the normal non-submitting Request Draft. Never submit a Booking Request automatically. For other consequential actions (Accept Offer, Start Payment), call the corresponding proposal tool to request guest confirmation.
 Explain actions clearly and ask the guest to confirm before consequential execution.
+For an in-scope support request, return the typed support_guidance reply plan without calling a tool. The server supplies the support route. Do not invent contact details or claim that a responder has been contacted.
 Do not claim an action succeeded until the authoritative tool or platform result confirms it.
 Do not generate HTML, A2UI, or raw application commands.
-Do not expose internal database IDs, tokens, or private credentials to the guest. Use conversational stay references like stay-1, stay-2.`;
+In the reply plan, \`references\` lists only the names of the tools whose results the reply reports, for example \`search_stays\` or \`get_unit_details\`. A stay reference such as stay-1 belongs only in tool arguments and never in \`references\`. Use [] when no tool result is reported.
+Do not expose internal database IDs, tokens, or private credentials to the guest. In guest-facing wording, refer to stays by conversational references like stay-1, stay-2.`;
 
 /** The full shortlet system instruction (platform preamble + shortlet section). */
 export const ASSISTANT_SYSTEM_INSTRUCTION = `${ASSISTANT_PLATFORM_PREAMBLE}\n${SHORTLET_PROMPT_SECTION}`;
@@ -299,8 +305,22 @@ export function resolveCheckInDate(
   modelCheckIn: string | null | undefined,
   userTextHistory: readonly string[],
   demoCheckIn: string,
+  currentCriteriaDate?: { readonly checkIn: string; readonly isDemoDate: boolean },
+  currentTurnDates?: { readonly checkIn?: string; readonly checkOut?: string },
+  unknownCurrentCriteriaDate?: string,
 ): { readonly checkIn: string; readonly isDemoDate: boolean } {
+  const currentCheckIn = currentTurnDates?.checkIn;
   if (!modelCheckIn || modelCheckIn === null) {
+    if (currentCheckIn) {
+      throw new AssistantDateProvenanceError("A current user date was omitted from the planner's search request.");
+    }
+    if (currentCriteriaDate) return currentCriteriaDate;
+    if (unknownCurrentCriteriaDate) {
+      throw new AssistantDateProvenanceError("The current task date has unknown provenance and cannot be reused.");
+    }
+    if (currentTurnDates?.checkOut) {
+      throw new AssistantDateProvenanceError("A checkout date cannot authorize a new check-in date.");
+    }
     return { checkIn: demoCheckIn, isDemoDate: true };
   }
 
@@ -308,16 +328,34 @@ export function resolveCheckInDate(
     throw new TypeError("checkIn must be an ISO calendar date (YYYY-MM-DD) or null");
   }
 
-  // Date Provenance check: verify the exact ISO date was present in user text
-  const userAuthored = userTextHistory.some((text) => text.includes(modelCheckIn));
-  if (!userAuthored) {
-    throw new Error(
-      `Date authority violation: model proposed date ${modelCheckIn} was not authored by user. Ask the user for explicit YYYY-MM-DD.`,
-    );
+  // Current typed scope slots bind explicit guest dates to their check-in/check-out roles.
+  if (currentCheckIn) {
+    if (currentCheckIn !== modelCheckIn) {
+      throw new AssistantDateProvenanceError("The planner date does not match the current user's explicit date.");
+    }
+    return { checkIn: modelCheckIn, isDemoDate: false };
   }
 
-  return { checkIn: modelCheckIn, isDemoDate: false };
+  // The active task can preserve its server-owned date across a correction.
+  if (currentCriteriaDate?.checkIn === modelCheckIn) return currentCriteriaDate;
+  if (currentCriteriaDate) {
+    throw new AssistantDateProvenanceError("The planner date does not match the current task's server-owned date.");
+  }
+  if (unknownCurrentCriteriaDate) {
+    throw new AssistantDateProvenanceError("The current task date has unknown provenance and cannot be reused.");
+  }
+  if (currentTurnDates?.checkOut) {
+    throw new AssistantDateProvenanceError("A checkout date cannot authorize a new check-in date.");
+  }
+
+  // Retain established same-thread user history when no typed current-turn role is available.
+  const priorUserText = currentTurnDates === undefined ? userTextHistory : userTextHistory.slice(0, -1);
+  if (priorUserText.some((text) => containsExactDateToken(text, modelCheckIn))) return { checkIn: modelCheckIn, isDemoDate: false };
+  throw new AssistantDateProvenanceError(`Date authority violation: model proposed date ${modelCheckIn} was not authored by user. Ask the user for explicit YYYY-MM-DD.`);
 }
+
+/** Closed diagnostic identity; current task dates and authored dates are separate authorities. */
+class AssistantDateProvenanceError extends Error {}
 
 export function executeAssistantTool(
   name: string,
@@ -353,8 +391,16 @@ export function executeAssistantTool(
         throw new RangeError("guests must be a positive integer");
       }
 
+      const currentCriteriaDate = typeof taskState.stayIntent.checkIn === "string"
+        && typeof taskState.stayIntent.isDemoDate === "boolean"
+        ? { checkIn: taskState.stayIntent.checkIn, isDemoDate: taskState.stayIntent.isDemoDate }
+        : undefined;
+      const unknownCurrentCriteriaDate = typeof taskState.stayIntent.checkIn === "string"
+        && typeof taskState.stayIntent.isDemoDate !== "boolean"
+        ? taskState.stayIntent.checkIn
+        : undefined;
       const dateContext = hasStayDetails
-        ? resolveCheckInDate(args.checkIn as string | null | undefined, context.userTextHistory, context.demoCheckIn)
+        ? resolveCheckInDate(args.checkIn as string | null | undefined, context.userTextHistory, context.demoCheckIn, currentCriteriaDate, context.currentTurnDates, unknownCurrentCriteriaDate)
         : undefined;
       const checkIn = dateContext?.checkIn;
       let checkOut: string | undefined;
@@ -421,6 +467,7 @@ export function executeAssistantTool(
         location: city,
         neighbourhood,
         ...(checkIn ? { checkIn } : {}),
+        ...(dateContext ? { isDemoDate: dateContext.isDemoDate } : {}),
         ...(checkOut ? { checkOut } : {}),
         ...(nights !== undefined ? { nights } : {}),
         ...(guests !== undefined ? { partySize: guests } : {}),
@@ -849,6 +896,84 @@ function shortletTaskSummary(taskState: AssistantTaskState): AssistantTaskSummar
   return { label: "Stay", status };
 }
 
+function renderShortletReply(plan: AssistantReplyPlan | undefined, results: readonly AssistantToolResult[], userText: string, now: Date): string {
+  if (plan?.kind === "support_guidance") {
+    return /active stay|locked out|access|safety|emergency/i.test(userText)
+      ? GUEST_ASSISTANT_COPY.activeStayEmergencySupport
+      : GUEST_ASSISTANT_COPY.generalSupport;
+  }
+  const successfulResults = results.filter((result) => !result.isError);
+  const kindForTool: Readonly<Record<string, string>> = {
+    search_stays: "show_results", get_unit_details: "show_details", compare_stays: "compare",
+    explain_stay_price: "explain_price", get_booking_status: "show_status", get_offer_status: "show_status",
+    prepare_request_draft: "propose_action", propose_request_to_book: "propose_action", propose_accept_offer: "propose_action", propose_start_payment: "propose_action",
+  };
+  const selected = plan ? successfulResults.find((result) => plan.references.includes(result.name) && kindForTool[result.name] === plan.kind) : undefined;
+  const operation = selected ?? successfulResults[0];
+  if (!operation && /\b(next friday|next week|tomorrow|next month)\b/i.test(userText)) return GUEST_ASSISTANT_COPY.dateClarification;
+  if (!operation) return plan?.kind === "clarify_stay" || /how many|nights|\bstay\b|somewhere|\bplace\b|lagos|abuja|lekki|ikoyi/i.test(userText)
+    ? GUEST_ASSISTANT_COPY.stayClarification
+    : GUEST_ASSISTANT_COPY.safeClarification;
+  const data = operation.result;
+  if (operation.name === "prepare_request_draft") return data.created === true && data.operation === "request_draft.create" ? GUEST_ASSISTANT_COPY.draftReady : GUEST_ASSISTANT_COPY.safeClarification;
+  if (operation.name === "get_offer_status") {
+    const expiresAt = typeof data.expiresAtIso === "string" ? Date.parse(data.expiresAtIso) : NaN;
+    if (data.hasOffer !== true || data.status !== "issued" || !Number.isFinite(expiresAt) || expiresAt <= now.getTime()) return GUEST_ASSISTANT_COPY.offerInactive;
+    const amounts = [data.allInStayTotalKobo, data.totalAmountDueNowKobo, data.refundableSecurityDepositKobo];
+    if (!amounts.every((value) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0)) return GUEST_ASSISTANT_COPY.priceUnavailable;
+    const money = (value: unknown) => `₦${(Number(value) / 100).toLocaleString("en-NG")}`;
+    return GUEST_ASSISTANT_COPY.offerAmount(...amounts.map(money) as [string, string, string]);
+  }
+  if (typeof data.message === "string" && ["propose_request_to_book", "propose_accept_offer", "propose_start_payment", "get_offer_status"].includes(operation.name)) return data.message;
+  if (operation.name === "search_stays") {
+    if (typeof data.resultCount !== "number" || typeof data.neighbourhood !== "string" && typeof data.location !== "string") return GUEST_ASSISTANT_COPY.safeClarification;
+    const count = data.resultCount;
+    const place = String(data.neighbourhood ?? data.location ?? "your selected area");
+    return count > 0 ? GUEST_ASSISTANT_COPY.results(count, place) : GUEST_ASSISTANT_COPY.noResults(place);
+  }
+  if (operation.name === "get_unit_details") {
+    const amenities = Array.isArray(data.amenities) ? data.amenities.filter((item): item is string => typeof item === "string").join(", ") : "";
+    return GUEST_ASSISTANT_COPY.details(String(data.title ?? "This stay"), amenities, data.inspectionStatus === "passed");
+  }
+  if (operation.name === "compare_stays") {
+    const compared = Array.isArray(data.compared) ? data.compared.filter((item): item is Record<string, unknown> => typeof item === "object" && item !== null) : [];
+    if (compared.length >= 2) {
+      const first = compared[0]!;
+      const second = compared[1]!;
+      const money = (value: unknown) => typeof value === "number" ? `₦${(value / 100).toLocaleString("en-NG")}` : undefined;
+      const firstTitle = String(first.title ?? "First stay");
+      const secondTitle = String(second.title ?? "Second stay");
+      const firstTotal = money(first.allInStayTotalKobo);
+      const secondTotal = money(second.allInStayTotalKobo);
+      const firstNight = money(first.nightlyKobo);
+      const secondNight = money(second.nightlyKobo);
+      if (firstTotal && secondTotal) {
+        return firstNight && secondNight
+          ? GUEST_ASSISTANT_COPY.comparedAllIn(firstTitle, firstTotal, firstNight, secondTitle, secondTotal, secondNight)
+          : GUEST_ASSISTANT_COPY.comparedAllInOnly(firstTitle, firstTotal, secondTitle, secondTotal);
+      }
+      return firstNight && secondNight
+        ? GUEST_ASSISTANT_COPY.comparedIndicative(firstTitle, firstNight, secondTitle, secondNight)
+        : GUEST_ASSISTANT_COPY.comparisonNoPrice;
+    }
+  }
+  if (operation.name === "explain_stay_price") {
+    const money = (value: unknown) => typeof value === "number" ? `₦${(value / 100).toLocaleString("en-NG")}` : undefined;
+    const total = money(data.allInStayTotalKobo);
+    const fees = money(data.mandatoryFeesKobo);
+    const deposit = money(data.refundableSecurityDepositKobo);
+    if (!total || !fees || !deposit) return GUEST_ASSISTANT_COPY.priceUnavailable;
+    return GUEST_ASSISTANT_COPY.priceBreakdown(String(data.title ?? "This stay"), total, fees, deposit);
+  }
+  if (operation.name === "get_booking_status") {
+    if (data.status === "confirmed" && typeof data.contractId === "string") return GUEST_ASSISTANT_COPY.confirmedBooking(data.contractId);
+    if (data.status === "offer_issued" && typeof data.offerId === "string") return GUEST_ASSISTANT_COPY.issuedOffer(data.offerId);
+    if (data.status === "request_disclosed" && typeof data.requestId === "string") return GUEST_ASSISTANT_COPY.disclosedRequest(data.requestId);
+    return GUEST_ASSISTANT_COPY.noCurrentBooking;
+  }
+  return GUEST_ASSISTANT_COPY.safeClarification;
+}
+
 /** The shortlet pack: prompt section, tools and surface projections for the shortlet domain. */
 export function createShortletAssistantPack(environment: LocalGuestEnvironment): AssistantDomainPack {
   return {
@@ -856,12 +981,58 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     label: "Stays",
     starterDescription: "Find an inspected apartment in Lagos or Abuja and book it.",
     promptSection: SHORTLET_PROMPT_SECTION,
+    scopeDescription: "Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.",
+    scopeLocations: [...new Set(environment.unitRepository.findAll().map((unit) => unit.location.neighbourhood))],
+    toolIntentMap: {
+      search: ["search_stays"],
+      details: ["get_unit_details"],
+      compare: ["compare_stays"],
+      price: ["explain_stay_price"],
+      status: ["get_booking_status", "get_offer_status"],
+      offer: ["get_offer_status"],
+      draft: ["get_unit_details", "prepare_request_draft"],
+      // ADR 0106: booking preparation remains available when the classifier labels intent as a request.
+      request: ["get_unit_details", "prepare_request_draft", "propose_request_to_book"],
+      accept: ["get_offer_status", "propose_accept_offer"],
+      payment: ["get_offer_status", "propose_start_payment"],
+    },
+    toolDefinition: (name) => stayToolDefinitions(environment.extendedStayPolicy).find((tool) => tool.name === name),
     intentKeywords: ["stay", "stays", "apartment", "apartments", "book", "booking", "ikoyi", "lekki", "lagos", "abuja", "check-in", "checkin"],
     toolNames: ASSISTANT_TOOL_DEFINITIONS.map((tool) => tool.name),
     toolsForState: (taskState) => assistantToolsForState(taskState, environment.extendedStayPolicy),
     validateToolCall: (name, args, taskState) => validateAssistantToolCall(name, args, taskState, environment.extendedStayPolicy),
     executeTool: executeAssistantTool,
+    projectToolResult: (_name, result, limits) => {
+      const keys = new Set(["stayRef", "city", "capacity", "bedrooms", "resultCount", "checkIn", "checkOut", "nights", "partySize", "isDemoDate", "nightlyKobo", "mandatoryFeesKobo", "allInStayTotalKobo", "refundableSecurityDepositKobo", "amountDueNowKobo", "totalAmountDueNowKobo", "currency", "inspectionStatus", "managementAuthorityStatus", "status", "expiresAt", "expiresAtIso", "hasOffer", "hasBooking", "draftCreated", "created", "availabilityChecked", "inventoryReserved", "operation", "available", "stays", "compared", "result", "hasRequest", "requestStatus"]);
+      const closedStatuses = new Set(["passed", "failed", "expired", "verified", "unverified", "none", "request_draft", "request_submitted", "request_disclosed", "offer_issued", "issued", "accepted", "payment_pending", "paid", "cancelled", "rejected", "stale", "revoked", "confirmed", "no_active_booking", "unknown"]);
+      const project = (value: unknown): unknown => {
+        if (Array.isArray(value)) return value.slice(0, limits.maxItems).map(project).filter((entry) => entry !== undefined);
+        if (typeof value !== "object" || value === null) return undefined;
+        const record = value as Record<string, unknown>;
+        const projected: Record<string, unknown> = {};
+        for (const [key, item] of Object.entries(record)) {
+          if (!keys.has(key)) continue;
+          if (key === "stays" || key === "compared" || key === "result") {
+            const nested = project(item);
+            if (nested !== undefined) projected[key] = nested;
+          } else if (["capacity", "bedrooms", "resultCount", "nights", "partySize", "nightlyKobo", "mandatoryFeesKobo", "allInStayTotalKobo", "refundableSecurityDepositKobo", "amountDueNowKobo", "totalAmountDueNowKobo"].includes(key)
+            && typeof item === "number" && Number.isFinite(item)) projected[key] = item;
+          else if (["isDemoDate", "hasOffer", "hasBooking", "draftCreated", "created", "availabilityChecked", "inventoryReserved", "available", "hasRequest"].includes(key) && typeof item === "boolean") projected[key] = item;
+          else if (key === "operation" && item === "request_draft.create") projected[key] = item;
+          else if (key === "stayRef" && typeof item === "string" && /^stay-[1-9]\d{0,3}$/.test(item)) projected[key] = item;
+          else if (key === "city" && (item === "Lagos" || item === "Abuja")) projected[key] = item;
+          else if (key === "currency" && item === "NGN") projected[key] = item;
+          else if (["checkIn", "checkOut"].includes(key) && typeof item === "string" && /^\d{4}-\d{2}-\d{2}$/.test(item) && !Number.isNaN(Date.parse(`${item}T00:00:00Z`))) projected[key] = item;
+          else if (["inspectionStatus", "managementAuthorityStatus", "status", "requestStatus"].includes(key) && typeof item === "string" && closedStatuses.has(item)) projected[key] = item;
+          else if (["expiresAt", "expiresAtIso"].includes(key) && typeof item === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(item) && !Number.isNaN(Date.parse(item))) projected[key] = item;
+        }
+        return projected;
+      };
+      return project(result) as Record<string, unknown>;
+    },
+    projectStateSummary: (state, limits) => ({ city: state.stayIntent.location === "Lagos" || state.stayIntent.location === "Abuja" ? state.stayIntent.location : null, hasShortlist: state.shortlist.length > 0, shortlistRefs: state.shortlist.slice(0, limits.maxItems).map((stay) => stay.stayRef), selectedStayRef: state.selectedStayRef ?? null, checkIn: state.stayIntent.checkIn ?? null, checkOut: state.stayIntent.checkOut ?? null, nights: state.stayIntent.nights ?? null, partySize: state.stayIntent.partySize ?? null, hasSelectedStay: Boolean(state.selectedStayRef), hasPendingAction: Boolean(state.pendingAction) }),
     taskSummary: shortletTaskSummary,
+    renderReply: (plan, results, text) => renderShortletReply(plan, results, text, environment.clock()),
     discoverySurface: (artifact, surfaceId) => discoveryArtifactToA2UI({ artifact: artifact as never, surfaceId, demo: environment.config.demo === true }),
     unitDetailSurface: ({ unitId, checkIn, checkOut, surfaceId }) => {
       const unit = environment.unitRepository.findById(unitId);

@@ -5,13 +5,14 @@ import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/scripted-assistant-model.js";
 import { createFakeShopPack } from "./helpers/fake-domain-pack.js";
+import { approvedTestScope } from "./helpers/assistant-scope.js";
 
 let testDbIndex = 0;
-function createTestRuntime(model: ScriptedAssistantModel) {
+function createTestRuntime(model: ScriptedAssistantModel, scopeClassifier?: typeof approvedTestScope) {
   testDbIndex++;
   const databasePath = temporaryDatabasePath(`router_test_${testDbIndex}_${Date.now()}.sqlite`);
   const env = LocalGuestEnvironment.openNode({ databasePath });
-  const runtime = new AssistantRuntime(env, model, { additionalPacks: [createFakeShopPack()] });
+  const runtime = new AssistantRuntime(env, model, { additionalPacks: [createFakeShopPack()], ...(scopeClassifier ? { scopeClassifier } : {}) });
   return { env, runtime };
 }
 
@@ -33,6 +34,7 @@ test("AC2: an intent for another registered domain produces a confirmation, neve
 
 test("AC3: switching tasks restores the previous task's state and tool set", async () => {
   let offeredTools: readonly string[] = [];
+  let shortletTaskId = "";
   const model = new ScriptedAssistantModel([
     (request) => {
       const last = request.history.at(-1);
@@ -43,7 +45,11 @@ test("AC3: switching tasks restores the previous task's state and tool set", asy
         return { toolCalls: [{ id: "start", name: "start_task", args: { domain: "shop" } }] };
       }
       if (last?.role === "user" && /go back/i.test(last.text)) {
-        return { toolCalls: [{ id: "switch", name: "switch_task", args: { taskId: "task-1" } }] };
+        return { toolCalls: [{ id: "switch", name: "switch_task", args: { taskId: shortletTaskId } }] };
+      }
+      if (last?.role === "user" && /next turn/i.test(last.text)) {
+        offeredTools = request.tools.map((tool) => tool.name);
+        return { text: JSON.stringify({ kind: "clarify_stay", references: [] }) };
       }
       if (last?.role === "tool_results") {
         offeredTools = request.tools.map((tool) => tool.name);
@@ -52,18 +58,22 @@ test("AC3: switching tasks restores the previous task's state and tool set", asy
       return null;
     },
   ]);
-  const { runtime } = createTestRuntime(model);
+  const { runtime } = createTestRuntime(model, approvedTestScope);
 
   await runtime.handleTurn("g-switch", "I need a place in Ikoyi for 4 nights for 2 guests");
   const beforeSwitch = runtime.getThread("g-switch");
   assert.ok(beforeSwitch.taskState.shortlist.length >= 1);
   assert.equal(beforeSwitch.tasks.find((task) => task.taskId === beforeSwitch.activeTaskId)?.domain, "shortlet");
+  shortletTaskId = beforeSwitch.activeTaskId;
 
   await runtime.handleTurn("g-switch", "start a new task");
   const afterStart = runtime.getThread("g-switch");
   assert.equal(afterStart.tasks.length, 2);
   assert.equal(afterStart.tasks.find((task) => task.taskId === afterStart.activeTaskId)?.domain, "shop");
   assert.equal(afterStart.taskState.shortlist.length, 0);
+  assert.equal(offeredTools.includes("shop_search"), false, "A task switch cannot grant the new pack's tools during the same turn");
+  assert.equal(offeredTools.includes("search_stays"), false);
+  await runtime.handleTurn("g-switch", "next turn product search");
   assert.equal(offeredTools.includes("shop_search"), true);
   assert.equal(offeredTools.includes("search_stays"), false);
 
@@ -71,7 +81,10 @@ test("AC3: switching tasks restores the previous task's state and tool set", asy
   const afterSwitch = runtime.getThread("g-switch");
   assert.equal(afterSwitch.tasks.find((task) => task.taskId === afterSwitch.activeTaskId)?.domain, "shortlet");
   assert.equal(afterSwitch.taskState.shortlist.length, beforeSwitch.taskState.shortlist.length);
+  assert.equal(offeredTools.includes("search_stays"), false, "Returning tasks must be classified on the following turn");
+  await runtime.handleTurn("g-switch", "next turn stay details");
   assert.equal(offeredTools.includes("search_stays"), true);
+  assert.equal(offeredTools.includes("shop_search"), false);
 });
 
 test("AC4: a tool from a non-active task's domain is rejected", async () => {

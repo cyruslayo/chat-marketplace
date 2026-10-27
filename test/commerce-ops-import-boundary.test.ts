@@ -5,6 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { ImportRefusedError, importBatch } from "../apps/cloudflare/src/ops-import-core.js";
 import type { SqlDatabase } from "../packages/platform-core/src/sql-database.js";
+import { importClosure } from "./helpers/import-closure.js";
 
 /**
  * guest-identity-assurance AC5 (review 1) and the commerce object's runtime boundary (ADR 0099, ADR 0101). ops-import.ts imports
@@ -35,22 +36,6 @@ function sourcesUnder(roots: readonly string[]): string[] {
   };
   for (const root of roots) walk(join(ROOT, root));
   return out;
-}
-
-/** Every relative module reachable from a file through its import edges, type-only edges included. */
-function runtimeClosure(start: string): string[] {
-  const seen = new Set<string>();
-  const queue = [join(ROOT, start)];
-  while (queue.length > 0) {
-    const file = queue.shift()!;
-    if (seen.has(file)) continue;
-    seen.add(file);
-    for (const specifier of specifiersOf(readFileSync(file, "utf8"))) {
-      if (!specifier.startsWith(".")) continue;
-      queue.push(resolve(dirname(file), specifier.replace(/\.js$/, ".ts")));
-    }
-  }
-  return [...seen].map(relative);
 }
 
 test("the commerce object imports the neutral ops import core, never ops-import.ts (which reaches the assurance store)", () => {
@@ -88,7 +73,7 @@ test("the importers of the neutral ops import core are exactly the commerce obje
 });
 
 test("the commerce object's full runtime closure, type-only edges included, reaches no Shortlet domain, pilot config, local guest or pilot app", () => {
-  const closure = runtimeClosure(COMMERCE_OBJECT);
+  const closure = importClosure(COMMERCE_OBJECT);
   const forbidden = closure.filter((file) =>
     file.startsWith("domains/shortlet/") ||
     file.endsWith("pilot-config-core.ts") ||

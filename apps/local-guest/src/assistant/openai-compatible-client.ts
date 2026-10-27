@@ -1,10 +1,12 @@
-import type {
-  AssistantConversationStep,
-  AssistantModelClient,
-  AssistantModelRequest,
-  AssistantModelResponse,
-  AssistantToolCall,
-  AssistantToolDefinition,
+import {
+  ModelRequestGuardError,
+  type AssistantFinishReason,
+  type AssistantModelClient,
+  type AssistantModelRequest,
+  type AssistantModelResponse,
+  type AssistantConversationStep,
+  type AssistantToolCall,
+  type AssistantToolDefinition,
 } from "./assistant-model.js";
 
 /**
@@ -67,17 +69,22 @@ type ChatMessage =
   | { readonly role: "tool"; readonly tool_call_id: string; readonly content: string };
 
 export class OpenAiCompatibleClient implements AssistantModelClient {
+  readonly supportsProviderAttemptReservation = true as const;
   readonly #apiKey: string;
   readonly #endpoint: string;
   readonly #model: string;
   readonly #timeoutMs: number;
+  readonly #requireSupportedParameters: boolean;
   readonly #fetch: FetchFunction;
 
   constructor(config: OpenAiCompatibleClientConfig) {
     if (!config.apiKey?.trim()) throw new Error("LLM_API_KEY is required for OpenAiCompatibleClient");
     if (!config.model?.trim()) throw new Error("LLM_MODEL is required for OpenAiCompatibleClient");
     this.#apiKey = config.apiKey.trim();
-    this.#endpoint = `${httpsBaseUrl(config.baseUrl)}/chat/completions`;
+    const safeBaseUrl = httpsBaseUrl(config.baseUrl);
+    this.#endpoint = `${safeBaseUrl}/chat/completions`;
+    const host = new URL(safeBaseUrl).hostname.toLowerCase();
+    this.#requireSupportedParameters = host === "openrouter.ai" || host.endsWith(".openrouter.ai");
     this.#model = config.model.trim();
     this.#timeoutMs = config.timeoutMs ?? DEFAULT_OPENAI_COMPATIBLE_TIMEOUT_MS;
     this.#fetch = config.fetch ?? ((input, init) => fetch(input, init));
@@ -88,15 +95,24 @@ export class OpenAiCompatibleClient implements AssistantModelClient {
       model: this.#model,
       messages: mapHistoryToMessages(request.systemInstruction, request.history),
       ...(request.tools.length > 0 ? { tools: request.tools.map(mapTool) } : {}),
+      ...(request.structuredOutput ? {
+        response_format: { type: "json_schema", json_schema: { name: request.structuredOutput.name, schema: request.structuredOutput.schema, strict: request.structuredOutput.strict ?? true } },
+        ...(this.#requireSupportedParameters ? { provider: { require_parameters: true } } : {}),
+      } : {}),
+      ...(request.maxOutputTokens !== undefined ? { max_completion_tokens: request.maxOutputTokens } : {}),
+      ...(request.reasoningEffort !== undefined ? { reasoning_effort: request.reasoningEffort } : {}),
       stream: false,
     });
-    return this.#postWithBoundedConnectionRetry(body, request.timeoutMs ?? this.#timeoutMs);
+    return this.#postWithBoundedConnectionRetry(body, request.timeoutMs ?? this.#timeoutMs, request);
   }
 
-  async #postWithBoundedConnectionRetry(body: string, timeoutMs: number): Promise<AssistantModelResponse> {
+  async #postWithBoundedConnectionRetry(body: string, timeoutMs: number, request: AssistantModelRequest): Promise<AssistantModelResponse> {
+    const now = Date.now();
+    const deadlineAt = Math.min(request.deadlineAt ?? now + timeoutMs, now + timeoutMs);
+    if (!Number.isSafeInteger(deadlineAt) || deadlineAt <= 0) throw new ModelRequestGuardError("deadline_exceeded");
     for (let attempt = 0; ; attempt++) {
       try {
-        return await this.#post(body, timeoutMs);
+        return await this.#post(body, deadlineAt, request.beforeProviderAttempt);
       } catch (error) {
         const retryable = error instanceof APIConnectionError && error.code === "connection_failed";
         if (attempt >= MAX_CONNECTION_RETRIES || !retryable) throw error;
@@ -105,14 +121,19 @@ export class OpenAiCompatibleClient implements AssistantModelClient {
     }
   }
 
-  async #post(body: string, timeoutMs: number): Promise<AssistantModelResponse> {
+  async #post(body: string, deadlineAt: number, beforeProviderAttempt?: () => Promise<void>): Promise<AssistantModelResponse> {
+    if (Date.now() >= deadlineAt) throw new ModelRequestGuardError("deadline_exceeded");
+    // Guard failures stay outside the transport catch so quota/storage errors cannot become provider retries.
+    await beforeProviderAttempt?.();
+    const remainingMs = deadlineAt - Date.now();
+    if (remainingMs <= 0) throw new ModelRequestGuardError("deadline_exceeded");
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
         controller.abort();
         reject(new APIConnectionError("timeout"));
-      }, timeoutMs);
+      }, remainingMs);
     });
     const operation = async (): Promise<AssistantModelResponse> => {
       let response: Response;
@@ -223,11 +244,25 @@ function parseCompletion(payload: unknown): AssistantModelResponse {
   }
   const toolCalls: AssistantToolCall[] = (rawCalls ?? []).map(parseToolCall);
   const usage = parseUsage(isPlainRecord(payload) ? payload.usage : undefined);
+  const finishReason = parseFinishReason(isPlainRecord(choice) ? choice.finish_reason : undefined);
   return {
     ...(text !== undefined ? { text } : {}),
     ...(toolCalls.length > 0 ? { toolCalls } : {}),
     ...(usage === undefined ? {} : { usage }),
+    ...(finishReason === undefined ? {} : { finishReason }),
   };
+}
+
+/** Absent stays undefined; a named provider value maps to its closed code; anything else is `other`. */
+function parseFinishReason(value: unknown): AssistantFinishReason | undefined {
+  if (value === undefined || value === null) return undefined;
+  switch (value) {
+    case "stop": return "stop";
+    case "length": return "length";
+    case "tool_calls": return "tool_calls";
+    case "content_filter": return "content_filter";
+    default: return "other";
+  }
 }
 
 function parseUsage(value: unknown): AssistantModelResponse["usage"] {

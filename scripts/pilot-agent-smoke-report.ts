@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import type { PerformanceReport, JourneyPerformance } from "./pilot-agent-smoke-metrics.js";
 import { MAX_PILOT_AGENT_SMOKE_RUNS } from "./pilot-agent-smoke-budget.js";
 import { SMOKE_GRADING_PROFILE } from "./pilot-agent-smoke-grading.js";
+import { ASSISTANT_CONTROL_OUTCOMES, type AssistantControlOutcome } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 
 export interface SmokeScenarioReport {
   readonly scenario: string;
@@ -10,8 +11,18 @@ export interface SmokeScenarioReport {
   readonly surfaceSelected: string | null;
   readonly authoritativeEntities: readonly string[];
   readonly semanticResult: "PASS" | "FAIL" | "NOT_RUN";
-  readonly failureClassification?: "PROVIDER_RATE_LIMITED" | "PROVIDER_REQUEST_BUDGET_EXCEEDED" | "PROVIDER_TRANSPORT_FAILURE" | "MODEL_SELECTION_FAILURE" | "INVALID_TOOL_FOR_STATE" | "APPLICATION_OPERATION_FAILURE" | "PROJECTION_FAILURE" | "A2UI_FAILURE" | "WEAVER_FAILURE" | "FABRICATION_FAILURE" | "AUTHORITY_FAILURE";
+  readonly failureClassification?: "PROVIDER_RATE_LIMITED" | "PROVIDER_REQUEST_BUDGET_EXCEEDED" | "PROVIDER_TRANSPORT_FAILURE" | "MODEL_SELECTION_FAILURE" | "INVALID_TOOL_FOR_STATE" | "APPLICATION_OPERATION_FAILURE" | "PROJECTION_FAILURE" | "A2UI_FAILURE" | "WEAVER_FAILURE" | "FABRICATION_FAILURE" | "AUTHORITY_FAILURE" | "QUOTA_REFUSED";
   readonly note?: string;
+  /** Number of prohibited state transitions observed for this scenario. */
+  readonly prohibitedEffects?: number;
+  readonly falseRefusal?: boolean;
+}
+
+export interface SmokeEvaluationMetrics {
+  readonly guardFailures: number;
+  readonly falseRefusals: number;
+  readonly taskCompletions: number;
+  readonly prohibitedEffects: number;
 }
 
 export interface SmokeResult {
@@ -26,7 +37,12 @@ export interface SmokeResult {
   readonly credentialConfigured: boolean;
   readonly configuredJourneyCount: number;
   readonly journeysActuallyAttempted: number;
+  /** Capacity claimed from the smoke budget before provider transports. */
+  readonly totalReservedRequests: number;
   readonly totalProviderRequests: number;
+  readonly controlOutcomeCounts: Readonly<Record<AssistantControlOutcome, number>>;
+  readonly evaluationMetrics: SmokeEvaluationMetrics;
+  readonly providerReservationsPerTurn: readonly { readonly journey: number; readonly turn: string; readonly providerRequests: number }[];
   readonly providerRequestsPerTurn: readonly { readonly journey: number; readonly turn: string; readonly providerRequests: number }[];
   readonly providerRequestBudget: { readonly perJourney: number; readonly total: number };
   readonly providerRequestBudgetExceeded: boolean;
@@ -90,12 +106,19 @@ export function renderSmokeMarkdown(result: SmokeResult): string {
     `- Credential configured: ${result.credentialConfigured}`,
     `- Configured journeys: ${result.configuredJourneyCount}`,
     `- Journeys actually attempted: ${result.journeysActuallyAttempted}`,
-    `- Total provider requests: ${result.totalProviderRequests}`,
-    `- Provider requests per turn: ${result.providerRequestsPerTurn.map((usage) => `journey ${usage.journey} ${usage.turn}=${usage.providerRequests}`).join(", ") || "none"}`,
+    `- Reserved provider-request capacity: ${result.totalReservedRequests}`,
+    `- Actual provider transport starts: ${result.totalProviderRequests}`,
+    `- Reserved capacity per turn: ${result.providerReservationsPerTurn.map((usage) => `journey ${usage.journey} ${usage.turn}=${usage.providerRequests}`).join(", ") || "none"}`,
+    `- Transport starts per turn: ${result.providerRequestsPerTurn.map((usage) => `journey ${usage.journey} ${usage.turn}=${usage.providerRequests}`).join(", ") || "none"}`,
     `- Provider request budget: ${result.providerRequestBudget.total} total (${result.providerRequestBudget.perJourney} per journey)`,
     `- Provider request budget exceeded: ${result.providerRequestBudgetExceeded}`,
     `- HTTP 429 occurred: ${result.rateLimitOccurred}`,
     `- Provider stop classification: ${result.providerStopClassification ?? "none"}`,
+    `- Guard failures: ${result.evaluationMetrics.guardFailures}`,
+    `- False refusals: ${result.evaluationMetrics.falseRefusals}`,
+    `- Completed tasks: ${result.evaluationMetrics.taskCompletions}`,
+    `- Prohibited effects: ${result.evaluationMetrics.prohibitedEffects}`,
+    `- Control outcomes: ${ASSISTANT_CONTROL_OUTCOMES.map((outcome) => `${outcome}=${result.controlOutcomeCounts[outcome]}`).join(", ")}`,
     `- Note: ${result.note}`,
     "",
     "| Scenario | Operation | Surface | Authoritative entities | Result | Classification |",
@@ -128,6 +151,13 @@ export function validateLiveBenchmarkResult(value: unknown): string | null {
   if (typeof candidate.generatedAt !== "string" || !Number.isFinite(Date.parse(candidate.generatedAt))) return "result date is invalid";
   if (typeof candidate.provider !== "string" || !candidate.provider.trim() || typeof candidate.model !== "string" || !candidate.model.trim()) return "provider or model is missing";
   if (!Array.isArray(candidate.scenarios)) return "result has no scenarios";
+  if (!isRecord(candidate.controlOutcomeCounts) || ASSISTANT_CONTROL_OUTCOMES.some((outcome) => !nonNegativeInteger(candidate.controlOutcomeCounts?.[outcome]))) return "control outcome counts are invalid";
+  if (Object.keys(candidate.controlOutcomeCounts).some((outcome) => !ASSISTANT_CONTROL_OUTCOMES.includes(outcome as AssistantControlOutcome))) return "control outcome counts contain unknown values";
+  if (!isRecord(candidate.evaluationMetrics)
+    || !nonNegativeInteger(candidate.evaluationMetrics.guardFailures)
+    || !nonNegativeInteger(candidate.evaluationMetrics.falseRefusals)
+    || !nonNegativeInteger(candidate.evaluationMetrics.taskCompletions)
+    || !nonNegativeInteger(candidate.evaluationMetrics.prohibitedEffects)) return "evaluation metrics are invalid";
   const count = candidate.journeysActuallyAttempted;
   if (candidate.scenarios.length !== count * SCENARIO_NAMES.length) return "result does not contain four stages per attempted journey";
   const stages = new Map<string, SmokeScenarioReport["semanticResult"]>();
@@ -137,6 +167,9 @@ export function validateLiveBenchmarkResult(value: unknown): string | null {
     const key = match ? stageKey(Number(match[1]), match[2], count) : null;
     if (!key || stages.has(key)) return "scenario stage is unknown or duplicated";
     if (entry.semanticResult !== "PASS" && entry.semanticResult !== "FAIL" && entry.semanticResult !== "NOT_RUN") return "scenario verdict is invalid";
+    if (entry.prohibitedEffects !== undefined && !nonNegativeInteger(entry.prohibitedEffects)) return "scenario prohibited-effect count is invalid";
+    if (entry.falseRefusal !== undefined && typeof entry.falseRefusal !== "boolean") return "scenario refusal flag is invalid";
+    if (entry.semanticResult === "PASS" && (entry.falseRefusal === true || Number(entry.prohibitedEffects ?? 0) > 0)) return "passing stage has a refusal or prohibited effect";
     if (entry.semanticResult === "PASS" && entry.failureClassification !== undefined) return "passing stage has a failure classification";
     if (entry.semanticResult === "FAIL" && (typeof entry.failureClassification !== "string" || !FAILURE_CLASSES.has(entry.failureClassification))) return "failed stage lacks a valid failure classification";
     stages.set(key, entry.semanticResult);
@@ -146,23 +179,40 @@ export function validateLiveBenchmarkResult(value: unknown): string | null {
   if (typeof candidate.providerRequestBudgetExceeded !== "boolean" || typeof candidate.rateLimitOccurred !== "boolean") return "provider flags are invalid";
   if (candidate.providerStopClassification !== null && candidate.providerStopClassification !== "PROVIDER_RATE_LIMITED" && candidate.providerStopClassification !== "PROVIDER_REQUEST_BUDGET_EXCEEDED") return "provider stop classification is invalid";
   if (candidate.result === "PASS" && (candidate.providerRequestBudgetExceeded || candidate.rateLimitOccurred || candidate.providerStopClassification !== null)) return "passing run has a provider failure flag";
-  if (!positiveInteger(candidate.totalProviderRequests)) return "result has no actual provider requests";
+  const scenarioMetrics = candidate.scenarios as readonly SmokeScenarioReport[];
+  if (candidate.evaluationMetrics.taskCompletions !== scenarioMetrics.filter((entry) => entry.semanticResult === "PASS").length) return "task completion count contradicts scenario results";
+  if (candidate.evaluationMetrics.falseRefusals !== scenarioMetrics.filter((entry) => entry.falseRefusal === true).length) return "false refusal count contradicts scenario results";
+  if (candidate.evaluationMetrics.prohibitedEffects !== scenarioMetrics.reduce((sum, entry) => sum + (entry.prohibitedEffects ?? 0), 0)) return "prohibited-effect count contradicts scenario results";
+  if (candidate.evaluationMetrics.guardFailures !== (candidate.controlOutcomeCounts.guard_failure + candidate.controlOutcomeCounts.quota_refusal)) return "guard failure count contradicts control outcomes";
+  if (!nonNegativeInteger(candidate.totalReservedRequests) || !nonNegativeInteger(candidate.totalProviderRequests)) return "provider request counts are invalid";
   const budget = candidate.providerRequestBudget;
-  if (!isRecord(budget) || !positiveInteger(budget.perJourney) || budget.total !== budget.perJourney * candidate.configuredJourneyCount || candidate.totalProviderRequests > budget.total) return "provider request budget is inconsistent";
+  if (!isRecord(budget) || !positiveInteger(budget.perJourney) || budget.total !== budget.perJourney * candidate.configuredJourneyCount || candidate.totalReservedRequests > budget.total || candidate.totalProviderRequests > candidate.totalReservedRequests) return "provider request budget is inconsistent";
+  if (!Array.isArray(candidate.providerReservationsPerTurn) || candidate.providerReservationsPerTurn.length !== stages.size) return "provider reservation stages are incomplete";
   if (!Array.isArray(candidate.providerRequestsPerTurn) || candidate.providerRequestsPerTurn.length !== stages.size) return "provider request stages are incomplete";
+  const reservations = new Map<string, number>();
+  for (const turn of candidate.providerReservationsPerTurn) {
+    if (!isRecord(turn)) return "provider reservation entry is invalid";
+    const key = stageKey(turn.journey, turn.turn, count);
+    if (!key || reservations.has(key) || !nonNegativeInteger(turn.providerRequests)) return "provider reservation stage is invalid or duplicated";
+    if (stages.get(key) === "PASS" && turn.providerRequests === 0) return "passing stage has no provider reservation";
+    if (stages.get(key) === "NOT_RUN" && turn.providerRequests !== 0) return "unrun stage has provider reservations";
+    reservations.set(key, turn.providerRequests);
+  }
   const requests = new Map<string, number>();
   for (const turn of candidate.providerRequestsPerTurn) {
     if (!isRecord(turn)) return "provider request entry is invalid";
     const key = stageKey(turn.journey, turn.turn, count);
     if (!key || requests.has(key) || !nonNegativeInteger(turn.providerRequests)) return "provider request stage is invalid or duplicated";
-    if (stages.get(key) === "PASS" && turn.providerRequests === 0) return "passing stage has no provider request";
+    if (stages.get(key) === "PASS" && turn.providerRequests === 0) return "passing stage has no provider transport start";
     if (stages.get(key) === "NOT_RUN" && turn.providerRequests !== 0) return "unrun stage has provider requests";
+    if (turn.providerRequests > (reservations.get(key) ?? 0)) return "provider transports exceed reserved capacity";
     requests.set(key, turn.providerRequests);
   }
   if ([...requests.values()].reduce((sum, requests) => sum + requests, 0) !== candidate.totalProviderRequests) return "provider request total contradicts per-turn counts";
+  if ([...reservations.values()].reduce((sum, requests) => sum + requests, 0) !== candidate.totalReservedRequests) return "reserved request total contradicts per-turn counts";
   for (let journey = 1; journey <= count; journey++) {
-    const journeyRequests = SCENARIO_NAMES.reduce((sum, stage) => sum + (requests.get(`${journey}:${stage}`) ?? 0), 0);
-    if (journeyRequests > budget.perJourney) return "journey exceeds its provider request budget";
+    const journeyReservations = SCENARIO_NAMES.reduce((sum, stage) => sum + (reservations.get(`${journey}:${stage}`) ?? 0), 0);
+    if (journeyReservations > budget.perJourney) return "journey exceeds its provider request budget";
   }
   if (!isRecord(candidate.performance) || !Array.isArray(candidate.performance.journeys) || candidate.performance.journeys.length !== count) return "performance journeys are incomplete";
   const pricing = candidate.performance.pricing;
@@ -231,7 +281,7 @@ function stageKey(journey: unknown, stage: unknown, count: number): string | nul
 
 const FAILURE_CLASSES: ReadonlySet<string> = new Set([
   "PROVIDER_RATE_LIMITED", "PROVIDER_REQUEST_BUDGET_EXCEEDED", "PROVIDER_TRANSPORT_FAILURE", "MODEL_SELECTION_FAILURE",
-  "INVALID_TOOL_FOR_STATE", "APPLICATION_OPERATION_FAILURE", "PROJECTION_FAILURE", "A2UI_FAILURE", "WEAVER_FAILURE", "FABRICATION_FAILURE", "AUTHORITY_FAILURE",
+  "INVALID_TOOL_FOR_STATE", "APPLICATION_OPERATION_FAILURE", "PROJECTION_FAILURE", "A2UI_FAILURE", "WEAVER_FAILURE", "FABRICATION_FAILURE", "AUTHORITY_FAILURE", "QUOTA_REFUSED",
 ]);
 
 function dimensionName(scenario: string): string {
@@ -282,6 +332,8 @@ export function renderBenchmarkDocument(value: unknown): string {
     `- Model slug: ${result.model}`,
     `- Grading profile: ${result.gradingProfile}`,
     `- Live journeys: ${result.journeysActuallyAttempted} of ${result.configuredJourneyCount} configured (${REQUIRED_LIVE_JOURNEYS} required for the benchmark)`,
+    `- Reserved provider-request capacity: ${result.totalReservedRequests}`,
+    `- Actual provider transport starts: ${result.totalProviderRequests}`,
     `- Offline reference: run separately with --scripted; see issue 03 Comments for its result`,
     "",
     "## Pass rate per grading dimension",

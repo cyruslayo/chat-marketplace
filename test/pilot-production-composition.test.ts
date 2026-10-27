@@ -261,7 +261,8 @@ test("The production pilot passes the concierge mode and model client to the gue
 
     const requests: AssistantModelRequest[] = [];
     const modelClient: AssistantModelClient = {
-      generate: async (request) => { requests.push(request); return { text: "Which city are you visiting?" }; },
+      supportsProviderAttemptReservation: true,
+      generate: async (request) => { await request.beforeProviderAttempt?.(); requests.push(request); return { text: "Which city are you visiting?" }; },
     };
     process.env.CONCIERGE_MODE = "deterministic";
     const server = startPilotServer({ port: 0, configuration: configured.configuration, paystackClient: configured.paystack, modelClient });

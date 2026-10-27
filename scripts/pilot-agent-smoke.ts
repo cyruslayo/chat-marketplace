@@ -1,17 +1,19 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { GoogleGenAI } from "@google/genai";
 import type { A2UIServerMessage } from "@cylayo/weaver-core";
 import type { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
-import type { AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
-import type { AssistantConversationStep } from "../apps/local-guest/src/assistant/assistant-model.js";
+import { ModelRequestGuardError, type AssistantModelClient } from "../apps/local-guest/src/assistant/assistant-model.js";
+import type { AssistantTaskState } from "../apps/local-guest/src/assistant/assistant-state.js";
+import { ASSISTANT_CONTROL_OUTCOMES, type AssistantControlOutcome, type AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 import { resolvePilotBaseUrl } from "./pilot-base-url.js";
-import { authoritativePriceFacts, hasUnsupportedPriceOrConfirmation, SMOKE_GRADING_PROFILE } from "./pilot-agent-smoke-grading.js";
+import { authoritativePriceFacts, hasUnsupportedPriceOrConfirmation, requestedUnitMatches, SMOKE_GRADING_PROFILE } from "./pilot-agent-smoke-grading.js";
 import { createSmokeReferenceModel } from "./pilot-agent-smoke-reference.js";
 import {
-  DEFAULT_PROVIDER_REQUEST_BUDGET_PER_JOURNEY,
   ProviderRequestBudget,
   parsePilotAgentSmokeRuns,
+  parseProviderRequestLimit,
   providerStopReason as getProviderStopReason,
 } from "./pilot-agent-smoke-budget.js";
 import {
@@ -32,7 +34,14 @@ import {
   type SmokeScenarioReport,
 } from "./pilot-agent-smoke-report.js";
 
-const reportDirectory = resolve(".scratch/pilot-agent-smoke");
+class ProviderRequestBudgetExceededError extends ModelRequestGuardError {
+  constructor() {
+    super("quota_denied");
+    this.name = "ProviderRequestBudgetExceededError";
+  }
+}
+
+const reportDirectory = resolve(process.env.PILOT_AGENT_SMOKE_REPORT_DIRECTORY?.trim() || ".scratch/pilot-agent-smoke");
 // Offline: renders docs/testing/openrouter-gpt6-luna-benchmark.md from an existing live result file only.
 // Refuses (exit 2) unless that file was produced by a live run. Never calls a provider.
 if (process.argv.slice(2).includes("--write-benchmark-doc")) {
@@ -59,9 +68,14 @@ if (resolvePilotBaseUrl(runArguments, process.env) !== null) {
   process.exit(2);
 }
 const configuredJourneys = parsePilotAgentSmokeRuns(runArguments, process.env.PILOT_AGENT_SMOKE_RUNS);
-const requestBudget = new ProviderRequestBudget(configuredJourneys, DEFAULT_PROVIDER_REQUEST_BUDGET_PER_JOURNEY);
+const providerRequestLimit = parseProviderRequestLimit(runArguments, process.env.PILOT_AGENT_SMOKE_REQUEST_LIMIT);
+const requestBudget = new ProviderRequestBudget(configuredJourneys, providerRequestLimit);
+const providerReservationsPerTurn: ProviderTurnUsage[] = [];
 const providerRequestsPerTurn: ProviderTurnUsage[] = [];
+const controlOutcomes = new Map<AssistantControlOutcome, number>();
+let totalProviderTransportStarts = 0;
 let activeProviderTurn: ActiveProviderTurn | null = null;
+const providerTurnContext = new AsyncLocalStorage<ActiveProviderTurn>();
 let budgetExceeded = false;
 let rateLimitOccurred = false;
 let journeysAttempted = 0;
@@ -82,7 +96,8 @@ interface ProviderTurnUsage {
 interface ActiveProviderTurn {
   readonly journey: number;
   readonly turn: string;
-  providerRequests: number;
+  providerReservations: number;
+  transportStarts: number;
 }
 
 const scenarios = [
@@ -99,6 +114,7 @@ async function writeReports(
   journeysAttempted: number,
   performanceReport?: PerformanceReport,
 ): Promise<void> {
+  const controlOutcomeCounts = Object.fromEntries(ASSISTANT_CONTROL_OUTCOMES.map((outcome) => [outcome, controlOutcomes.get(outcome) ?? 0])) as Record<AssistantControlOutcome, number>;
   await writeSmokeArtifacts(reportDirectory, buildSmokeResult({
     gradingProfile: SMOKE_GRADING_PROFILE,
     generatedAt: new Date().toISOString(),
@@ -106,11 +122,20 @@ async function writeReports(
     model,
     result,
     // Live only when a credential was configured and at least one journey reached the provider.
-    liveRun: Boolean(credential) && journeysAttempted > 0,
+    liveRun: Boolean(credential) && totalProviderTransportStarts > 0,
     credentialConfigured: Boolean(credential),
     configuredJourneyCount: configuredJourneys,
     journeysActuallyAttempted: journeysAttempted,
-    totalProviderRequests: requestBudget.totalRequests,
+    totalReservedRequests: requestBudget.totalRequests,
+    totalProviderRequests: totalProviderTransportStarts,
+    controlOutcomeCounts,
+    evaluationMetrics: {
+      guardFailures: controlOutcomeCounts.guard_failure + controlOutcomeCounts.quota_refusal,
+      falseRefusals: entries.filter((entry) => entry.falseRefusal === true).length,
+      taskCompletions: entries.filter((entry) => entry.semanticResult === "PASS").length,
+      prohibitedEffects: entries.reduce((sum, entry) => sum + (entry.prohibitedEffects ?? 0), 0),
+    },
+    providerReservationsPerTurn,
     providerRequestsPerTurn,
     providerRequestBudget: {
       perJourney: requestBudget.maxRequestsPerJourney,
@@ -166,7 +191,7 @@ if (!credential && !scripted) {
   try {
     assertLocalPilotReady(paths);
     await mkdir(reportDirectory, { recursive: true });
-    smokeDatabasePath = resolve(reportDirectory, `runtime-${process.pid}.sqlite`);
+    smokeDatabasePath = resolve(reportDirectory, `runtime-${process.pid}-${crypto.randomUUID()}.sqlite`);
     environment = LocalGuestEnvironment.openNode({
       databasePath: smokeDatabasePath,
       inventoryPath: paths.inventoryPath,
@@ -187,13 +212,19 @@ if (!credential && !scripted) {
       seedRepresentativeGrant: false,
       clock: localPilotClock(paths),
     });
-    const reserveProviderRequest = (): void => {
-      const currentTurn = activeProviderTurn;
-      if (!currentTurn || !requestBudget.reserve(currentTurn.journey)) {
+    const reserveProviderRequest = (currentTurn: ActiveProviderTurn): void => {
+      if (!requestBudget.reserve(currentTurn.journey)) {
         budgetExceeded = true;
         throw new ProviderRequestBudgetExceededError();
       }
-      currentTurn.providerRequests++;
+      currentTurn.providerReservations++;
+    };
+    const noteTransportStart = (): void => {
+      const currentTurn = providerTurnContext.getStore();
+      if (!currentTurn) throw new Error("Provider transport started outside an active smoke turn");
+      if (currentTurn.transportStarts >= currentTurn.providerReservations) throw new Error("Provider transport started without reserved capacity");
+      currentTurn.transportStarts++;
+      totalProviderTransportStarts++;
     };
     const providerClient = scripted ? createSmokeReferenceModel() : openAiCompatible
       ? new OpenAiCompatibleClient({
@@ -201,7 +232,7 @@ if (!credential && !scripted) {
         baseUrl: process.env.LLM_BASE_URL?.trim() ?? "",
         model,
         fetch: async (input, init) => {
-          reserveProviderRequest();
+          noteTransportStart();
           return fetch(input, init);
         },
       })
@@ -213,7 +244,7 @@ if (!credential && !scripted) {
           customAi: {
             interactions: {
               create: async (params, options) => {
-                reserveProviderRequest();
+                noteTransportStart();
                 return googleAi.interactions.create(
                   { ...params, stream: false },
                   { ...options, maxRetries: 0 },
@@ -224,9 +255,26 @@ if (!credential && !scripted) {
         });
       })();
     // Counts every model call and its provider-reported usage per turn; the provider client itself is unchanged.
-    const modelClient = observeModelClient(providerClient, {
-      record: (usage) => activeTurnUsage?.record(usage),
+    const observedClient = observeModelClient(providerClient, {
+      record: () => undefined,
+      capture: () => activeTurnUsage,
     });
+    const modelClient: AssistantModelClient = {
+      ...(observedClient.supportsProviderAttemptReservation === true ? { supportsProviderAttemptReservation: true as const } : {}),
+      generate(request) {
+        if (scripted) return observedClient.generate(request);
+        const currentTurn = activeProviderTurn;
+        if (!currentTurn) throw new ProviderRequestBudgetExceededError();
+        // Capture context before awaiting. Reservation failures never enter the injected transport catch.
+        return providerTurnContext.run(currentTurn, () => observedClient.generate({ ...request,
+          beforeProviderAttempt: async () => {
+            reserveProviderRequest(currentTurn);
+            await request.beforeProviderAttempt?.();
+          },
+        }));
+      },
+      projectProviderContinuation: (response, calls) => observedClient.projectProviderContinuation?.(response, calls),
+    };
     // The OpenRouter catalogue is public and needs no credential. Gemini has no OpenRouter slug, so cost stays unavailable.
     const priceFetcher = createOpenRouterPriceFetcher({
       fetch: (url, init) => fetch(url, init),
@@ -243,7 +291,7 @@ if (!credential && !scripted) {
       const threadId = `g-live-smoke-${run}`;
       const runEntries: ScenarioReport[] = [];
       const invokeTurn = async (turn: string, text: string) => {
-        const usage: ActiveProviderTurn = { journey: run, turn, providerRequests: 0 };
+        const usage: ActiveProviderTurn = { journey: run, turn, providerReservations: 0, transportStarts: 0 };
         const turnUsage = new TurnUsageAccumulator();
         activeProviderTurn = usage;
         activeTurnUsage = turnUsage;
@@ -260,7 +308,8 @@ if (!credential && !scripted) {
             completionTokens: snapshot.completionTokens,
             tokenUsage: snapshot.promptTokens === null || snapshot.completionTokens === null ? "unavailable" : "reported",
           });
-          providerRequestsPerTurn.push({ journey: run, turn, providerRequests: usage.providerRequests });
+          providerReservationsPerTurn.push({ journey: run, turn, providerRequests: usage.providerReservations });
+          providerRequestsPerTurn.push({ journey: run, turn, providerRequests: usage.transportStarts });
           activeProviderTurn = null;
           activeTurnUsage = null;
         }
@@ -296,6 +345,8 @@ if (!credential && !scripted) {
       if (discoveryStopReason === "PROVIDER_RATE_LIMITED") rateLimitOccurred = true;
       runEntries.push({
         scenario: `run ${run} discovery`,
+        falseRefusal: first.controlOutcome === "scope_redirect" || first.controlOutcome === "scope_unavailable",
+        prohibitedEffects: unexpectedWorkflowEffects(thread.taskState),
         selectedApplicationOperation: discoveryOperation,
         surfaceSelected: first.surfaces?.[0]?.surfaceId ?? null,
         authoritativeEntities: discovered.map((stay) => stay.unitId),
@@ -306,7 +357,7 @@ if (!credential && !scripted) {
       if (discoveryStopReason) {
         providerStopClassification = discoveryStopReason;
         errors.push(`run ${run} stopped: ${discoveryStopReason}`);
-        reports.push(...runEntries, ...notRunScenarios(run, scenarios.slice(1), discoveryStopReason, providerRequestsPerTurn));
+        reports.push(...runEntries, ...notRunScenarios(run, scenarios.slice(1), discoveryStopReason, providerReservationsPerTurn, providerRequestsPerTurn));
         break journeyLoop;
       }
 
@@ -329,6 +380,8 @@ if (!credential && !scripted) {
       if (refinementStopReason === "PROVIDER_RATE_LIMITED") rateLimitOccurred = true;
       runEntries.push({
         scenario: `run ${run} refinement`,
+        falseRefusal: refinement.controlOutcome === "scope_redirect" || refinement.controlOutcome === "scope_unavailable",
+        prohibitedEffects: unexpectedWorkflowEffects(refined.taskState),
         selectedApplicationOperation: refinementOperation,
         surfaceSelected: refinement.surfaces?.[0]?.surfaceId ?? null,
         authoritativeEntities: refinedIds,
@@ -339,17 +392,17 @@ if (!credential && !scripted) {
       if (refinementStopReason) {
         providerStopClassification = refinementStopReason;
         errors.push(`run ${run} stopped: ${refinementStopReason}`);
-        reports.push(...runEntries, ...notRunScenarios(run, scenarios.slice(2), refinementStopReason, providerRequestsPerTurn));
+        reports.push(...runEntries, ...notRunScenarios(run, scenarios.slice(2), refinementStopReason, providerReservationsPerTurn, providerRequestsPerTurn));
         break journeyLoop;
       }
 
       turnDiagnostics = [];
-      const inspectionHistoryStart = runtime.getThread(threadId).conversationHistory.length;
+      const selected = refined.taskState.shortlist[0];
       const inspection = await invokeTurn("unit inspection", "Open the first one.");
       const inspectionDiagnostics = [...turnDiagnostics];
       const inspectionOperation = successfulOperation(inspectionDiagnostics);
-      const selected = refined.taskState.shortlist[0];
-      const inspectionToolResult = latestToolResult(runtime.getThread(threadId).conversationHistory, "get_unit_details", inspectionHistoryStart);
+      const inspectionThread = runtime.getThread(threadId);
+      const actualSelected = inspectionThread.taskState.shortlist.find((stay) => stay.stayRef === inspectionThread.taskState.selectedStayRef);
       const detailRender = await anyRenderable(inspection.surfaces ?? []);
       const detailMessages = JSON.stringify(inspection.surfaces?.[0]?.a2uiMessages ?? []);
       const selectedUnit = selected ? environment.unitRepository.findById(selected.unitId) : null;
@@ -360,18 +413,25 @@ if (!credential && !scripted) {
         ? createStayQuote({ unit: selectedUnit, checkIn: detailCheckIn, checkOut: detailCheckOut, partySize: detailState.partySize ?? 1, clock: environment.clock })
         : null;
       const detailFactsPreserved = Boolean(selected)
-        && inspectionToolResult?.stayRef === selected!.stayRef
+        && requestedUnitMatches(selected?.unitId, actualSelected?.unitId)
         && detailMessages.includes(selected!.title)
         && detailMessages.includes(selected!.neighbourhood)
         && detailMessages.includes(selected!.city)
         && Boolean(detailQuote && detailMessages.includes(formatNairaKobo(detailQuote.allInStayTotalKobo)));
-      const detailFabricated = hasUnsupportedPriceOrConfirmation(inspection.messages ?? [], inspectionToolResult ? [authoritativePriceFacts({
-        ...inspectionToolResult, accommodationKobo: detailQuote?.lineItems.accommodationKobo,
+      const detailFabricated = hasUnsupportedPriceOrConfirmation(inspection.messages ?? [], detailQuote ? [authoritativePriceFacts({
+        nightlyKobo: selected!.nightlyKobo,
+        allInStayTotalKobo: detailQuote.allInStayTotalKobo,
+        accommodationKobo: detailQuote.lineItems.accommodationKobo,
+        mandatoryFeesKobo: detailQuote.lineItems.mandatoryFeesKobo,
+        refundableSecurityDepositKobo: detailQuote.refundableSecurityDepositKobo,
+        amountDueNowKobo: detailQuote.totalAmountDueNowKobo,
       })] : []);
       const inspectionStopReason = providerStopReason(inspectionDiagnostics, budgetExceeded);
       if (inspectionStopReason === "PROVIDER_RATE_LIMITED") rateLimitOccurred = true;
       runEntries.push({
         scenario: `run ${run} Unit inspection`,
+        falseRefusal: inspection.controlOutcome === "scope_redirect" || inspection.controlOutcome === "scope_unavailable",
+        prohibitedEffects: unexpectedWorkflowEffects(runtime.getThread(threadId).taskState),
         selectedApplicationOperation: inspectionOperation,
         surfaceSelected: inspection.surfaces?.[0]?.surfaceId ?? null,
         authoritativeEntities: selected ? [selected.unitId] : [],
@@ -382,26 +442,28 @@ if (!credential && !scripted) {
       if (inspectionStopReason) {
         providerStopClassification = inspectionStopReason;
         errors.push(`run ${run} stopped: ${inspectionStopReason}`);
-        reports.push(...runEntries, ...notRunScenarios(run, scenarios.slice(3), inspectionStopReason, providerRequestsPerTurn));
+        reports.push(...runEntries, ...notRunScenarios(run, scenarios.slice(3), inspectionStopReason, providerReservationsPerTurn, providerRequestsPerTurn));
         break journeyLoop;
       }
 
       turnDiagnostics = [];
-      const bookingHistoryStart = runtime.getThread(threadId).conversationHistory.length;
       const booking = await invokeTurn("booking intent", "I want to book this apartment for two nights for two guests.");
       const bookingDiagnostics = [...turnDiagnostics];
       const bookingOperation = successfulOperation(bookingDiagnostics);
       const bookingThread = runtime.getThread(threadId);
       const bookingState = bookingThread.taskState;
-      const hasDraft = Boolean(bookingState.currentDraftId);
+      let currentDraft: ReturnType<LocalGuestEnvironment["bookingRequestApp"]["getDraft"]> | undefined;
+      try {
+        if (bookingState.currentDraftId) currentDraft = environment!.bookingRequestApp.getDraft(bookingState.currentDraftId);
+      } catch {
+        currentDraft = undefined;
+      }
+      const hasDraft = Boolean(bookingState.currentDraftId && currentDraft?.status === "draft" && currentDraft.unitId === selected?.unitId);
       const bookingSurface = JSON.stringify(booking.surfaces?.[0]?.a2uiMessages ?? []);
       const guestActionRequired = bookingSurface.includes("shortlet.request-draft.review")
         && !bookingSurface.includes("shortlet.request-draft.submit");
-      const bookingToolResult = latestToolResult(bookingThread.conversationHistory, "prepare_request_draft", bookingHistoryStart);
-      const availabilityRechecked = bookingToolResult?.operation === "request_draft.create"
-        && bookingToolResult.created === true
-        && bookingToolResult.availabilityChecked === true
-        && bookingToolResult.inventoryReserved === false;
+      const availabilityRechecked = bookingDiagnostics.some((event) => event.effectCode === "request_draft_created_availability_checked_not_reserved")
+        && hasDraft;
       const bookingCheckIn = refined.taskState.stayIntent.checkIn ?? environment.config.demoCheckIn;
       const bookingCheckOutDate = new Date(`${bookingCheckIn}T00:00:00Z`);
       bookingCheckOutDate.setUTCDate(bookingCheckOutDate.getUTCDate() + 2);
@@ -421,6 +483,8 @@ if (!credential && !scripted) {
       if (bookingStopReason === "PROVIDER_RATE_LIMITED") rateLimitOccurred = true;
       runEntries.push({
         scenario: `run ${run} booking intent`,
+        falseRefusal: booking.controlOutcome === "scope_redirect" || booking.controlOutcome === "scope_unavailable",
+        prohibitedEffects: unexpectedWorkflowEffects(bookingState, true),
         selectedApplicationOperation: bookingOperation,
         surfaceSelected: booking.surfaces?.[0]?.surfaceId ?? null,
         authoritativeEntities: selected ? [selected.unitId] : [],
@@ -450,6 +514,14 @@ if (!credential && !scripted) {
       note: `Execution stopped (${errorClass}); exception text is omitted.`,
     });
   } finally {
+    if (environment) {
+      for (const event of environment.telemetry.events()) {
+        if (event.type !== "assistant.control.outcome.v1" || typeof event.outcome !== "string"
+          || !ASSISTANT_CONTROL_OUTCOMES.some((outcome) => outcome === event.outcome)) continue;
+        const outcome = event.outcome as AssistantControlOutcome;
+        controlOutcomes.set(outcome, (controlOutcomes.get(outcome) ?? 0) + 1);
+      }
+    }
     environment?.close();
     if (smokeDatabasePath) {
       await Promise.all([
@@ -467,14 +539,19 @@ if (!credential && !scripted) {
   });
   await writeReports(failed ? "FAIL" : "PASS", reports, failed ? errors.join("; ") : "All semantic assertions passed.", journeysAttempted, scripted ? undefined : performanceReport);
   if (failed) {
-    console.error(`${scripted ? "Scripted reference" : "Live-agent smoke"} failed; see .scratch/pilot-agent-smoke/agent-smoke-report.md`);
+    console.error(`${scripted ? "Scripted reference" : "Live-agent smoke"} failed; see ${reportDirectory}/agent-smoke-report.md`);
     process.exitCode = 1;
   } else {
-    console.log(`${scripted ? "Scripted reference" : "Live-agent smoke"} passed; see .scratch/pilot-agent-smoke/agent-smoke-report.md`);
+    console.log(`${scripted ? "Scripted reference" : "Live-agent smoke"} passed; see ${reportDirectory}/agent-smoke-report.md`);
   }
 }
 
 type RenderFailureClass = "PROJECTION_FAILURE" | "A2UI_FAILURE" | "WEAVER_FAILURE";
+
+function unexpectedWorkflowEffects(state: AssistantTaskState, allowDraft = false): number {
+  return [!allowDraft && state.currentDraftId, state.currentBookingRequestId, state.pendingAction,
+    state.currentOfferId, state.currentReservationId, state.currentContractId].filter(Boolean).length;
+}
 
 async function anyRenderable(surfaces: readonly { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] }[]): Promise<{ readonly ok: true } | { readonly ok: false; readonly failureClass: RenderFailureClass }> {
   if (surfaces.length === 0) return { ok: false, failureClass: "PROJECTION_FAILURE" };
@@ -509,16 +586,6 @@ function successfulOperation(diagnostics: readonly AssistantDiagnosticEvent[]): 
   return diagnostics.find((event) => event.stage === "application_operation" && event.succeeded && event.toolName)?.toolName ?? null;
 }
 
-function latestToolResult(history: readonly AssistantConversationStep[], name: string, startIndex: number): Record<string, unknown> | undefined {
-  for (let index = history.length - 1; index >= startIndex; index--) {
-    const step = history[index];
-    if (step?.role !== "tool_results") continue;
-    const result = step.results.find((candidate) => candidate.name === name)?.result;
-    if (result) return result;
-  }
-  return undefined;
-}
-
 function providerStopReason(
   diagnostics: readonly AssistantDiagnosticEvent[],
   didExceedBudget: boolean,
@@ -535,10 +602,12 @@ function notRunScenarios(
   journey: number,
   remainingScenarios: readonly string[],
   stopReason: "PROVIDER_RATE_LIMITED" | "PROVIDER_REQUEST_BUDGET_EXCEEDED",
-  usage: ProviderTurnUsage[],
+  reservations: ProviderTurnUsage[],
+  starts: ProviderTurnUsage[],
 ): ScenarioReport[] {
   return remainingScenarios.map((scenario) => {
-    usage.push({ journey, turn: scenario, providerRequests: 0 });
+    reservations.push({ journey, turn: scenario, providerRequests: 0 });
+    starts.push({ journey, turn: scenario, providerRequests: 0 });
     return {
       scenario: `run ${journey} ${scenario}`,
       selectedApplicationOperation: null,
@@ -576,14 +645,7 @@ function classifyFailure(
 
 function diagnosticSummary(diagnostics: readonly AssistantDiagnosticEvent[]): string {
   if (diagnostics.length === 0) return "none";
-  return diagnostics.map((event) => `${event.stage}:${event.succeeded ? "ok" : event.failureClass ?? "failed"}${event.toolName ? `:${event.toolName}` : ""}${event.errorClass ? `:${event.errorClass}` : ""}${event.providerStatusCode ? `:http${event.providerStatusCode}` : ""}${event.providerErrorCode ? `:${event.providerErrorCode}` : ""}`).join(",");
-}
-
-class ProviderRequestBudgetExceededError extends Error {
-  constructor() {
-    super("Live smoke provider request budget exhausted");
-    this.name = "ProviderRequestBudgetExceededError";
-  }
+  return diagnostics.map((event) => `${event.stage}:${event.succeeded ? "ok" : event.failureClass ?? "failed"}${event.toolName ? `:${event.toolName}` : ""}${event.errorClass ? `:${event.errorClass}` : ""}${event.providerStatusCode ? `:http${event.providerStatusCode}` : ""}${event.providerErrorCode ? `:${event.providerErrorCode}` : ""}${event.scopeFailureReason ? `:${event.scopeFailureReason}` : ""}`).join(",");
 }
 
 function formatNairaKobo(kobo: number): string {

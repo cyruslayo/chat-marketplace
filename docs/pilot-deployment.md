@@ -88,18 +88,23 @@ is a positive whole number; unset uses the default.
 
 | Setting | Default | Limits |
 |---|---|---|
-| `SHORTLET_CHAT_TURNS_PER_SESSION_PER_HOUR` | 60 | chat turns per Guest session |
+| `SHORTLET_CHAT_TURNS_PER_SESSION_PER_HOUR` | 60 | chat turns per Guest session and provider-request reservations per guest in a rolling hour |
 | `SHORTLET_CHAT_TURNS_PER_ADDRESS_PER_HOUR` | 600 | chat turns per client address |
 | `SHORTLET_NEW_SESSIONS_PER_ADDRESS_PER_HOUR` | 120 | new Guest sessions (and beta invite attempts) per address |
 | `SHORTLET_OPERATOR_LOGINS_PER_ADDRESS_PER_HOUR` | 10 | Operator sign-in attempts per address |
-| `CONCIERGE_DAILY_MODEL_CALL_CAP` | 3000 | model calls per day (midnight Africa/Lagos) |
+| `CONCIERGE_DAILY_MODEL_CALL_CAP` | 3000 | durable provider-request reservations per tenant-day (midnight Africa/Lagos) |
 | `SHORTLET_GUEST_RUNTIME_IDLE_MINUTES` | 30 | idle time before a session's in-memory runtime is closed |
 
 Nigerian mobile carriers put many subscribers behind one address, which is why
 the per-address limits are high; raise them before a public campaign. When the
 daily model-call cap is spent, new chat turns use the deterministic concierge
-until midnight; search and booking pages are unaffected (ADR 0080). A closed
-session runtime is rebuilt from SQLite on the Guest's next request; only the
+until midnight; search and booking pages are unaffected (ADR 0080). Each actual
+provider transport reserves capacity before it starts, including classifiers,
+retries, and fallbacks. Node stores reservations in SQLite. Cloudflare stores
+them in the shared Platform Durable Object (ADR 0101). The per-guest window
+reuses the existing session chat-turn limit. OpenRouter account limits remain a
+separate spending backstop. A closed session runtime is rebuilt from SQLite on
+the Guest's next request; only the
 in-memory assistant conversation is lost.
 
 Request bodies are capped: 64 KiB for chat and event JSON, 256 KiB for Paystack

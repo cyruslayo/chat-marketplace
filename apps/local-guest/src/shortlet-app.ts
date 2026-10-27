@@ -8,7 +8,6 @@ import type {
   HttpResponseLike,
 } from "../../../packages/platform-core/src/http-like.js";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { isExplicitCancellation, isExplicitConfirmation } from "./assistant/pending-actions.js";
 import {
   A2UI_V091_BASIC_CATALOG_ID,
   type A2UIComponent,
@@ -169,6 +168,7 @@ import {
 import { projectJourney, type GuestJourney } from "./journey-rail.js";
 import {
   parseGuestProjection,
+  type PersistedAssistantContext,
   type GuestPersistentProjection,
 } from "./guest-projection.js";
 import {
@@ -216,9 +216,14 @@ import {
 import type { Content } from "@google/genai";
 import {
   AssistantRuntime,
+  type AssistantControlOutcome,
+  type AssistantShortletRestoreInput,
   type AssistantTaskRailEntry,
   type AssistantVertical,
 } from "./assistant/assistant-runtime.js";
+import { ASSISTANT_CONTROL_COPY } from "./assistant/control-copy.js";
+import type { AssistantStayReference, AssistantTaskState } from "./assistant/assistant-state.js";
+import { redactSensitiveData } from "../../../packages/platform-core/src/redaction.js";
 import {
   TASK_START_EVENT,
   TASK_SWITCH_EVENT,
@@ -237,7 +242,7 @@ import {
   ASSISTANT_CONFIRM_ACTION_EVENT,
   ASSISTANT_CANCEL_ACTION_EVENT,
 } from "./assistant/pending-action-a2ui.js";
-import { GUEST_ACCOUNT_COPY } from "../../web-agent/src/guest-content.js";
+import { GUEST_ACCOUNT_COPY, GUEST_ASSISTANT_COPY } from "../../web-agent/src/guest-content.js";
 import { SqliteGuestContactRepository, type GuestContactSource } from "../../../domains/shortlet/src/index.js";
 import {
   GuestContactOwnedByAccountError,
@@ -354,6 +359,10 @@ export interface GuestStateSnapshot {
 }
 
 export interface GuestTurnSuccess {
+  readonly discardUserInput?: boolean;
+  /** Indicates that the AssistantRuntime owns this turn's in-memory conversation state. */
+  readonly assistantManaged?: boolean;
+  readonly assistantControlOutcome?: AssistantControlOutcome;
   readonly ok: true;
   readonly messages: readonly string[];
   /** Completed-action receipts, rendered as quiet timeline markers. */
@@ -648,12 +657,21 @@ interface GuestThreadState {
   lastSurfaces: GuestSurfacePayload[];
   /** Issue 03a: the criteria of each executed search, oldest first (for "Undo last change"). */
   searchHistory: DiscoverySearchContext[];
+  assistantContext: PersistedAssistantContext | null;
   /** Issue 13b: the result picked for comparison. Presentation only, never persisted. */
   compareSelection: string | null;
   /** Issue 14: a change to the draft's stay that awaits a date confirmation. In memory only. */
   draftChangeContext: DiscoverySearchContext | null;
   /** Issue 14: the proposed replacement Request Draft. In memory only; a restart shows the current draft. */
   pendingDraftReplacement: PendingDraftReplacement | null;
+}
+
+function isDiscoveryArtifactProjection(value: unknown): value is DiscoveryArtifactProjection {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  if (typeof record.id !== "string" || typeof record.kind !== "string" || typeof record.schemaVersion !== "string" || typeof record.projectionVersion !== "number" || !Array.isArray(record.actions)) return false;
+  if (typeof record.facts !== "object" || record.facts === null || Array.isArray(record.facts)) return false;
+  return Array.isArray((record.facts as Record<string, unknown>).results);
 }
 
 /** The stay a replacement Request Draft would cover (issue 14). */
@@ -731,13 +749,20 @@ export class LocalGuestApp {
   }
 
   #assistantResult(output: {
+    readonly modelHandled?: boolean;
+    readonly discardUserInput?: boolean;
     readonly messages?: readonly string[];
     readonly message?: string;
     readonly surfaces?: readonly { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] }[];
     readonly tasks?: readonly AssistantTaskRailEntry[];
+    readonly controlOutcome?: AssistantControlOutcome;
   }): GuestTurnResult {
     return {
       ok: true,
+      // Assistant prompts and model turns are never written to the guest timeline.
+      discardUserInput: true,
+      assistantManaged: true,
+      ...(output.controlOutcome === undefined ? {} : { assistantControlOutcome: output.controlOutcome }),
       messages: output.messages ?? (output.message ? [output.message] : []),
       surfaces: this.#assistantSurfaces(output.surfaces ?? []),
       ...(output.tasks === undefined || output.tasks.length === 0
@@ -749,10 +774,12 @@ export class LocalGuestApp {
   async handleTurn(threadId: string, text: string): Promise<GuestTurnResult> {
     await this.#hydrateRemoteContact();
     if (this.#environment.guestDataIsRemote && !this.#threads.has(threadId)) await this.#loadRemoteThread(threadId);
+    const storedThread = this.#threads.get(threadId) ?? (this.#environment.guestDataIsRemote ? null : this.#loadThread(threadId));
+    if (storedThread) this.#restoreAssistantFromGuestThread(threadId, storedThread);
     const result = await this.#handleTurn(threadId, text);
     const decorated = this.#decorateResult(result);
     if (decorated.ok) {
-      this.#rememberResult(threadId, text, decorated);
+      this.#rememberResult(threadId, decorated.discardUserInput ? undefined : text, decorated);
       if (this.#environment.guestDataIsRemote) await this.#persistRemoteThread(threadId);
     }
     await this.#flushRemoteContact();
@@ -768,10 +795,8 @@ export class LocalGuestApp {
       };
     }
 
-    // ADR 0072/0080: deterministic pending decisions retain their command path after the model budget is spent.
-    const pending = this.#assistantRuntime?.getThread(threadId).taskState.pendingAction;
-    const pendingDecision = pending && !pending.executed && (isExplicitConfirmation(text) || isExplicitCancellation(text));
-    if (this.#assistantRuntime && ((this.#modelCallBudget?.hasCapacity() ?? true) || pendingDecision)) {
+    // ADR 0072/0080: pending confirmations and cancellations are resolved before any model request.
+    if (this.#assistantRuntime) {
       const output = await this.#assistantRuntime.handleTurn(threadId, text);
       if (output.ok) {
         if (output.modelHandled) this.#modelCallBudget?.recordTurn("model");
@@ -1101,6 +1126,8 @@ export class LocalGuestApp {
   }
 
   handleEvent(threadId: string, payload: unknown): GuestTurnResult {
+    const stored = this.#threads.get(threadId) ?? (this.#environment.guestDataIsRemote ? null : this.#loadThread(threadId));
+    if (stored) this.#restoreAssistantFromGuestThread(threadId, stored);
     const result = this.#handleEvent(threadId, payload);
     const decorated = this.#decorateResult(result);
     if (decorated.ok) this.#rememberResult(threadId, undefined, decorated);
@@ -1113,6 +1140,8 @@ export class LocalGuestApp {
   ): Promise<GuestTurnResult> {
     await this.#hydrateRemoteContact();
     if (this.#environment.guestDataIsRemote && !this.#threads.has(threadId)) await this.#loadRemoteThread(threadId);
+    const stored = this.#threads.get(threadId) ?? (this.#environment.guestDataIsRemote ? null : this.#loadThread(threadId));
+    if (stored) this.#restoreAssistantFromGuestThread(threadId, stored);
     const event = readEventPayload(payload);
     if (
       this.#environment.payments &&
@@ -1883,22 +1912,11 @@ export class LocalGuestApp {
   }
 
   getState(threadId: string): GuestStateSnapshot | undefined {
-    if (this.#assistantRuntime) {
-      const assistantThread = this.#assistantRuntime.getThread(threadId);
-      const tasks = this.#assistantRuntime.getTaskRail(threadId);
-      if (tasks.length > 0) {
-        return {
-          ok: true,
-          threadId,
-          timeline: [],
-          surfaces: this.#assistantSurfaces(assistantThread.lastSurfaces),
-          tasks,
-          verticals: this.#verticals(),
-        };
-      }
-    }
     const thread = this.#threads.get(threadId) ?? (this.#environment.guestDataIsRemote ? null : this.#loadThread(threadId));
     if (!thread) return undefined;
+    this.#rebuildAssistantDiscovery(thread);
+    this.#refreshAssistantSurface(thread);
+    this.#restoreAssistantFromGuestThread(threadId, thread);
     const priorSurfaceId = thread.lastSurfaces.at(-1)?.surfaceId;
     const refreshed = this.#refreshWorkflow(thread);
     const decorated = refreshed ? this.#decorateResult(refreshed) : null;
@@ -1931,6 +1949,7 @@ export class LocalGuestApp {
       surfaces: this.#withWaiting(thread, normalized.surfaces),
       ...(journey === undefined ? {} : { journey }),
       ...(criteria === undefined ? {} : { criteria }),
+      ...(this.#assistantRuntime?.hasThread(threadId) ? { tasks: this.#assistantRuntime.getTaskRail(threadId), verticals: this.#verticals() } : {}),
     };
   }
 
@@ -2330,6 +2349,7 @@ export class LocalGuestApp {
   #projectionFor(
     thread: GuestThreadState,
     activeStage: string | null,
+    forCurrentRestore = false,
   ): GuestPersistentProjection {
     const current = thread.lastSurfaces.at(-1);
     return {
@@ -2339,7 +2359,8 @@ export class LocalGuestApp {
         thread.discoveryContext === null
           ? null
           : { ...thread.discoveryContext },
-      discoveryArtifact: thread.discoveryArtifact,
+      // ADR 0075/0077: Assistant searches persist safe criteria, not listing prose; current artifacts are re-queried on restore.
+      discoveryArtifact: thread.assistantContext && !forCurrentRestore ? null : thread.discoveryArtifact,
       discoverySurfaceId: thread.discoverySurfaceId,
       discoveryRevision: thread.discoveryRevision,
       unitDetail: thread.unitDetail
@@ -2355,7 +2376,13 @@ export class LocalGuestApp {
       activeStage,
       activeSurfaceId: current?.surfaceId ?? null,
       searchHistory: thread.searchHistory.map((context) => ({ ...context })),
+      assistantContext: thread.assistantContext,
     };
+  }
+
+  #assistantRestoreProjection(thread: GuestThreadState, activeStage: string | null, activeSurfaceId?: string | null): GuestPersistentProjection {
+    const projection = this.#projectionFor(thread, activeStage, true);
+    return { ...projection, ...(activeSurfaceId === undefined ? {} : { activeSurfaceId }) };
   }
 
   #stageForSurfaceId(surfaceId: string): string | null {
@@ -2505,12 +2532,17 @@ export class LocalGuestApp {
       searchHistory: projection.searchHistory.map((context) => ({
         ...context,
       })),
+      assistantContext: projection.assistantContext,
       compareSelection: null,
       draftChangeContext: null,
       pendingDraftReplacement: null,
     };
     this.#threads.set(threadId, thread);
-    const restored = this.#restoreCurrentSurface(thread, projection);
+    this.#rebuildAssistantDiscovery(thread);
+    const restoredProjection = thread.assistantContext
+      ? { ...this.#assistantRestoreProjection(thread, projection.activeStage, projection.activeSurfaceId), discoverySurfaceId: projection.discoverySurfaceId, discoveryRevision: projection.discoveryRevision }
+      : projection;
+    const restored = this.#restoreCurrentSurface(thread, restoredProjection);
     if (restored) {
       thread.lastSurfaces = [restored];
       this.#emitTransition(
@@ -2875,12 +2907,203 @@ export class LocalGuestApp {
       timeline: [],
       lastSurfaces: [],
       searchHistory: [],
+      assistantContext: null,
       compareSelection: null,
       draftChangeContext: null,
       pendingDraftReplacement: null,
     };
     this.#threads.set(threadId, thread);
     return thread;
+  }
+
+  #assistantContextFromState(state: AssistantTaskState): PersistedAssistantContext | null {
+    const city = state.stayIntent.location;
+    if (city !== "Lagos" && city !== "Abuja") return null;
+    const knownNeighbourhoods = new Set(this.#environment.unitRepository.findAll().map((unit) => unit.location.neighbourhood));
+    const neighbourhood = state.stayIntent.neighbourhood;
+    const amenityIds = new Set(this.#environment.unitRepository.findAll().flatMap((unit) => unit.amenities));
+    const requiredAmenities = state.stayIntent.requiredAmenities?.filter((amenity) => amenityIds.has(amenity) && /^[A-Za-z0-9_-]{1,48}$/.test(amenity)).slice(0, 16);
+    const selectedStay = state.selectedStayRef ? state.shortlist.find((stay) => stay.stayRef === state.selectedStayRef) : undefined;
+    return {
+      city,
+      ...(neighbourhood && knownNeighbourhoods.has(neighbourhood) ? { neighbourhood } : {}),
+      ...(state.stayIntent.checkIn && /^\d{4}-\d{2}-\d{2}$/.test(state.stayIntent.checkIn) ? { checkIn: state.stayIntent.checkIn } : {}),
+      ...(typeof state.stayIntent.isDemoDate === "boolean" ? { isDemoDate: state.stayIntent.isDemoDate } : {}),
+      ...(state.stayIntent.checkOut && /^\d{4}-\d{2}-\d{2}$/.test(state.stayIntent.checkOut) ? { checkOut: state.stayIntent.checkOut } : {}),
+      ...(Number.isSafeInteger(state.stayIntent.nights) && (state.stayIntent.nights ?? 0) > 0 ? { nights: state.stayIntent.nights } : {}),
+      ...(Number.isSafeInteger(state.stayIntent.partySize) && (state.stayIntent.partySize ?? 0) > 0 ? { partySize: state.stayIntent.partySize } : {}),
+      ...(Number.isSafeInteger(state.stayIntent.bedrooms) && (state.stayIntent.bedrooms ?? -1) >= 0 ? { bedrooms: state.stayIntent.bedrooms } : {}),
+      ...(Number.isSafeInteger(state.stayIntent.maxBudgetKobo) && (state.stayIntent.maxBudgetKobo ?? -1) >= 0 ? { maxBudgetKobo: state.stayIntent.maxBudgetKobo } : {}),
+      ...(requiredAmenities?.length ? { requiredAmenities } : {}),
+      ...(selectedStay ? { selectedUnitId: selectedStay.unitId } : {}),
+    };
+  }
+
+  #assistantContextSearch(thread: GuestThreadState, context: PersistedAssistantContext, currentArtifact?: DiscoveryArtifactProjection): void {
+    const filters = {
+      location: context.city,
+      ...(context.neighbourhood ? { neighbourhood: context.neighbourhood } : {}),
+      ...(context.checkIn && context.checkOut ? { checkIn: context.checkIn, checkOut: context.checkOut } : {}),
+      ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
+      ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
+      ...(context.maxBudgetKobo === undefined ? {} : { maxPriceKobo: context.maxBudgetKobo }),
+      ...(context.requiredAmenities?.length ? { requiredAmenities: context.requiredAmenities } : {}),
+    };
+    try {
+      // ADR 0077/0080: cold start rebuilds current facts from the authorized domain query.
+      const currentFilters = currentArtifact?.facts.filters;
+      const matchesContext = currentArtifact !== undefined
+        && currentFilters?.location === context.city
+        && (context.neighbourhood === undefined || currentFilters.neighbourhood === context.neighbourhood)
+        && (context.checkIn === undefined || currentFilters.checkIn === context.checkIn)
+        && (context.checkOut === undefined || currentFilters.checkOut === context.checkOut);
+      thread.discoveryArtifact = matchesContext ? currentArtifact : this.#environment.discoveryQuery.search(filters);
+      thread.discoveryContext = {
+        city: context.city,
+        ...(context.neighbourhood ? { neighbourhood: context.neighbourhood } : {}),
+        ...(context.checkIn ? { checkIn: context.checkIn, datesConfirmed: true } : {}),
+        ...(context.nights === undefined ? {} : { nights: context.nights }),
+        ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
+        ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
+        ...(context.maxBudgetKobo === undefined ? {} : { budget: { kobo: context.maxBudgetKobo, per: "stay" as const } }),
+      };
+      thread.searchHistory = [thread.discoveryContext];
+      thread.unitDetail = context.selectedUnitId && thread.discoveryArtifact.facts.results.some((unit) => unit.id === context.selectedUnitId)
+        ? { unitId: context.selectedUnitId, artifactId: thread.discoveryArtifact.id }
+        : null;
+    } catch {
+      thread.discoveryArtifact = null;
+      thread.unitDetail = null;
+    }
+  }
+
+  #rebuildAssistantDiscovery(thread: GuestThreadState): void {
+    if (!thread.assistantContext) return;
+    const runtime = this.#assistantRuntime;
+    const currentArtifact = runtime?.hasThread(thread.threadId) ? runtime.getThread(thread.threadId).discoveryArtifact : undefined;
+    this.#assistantContextSearch(thread, thread.assistantContext, isDiscoveryArtifactProjection(currentArtifact) ? currentArtifact : undefined);
+  }
+
+  #refreshAssistantSurface(thread: GuestThreadState): void {
+    if (!thread.assistantContext) return;
+    const surfaceId = thread.lastSurfaces.at(-1)?.surfaceId ?? "";
+    const stage = this.#stageForSurfaceId(surfaceId);
+    if (!stage) return;
+    const restored = this.#restoreCurrentSurface(thread, this.#assistantRestoreProjection(thread, stage));
+    if (restored) thread.lastSurfaces = [restored];
+  }
+
+  #safeAssistantTimelineMessage(thread: GuestThreadState): string {
+    const stage = this.#stageForSurfaceId(thread.lastSurfaces.at(-1)?.surfaceId ?? "");
+    if (stage === REQUEST_STAGE && thread.draftId && !thread.requestId) return GUEST_ASSISTANT_COPY.draftReady;
+    if (stage === UNIT_STAGE) return GUEST_ASSISTANT_COPY.detailsReady;
+    if (thread.requestId || thread.offerId) return GUEST_ASSISTANT_COPY.statusReady;
+    if (thread.discoveryArtifact) {
+      const count = thread.discoveryArtifact.facts.results.length;
+      return GUEST_ASSISTANT_COPY.results(count, thread.assistantContext?.neighbourhood ?? thread.assistantContext?.city ?? "your selected area");
+    }
+    return GUEST_ASSISTANT_COPY.safeClarification;
+  }
+
+  #restoreAssistantFromGuestThread(threadId: string, thread: GuestThreadState): void {
+    const runtime = this.#assistantRuntime;
+    const context = thread.assistantContext;
+    if (!runtime || !context || runtime.hasThread(threadId)) return;
+    // ADR 0070/0075/0093: load only the owner-checked, minimal projection; never restore model or provider history.
+    if (!thread.discoveryArtifact) this.#rebuildAssistantDiscovery(thread);
+    const results = thread.discoveryArtifact?.facts.results ?? [];
+    const shortlist: AssistantStayReference[] = results.map((unit, index) => ({
+      stayRef: `stay-${index + 1}`,
+      unitId: unit.id,
+      title: unit.title,
+      city: unit.location.city,
+      neighbourhood: unit.location.neighbourhood,
+      capacity: unit.capacity,
+      bedrooms: unit.bedrooms,
+      amenities: [...unit.amenities],
+      nightlyKobo: unit.price.nightlyKobo,
+      allInStayTotalKobo: unit.price.allInStayTotalKobo,
+      mandatoryFeesKobo: unit.price.mandatoryFeesKobo,
+      refundableSecurityDepositKobo: unit.price.refundableSecurityDepositKobo,
+      amountDueNowKobo: unit.price.amountDueNowKobo,
+      inspectionStatus: unit.trust.inspection.status,
+      managementAuthorityStatus: unit.trust.managementAuthority.status,
+    }));
+    const selected = context.selectedUnitId ? shortlist.find((stay) => stay.unitId === context.selectedUnitId) : undefined;
+    let currentContractId: string | undefined;
+    let currentReservationId: string | undefined;
+    if (thread.offerId) {
+      const snapshot = this.#environment.interactionStore.findBookingSnapshotByOfferId(thread.offerId);
+      if (snapshot) {
+        try {
+          const booking = JSON.parse(snapshot.contractJson) as { contractId?: unknown; reservationId?: unknown };
+          if (typeof booking.contractId === "string") currentContractId = booking.contractId;
+          if (typeof booking.reservationId === "string") currentReservationId = booking.reservationId;
+        } catch { /* Invalid persisted metadata cannot restore domain status. */ }
+      }
+    }
+    const state: AssistantTaskState = {
+      goal: shortlist.length ? "find_stay" : null,
+      stayIntent: {
+        location: context.city,
+        ...(context.neighbourhood ? { neighbourhood: context.neighbourhood } : {}),
+        ...(context.checkIn ? { checkIn: context.checkIn } : {}),
+        ...(typeof context.isDemoDate === "boolean" ? { isDemoDate: context.isDemoDate } : {}),
+        ...(context.checkOut ? { checkOut: context.checkOut } : {}),
+        ...(context.nights === undefined ? {} : { nights: context.nights }),
+        ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
+        ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
+        ...(context.maxBudgetKobo === undefined ? {} : { maxBudgetKobo: context.maxBudgetKobo }),
+        ...(context.requiredAmenities ? { requiredAmenities: context.requiredAmenities } : {}),
+      },
+      shortlist,
+      ...(selected ? { selectedStayRef: selected.stayRef } : {}),
+      ...(thread.draftId ? { currentDraftId: thread.draftId } : {}),
+      ...(thread.requestId ? { currentBookingRequestId: thread.requestId } : {}),
+      ...(thread.offerId ? { currentOfferId: thread.offerId } : {}),
+      ...(currentReservationId ? { currentReservationId } : {}),
+      ...(currentContractId ? { currentContractId } : {}),
+      pendingAction: null,
+    };
+    const canonicalUserFacts = context.isDemoDate === false
+      ? [context.checkIn, context.checkOut].filter((fact): fact is string => typeof fact === "string")
+      : [];
+    runtime.restoreShortletState(threadId, { principalId: this.#environment.guestPrincipal().id, tenantId: this.#environment.config.tenantId, taskState: state, canonicalUserFacts });
+  }
+
+  #syncAssistantPersistence(threadId: string, thread: GuestThreadState): void {
+    // ADR 0099/0101: persist only the active Shortlet pack's canonical filters and domain references through this host boundary.
+    const runtime = this.#assistantRuntime;
+    if (!runtime?.hasThread(threadId)) return;
+    const assistant = runtime.getThread(threadId);
+    const activeTask = assistant.tasks.find((task) => task.taskId === assistant.activeTaskId);
+    if (activeTask?.domain !== "shortlet") return;
+    const context = this.#assistantContextFromState(assistant.taskState);
+    if (context) {
+      thread.assistantContext = context;
+      const runtimeArtifact = isDiscoveryArtifactProjection(assistant.discoveryArtifact) ? assistant.discoveryArtifact : undefined;
+      this.#assistantContextSearch(thread, context, runtimeArtifact ?? thread.discoveryArtifact ?? undefined);
+    }
+    if (assistant.taskState.currentDraftId) thread.draftId = assistant.taskState.currentDraftId;
+    if (assistant.taskState.currentBookingRequestId) thread.requestId = assistant.taskState.currentBookingRequestId;
+    if (assistant.taskState.currentOfferId) thread.offerId = assistant.taskState.currentOfferId;
+    if (thread.draftId) {
+      try {
+        const quote = this.#draftArtifact(thread, "draft").facts;
+        thread.draftQuote = { allInStayTotalKobo: quote.allInStayTotalKobo, refundableSecurityDepositKobo: quote.refundableSecurityDepositKobo, amountDueNowKobo: quote.amountDueNowKobo };
+      } catch { thread.draftQuote = null; }
+    } else thread.draftQuote = null;
+    const selected = assistant.taskState.selectedStayRef;
+    if (selected && thread.discoveryArtifact) {
+      const ref = assistant.taskState.shortlist.find((stay) => stay.stayRef === selected);
+      const unit = ref ? thread.discoveryArtifact.facts.results.find((candidate) => candidate.id === ref.unitId) : undefined;
+      thread.unitDetail = unit ? { unitId: unit.id, artifactId: thread.discoveryArtifact.id } : null;
+    } else if (!selected) thread.unitDetail = null;
+    const activeSurface = assistant.lastSurfaces.at(-1);
+    const stage = activeSurface ? this.#stageForSurfaceId(activeSurface.surfaceId) : null;
+    if (stage && thread.assistantContext) {
+      this.#refreshAssistantSurface(thread);
+    }
   }
 
   #supersede(thread: GuestThreadState, stage: string): void {
@@ -2923,8 +3146,28 @@ export class LocalGuestApp {
       (this.#environment.guestDataIsRemote ? null : this.#loadThread(threadId)) ??
       this.#createThread(threadId);
     if (userText !== undefined)
-      thread.timeline.push({ role: "user", text: userText });
-    for (const message of result.messages) {
+      thread.timeline.push({ role: "user", text: redactSensitiveData(userText) as string });
+    if (result.surfaces.length > 0) thread.lastSurfaces = [...result.surfaces];
+    if (result.assistantManaged) this.#syncAssistantPersistence(threadId, thread);
+    else if (this.#assistantRuntime?.hasThread(threadId)) {
+      const unitId = thread.unitDetail?.unitId;
+      if (unitId) {
+        this.#assistantRuntime.selectShortletUnit(threadId, unitId);
+        if (thread.assistantContext) thread.assistantContext = { ...thread.assistantContext, selectedUnitId: unitId };
+      } else {
+        this.#assistantRuntime.clearShortletSelection(threadId);
+        if (thread.assistantContext?.selectedUnitId) {
+          const { selectedUnitId: _selectedUnitId, ...context } = thread.assistantContext;
+          thread.assistantContext = context;
+        }
+      }
+    }
+    const messages = this.#assistantRuntime?.hasThread(threadId)
+      ? result.messages.length > 0
+        ? [this.#assistantTimelineMessage(result, thread)]
+        : []
+      : result.messages;
+    for (const message of messages) {
       // Refresh paths can re-present the same outcome message (ADR-0074);
       // avoid duplicating an identical assistant message at the tail.
       const tail = thread.timeline.at(-1);
@@ -2935,7 +3178,6 @@ export class LocalGuestApp {
       thread.timeline.push({ role: "receipt", text: receipt });
     // A text-only turn changes the transcript but does not supersede the
     // current server-backed workspace (ADR-0074).
-    if (result.surfaces.length > 0) thread.lastSurfaces = [...result.surfaces];
     try {
       if (result.messages.length > 0)
         this.#environment.telemetry.track({
@@ -2957,6 +3199,26 @@ export class LocalGuestApp {
       /* presentation telemetry is best-effort */
     }
     if (!this.#environment.guestDataIsRemote) this.#persistThread(thread);
+  }
+
+  #assistantTimelineMessage(result: GuestTurnSuccess, thread: GuestThreadState): string {
+    switch (result.assistantControlOutcome) {
+      case "scope_redirect": return ASSISTANT_CONTROL_COPY.redirect;
+      case "scope_unavailable":
+      case "quota_refusal":
+      case "model_handling_failure":
+      case "guard_failure": return ASSISTANT_CONTROL_COPY.unavailable;
+      case "support_guidance":
+        // This plan renders only fixed support copy from the Shortlet pack; no model prose enters the timeline.
+        return result.messages[0] === GUEST_ASSISTANT_COPY.activeStayEmergencySupport
+          ? GUEST_ASSISTANT_COPY.activeStayEmergencySupport
+          : GUEST_ASSISTANT_COPY.generalSupport;
+      case "no_current_booking": return GUEST_ASSISTANT_COPY.noCurrentBooking;
+      case "rejected_plan_fallback":
+      case "tool_denial":
+      case "successful_model_handling":
+      case undefined: return this.#safeAssistantTimelineMessage(thread);
+    }
   }
 
   #decorateResult(result: GuestTurnResult): GuestTurnResult {

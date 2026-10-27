@@ -1,0 +1,33 @@
+TAP version 13
+# Subtest: A closed classifier can disable reasoning without changing the planner or selected model
+not ok 1 - A closed classifier can disable reasoning without changing the planner or selected model
+  ---
+  duration_ms: 25.0208
+  type: 'test'
+  location: 'C:\\AI2026\\chat-marketplace-controls\\test\\openai-compatible-client.test.ts:1:3423'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + undefined
+    - 'none'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'none'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\openai-compatible-client.test.ts:73:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 969.2598

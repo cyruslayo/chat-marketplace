@@ -6,7 +6,9 @@ import type {
   AssistantModelClient,
   AssistantToolCall,
   AssistantToolResult,
+  AssistantModelResponse,
 } from "./assistant-model.js";
+import { ModelRequestGuardError } from "./assistant-model.js";
 import {
   AssistantPackRegistry,
   composeSystemInstruction,
@@ -15,11 +17,20 @@ import {
   PLATFORM_TASK_TOOL_NAMES,
   TASK_START_EVENT,
   TASK_SWITCH_EVENT,
+  toolsForValidatedIntents,
+  toolNamesForValidatedIntents,
+  validateAssistantToolArguments,
   type AssistantDomainPack,
   type AssistantTaskSummary,
   type AssistantToolContext,
+  type AssistantReplyPlan,
+  type AssistantReplyPlanKind,
 } from "./assistant-platform.js";
 import { createShortletAssistantPack } from "./shortlet-assistant-pack.js";
+import { containsExactDateToken, currentTurnDateRoles } from "./date-tokens.js";
+import { ModelScopeClassifier, ScopeClassificationError, assessScopeSafely, scopedMixedInput, type ScopeClassifier, type ScopeAssessment, type ConciergeIntent } from "./scope-classifier.js";
+import { RetryingScopeClassifier, ScopeClassifierRetryError, SCOPE_TOTAL_BUDGET_MS, type ScopeClassifierRetryEvent, type ScopeClassifierRetryResult } from "./scope-classifier-retry.js";
+import { ASSISTANT_CONTROL_COPY } from "./control-copy.js";
 import { isProviderUnavailable } from "./fallback-model-client.js";
 import {
   cloneTaskState,
@@ -38,6 +49,13 @@ import {
   ASSISTANT_CONFIRM_ACTION_EVENT,
   ASSISTANT_CANCEL_ACTION_EVENT,
 } from "./pending-action-a2ui.js";
+import { redactSensitiveData } from "../../../../packages/platform-core/src/redaction.js";
+
+export const ASSISTANT_CONTROL_OUTCOMES = [
+  "scope_redirect", "scope_unavailable", "quota_refusal", "guard_failure", "rejected_plan_fallback",
+  "support_guidance", "no_current_booking", "successful_model_handling", "model_handling_failure", "tool_denial",
+] as const;
+export type AssistantControlOutcome = typeof ASSISTANT_CONTROL_OUTCOMES[number];
 
 export interface AssistantTurnOutput {
   readonly ok: boolean;
@@ -48,6 +66,8 @@ export interface AssistantTurnOutput {
   readonly tasks?: readonly AssistantTaskRailEntry[];
   readonly modelHandled?: boolean;
   readonly providerUnavailable?: boolean;
+  readonly discardUserInput?: boolean;
+  readonly controlOutcome?: AssistantControlOutcome;
 }
 
 /** A task's entry in the shell rail, derived from the active pack's `taskSummary`. */
@@ -85,7 +105,11 @@ export type AssistantFailureClass =
   | "APPLICATION_OPERATION_FAILURE"
   | "PROJECTION_FAILURE"
   | "A2UI_FAILURE"
-  | "WEAVER_FAILURE";
+  | "WEAVER_FAILURE"
+  /** ADR 0106: a local product quota refusal, reported as a control outcome and never as a model or provider fault. */
+  | "QUOTA_REFUSED";
+
+export type AssistantToolEffectCode = "request_draft_created_availability_checked_not_reserved";
 
 export interface AssistantDiagnosticEvent {
   readonly stage: AssistantDiagnosticStage;
@@ -97,12 +121,49 @@ export interface AssistantDiagnosticEvent {
   readonly providerStatusCode?: number;
   readonly providerErrorCode?: string;
   readonly failureClass?: AssistantFailureClass;
+  readonly outcome?: AssistantControlOutcome;
+  readonly effectCode?: AssistantToolEffectCode;
+  readonly scopeFailureReason?: import("./scope-classifier.js").ScopeFailureReason;
+  /** ADR 0106 amendment: classifier attempts that started for this stage (1 or 2). Closed count only. */
+  readonly classifierAttempts?: 1 | 2;
+  /** ADR 0106 amendment: the closed code of the first classifier attempt when it failed validation. Never classifier text. */
+  readonly firstAttemptScopeFailureReason?: import("./scope-classifier.js").ScopeFailureReason;
+  /** ADR 0106 amendment: how the retry stage ended. Present only when a first attempt failed validation. */
+  readonly classifierRetryResult?: ScopeClassifierRetryResult;
+  /** ADR 0106 amendment, metadata only: the closed finish reason of the failed classifier response, recorded beside its code. Never changes acceptance or retry. */
+  readonly finishReason?: import("./assistant-model.js").AssistantFinishReason;
+  /** Metadata only: the closed finish reason of the first failed classifier attempt when a retry stage ran. */
+  readonly firstAttemptFinishReason?: import("./assistant-model.js").AssistantFinishReason;
+  /** ADR 0075 / 0106: a fixed rejection code for a reply plan; the rejected text is never recorded. */
+  readonly replyPlanRejectionReason?: ReplyPlanRejectionReason;
 }
+
+export type ReplyPlanRejectionReason = "empty_text" | "unexpected_tool_calls" | "not_json" | "not_object" | "invalid_shape"
+  | "unknown_kind" | "invalid_references" | "reference_not_in_results";
 
 export interface AssistantRuntimeOptions {
   readonly onDiagnostic?: (event: AssistantDiagnosticEvent) => void;
   /** Additional domain packs to register (used by hosts that host more than one domain). */
   readonly additionalPacks?: readonly AssistantDomainPack[];
+  /** Maximum tokens for a final reply plan; engineering bound configured by the host. */
+  readonly maxReplyOutputTokens?: number;
+  readonly maxPlanningOutputTokens?: number;
+  readonly scopeClassifier?: ScopeClassifier;
+  readonly scopeTimeoutMs?: number;
+  readonly scopeReasoningEffort?: "none" | "provider_default";
+  readonly maxInputCharacters?: number;
+  /** Engineering bounds on retained model context; packs supply the canonical state summary. */
+  readonly maxHistorySteps?: number;
+  readonly maxHistoryCharacters?: number;
+  /** Maximum projected result/reference items retained in model context. */
+  readonly maxContextItems?: number;
+}
+
+export interface AssistantShortletRestoreInput {
+  readonly principalId: string;
+  readonly tenantId: string;
+  readonly taskState: AssistantTaskState;
+  readonly canonicalUserFacts: readonly string[];
 }
 
 interface AssistantEventContext {
@@ -124,11 +185,64 @@ const REQUEST_STAGE = "request";
 const OFFER_STAGE = "offer";
 const PAYMENT_STAGE = "payment";
 const BOOKING_STAGE = "booking";
+export const DEFAULT_ASSISTANT_REPLY_MAX_OUTPUT_TOKENS = 128;
+export const DEFAULT_ASSISTANT_PLANNING_MAX_OUTPUT_TOKENS = 1024;
+export const DEFAULT_ASSISTANT_HISTORY_MAX_STEPS = 32;
+export const DEFAULT_ASSISTANT_HISTORY_MAX_CHARACTERS = 24_000;
+export const DEFAULT_ASSISTANT_CONTEXT_MAX_ITEMS = 8;
+const MAX_ASSISTANT_HISTORY_STEPS = 512;
+const MAX_ASSISTANT_HISTORY_CHARACTERS = 262_144;
+const MAX_ASSISTANT_CONTEXT_ITEMS = 128;
+const MAX_ASSISTANT_REPLY_OUTPUT_TOKENS = 4096;
+/** ADR 0106: references name tools whose results this turn produced. The parser stays the authority; the enum only narrows the provider output. */
+function replyPlanSchema(referenceNames: readonly string[]): Record<string, unknown> {
+  const names = [...new Set(referenceNames)];
+  return {
+    type: "object",
+    properties: {
+      kind: { type: "string", enum: ["show_results", "show_details", "compare", "explain_price", "show_status", "propose_action", "clarify_stay", "redirect", "support_guidance"] },
+      // With no successful tool result yet, no name is valid; the parser then rejects any non-empty list.
+      references: { type: "array", items: names.length > 0 ? { type: "string", enum: names } : { type: "string" } },
+    },
+    required: ["kind", "references"],
+    additionalProperties: false,
+  };
+}
 
+function successfulToolNames(results: readonly AssistantToolResult[]): string[] {
+  return results.filter((result) => !result.isError).map((result) => result.name);
+}
+
+/** Returns the validated plan, or the closed code for the first rule the reply failed. `results` must be every successful result of the turn. */
+function parseReplyPlan(response: AssistantModelResponse, results: readonly AssistantToolResult[]): AssistantReplyPlan | ReplyPlanRejectionReason {
+  if (response.toolCalls?.length) return "unexpected_tool_calls";
+  if (!response.text) return "empty_text";
+  let value: unknown;
+  try { value = JSON.parse(response.text); } catch { return "not_json"; }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return "not_object";
+  const record = value as Record<string, unknown>;
+  const kinds: readonly AssistantReplyPlanKind[] = ["show_results", "show_details", "compare", "explain_price", "show_status", "propose_action", "clarify_stay", "redirect", "support_guidance"];
+  if (Object.keys(record).length !== 2) return "invalid_shape";
+  if (typeof record.kind !== "string" || !kinds.includes(record.kind as AssistantReplyPlanKind)) return "unknown_kind";
+  if (!Array.isArray(record.references) || !record.references.every((item) => typeof item === "string")) return "invalid_references";
+  const allowed = new Set(results.filter((result) => !result.isError).map((result) => result.name));
+  if (record.references.some((reference) => !allowed.has(reference))) return "reference_not_in_results";
+  return { kind: record.kind as AssistantReplyPlanKind, references: record.references as string[] };
+}
 export class AssistantRuntime {
   readonly #environment: LocalGuestEnvironment;
   readonly #modelClient: AssistantModelClient;
   readonly #onDiagnostic?: (event: AssistantDiagnosticEvent) => void;
+  readonly #maxReplyOutputTokens: number;
+  readonly #maxPlanningOutputTokens: number;
+  readonly #scopeClassifier: ScopeClassifier;
+  readonly #scopeTimeoutMs: number;
+  /** The classifier stage's outer race: the per-attempt cap for an injected classifier, the 8 s total for the default retrying path. */
+  readonly #scopeOuterTimeoutMs: number;
+  readonly #maxInputCharacters: number;
+  readonly #maxHistorySteps: number;
+  readonly #maxHistoryCharacters: number;
+  readonly #maxContextItems: number;
   readonly #threads = new Map<string, AssistantThreadState>();
   readonly #packs = new AssistantPackRegistry();
 
@@ -136,12 +250,102 @@ export class AssistantRuntime {
     this.#environment = environment;
     this.#modelClient = modelClient;
     this.#onDiagnostic = options.onDiagnostic;
+    const maxReplyOutputTokens = options.maxReplyOutputTokens ?? DEFAULT_ASSISTANT_REPLY_MAX_OUTPUT_TOKENS;
+    if (!Number.isSafeInteger(maxReplyOutputTokens) || maxReplyOutputTokens < 1 || maxReplyOutputTokens > MAX_ASSISTANT_REPLY_OUTPUT_TOKENS) {
+      throw new Error(`maxReplyOutputTokens must be an integer between 1 and ${MAX_ASSISTANT_REPLY_OUTPUT_TOKENS}`);
+    }
+    this.#maxReplyOutputTokens = maxReplyOutputTokens;
+    const planningLimit = options.maxPlanningOutputTokens ?? DEFAULT_ASSISTANT_PLANNING_MAX_OUTPUT_TOKENS;
+    if (!Number.isSafeInteger(planningLimit) || planningLimit < 1 || planningLimit > MAX_ASSISTANT_REPLY_OUTPUT_TOKENS) throw new Error("maxPlanningOutputTokens is invalid");
+    this.#maxPlanningOutputTokens = planningLimit;
+    this.#scopeTimeoutMs = options.scopeTimeoutMs ?? 5000;
+    this.#maxInputCharacters = options.maxInputCharacters ?? 8192;
+    this.#maxHistorySteps = options.maxHistorySteps ?? DEFAULT_ASSISTANT_HISTORY_MAX_STEPS;
+    this.#maxHistoryCharacters = options.maxHistoryCharacters ?? DEFAULT_ASSISTANT_HISTORY_MAX_CHARACTERS;
+    this.#maxContextItems = options.maxContextItems ?? DEFAULT_ASSISTANT_CONTEXT_MAX_ITEMS;
+    if (![this.#scopeTimeoutMs, this.#maxInputCharacters].every((value) => Number.isSafeInteger(value) && value > 0)
+      || !Number.isSafeInteger(this.#maxHistorySteps) || this.#maxHistorySteps < 2 || this.#maxHistorySteps > MAX_ASSISTANT_HISTORY_STEPS
+      || !Number.isSafeInteger(this.#maxHistoryCharacters) || this.#maxHistoryCharacters < 256 || this.#maxHistoryCharacters > MAX_ASSISTANT_HISTORY_CHARACTERS) throw new Error("Scope and history engineering limits are outside configured bounds");
+    if (!Number.isSafeInteger(this.#maxContextItems) || this.#maxContextItems < 1 || this.#maxContextItems > MAX_ASSISTANT_CONTEXT_ITEMS) throw new Error("maxContextItems is outside configured bounds");
+    if (options.scopeReasoningEffort !== undefined && options.scopeReasoningEffort !== "none" && options.scopeReasoningEffort !== "provider_default") throw new Error("Invalid scope reasoning effort");
+    // ADR 0106 amendment: the default path retries an eligible JSON-shape failure once with an identical request.
+    // Injected classifiers keep their single attempt and the scope timeout as before.
+    this.#scopeClassifier = options.scopeClassifier ?? new RetryingScopeClassifier({
+      createAttempt: (timeoutMs) => new ModelScopeClassifier(modelClient, timeoutMs, undefined, options.scopeReasoningEffort),
+      firstAttemptTimeoutMs: this.#scopeTimeoutMs,
+      onAttempt: (event) => this.#recordClassifierRetry(event),
+    });
+    this.#scopeOuterTimeoutMs = options.scopeClassifier ? this.#scopeTimeoutMs : SCOPE_TOTAL_BUDGET_MS;
     this.#packs.register(createShortletAssistantPack(environment));
     for (const pack of options.additionalPacks ?? []) this.#packs.register(pack);
   }
 
   get #activePack(): AssistantDomainPack {
     return this.#packs.active;
+  }
+
+  #projectionForTool(name: string, result: Record<string, unknown>): Record<string, unknown> {
+    for (const id of this.#packs.ids()) {
+      const pack = this.#packs.packFor(id);
+      if (pack?.toolNames.includes(name)) return pack.projectToolResult?.(name, result, { maxItems: this.#maxContextItems }) ?? {};
+    }
+    return {};
+  }
+
+  #sanitizeHistory(history: readonly AssistantConversationStep[]): AssistantConversationStep[] {
+    const projected = history.map((step): AssistantConversationStep => {
+      if (step.role === "user") return { role: "user", text: redactSensitiveData(step.text) as string };
+      if (step.role === "assistant") return { role: "assistant", text: "Server reply delivered." };
+      if (step.role === "tool_calls") {
+        const calls = step.calls.map((call) => ({ id: call.id, name: safeAssistantToolName(call.name, this.#packs), args: redactSensitiveData(call.args) as Record<string, unknown> }));
+        const rawStep = step.rawStep === undefined ? undefined : this.#modelClient.projectProviderContinuation?.({ rawStep: step.rawStep }, calls);
+        return { role: "tool_calls", calls, ...(rawStep === undefined ? {} : { rawStep }) };
+      }
+      return { role: "tool_results", results: step.results.map((result) => ({ callId: result.callId, name: safeAssistantToolName(result.name, this.#packs), result: this.#projectionForTool(result.name, result.result), ...(result.isError ? { isError: true } : {}) })) };
+    });
+    const safe: AssistantConversationStep[] = [];
+    for (let index = 0; index < projected.length; index++) {
+      const step = projected[index]!;
+      if (step.role === "tool_results") continue;
+      if (step.role !== "tool_calls") { safe.push(step); continue; }
+      const resultStep = projected[index + 1];
+      if (resultStep?.role !== "tool_results") continue;
+      const results = resultStep.results.filter((result) => step.calls.some((call) => call.id === result.callId && call.name === result.name));
+      const calls = step.calls.filter((call) => results.some((result) => result.callId === call.id && result.name === call.name));
+      if (calls.length === 0 || results.length === 0) continue;
+      const rawStep = step.rawStep === undefined ? undefined : this.#modelClient.projectProviderContinuation?.({ rawStep: step.rawStep }, calls);
+      safe.push({ role: "tool_calls", calls, ...(rawStep === undefined ? {} : { rawStep }) }, { role: "tool_results", results });
+      index++;
+    }
+    return safe;
+  }
+
+  #commitHistory(thread: AssistantThreadState, history: readonly AssistantConversationStep[], pack: AssistantDomainPack, state: AssistantTaskState): void {
+    let retained: readonly AssistantConversationStep[];
+    try {
+      retained = this.#boundedHistory(this.#sanitizeHistory(history), pack, state);
+    } catch {
+      // Preserve committed domain state and a minimal server-owned summary when even bounded context cannot fit.
+      retained = [{ role: "assistant", text: `Canonical task facts: ${JSON.stringify({ domain: pack.id })}` }];
+    }
+    thread.conversationHistory.length = 0;
+    thread.conversationHistory.push(...retained);
+  }
+
+  #boundedHistory(history: readonly AssistantConversationStep[], pack: AssistantDomainPack, state: AssistantTaskState): readonly AssistantConversationStep[] {
+    let retained = history.filter((step) => step.role !== "assistant");
+    const facts = pack.projectStateSummary?.(state, { maxItems: this.#maxContextItems }) ?? { domain: pack.id };
+    const summary: AssistantConversationStep = { role: "assistant", text: `Canonical task facts: ${JSON.stringify(redactSensitiveData(facts))}` };
+    const currentUser = [...retained].reverse().find((step) => step.role === "user");
+    const exceeds = () => retained.length + 1 > this.#maxHistorySteps || JSON.stringify([summary, ...retained]).length > this.#maxHistoryCharacters;
+    while (exceeds()) {
+      if (!retained.length || retained[0] === currentUser) throw new Error("The current input and canonical task facts exceed configured history bounds");
+      const removed = retained.shift();
+      if (removed?.role === "tool_calls" && retained[0]?.role === "tool_results") retained.shift();
+      else if (retained[0]?.role === "tool_results") retained.shift();
+      if (removed?.role === "user" && removed === currentUser) throw new Error("The current input and canonical task facts exceed configured history bounds");
+    }
+    return [summary, ...retained];
   }
 
   #packForThread(threadId: string): AssistantDomainPack {
@@ -214,7 +418,9 @@ export class AssistantRuntime {
       return { state: restored.state, activeTaskId: restored.activeTaskId, workspace: restored, result: { started: domain, taskId: existing.taskId } };
     }
     const created: AssistantTask = {
-      taskId: `task-${tasks.length + 1}`,
+      // ADR 0070/0099: task IDs cross domain storage boundaries (for example, Commerce Cart task_id).
+      // Allocate a server-unique ID so separate guests and threads cannot share task-keyed state.
+      taskId: `task-${crypto.randomUUID()}`,
       domain,
       state: createInitialTaskState(),
       activeSurfaces: new Map(),
@@ -285,7 +491,54 @@ export class AssistantRuntime {
     return thread;
   }
 
+  hasThread(threadId: string): boolean {
+    return this.#threads.has(threadId);
+  }
+
+  /** Restores only app-validated canonical Shortlet state; no model history or provider metadata is accepted. */
+  restoreShortletState(threadId: string, input: AssistantShortletRestoreInput): boolean {
+    const principal = this.#environment.guestPrincipal();
+    if (!threadId || input.principalId !== principal.id || input.tenantId !== this.#environment.config.tenantId || principal.tenantId !== input.tenantId) return false;
+    const thread = this.getThread(threadId);
+    const task = thread.tasks.find((entry) => entry.domain === "shortlet") ?? thread.tasks[0];
+    if (!task || task.domain !== "shortlet") return false;
+    const state = cloneTaskState(input.taskState);
+    task.state = state;
+    thread.activeTaskId = task.taskId;
+    thread.taskState = state;
+    thread.canonicalUserFactHistory = input.canonicalUserFacts.filter((fact) => /^\d{4}-\d{2}-\d{2}$/.test(fact));
+    thread.conversationHistory.length = 0;
+    thread.activeSurfaces.clear();
+    thread.supersededSurfaces.clear();
+    thread.lastSurfaces = [];
+    thread.discoveryArtifactId = null;
+    thread.discoveryArtifact = undefined;
+    this.#syncActiveTask(thread);
+    return true;
+  }
+
+  selectShortletUnit(threadId: string, unitId: string): boolean {
+    const thread = this.#threads.get(threadId);
+    if (!thread) return false;
+    const selected = thread.taskState.shortlist.find((stay) => stay.unitId === unitId);
+    if (!selected) return false;
+    thread.taskState.selectedStayRef = selected.stayRef;
+    const task = thread.tasks.find((entry) => entry.taskId === thread.activeTaskId);
+    if (task) task.state = thread.taskState;
+    return true;
+  }
+
+  clearShortletSelection(threadId: string): void {
+    const thread = this.#threads.get(threadId);
+    if (!thread) return;
+    thread.taskState.selectedStayRef = undefined;
+    const task = thread.tasks.find((entry) => entry.taskId === thread.activeTaskId);
+    if (task) task.state = thread.taskState;
+  }
+
   async handleTurn(threadId: string, text: string): Promise<AssistantTurnOutput> {
+    const controlStartedAt = performance.now();
+    const recordOutcome = (outcome: AssistantControlOutcome) => this.#recordControlOutcome(outcome, performance.now() - controlStartedAt);
     const thread = this.getThread(threadId);
 
     // 1. Transactional Candidates (Item 24)
@@ -293,19 +546,30 @@ export class AssistantRuntime {
     let candidateTaskState = cloneTaskState(thread.taskState);
     let candidateActiveTaskId = thread.activeTaskId;
     const candidateTasks: AssistantTask[] = thread.tasks.map((task) => ({ ...task }));
-    const candidateHistory: AssistantConversationStep[] = [...thread.conversationHistory];
+    const candidateHistory = this.#sanitizeHistory(thread.conversationHistory);
     const candidateSurfaces: AssistantTurnSurface[] = [];
     let candidateActiveSurfaces = new Map<string, string>(thread.activeSurfaces);
     let candidateSuperseded = new Set<string>(thread.supersededSurfaces);
     let candidateLastSurfaces: readonly AssistantTurnSurface[] = thread.lastSurfaces;
     let candidateDiscoveryArtifactId = thread.discoveryArtifactId;
+    let candidateDiscoveryArtifact = thread.discoveryArtifact;
 
     // The active task decides the active pack: its tools, prompt and projections.
     const candidateDomain = () => candidateTasks.find((task) => task.taskId === candidateActiveTaskId)?.domain ?? this.#activePack.id;
     const candidatePack = () => this.#packs.packFor(candidateDomain()) ?? this.#activePack;
-    const taskTools = () => this.#packs.size > 1
-      ? [...PLATFORM_TASK_TOOLS, ...candidatePack().toolsForState(candidateTaskState)]
-      : [...candidatePack().toolsForState(candidateTaskState)];
+    let validatedDomainId: string | undefined;
+    let validatedTurnIntents: readonly ConciergeIntent[] = [];
+    let validatedTurnToolNames: ReadonlySet<string> = new Set();
+    let taskSwitchPermitted = false;
+    // ADR 0099/0106: intersect the active pack, its current-state tools, and this turn's validated intents.
+    const taskTools = () => {
+      const pack = candidatePack();
+      const domainTools = pack.id === validatedDomainId
+        ? toolsForValidatedIntents(pack, candidateTaskState, validatedTurnIntents)
+        : [];
+      const taskTools = this.#packs.size > 1 && taskSwitchPermitted ? PLATFORM_TASK_TOOLS : [];
+      return [...taskTools, ...domainTools];
+    };
 
     const supersede = (stage: string) => {
       const surfaceId = candidateActiveSurfaces.get(stage);
@@ -331,8 +595,9 @@ export class AssistantRuntime {
 
         // Action completed: commit state transaction
         thread.taskState = candidateTaskState;
-        thread.conversationHistory.push({ role: "user", text });
-        thread.conversationHistory.push({ role: "assistant", text: execution.message });
+        thread.conversationHistory.push({ role: "user", text: redactSensitiveData(text) as string });
+        thread.conversationHistory.push({ role: "assistant", text: "Server reply delivered." });
+        this.#commitHistory(thread, thread.conversationHistory, candidatePack(), candidateTaskState);
         thread.activeSurfaces = candidateActiveSurfaces;
         thread.supersededSurfaces = candidateSuperseded;
         thread.lastSurfaces = execution.surfaces.length > 0 ? execution.surfaces : candidateLastSurfaces;
@@ -353,8 +618,9 @@ export class AssistantRuntime {
 
         // Commit cancellation
         thread.taskState = candidateTaskState;
-        thread.conversationHistory.push({ role: "user", text });
-        thread.conversationHistory.push({ role: "assistant", text: "Action cancelled. Let me know how else I can help." });
+        thread.conversationHistory.push({ role: "user", text: redactSensitiveData(text) as string });
+        thread.conversationHistory.push({ role: "assistant", text: "Server reply delivered." });
+        this.#commitHistory(thread, thread.conversationHistory, candidatePack(), candidateTaskState);
         thread.activeSurfaces = candidateActiveSurfaces;
         thread.supersededSurfaces = candidateSuperseded;
         thread.lastSurfaces = candidateLastSurfaces;
@@ -377,17 +643,59 @@ export class AssistantRuntime {
     }
 
     // 3. User message turn
-    candidateHistory.push({ role: "user", text });
+    const originalUserText = text;
+    const packForScope = candidatePack();
+    const safeUserText = redactSensitiveData(text) as string;
+    let scopeFailureOutcome: "quota_refusal" | "guard_failure" | undefined;
+    const assessment = text.length > this.#maxInputCharacters ? undefined : await assessScopeSafely(this.#scopeClassifier, safeUserText, {
+      domain: packForScope.id, description: packForScope.scopeDescription ?? packForScope.label,
+      hasShortlist: candidateTaskState.shortlist.length > 0, hasSelectedStay: Boolean(candidateTaskState.selectedStayRef), hasOffer: Boolean(candidateTaskState.currentOfferId),
+    }, this.#scopeOuterTimeoutMs, (error) => {
+      // A retry failure carries the stage's decisive error; the first failure's outcome stands for refused or skipped retries (ADR 0106 amendment).
+      const cause = error instanceof ScopeClassifierRetryError ? error.failure : error;
+      this.#diagnose({ ...createFailureDiagnostic("provider_request", 0, undefined, cause),
+        ...(cause instanceof ScopeClassificationError ? { scopeFailureReason: cause.reason, ...(cause.finishReason ? { finishReason: cause.finishReason } : {}) } : {}),
+        ...(error instanceof ScopeClassifierRetryError ? { classifierAttempts: error.classifierAttempts, firstAttemptScopeFailureReason: error.firstAttemptScopeFailureReason, classifierRetryResult: error.classifierRetryResult,
+          ...(error.firstAttemptFinishReason ? { firstAttemptFinishReason: error.firstAttemptFinishReason } : {}) } : {}) });
+      scopeFailureOutcome = cause instanceof ModelRequestGuardError && cause.code === "quota_denied" ? "quota_refusal" : "guard_failure";
+    });
+    if (!assessment || assessment.scope === "unclear" || assessment.scope === "out_of_scope" || assessment.risk === "policy_override" || assessment.risk === "unauthorized_data" || assessment.risk === "unknown") {
+      const scopeOutcome = assessment?.scope === "out_of_scope" ? "scope_redirect" : "scope_unavailable";
+      const controlOutcome = scopeFailureOutcome ?? scopeOutcome;
+      // One count per turn: the outcome this turn returns (ADR 0106 telemetry, closed codes only).
+      recordOutcome(controlOutcome);
+      return { ok: true, messages: [controlOutcome === "scope_redirect" ? ASSISTANT_CONTROL_COPY.redirect : ASSISTANT_CONTROL_COPY.unavailable],
+        surfaces: [], modelHandled: false, discardUserInput: true, controlOutcome, tasks: this.getTaskRail(threadId) };
+    }
+    const discardUserInput = assessment.scope === "mixed";
+    const validMixedLocation = assessment.slots.neighbourhood === null || packForScope.scopeLocations?.includes(assessment.slots.neighbourhood) === true;
+    if (discardUserInput && (!validMixedLocation || [assessment.slots.checkIn, assessment.slots.checkOut].some((date) => date !== null && !containsExactDateToken(originalUserText, date)))) {
+      recordOutcome("scope_unavailable");
+      return { ok: true, messages: [ASSISTANT_CONTROL_COPY.unavailable], surfaces: [], modelHandled: false,
+        discardUserInput: true, controlOutcome: "scope_unavailable", tasks: this.getTaskRail(threadId) };
+    }
+    if (discardUserInput) text = scopedMixedInput(assessment);
+    validatedDomainId = packForScope.id;
+    validatedTurnIntents = assessment.intents;
+    validatedTurnToolNames = toolNamesForValidatedIntents(packForScope, assessment.intents);
+    taskSwitchPermitted = assessment.intents.includes("task_switch");
+    candidateHistory.push({ role: "user", text: redactSensitiveData(discardUserInput ? text : originalUserText) as string });
 
-    const userTextHistory: string[] = candidateHistory
+    const userTextHistory: string[] = [...(thread.canonicalUserFactHistory ?? []), ...candidateHistory
       .filter((s): s is Extract<AssistantConversationStep, { role: "user" }> => s.role === "user")
-      .map((s) => s.text);
+      .map((s) => s.text)];
+    // ADR 0106: provenance stays server-side; unsupported text never enters model history.
+    if (discardUserInput) userTextHistory[userTextHistory.length - 1] = redactSensitiveData(text) as string;
 
     let round = 0;
     let finalAssistantReply: string | undefined;
     let activeStage: AssistantDiagnosticStage = "provider_request";
     let activeToolName: string | undefined;
     let hasSuccessfulApplicationOperation = false;
+    // The renderer uses the latest round; reference validation accepts every successful result of this turn (ADR 0106).
+    let latestRawResults: AssistantToolResult[] = [];
+    let turnRawResults: AssistantToolResult[] = [];
+    let controlOutcome: AssistantControlOutcome = "successful_model_handling";
 
     try {
       while (round < MAX_ASSISTANT_TOOL_ROUNDS) {
@@ -398,8 +706,10 @@ export class AssistantRuntime {
         const modelResponse = await this.#modelClient.generate({
           systemInstruction: composeSystemInstruction(candidatePack()),
           tools: taskTools(),
-          history: candidateHistory,
+          history: this.#boundedHistory(candidateHistory, candidatePack(), candidateTaskState),
           timeoutMs: 20_000,
+          structuredOutput: { name: "assistant_reply_plan", schema: replyPlanSchema(successfulToolNames(turnRawResults)), strict: true },
+          maxOutputTokens: this.#maxPlanningOutputTokens,
         });
         this.#diagnose({ stage: "provider_request", round, succeeded: true });
         if (isFunctionResultContinuation) {
@@ -410,48 +720,73 @@ export class AssistantRuntime {
 
         // If model produced no tool calls, it is returning a natural language reply
         if (!modelResponse.toolCalls || modelResponse.toolCalls.length === 0) {
-          finalAssistantReply = modelResponse.text?.trim() ?? "How can I assist you with your stay?";
-          candidateHistory.push({
-            role: "assistant",
-            text: finalAssistantReply,
-            rawStep: modelResponse.rawStep,
-          });
+          // ADR 0106: accept a validated typed plan; discard legacy prose and opaque steps.
+          const latestResults = latestRawResults;
+          const parsedPlan = parseReplyPlan(modelResponse, turnRawResults);
+          const plan = typeof parsedPlan === "string" ? undefined : parsedPlan;
+          if (typeof parsedPlan === "string") {
+            this.#diagnose({ stage: "provider_response", round, succeeded: false, failureClass: "MODEL_SELECTION_FAILURE", replyPlanRejectionReason: parsedPlan });
+          }
+          if (!plan) {
+            controlOutcome = "rejected_plan_fallback";
+          } else if (plan.kind === "support_guidance") {
+            controlOutcome = "support_guidance";
+          }
+          if (latestResults.some((result) => result.name === "get_booking_status" && result.result.status === "no_active_booking")) {
+            controlOutcome = "no_current_booking";
+          }
+          finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "")
+            ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
+          candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
           break;
         }
 
-        // Record tool calls into history
-        candidateHistory.push({
-          role: "tool_calls",
-          calls: modelResponse.toolCalls,
-          rawStep: modelResponse.rawStep,
-        });
-
         const toolResults: AssistantToolResult[] = [];
+        const acceptedCalls: AssistantToolCall[] = [];
+        const roundRawResults: AssistantToolResult[] = [];
 
         for (const call of modelResponse.toolCalls) {
           activeStage = "tool_execution";
-          activeToolName = call.name;
-          const offered = taskTools().some((tool) => tool.name === call.name);
-          const precondition = this.#isPlatformTaskTool(call.name)
+          activeToolName = safeAssistantToolName(call.name, this.#packs);
+          const offeredTool = taskTools().find((tool) => tool.name === call.name);
+          const activePack = candidatePack();
+          const isTaskTool = this.#isPlatformTaskTool(call.name);
+          const turnAuthorized = isTaskTool
+            ? taskSwitchPermitted && this.#packs.size > 1
+            : activePack.id === validatedDomainId && validatedTurnToolNames.has(call.name);
+          const schemaTool = offeredTool ?? (activePack.id === validatedDomainId ? activePack.toolDefinition?.(call.name) : undefined);
+          // ADR 0072/0106: validate provider arguments locally before pack execution or command routing.
+          const malformedArguments = turnAuthorized && schemaTool && !validateAssistantToolArguments(schemaTool.parametersSchema, call.args)
+            ? { code: "invalid_tool_arguments" as const, message: "The tool arguments do not match the declared schema." }
+            : undefined;
+          const precondition = !turnAuthorized || isTaskTool || malformedArguments || !offeredTool
             ? undefined
-            : candidatePack().validateToolCall(call.name, call.args, candidateTaskState);
-          const invalidCall = precondition ?? (offered ? undefined : { code: "invalid_tool_for_state" as const, message: "That operation is not available for the current Guest workflow." });
+            : activePack.validateToolCall(call.name, call.args, candidateTaskState);
+          const stateUnavailable = !isTaskTool && !offeredTool && turnAuthorized
+            ? activePack.validateToolCall(call.name, call.args, candidateTaskState)
+              ?? { code: "invalid_tool_for_state" as const, message: "That operation is not available for the current Guest workflow." }
+            : undefined;
+          const invalidCall = !turnAuthorized || !schemaTool
+            ? { code: "invalid_tool_for_state" as const, message: "That operation is not available for the current Guest workflow." }
+            : malformedArguments ?? precondition ?? stateUnavailable;
           if (invalidCall) {
+            controlOutcome = "tool_denial";
             this.#diagnose({
               stage: "tool_execution",
               round,
-              toolName: call.name,
+              toolName: safeAssistantToolName(call.name, this.#packs),
               succeeded: false,
               failureClass: invalidCall.code === "invalid_tool_for_state" ? "INVALID_TOOL_FOR_STATE" : "MODEL_SELECTION_FAILURE",
             });
             toolResults.push({
               callId: call.id,
-              name: call.name,
+              name: safeAssistantToolName(call.name, this.#packs),
               result: { error: invalidCall.code, message: invalidCall.message },
               isError: true,
             });
             continue;
           }
+          acceptedCalls.push(call);
           if (this.#isPlatformTaskTool(call.name)) {
             const applied = this.#applyTaskTool(
               call.name,
@@ -466,7 +801,12 @@ export class AssistantRuntime {
             candidateActiveSurfaces = applied.workspace.activeSurfaces;
             candidateSuperseded = applied.workspace.supersededSurfaces;
             candidateLastSurfaces = applied.workspace.lastSurfaces;
-            toolResults.push({ callId: call.id, name: call.name, result: applied.result });
+            const safeTaskResult = typeof applied.result.started === "string"
+              ? { started: applied.result.started }
+              : typeof applied.result.switched === "string"
+                ? { switched: true, domain: applied.result.domain }
+                : { error: "TASK_UNAVAILABLE" };
+            toolResults.push({ callId: call.id, name: call.name, result: safeTaskResult });
             continue;
           }
           const toolContext: AssistantToolContext = {
@@ -475,6 +815,8 @@ export class AssistantRuntime {
             threadId,
             taskId: candidateActiveTaskId,
             userTextHistory,
+            // ADR 0106: classifier date slots bind to roles only through server-side checks; ambiguous ones carry no check-in authority.
+            currentTurnDates: currentTurnDateRoles(originalUserText, assessment.slots),
             now: this.#environment.clock(),
             demoCheckIn: this.#environment.config.demoCheckIn,
           };
@@ -483,17 +825,26 @@ export class AssistantRuntime {
           const execution = candidatePack().executeTool(call.name, call.args, toolContext);
           hasSuccessfulApplicationOperation = true;
           const resultCount = getSafeResultCount(execution.result);
+          const effectCode: AssistantToolEffectCode | undefined = call.name === "prepare_request_draft"
+            && execution.result.operation === "request_draft.create"
+            && execution.result.created === true
+            && execution.result.availabilityChecked === true
+            && execution.result.inventoryReserved === false
+            ? "request_draft_created_availability_checked_not_reserved"
+            : undefined;
           this.#diagnose({
             stage: activeStage,
             round,
-            toolName: call.name,
+            toolName: safeAssistantToolName(call.name, this.#packs),
             succeeded: true,
             ...(resultCount !== undefined ? { resultCount } : {}),
+            ...(effectCode ? { effectCode } : {}),
           });
+          roundRawResults.push({ callId: call.id, name: call.name, result: execution.result });
           toolResults.push({
             callId: call.id,
             name: call.name,
-            result: execution.result,
+            result: candidatePack().projectToolResult?.(call.name, execution.result, { maxItems: this.#maxContextItems }) ?? {},
           });
 
           // Application projections are generated server-side from authoritative operation results.
@@ -507,6 +858,7 @@ export class AssistantRuntime {
               throw new Error("Authoritative discovery did not return an artifact");
             }
             candidateDiscoveryArtifactId = execution.discoveryArtifact.id;
+            candidateDiscoveryArtifact = execution.discoveryArtifact;
             const surfaceId = `thread-${threadId}:discovery:${execution.discoveryArtifact.id}`;
             candidateActiveSurfaces.set(DISCOVERY_STAGE, surfaceId);
             activeStage = "a2ui";
@@ -559,9 +911,19 @@ export class AssistantRuntime {
           }
         }
 
+        latestRawResults = roundRawResults;
+        turnRawResults = [...turnRawResults, ...roundRawResults];
+
+        if (acceptedCalls.length === 0 && candidateHistory.at(-1)?.role === "user") candidateHistory.pop();
+        candidateHistory.push({
+          role: "tool_calls",
+          calls: (acceptedCalls.length > 0 ? acceptedCalls : modelResponse.toolCalls).map((call) => ({ id: call.id, name: safeAssistantToolName(call.name, this.#packs), args: acceptedCalls.some((accepted) => accepted.id === call.id) ? call.args : {} })),
+          ...(modelResponse.rawStep !== undefined && this.#modelClient.projectProviderContinuation
+            ? { rawStep: this.#modelClient.projectProviderContinuation(modelResponse, acceptedCalls) } : {}),
+        });
         candidateHistory.push({
           role: "tool_results",
-          results: toolResults,
+          results: acceptedCalls.length > 0 ? toolResults.filter((result) => acceptedCalls.some((call) => call.id === result.callId)) : toolResults,
         });
         activeStage = "function_result_round_trip";
         activeToolName = undefined;
@@ -574,27 +936,38 @@ export class AssistantRuntime {
         const finalModelResponse = await this.#modelClient.generate({
           systemInstruction: composeSystemInstruction(candidatePack()),
           tools: [],
-          history: candidateHistory,
+          history: this.#boundedHistory(candidateHistory, candidatePack(), candidateTaskState),
+          structuredOutput: { name: "assistant_reply_plan", schema: replyPlanSchema(successfulToolNames(turnRawResults)), strict: true },
+          maxOutputTokens: this.#maxReplyOutputTokens,
         });
         this.#diagnose({ stage: "provider_request", round, succeeded: true });
         this.#diagnose({ stage: "function_result_round_trip", round, succeeded: true });
         activeStage = "provider_response";
         this.#diagnose({ stage: activeStage, round, succeeded: true });
-        finalAssistantReply = finalModelResponse.text?.trim() ?? "I processed your request.";
-        candidateHistory.push({ role: "assistant", text: finalAssistantReply });
+        const lastStep = candidateHistory.at(-1);
+        const latestResults = latestRawResults;
+        const parsedFinalPlan = parseReplyPlan(finalModelResponse, turnRawResults);
+        if (typeof parsedFinalPlan === "string") {
+          this.#diagnose({ stage: "provider_response", round, succeeded: false, failureClass: "MODEL_SELECTION_FAILURE", replyPlanRejectionReason: parsedFinalPlan });
+        }
+        const plan = typeof parsedFinalPlan === "string" ? undefined : parsedFinalPlan;
+        finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "")
+          ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
+        candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
       }
 
       // 4. Commit Transaction (Item 24)
       thread.taskState = candidateTaskState;
       thread.tasks = candidateTasks;
       thread.activeTaskId = candidateActiveTaskId;
-      thread.conversationHistory.length = 0;
-      thread.conversationHistory.push(...candidateHistory);
+      this.#commitHistory(thread, candidateHistory, candidatePack(), candidateTaskState);
       thread.activeSurfaces = candidateActiveSurfaces;
       thread.supersededSurfaces = candidateSuperseded;
       thread.lastSurfaces = candidateSurfaces.length > 0 ? candidateSurfaces : candidateLastSurfaces;
       thread.discoveryArtifactId = candidateDiscoveryArtifactId;
+      thread.discoveryArtifact = candidateDiscoveryArtifact;
       this.#syncActiveTask(thread);
+      recordOutcome(controlOutcome);
 
       return {
         ok: true,
@@ -602,25 +975,53 @@ export class AssistantRuntime {
         surfaces: candidateSurfaces,
         tasks: this.getTaskRail(threadId),
         modelHandled: true,
+        discardUserInput,
+        controlOutcome,
       };
     } catch (error) {
+      if (error instanceof ModelRequestGuardError && (error.code === "quota_denied" || error.code === "quota_unavailable")) {
+        controlOutcome = error.code === "quota_denied" ? "quota_refusal" : "guard_failure";
+      } else if (error instanceof ModelRequestGuardError && error.code === "deadline_exceeded") {
+        controlOutcome = "guard_failure";
+      } else {
+        controlOutcome = "model_handling_failure";
+      }
       this.#diagnose(createFailureDiagnostic(activeStage, round, activeToolName, error));
       if (hasSuccessfulApplicationOperation && candidateSurfaces.length > 0) {
+        // The fallback replaces the failure outcome, so this turn is counted once as the fallback.
+        controlOutcome = "rejected_plan_fallback";
+        recordOutcome(controlOutcome);
         const message = fallbackForProjectedOperation(candidateSurfaces[0]?.surfaceId ?? "");
-        candidateHistory.push({ role: "assistant", text: message });
+        candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
         thread.taskState = candidateTaskState;
         thread.tasks = candidateTasks;
         thread.activeTaskId = candidateActiveTaskId;
-        thread.conversationHistory.length = 0;
-        thread.conversationHistory.push(...candidateHistory);
+        this.#commitHistory(thread, candidateHistory, candidatePack(), candidateTaskState);
         thread.activeSurfaces = candidateActiveSurfaces;
         thread.supersededSurfaces = candidateSuperseded;
         thread.lastSurfaces = candidateSurfaces;
         thread.discoveryArtifactId = candidateDiscoveryArtifactId;
+        thread.discoveryArtifact = candidateDiscoveryArtifact;
         this.#syncActiveTask(thread);
-        return { ok: true, messages: [message], surfaces: candidateSurfaces, tasks: this.getTaskRail(threadId), modelHandled: true };
+        return { ok: true, messages: [message], surfaces: candidateSurfaces, tasks: this.getTaskRail(threadId), modelHandled: true, discardUserInput, controlOutcome: "rejected_plan_fallback" };
       }
+      recordOutcome(controlOutcome);
       // Rollback: thread is not mutated on error
+      if (discardUserInput) {
+        return { ok: true, messages: [ASSISTANT_CONTROL_COPY.unavailable], surfaces: [],
+          modelHandled: false, discardUserInput: true, controlOutcome, tasks: this.getTaskRail(threadId) };
+      }
+      if (error instanceof ModelRequestGuardError) {
+        return {
+          ok: true,
+          messages: [ASSISTANT_CONTROL_COPY.unavailable],
+          surfaces: [],
+          modelHandled: false,
+          discardUserInput: true,
+          controlOutcome,
+          tasks: this.getTaskRail(threadId),
+        };
+      }
       return {
         ok: false,
         code: "CONCIERGE_UNAVAILABLE",
@@ -636,6 +1037,30 @@ export class AssistantRuntime {
       this.#onDiagnostic?.(event);
     } catch {
       // Diagnostics are observational and must never affect the authoritative flow.
+    }
+  }
+
+  /** ADR 0106 amendment: closed retry metadata only. A recovered retry adds a succeeded stage diagnostic and no scope failure. */
+  #recordClassifierRetry(event: ScopeClassifierRetryEvent): void {
+    try {
+      this.#environment.telemetry.track({ type: "assistant.classifier.retry.v1", recovered: event.recovered, classifierAttempts: event.classifierAttempts,
+        firstAttemptScopeFailureReason: event.firstAttemptScopeFailureReason, classifierRetryResult: event.classifierRetryResult });
+    } catch {
+      // Telemetry must never affect the authoritative workflow.
+    }
+    if (event.recovered) {
+      this.#diagnose({ stage: "provider_request", round: 0, succeeded: true, classifierAttempts: 2,
+        firstAttemptScopeFailureReason: event.firstAttemptScopeFailureReason, classifierRetryResult: "recovered",
+        ...(event.firstAttemptFinishReason ? { firstAttemptFinishReason: event.firstAttemptFinishReason } : {}) });
+    }
+  }
+
+  #recordControlOutcome(outcome: AssistantControlOutcome, elapsedMs: number): void {
+    try {
+      // ADR 0075: store closed outcome codes only. Never include prompt, reply, identity, or provider error text.
+      this.#environment.telemetry.track({ type: "assistant.control.outcome.v1", outcome, elapsedMs: Math.round(Math.max(0, elapsedMs)) });
+    } catch {
+      // Telemetry must never affect the authoritative workflow.
     }
   }
 
@@ -1144,6 +1569,10 @@ function getSafeResultCount(result: unknown): number | undefined {
   return typeof count === "number" && Number.isSafeInteger(count) && count >= 0 ? count : undefined;
 }
 
+function safeAssistantToolName(name: string, packs?: AssistantPackRegistry): string {
+  return PLATFORM_TASK_TOOL_NAMES.includes(name) || packs?.ids().some((id) => packs.packFor(id)?.toolNames.includes(name)) === true ? name : "unknown_tool";
+}
+
 function createFailureDiagnostic(
   stage: AssistantDiagnosticStage,
   round: number,
@@ -1159,7 +1588,7 @@ function createFailureDiagnostic(
     && statusCandidate <= 599
     ? statusCandidate
     : undefined;
-  const safeCode = typeof codeCandidate === "string" && /^[A-Za-z0-9_.-]{1,64}$/.test(codeCandidate)
+  const safeCode = typeof codeCandidate === "string" && new Set(["RATE_LIMITED"]).has(codeCandidate)
     ? codeCandidate
     : undefined;
   return {
@@ -1167,7 +1596,7 @@ function createFailureDiagnostic(
     round,
     succeeded: false,
     ...(toolName ? { toolName } : {}),
-    errorClass: error instanceof Error ? error.constructor.name : typeof error,
+    errorClass: error instanceof Error && ["Error", "TypeError", "RangeError", "SyntaxError", "APIError", "APIConnectionError", "RateLimitError", "AssistantDateProvenanceError", "ModelRequestGuardError"].includes(error.constructor.name) ? error.constructor.name : "UNKNOWN_ERROR",
     failureClass: classifyFailure(stage, error),
     ...(safeStatus !== undefined ? { providerStatusCode: safeStatus } : {}),
     ...(safeCode !== undefined ? { providerErrorCode: safeCode } : {}),
@@ -1175,6 +1604,8 @@ function createFailureDiagnostic(
 }
 
 function classifyFailure(stage: AssistantDiagnosticStage, error: unknown): AssistantFailureClass {
+  // ADR 0106: a local quota refusal stopped the call before transport; it is neither a model selection nor a provider fault.
+  if (error instanceof ModelRequestGuardError && error.code === "quota_denied") return "QUOTA_REFUSED";
   const errorClass = error instanceof Error ? error.constructor.name : "";
   const providerStatus = typeof error === "object" && error !== null && "status" in error
     && typeof error.status === "number";

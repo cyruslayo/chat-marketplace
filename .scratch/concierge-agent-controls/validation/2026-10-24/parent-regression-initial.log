@@ -1,0 +1,146 @@
+TAP version 13
+# (node:19888) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC1: injected listing and tool-result narrative cannot enter later model instructions, tools, replies, or actions
+ok 1 - AC1: injected listing and tool-result narrative cannot enter later model instructions, tools, replies, or actions
+  ---
+  duration_ms: 1342.4981
+  type: 'test'
+  ...
+# Subtest: AC2: classifier and planner receive current redacted input and minimal canonical task facts only
+ok 2 - AC2: classifier and planner receive current redacted input and minimal canonical task facts only
+  ---
+  duration_ms: 1193.9954
+  type: 'test'
+  ...
+# Subtest: AC3: rejected turns and server replies cannot poison later history after task and persistence boundaries
+ok 3 - AC3: rejected turns and server replies cannot poison later history after task and persistence boundaries
+  ---
+  duration_ms: 2494.7934
+  type: 'test'
+  ...
+# Subtest: AC4: minimized pack projections retain numeric and canonical facts for discovery, comparison, price, status, and draft
+ok 4 - AC4: minimized pack projections retain numeric and canonical facts for discovery, comparison, price, status, and draft
+  ---
+  duration_ms: 1914.6359
+  type: 'test'
+  ...
+# Subtest: AC5: diagnostics keep only allowlisted tool and provider metadata
+ok 5 - AC5: diagnostics keep only allowlisted tool and provider metadata
+  ---
+  duration_ms: 1497.893
+  type: 'test'
+  ...
+# Subtest: AC4 engineering history bounds reject oversized canonical facts without dropping current input or hanging
+ok 6 - AC4 engineering history bounds reject oversized canonical facts without dropping current input or hanging
+  ---
+  duration_ms: 1050.3006
+  type: 'test'
+  ...
+# Subtest: AC4 bounded projections preserve a large successful search and its surface under a small context limit
+ok 7 - AC4 bounded projections preserve a large successful search and its surface under a small context limit
+  ---
+  duration_ms: 1186.6887
+  type: 'test'
+  ...
+# (node:159024) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Assistant Shortlet search, detail, and draft continuity survive authenticated HTTP refreshes and application restarts
+ok 8 - Assistant Shortlet search, detail, and draft continuity survive authenticated HTTP refreshes and application restarts
+  ---
+  duration_ms: 7598.7829
+  type: 'test'
+  ...
+# (node:135336) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Current offer replies show authoritative amounts and stop treating expired offers as payable
+ok 9 - Current offer replies show authoritative amounts and stop treating expired offers as payable
+  ---
+  duration_ms: 1417.1917
+  type: 'test'
+  ...
+# Subtest: Only a successfully created Request Draft gets a review-ready reply
+ok 10 - Only a successfully created Request Draft gets a review-ready reply
+  ---
+  duration_ms: 1080.7177
+  type: 'test'
+  ...
+# Subtest: Zero-deposit price replies never claim that a deposit is collected
+ok 11 - Zero-deposit price replies never claim that a deposit is collected
+  ---
+  duration_ms: 1381.3544
+  type: 'test'
+  ...
+# Subtest: Planning output has a separate configurable bound from the final reply
+ok 12 - Planning output has a separate configurable bound from the final reply
+  ---
+  duration_ms: 1132.4142
+  type: 'test'
+  ...
+# (node:174848) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Scope AC1: unrelated requests never invoke planner tools or retain rejected input
+ok 13 - Scope AC1: unrelated requests never invoke planner tools or retain rejected input
+  ---
+  duration_ms: 919.3972
+  type: 'test'
+  ...
+# Subtest: Scope AC3: mixed requests send only validated scope slots to the planner
+ok 14 - Scope AC3: mixed requests send only validated scope slots to the planner
+  ---
+  duration_ms: 1398.4118
+  type: 'test'
+  ...
+# Subtest: Scope AC4: unavailable and malformed classifier decisions use fixed replies without a planner call
+ok 15 - Scope AC4: unavailable and malformed classifier decisions use fixed replies without a planner call
+  ---
+  duration_ms: 1324.5207
+  type: 'test'
+  ...
+# Subtest: Scope AC2: valid stays, greetings, Pidgin, corrections and contextual follow-ups reach planning
+ok 16 - Scope AC2: valid stays, greetings, Pidgin, corrections and contextual follow-ups reach planning
+  ---
+  duration_ms: 1462.4237
+  type: 'test'
+  ...
+# Subtest: Scope AC5: pending confirmations and cancellations bypass an unavailable classifier
+ok 17 - Scope AC5: pending confirmations and cancellations bypass an unavailable classifier
+  ---
+  duration_ms: 1865.01
+  type: 'test'
+  ...
+# Subtest: Scope AC6: rejected input stays absent from persisted history and later classifier context
+ok 18 - Scope AC6: rejected input stays absent from persisted history and later classifier context
+  ---
+  duration_ms: 1835.9784
+  type: 'test'
+  ...
+# Subtest: Scope AC7: the default classifier is tool-free and excludes prior history and listing prose
+ok 19 - Scope AC7: the default classifier is tool-free and excludes prior history and listing prose
+  ---
+  duration_ms: 1128.7958
+  type: 'test'
+  ...
+# (node:21496) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Context AC3 integration: rejected model call and raw step stay absent after remote persistence and cold start
+ok 20 - Context AC3 integration: rejected model call and raw step stay absent after remote persistence and cold start
+  ---
+  duration_ms: 1810.0065
+  type: 'test'
+  ...
+# Subtest: Scope AC6 integration: rejected input stays absent through remote-port persistence and a fresh application
+ok 21 - Scope AC6 integration: rejected input stays absent through remote-port persistence and a fresh application
+  ---
+  duration_ms: 2247.7311
+  type: 'test'
+  ...
+1..21
+# tests 21
+# suites 0
+# pass 21
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 21839.3499

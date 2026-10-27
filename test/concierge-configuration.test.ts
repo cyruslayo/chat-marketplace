@@ -25,7 +25,8 @@ const request: AssistantModelRequest = { systemInstruction: "You are the assista
 function recordingClient(respond: () => Promise<{ readonly text: string }>): AssistantModelClient & { calls: number } {
   const client = {
     calls: 0,
-    async generate() { client.calls++; return respond(); },
+    supportsProviderAttemptReservation: true as const,
+    async generate(request: AssistantModelRequest) { client.calls++; await request.beforeProviderAttempt?.(); return respond(); },
   };
   return client;
 }

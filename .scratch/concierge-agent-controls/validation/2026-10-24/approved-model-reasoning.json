@@ -1,0 +1,31 @@
+{
+  "checkedAt": "2026-10-24T20:36:22.6142514+00:00",
+  "source": "https://openrouter.ai/api/v1/models",
+  "id": "openai/gpt-6-luna",
+  "reasoning": {
+    "mandatory": false,
+    "default_enabled": true,
+    "supported_efforts": [
+      "max",
+      "xhigh",
+      "high",
+      "medium",
+      "low",
+      "none"
+    ],
+    "default_effort": "medium"
+  },
+  "supported_parameters": [
+    "include_reasoning",
+    "max_completion_tokens",
+    "max_tokens",
+    "reasoning",
+    "reasoning_effort",
+    "response_format",
+    "seed",
+    "structured_outputs",
+    "tool_choice",
+    "tools",
+    "verbosity"
+  ]
+}

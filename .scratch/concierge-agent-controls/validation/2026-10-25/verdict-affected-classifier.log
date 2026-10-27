@@ -1,0 +1,632 @@
+TAP version 13
+# (node:99636) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Each turn records exactly one control outcome, equal to the outcome it returns
+ok 1 - Each turn records exactly one control outcome, equal to the outcome it returns
+  ---
+  duration_ms: 1161.0058
+  type: 'test'
+  ...
+# (node:31276) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: GeminiInteractionsClient maps request to Interactions API shape without live network
+ok 2 - GeminiInteractionsClient maps request to Interactions API shape without live network
+  ---
+  duration_ms: 18.6418
+  type: 'test'
+  ...
+# Subtest: GeminiInteractionsClient retries one API connection failure and then succeeds
+ok 3 - GeminiInteractionsClient retries one API connection failure and then succeeds
+  ---
+  duration_ms: 154.7381
+  type: 'test'
+  ...
+# Subtest: GeminiInteractionsClient does not retry non-connection provider errors
+ok 4 - GeminiInteractionsClient does not retry non-connection provider errors
+  ---
+  duration_ms: 12.2512
+  type: 'test'
+  ...
+# Subtest: GeminiInteractionsClient stops after one retry when the connection remains unavailable
+ok 5 - GeminiInteractionsClient stops after one retry when the connection remains unavailable
+  ---
+  duration_ms: 147.2042
+  type: 'test'
+  ...
+# Subtest: GeminiInteractionsClient maps tool results and model outputs accurately
+ok 6 - GeminiInteractionsClient maps tool results and model outputs accurately
+  ---
+  duration_ms: 7.8204
+  type: 'test'
+  ...
+# Subtest: GeminiInteractionsClient always disables provider storage
+ok 7 - GeminiInteractionsClient always disables provider storage
+  ---
+  duration_ms: 2.7679
+  type: 'test'
+  ...
+# Subtest: GeminiInteractionsClient rejects a provider function call without an id
+ok 8 - GeminiInteractionsClient rejects a provider function call without an id
+  ---
+  duration_ms: 4.031
+  type: 'test'
+  ...
+# Subtest: GeminiInteractionsClient preserves provider function-call steps across stateless tool turns
+ok 9 - GeminiInteractionsClient preserves provider function-call steps across stateless tool turns
+  ---
+  duration_ms: 40.404
+  type: 'test'
+  ...
+# Subtest: GeminiInteractionsClient uses output_text as the primary response text
+ok 10 - GeminiInteractionsClient uses output_text as the primary response text
+  ---
+  duration_ms: 5.3385
+  type: 'test'
+  ...
+# Subtest: GeminiInteractionsClient fails closed when apiKey and customAi are missing
+ok 11 - GeminiInteractionsClient fails closed when apiKey and customAi are missing
+  ---
+  duration_ms: 6.1958
+  type: 'test'
+  ...
+# Subtest: GeminiInteractionsClient preserves thought steps with signatures and model_output across stateless turns
+ok 12 - GeminiInteractionsClient preserves thought steps with signatures and model_output across stateless turns
+  ---
+  duration_ms: 22.1509
+  type: 'test'
+  ...
+# Subtest: GeminiInteractionsClient replays signed thought and function-call steps with documented function-result content before the next model output
+ok 13 - GeminiInteractionsClient replays signed thought and function-call steps with documented function-result content before the next model output
+  ---
+  duration_ms: 3.261
+  type: 'test'
+  ...
+# Subtest: AssistantRuntime keeps Gemini tool continuity and replaces legacy final prose with a safe server reply
+ok 14 - AssistantRuntime keeps Gemini tool continuity and replaces legacy final prose with a safe server reply
+  ---
+  duration_ms: 1860.8973
+  type: 'test'
+  ...
+# Subtest: AssistantRuntime keeps Gemini signed continuity paired when one call in a batch is rejected
+ok 15 - AssistantRuntime keeps Gemini signed continuity paired when one call in a batch is rejected
+  ---
+  duration_ms: 1179.8359
+  type: 'test'
+  ...
+# Subtest: FallbackModelClient reprojects sanitized signed continuity after history reconstruction
+ok 16 - FallbackModelClient reprojects sanitized signed continuity after history reconstruction
+  ---
+  duration_ms: 909.2338
+  type: 'test'
+  ...
+# (node:41764) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Current offer replies show authoritative amounts and stop treating expired offers as payable
+ok 17 - Current offer replies show authoritative amounts and stop treating expired offers as payable
+  ---
+  duration_ms: 1559.7154
+  type: 'test'
+  ...
+# Subtest: Only a successfully created Request Draft gets a review-ready reply
+ok 18 - Only a successfully created Request Draft gets a review-ready reply
+  ---
+  duration_ms: 919.9283
+  type: 'test'
+  ...
+# Subtest: Zero-deposit price replies never claim that a deposit is collected
+ok 19 - Zero-deposit price replies never claim that a deposit is collected
+  ---
+  duration_ms: 1280.7992
+  type: 'test'
+  ...
+# Subtest: Planning output has a separate configurable bound from the final reply
+ok 20 - Planning output has a separate configurable bound from the final reply
+  ---
+  duration_ms: 1057.4141
+  type: 'test'
+  ...
+# Subtest: Support intent returns server-owned Active-Stay guidance for access emergencies without tools
+ok 21 - Support intent returns server-owned Active-Stay guidance for access emergencies without tools
+  ---
+  duration_ms: 994.7762
+  type: 'test'
+  ...
+# (node:142292) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Planner instructions name tool results as the only reference vocabulary
+ok 22 - Planner instructions name tool results as the only reference vocabulary
+  ---
+  duration_ms: 7.9226
+  type: 'test'
+  ...
+# Subtest: A reply plan citing a stay reference instead of a tool name is rejected once and still renders
+ok 23 - A reply plan citing a stay reference instead of a tool name is rejected once and still renders
+  ---
+  duration_ms: 397.8132
+  type: 'test'
+  ...
+# Subtest: A reply plan may cite search_stays after a search then details turn
+ok 24 - A reply plan may cite search_stays after a search then details turn
+  ---
+  duration_ms: 87.5377
+  type: 'test'
+  ...
+# Subtest: A reply plan may cite get_unit_details from the latest round after a search then details turn
+ok 25 - A reply plan may cite get_unit_details from the latest round after a search then details turn
+  ---
+  duration_ms: 253.9752
+  type: 'test'
+  ...
+# Subtest: A reply plan may not cite a tool whose call was denied
+ok 26 - A reply plan may not cite a tool whose call was denied
+  ---
+  duration_ms: 40.7543
+  type: 'test'
+  ...
+# Subtest: A reply plan may not cite a tool whose call returned an error result
+ok 27 - A reply plan may not cite a tool whose call returned an error result
+  ---
+  duration_ms: 46.9046
+  type: 'test'
+  ...
+# Subtest: An empty reference list is accepted without a tool result
+ok 28 - An empty reference list is accepted without a tool result
+  ---
+  duration_ms: 32.1569
+  type: 'test'
+  ...
+# Subtest: The reply renders from the latest round even when the plan cites an earlier round
+ok 29 - The reply renders from the latest round even when the plan cites an earlier round
+  ---
+  duration_ms: 454.4201
+  type: 'test'
+  ...
+# Subtest: The per-request plan schema enumerates only the tool names that succeeded earlier in this turn
+ok 30 - The per-request plan schema enumerates only the tool names that succeeded earlier in this turn
+  ---
+  duration_ms: 94.2099
+  type: 'test'
+  ...
+# (node:101432) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Context AC3 integration: rejected model call and raw step stay absent after remote persistence and cold start
+ok 31 - Context AC3 integration: rejected model call and raw step stay absent after remote persistence and cold start
+  ---
+  duration_ms: 1748.533
+  type: 'test'
+  ...
+# Subtest: Scope AC6 integration: rejected input stays absent through remote-port persistence and a fresh application
+ok 32 - Scope AC6 integration: rejected input stays absent through remote-port persistence and a fresh application
+  ---
+  duration_ms: 1959.8597
+  type: 'test'
+  ...
+# (node:31456) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC1: a shopping intent starts a commerce task and only commerce tools are offered
+ok 33 - AC1: a shopping intent starts a commerce task and only commerce tools are offered
+  ---
+  duration_ms: 53.7963
+  type: 'test'
+  ...
+# Subtest: AC6: development commerce search works only after task selection and exposes only commerce tools
+ok 34 - AC6: development commerce search works only after task selection and exposes only commerce tools
+  ---
+  duration_ms: 200.016
+  type: 'test'
+  ...
+# Subtest: AC2: propose_checkout never pays without an explicit confirmation command
+ok 35 - AC2: propose_checkout never pays without an explicit confirmation command
+  ---
+  duration_ms: 31.2935
+  type: 'test'
+  ...
+# Subtest: AC2 scripted assistant: proposal requires a separate explicit command and creates no Merchant Order
+ok 36 - AC2 scripted assistant: proposal requires a separate explicit command and creates no Merchant Order
+  ---
+  duration_ms: 80.1286
+  type: 'test'
+  ...
+# Subtest: AC3: commerce surfaces use only the owner-approved registered commerce catalogues
+ok 37 - AC3: commerce surfaces use only the owner-approved registered commerce catalogues
+  ---
+  duration_ms: 5158.3075
+  type: 'test'
+  ...
+# Subtest: AC3 scripted assistant: discovery, cart and order surfaces all validate and mount in the registered Weaver runtime
+ok 38 - AC3 scripted assistant: discovery, cart and order surfaces all validate and mount in the registered Weaver runtime
+  ---
+  duration_ms: 3022.9118
+  type: 'test'
+  ...
+# Subtest: AC4: checkout has a deterministic text and typed-surface path with no payment execution
+ok 39 - AC4: checkout has a deterministic text and typed-surface path with no payment execution
+  ---
+  duration_ms: 19.1101
+  type: 'test'
+  ...
+# Subtest: AC4 scripted assistant and conventional route use the same authorized, versioned, idempotent platform command
+ok 40 - AC4 scripted assistant and conventional route use the same authorized, versioned, idempotent platform command
+  ---
+  duration_ms: 50.0768
+  type: 'test'
+  ...
+# Subtest: checkout proposal creation and confirmation fail closed for missing, blank, malformed and cross-tenant scope
+ok 41 - checkout proposal creation and confirmation fail closed for missing, blank, malformed and cross-tenant scope
+  ---
+  duration_ms: 59.4944
+  type: 'test'
+  ...
+# Subtest: commerce projections enforce configured Unicode-safe text and result budgets before tool and A2UI output
+ok 42 - commerce projections enforce configured Unicode-safe text and result budgets before tool and A2UI output
+  ---
+  duration_ms: 76.3282
+  type: 'test'
+  ...
+# Subtest: checkout keeps full private product names for freshness while bounding only outbound display data
+ok 43 - checkout keeps full private product names for freshness while bounding only outbound display data
+  ---
+  duration_ms: 80.4404
+  type: 'test'
+  ...
+# Subtest: AC4 scripted post-confirm checkout surface references only emitted components and states that payment is unavailable
+ok 44 - AC4 scripted post-confirm checkout surface references only emitted components and states that payment is unavailable
+  ---
+  duration_ms: 53.2288
+  type: 'test'
+  ...
+# Subtest: chat never offers an offer from a pending Merchant or a suspended Store, and get_offer fails closed for both
+ok 45 - chat never offers an offer from a pending Merchant or a suspended Store, and get_offer fails closed for both
+  ---
+  duration_ms: 56.8363
+  type: 'test'
+  ...
+# Subtest: Distinct guest tasks in separate threads keep development Commerce carts isolated in one shared database
+ok 46 - Distinct guest tasks in separate threads keep development Commerce carts isolated in one shared database
+  ---
+  duration_ms: 1218.0253
+  type: 'test'
+  ...
+# (node:127340) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC2: an intent for another registered domain produces a confirmation, never a silent task switch
+ok 47 - AC2: an intent for another registered domain produces a confirmation, never a silent task switch
+  ---
+  duration_ms: 1099.4432
+  type: 'test'
+  ...
+# Subtest: AC3: switching tasks restores the previous task's state and tool set
+ok 48 - AC3: switching tasks restores the previous task's state and tool set
+  ---
+  duration_ms: 1637.8721
+  type: 'test'
+  ...
+# Subtest: AC4: a tool from a non-active task's domain is rejected
+ok 49 - AC4: a tool from a non-active task's domain is rejected
+  ---
+  duration_ms: 1145.7075
+  type: 'test'
+  ...
+# (node:162588) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Eval 1: Search with full criteria produces discovery surface with all-in pricing
+ok 50 - Eval 1: Search with full criteria produces discovery surface with all-in pricing
+  ---
+  duration_ms: 2019.0745
+  type: 'test'
+  ...
+# Subtest: Eval 2: Clarification when essential search info is missing
+ok 51 - Eval 2: Clarification when essential search info is missing
+  ---
+  duration_ms: 639.7162
+  type: 'test'
+  ...
+# Subtest: No-date local demo instruction makes date optional while relative dates require YYYY-MM-DD
+ok 52 - No-date local demo instruction makes date optional while relative dates require YYYY-MM-DD
+  ---
+  duration_ms: 2.0804
+  type: 'test'
+  ...
+# Subtest: Authoritative Assistant discovery supports exact bedroom refinement and supersedes the prior result surface
+ok 53 - Authoritative Assistant discovery supports exact bedroom refinement and supersedes the prior result surface
+  ---
+  duration_ms: 735.3588
+  type: 'test'
+  ...
+# Subtest: Assistant booking intent creates an authoritative non-submitting Request Draft surface
+ok 54 - Assistant booking intent creates an authoritative non-submitting Request Draft surface
+  ---
+  duration_ms: 1306.0923
+  type: 'test'
+  ...
+# Subtest: Context-invalid get_unit_details returns a recoverable tool error without creating a Unit surface
+ok 55 - Context-invalid get_unit_details returns a recoverable tool error without creating a Unit surface
+  ---
+  duration_ms: 619.7417
+  type: 'test'
+  ...
+# Subtest: get_unit_details rejects a Unit reference outside the current shortlist
+ok 56 - get_unit_details rejects a Unit reference outside the current shortlist
+  ---
+  duration_ms: 652.2338
+  type: 'test'
+  ...
+# Subtest: A zero-result refinement retains its authoritative DiscoveryArtifact and active surface
+ok 57 - A zero-result refinement retains its authoritative DiscoveryArtifact and active surface
+  ---
+  duration_ms: 1525.2761
+  type: 'test'
+  ...
+# Subtest: A successful application projection remains returned if Gemini continuation fails
+ok 58 - A successful application projection remains returned if Gemini continuation fails
+  ---
+  duration_ms: 613.9059
+  type: 'test'
+  ...
+# Subtest: A provider failure on a later turn preserves prior conversation, shortlist, and active surface
+ok 59 - A provider failure on a later turn preserves prior conversation, shortlist, and active surface
+  ---
+  duration_ms: 635.2526
+  type: 'test'
+  ...
+# Subtest: prepare_request_draft without a selected current Unit is rejected without creating a draft
+ok 60 - prepare_request_draft without a selected current Unit is rejected without creating a draft
+  ---
+  duration_ms: 876.127
+  type: 'test'
+  ...
+# Subtest: Authoritative search normalizes Lagos and Abuja case-insensitively without accepting other cities
+ok 61 - Authoritative search normalizes Lagos and Abuja case-insensitively without accepting other cities
+  ---
+  duration_ms: 6675.6507
+  type: 'test'
+  ...
+# Subtest: Eval 3: Answering clarification completes the search
+ok 62 - Eval 3: Answering clarification completes the search
+  ---
+  duration_ms: 761.755
+  type: 'test'
+  ...
+# Subtest: Eval 4: Follow-up resolution for stay details
+ok 63 - Eval 4: Follow-up resolution for stay details
+  ---
+  duration_ms: 855.4097
+  type: 'test'
+  ...
+# Subtest: Eval 5: Search refinement updates destination and results
+ok 64 - Eval 5: Search refinement updates destination and results
+  ---
+  duration_ms: 1864.5207
+  type: 'test'
+  ...
+# Subtest: Unit detail surface projects inspection facts from the authoritative Unit
+ok 65 - Unit detail surface projects inspection facts from the authoritative Unit
+  ---
+  duration_ms: 996.3921
+  type: 'test'
+  ...
+# Subtest: Eval 6: Compare stays side-by-side using authoritative facts
+ok 66 - Eval 6: Compare stays side-by-side using authoritative facts
+  ---
+  duration_ms: 800.5679
+  type: 'test'
+  ...
+# Subtest: Eval 7: Price explanation provides transparent breakdown and deposit policy
+ok 67 - Eval 7: Price explanation provides transparent breakdown and deposit policy
+  ---
+  duration_ms: 777.8714
+  type: 'test'
+  ...
+# Subtest: Eval 8: Request to book proposes action with explicit confirmation requirement
+ok 68 - Eval 8: Request to book proposes action with explicit confirmation requirement
+  ---
+  duration_ms: 1333.7535
+  type: 'test'
+  ...
+# Subtest: Eval 9: Ambiguous confirmation does not execute pending action
+ok 69 - Eval 9: Ambiguous confirmation does not execute pending action
+  ---
+  duration_ms: 793.0709
+  type: 'test'
+  ...
+# Subtest: Eval 10: Explicit natural language 'yes' executes pending action
+ok 70 - Eval 10: Explicit natural language 'yes' executes pending action
+  ---
+  duration_ms: 1005.5724
+  type: 'test'
+  ...
+# Subtest: Eval 11: Weaver Confirm button executes pending action
+ok 71 - Eval 11: Weaver Confirm button executes pending action
+  ---
+  duration_ms: 1168.0983
+  type: 'test'
+  ...
+# Subtest: Eval 12: Replayed or duplicate confirmation fails closed
+ok 72 - Eval 12: Replayed or duplicate confirmation fails closed
+  ---
+  duration_ms: 1125.9781
+  type: 'test'
+  ...
+# Subtest: Weaver confirmation is rejected unless it comes from the active pending-action surface
+ok 73 - Weaver confirmation is rejected unless it comes from the active pending-action surface
+  ---
+  duration_ms: 688.1562
+  type: 'test'
+  ...
+# Subtest: Expired pending actions fail closed before executing
+ok 74 - Expired pending actions fail closed before executing
+  ---
+  duration_ms: 568.8512
+  type: 'test'
+  ...
+# Subtest: Pending actions fail closed when guest actor or tenant scope does not match
+ok 75 - Pending actions fail closed when guest actor or tenant scope does not match
+  ---
+  duration_ms: 1089.8532
+  type: 'test'
+  ...
+# Subtest: Offer acceptance revalidates the confirmed status, version, and amounts
+ok 76 - Offer acceptance revalidates the confirmed status, version, and amounts
+  ---
+  duration_ms: 739.2021
+  type: 'test'
+  ...
+# Subtest: Checkout confirmation derives the live stay total and refundable deposit
+ok 77 - Checkout confirmation derives the live stay total and refundable deposit
+  ---
+  duration_ms: 1059.2775
+  type: 'test'
+  ...
+# Subtest: Eval 13: Conversational offer acceptance flow
+ok 78 - Eval 13: Conversational offer acceptance flow
+  ---
+  duration_ms: 857.1312
+  type: 'test'
+  ...
+# Subtest: Eval 14: Conversational payment proposal and completion
+ok 79 - Eval 14: Conversational payment proposal and completion
+  ---
+  duration_ms: 1131.1264
+  type: 'test'
+  ...
+# Subtest: Eval 15: Answering 'Am I booked?' using platform truth
+ok 80 - Eval 15: Answering 'Am I booked?' using platform truth
+  ---
+  duration_ms: 1119.7316
+  type: 'test'
+  ...
+# Subtest: Eval 16: Prompt injection in search is treated strictly as data
+ok 81 - Eval 16: Prompt injection in search is treated strictly as data
+  ---
+  duration_ms: 510.6403
+  type: 'test'
+  ...
+# Subtest: Eval 17: Model proposing date not authored by user fails closed
+ok 82 - Eval 17: Model proposing date not authored by user fails closed
+  ---
+  duration_ms: 500.2579
+  type: 'test'
+  ...
+# Subtest: Date provenance reuses only the current task date and preserves its server demo flag
+ok 83 - Date provenance reuses only the current task date and preserves its server demo flag
+  ---
+  duration_ms: 2.7833
+  type: 'test'
+  ...
+# Subtest: Date provenance treats checkout-only and unrelated ISO dates separately from check-in
+ok 84 - Date provenance treats checkout-only and unrelated ISO dates separately from check-in
+  ---
+  duration_ms: 0.8847
+  type: 'test'
+  ...
+# Subtest: Date provenance fails closed when restored current criteria has unknown provenance
+ok 85 - Date provenance fails closed when restored current criteria has unknown provenance
+  ---
+  duration_ms: 0.643
+  type: 'test'
+  ...
+# Subtest: Eval 18: Relative date 'next Friday' requests explicit date
+ok 86 - Eval 18: Relative date 'next Friday' requests explicit date
+  ---
+  duration_ms: 521.9041
+  type: 'test'
+  ...
+# Subtest: Eval 19: Error in provider does not mutate thread state
+ok 87 - Eval 19: Error in provider does not mutate thread state
+  ---
+  duration_ms: 699.006
+  type: 'test'
+  ...
+# Subtest: Server-only diagnostics identify provider, tool, and continuation stages without sensitive payloads
+ok 88 - Server-only diagnostics identify provider, tool, and continuation stages without sensitive payloads
+  ---
+  duration_ms: 636.3746
+  type: 'test'
+  ...
+# Subtest: Server-only diagnostics safely expose provider status and code while the guest response stays generic
+ok 89 - Server-only diagnostics safely expose provider status and code while the guest response stays generic
+  ---
+  duration_ms: 507.2988
+  type: 'test'
+  ...
+# Subtest: Server-only diagnostics discard malformed provider metadata that could carry private data
+ok 90 - Server-only diagnostics discard malformed provider metadata that could carry private data
+  ---
+  duration_ms: 499.7797
+  type: 'test'
+  ...
+# Subtest: Eval 20: Explicit cancellation cancels pending action
+ok 91 - Eval 20: Explicit cancellation cancels pending action
+  ---
+  duration_ms: 565.8499
+  type: 'test'
+  ...
+# Subtest: Search artifact, assistant shortlist, and Weaver surface contain the same amenity-filtered Units
+ok 92 - Search artifact, assistant shortlist, and Weaver surface contain the same amenity-filtered Units
+  ---
+  duration_ms: 534.7727
+  type: 'test'
+  ...
+# Subtest: Post-authoritative-commit reconciliation: request_to_book retains request state if operator simulation fails
+ok 93 - Post-authoritative-commit reconciliation: request_to_book retains request state if operator simulation fails
+  ---
+  duration_ms: 695.6445
+  type: 'test'
+  ...
+# Subtest: Post-authoritative-commit reconciliation: accept_offer retains accepted state if payment presentation fails
+ok 94 - Post-authoritative-commit reconciliation: accept_offer retains accepted state if payment presentation fails
+  ---
+  duration_ms: 774.7702
+  type: 'test'
+  ...
+# Subtest: Post-authoritative-commit reconciliation: start_checkout retains reservation and contract if contract presentation fails
+ok 95 - Post-authoritative-commit reconciliation: start_checkout retains reservation and contract if contract presentation fails
+  ---
+  duration_ms: 1071.3473
+  type: 'test'
+  ...
+# Subtest: AC1: arbitrary model prose, prices, confirmations, URLs, and HTML cannot become a guest reply
+ok 96 - AC1: arbitrary model prose, prices, confirmations, URLs, and HTML cannot become a guest reply
+  ---
+  duration_ms: 913.9206
+  type: 'test'
+  ...
+# Subtest: AC2: valid typed reply plans render current facts and reject invalid plans
+ok 97 - AC2: valid typed reply plans render current facts and reject invalid plans
+  ---
+  duration_ms: 4359.2474
+  type: 'test'
+  ...
+# Subtest: AC3: discovery, details, comparison, price, status, drafts, and proposals retain useful server replies
+ok 98 - AC3: discovery, details, comparison, price, status, drafts, and proposals retain useful server replies
+  ---
+  duration_ms: 1121.5499
+  type: 'test'
+  ...
+# Subtest: AC4: invalid legacy replies after operations keep safe surfaces and never claim unperformed success
+ok 99 - AC4: invalid legacy replies after operations keep safe surfaces and never claim unperformed success
+  ---
+  duration_ms: 630.7923
+  type: 'test'
+  ...
+# Subtest: AC5: reply token limits are configurable engineering bounds and reject invalid values
+ok 100 - AC5: reply token limits are configurable engineering bounds and reject invalid values
+  ---
+  duration_ms: 2100.9449
+  type: 'test'
+  ...
+# Subtest: AC6: deterministic pending confirmations and conventional routes remain available
+ok 101 - AC6: deterministic pending confirmations and conventional routes remain available
+  ---
+  duration_ms: 724.932
+  type: 'test'
+  ...
+1..101
+# tests 101
+# suites 0
+# pass 101
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 77855.7863

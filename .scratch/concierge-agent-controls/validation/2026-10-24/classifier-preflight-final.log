@@ -1,0 +1,146 @@
+TAP version 13
+# (node:112348) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Scope AC1: unrelated requests never invoke planner tools or retain rejected input
+ok 1 - Scope AC1: unrelated requests never invoke planner tools or retain rejected input
+  ---
+  duration_ms: 409.664
+  type: 'test'
+  ...
+# Subtest: Scope AC3: mixed requests send only validated scope slots to the planner
+ok 2 - Scope AC3: mixed requests send only validated scope slots to the planner
+  ---
+  duration_ms: 505.1765
+  type: 'test'
+  ...
+# Subtest: Scope AC4: unavailable and malformed classifier decisions use fixed replies without a planner call
+ok 3 - Scope AC4: unavailable and malformed classifier decisions use fixed replies without a planner call
+  ---
+  duration_ms: 483.3976
+  type: 'test'
+  ...
+# Subtest: Scope AC2: valid stays, greetings, Pidgin, corrections and contextual follow-ups reach planning
+ok 4 - Scope AC2: valid stays, greetings, Pidgin, corrections and contextual follow-ups reach planning
+  ---
+  duration_ms: 466.9326
+  type: 'test'
+  ...
+# Subtest: Scope AC5: pending confirmations and cancellations bypass an unavailable classifier
+ok 5 - Scope AC5: pending confirmations and cancellations bypass an unavailable classifier
+  ---
+  duration_ms: 814.1088
+  type: 'test'
+  ...
+# Subtest: Scope AC6: rejected input stays absent from persisted history and later classifier context
+ok 6 - Scope AC6: rejected input stays absent from persisted history and later classifier context
+  ---
+  duration_ms: 442.6053
+  type: 'test'
+  ...
+# Subtest: Scope AC7: the default classifier is tool-free and excludes prior history and listing prose
+ok 7 - Scope AC7: the default classifier is tool-free and excludes prior history and listing prose
+  ---
+  duration_ms: 463.4421
+  type: 'test'
+  ...
+# Subtest: Classifier reasoning can retain provider defaults without extending its five-second deadline
+ok 8 - Classifier reasoning can retain provider defaults without extending its five-second deadline
+  ---
+  duration_ms: 13.4163
+  type: 'test'
+  ...
+# (node:31020) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Controlled live evaluation requires explicit opt-in and a bounded total attempt limit
+ok 9 - Controlled live evaluation requires explicit opt-in and a bounded total attempt limit
+  ---
+  duration_ms: 3.7511
+  type: 'test'
+  ...
+# Subtest: Blocked scenario grading rejects arbitrary generation, planner calls, and new surfaces despite unchanged database effects
+ok 10 - Blocked scenario grading rejects arbitrary generation, planner calls, and new surfaces despite unchanged database effects
+  ---
+  duration_ms: 0.5839
+  type: 'test'
+  ...
+# Subtest: Pending evaluator calls keep usage and cost unavailable in immutable report snapshots
+ok 11 - Pending evaluator calls keep usage and cost unavailable in immutable report snapshots
+  ---
+  duration_ms: 0.3514
+  type: 'test'
+  ...
+# Subtest: Controlled details grading pins the first public action before generation and rejects a different authorized Unit
+ok 12 - Controlled details grading pins the first public action before generation and rejects a different authorized Unit
+  ---
+  duration_ms: 0.4563
+  type: 'test'
+  ...
+# Subtest: The controlled evaluator runs a synthetic HTTP case with network-blocked provider fixtures and excludes content from reports
+ok 13 - The controlled evaluator runs a synthetic HTTP case with network-blocked provider fixtures and excludes content from reports
+  ---
+  duration_ms: 2505.5278
+  type: 'test'
+  ...
+# Subtest: The request maps the system instruction, user and assistant turns, tool calls and tool results onto Chat Completions messages, and tool definitions onto tools[].function
+ok 14 - The request maps the system instruction, user and assistant turns, tool calls and tool results onto Chat Completions messages, and tool definitions onto tools[].function
+  ---
+  duration_ms: 40.0312
+  type: 'test'
+  ...
+# Subtest: AC5: provider-neutral structured-output and token limits map to OpenAI-compatible parameters
+ok 15 - AC5: provider-neutral structured-output and token limits map to OpenAI-compatible parameters
+  ---
+  duration_ms: 1.7144
+  type: 'test'
+  ...
+# Subtest: A closed classifier can disable reasoning without changing the planner or selected model
+ok 16 - A closed classifier can disable reasoning without changing the planner or selected model
+  ---
+  duration_ms: 1.9329
+  type: 'test'
+  ...
+# Subtest: AC3: each OpenAI-compatible transport attempt reserves before fetch, and refusal or an expired deadline starts no request
+ok 17 - AC3: each OpenAI-compatible transport attempt reserves before fetch, and refusal or an expired deadline starts no request
+  ---
+  duration_ms: 127.7937
+  type: 'test'
+  ...
+# Subtest: Tool calls in the response become AssistantToolCalls; a tool call with a missing id or name, or arguments that are not a JSON object, fails closed
+ok 18 - Tool calls in the response become AssistantToolCalls; a tool call with a missing id or name, or arguments that are not a JSON object, fails closed
+  ---
+  duration_ms: 9.252
+  type: 'test'
+  ...
+# Subtest: A connection failure is retried exactly once; an HTTP error response is never retried
+ok 19 - A connection failure is retried exactly once; an HTTP error response is never retried
+  ---
+  duration_ms: 218.1698
+  type: 'test'
+  ...
+# Subtest: HTTP 429 surfaces as RateLimitError and other HTTP errors as APIError, carrying only a sanitised status and code
+ok 20 - HTTP 429 surfaces as RateLimitError and other HTTP errors as APIError, carrying only a sanitised status and code
+  ---
+  duration_ms: 3.312
+  type: 'test'
+  ...
+# Subtest: Requests time out after the configured timeout (default matches DEFAULT_GEMINI_TIMEOUT_MS)
+ok 21 - Requests time out after the configured timeout (default matches DEFAULT_GEMINI_TIMEOUT_MS)
+  ---
+  duration_ms: 58.465
+  type: 'test'
+  ...
+# Subtest: The adapter refuses to construct without an API key, a model, or an HTTPS base URL
+ok 22 - The adapter refuses to construct without an API key, a model, or an HTTPS base URL
+  ---
+  duration_ms: 1.8578
+  type: 'test'
+  ...
+1..22
+# tests 22
+# suites 0
+# pass 22
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5165.0162

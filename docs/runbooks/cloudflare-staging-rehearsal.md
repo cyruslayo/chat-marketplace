@@ -14,7 +14,7 @@ npm run worker:deploy:dry-run:staging
 ```
 
 The real upload is `cf deploy --prebuilt --mode staging` run from `apps/cloudflare` after the same install step. Run it only in
-section 1, step 3, as the operator.
+section 1, step 4, as the operator.
 
 ## 0. Preconditions and open gates
 
@@ -54,11 +54,11 @@ evidence log or chat):
 
 - Non-secret vars declared in `cloudflare.config.ts` for `staging`: `SHORTLET_PUBLIC_ORIGIN`, `SHORTLET_TENANT_ID`,
   `SHORTLET_DEPLOYMENT=staging` (set by the config), `SHORTLET_BETA_INVITE_CODE` (operator-supplied for staging),
-  `PAYSTACK_ENVIRONMENT=test` (set by the config), `CONCIERGE_MODE`, and optional `CF_ACCESS_TEAM_DOMAIN`,
+  `PAYSTACK_ENVIRONMENT=test` (set by the config), `CONCIERGE_MODE`, `COMMERCE_ENABLED` (read from the operator's shell at build time; off unless exactly `true`, ADR 0104 decision 5), and optional `CF_ACCESS_TEAM_DOMAIN`,
   `CF_ACCESS_AUD`, `SHORTLET_EXPORT_RETENTION_DAYS`, `SHORTLET_RECEIPT_ORPHAN_GRACE_HOURS`,
   `SHORTLET_NOTIFICATION_FROM`, `SHORTLET_OPERATOR_ALERT_EMAILS`, `SHORTLET_NOTIFICATION_SWEEP_SECONDS`.
 - Secrets declared with `bindings.secret()`: `PAYSTACK_SECRET_KEY` (a **test** key), `GEMINI_API_KEY`,
-  `RESEND_API_KEY`, `OPS_SHARED_SECRET`, `COMMERCE_REFERENCE_HMAC_KEY` (commerce payment reference key, ADR 0075; the id is the plain var `COMMERCE_REFERENCE_HMAC_KEY_ID`).
+  `RESEND_API_KEY`, `OPS_SHARED_SECRET`, and, only when commerce is on, `COMMERCE_REFERENCE_HMAC_KEY` (commerce payment reference key, ADR 0075; the id is the plain var `COMMERCE_REFERENCE_HMAC_KEY_ID`). Commerce is off by default, so the default staging build declares no commerce secret.
 
 ## 1. Build and deploy staging (issue step 1)
 
@@ -71,13 +71,19 @@ evidence log or chat):
    npm run worker:deploy:dry-run:staging
    ```
 
-3. Provision the secrets (see the procedure below), then deploy the prebuilt artifact from `apps/cloudflare`:
+3. Commerce switch (off/on step; ADR 0104 decision 5). Leave `COMMERCE_ENABLED` unset or `false` for this rehearsal. The
+   build then declares no commerce key secret, and the secret list below has no commerce entry. Only the owner can turn
+   commerce on for a public deployment (ADR 0104 decision 3). If the owner has done so, set `COMMERCE_ENABLED=true` in the
+   operator's shell, run `npm run worker:build:staging` again (the switch is read at build time, so the earlier build no
+   longer matches), and provision `COMMERCE_REFERENCE_HMAC_KEY` and `COMMERCE_REFERENCE_HMAC_KEY_ID` before the deploy, as
+   the build now declares them.
+4. Provision the secrets (see the procedure below), then deploy the prebuilt artifact from `apps/cloudflare`:
 
    ```bash
    (cd apps/cloudflare && npm exec cf -- deploy --prebuilt --mode staging)
    ```
 
-4. Do not expect `GET <staging origin>/healthz` to return `{"ok":true}` yet. Until the tenant is provisioned, health and
+5. Do not expect `GET <staging origin>/healthz` to return `{"ok":true}` yet. Until the tenant is provisioned, health and
    the guest and owner routes answer 503 by design (issue 10a). Check `/healthz` at the end of step 2.
 
 **Secret provisioning procedure (per issue 01c).** The pinned beta exposes `workers secrets update` and
@@ -89,9 +95,9 @@ npm exec cf -- workers secrets bulk --help
 npm exec cf -- deploy --help
 ```
 
-- Set each secret by **name** only: `PAYSTACK_SECRET_KEY`, `GEMINI_API_KEY`, `RESEND_API_KEY`, `OPS_SHARED_SECRET`, `COMMERCE_REFERENCE_HMAC_KEY`.
+- Set each secret by **name** only: `PAYSTACK_SECRET_KEY`, `GEMINI_API_KEY`, `RESEND_API_KEY`, `OPS_SHARED_SECRET`, and, only when commerce is on (step 3), `COMMERCE_REFERENCE_HMAC_KEY`.
 - Prefer the form that takes values interactively or from standard input, so no value enters shell history.
-- If a secrets file is used, create it outside the repository, use only the five names above, and delete it
+- If a secrets file is used, create it outside the repository, use only the names above (the commerce key only when commerce is on), and delete it
   immediately after the deploy. Never commit it, never paste it into chat and never write a value into a log.
 - Use Paystack **test** keys only. A key marked live or production must not reach staging.
 - Record in the evidence log only the names set and the date. Do not record values, prefixes or hashes.
@@ -194,7 +200,7 @@ If today's objects are absent, record `BLOCKED` with the time checked. Do not fo
 
 **PITR drill (staging only, gap 6).** Follow `docs/runbooks/cloudflare-restore.md` exactly:
 
-1. Dry run to obtain the bookmark (no `confirm`), using the `/_ops/restore` route with the operator's ops credentials.
+1. Dry run to obtain the bookmark (no `confirm`), using the `/_ops/restore` route with the operator's ops credentials. Commerce is off in this rehearsal, so a restore that carries commerce rows is refused by the commerce object (`COMMERCE_DISABLED`; `commerce-migration-failure.md`, section 0). If the dry run shows commerce rows, stop here and record it. Do not change the switch to get past the refusal without the owner's decision.
 2. Choose a restore point (for example, just before the test payment in step 5). Record the bookmark.
 3. Confirm the restore with the bookmark, then force a restart by redeploying the prebuilt artifact, because the
    restore applies on the next session.
@@ -258,7 +264,7 @@ Record references only.
 | Step | Date (Lagos) | Result (PASS / FAIL / BLOCKED) | Operator | Commit SHA | References (payment refs, export object keys, PITR bookmark, restart stage) | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | 0. Gates and gaps reviewed | | | | | Counsel / contracts / retention / DPIA status: | |
-| 1. Build and deploy (names of secrets set: ) | | | | | Build log reference: | |
+| 1. Build and deploy (names of secrets set: ; `COMMERCE_ENABLED` value as built: ) | | | | | Build log reference: | |
 | 2. Ops provisioning (inventory import, operators bootstrapped, operator id) | | | | | Import summary reference: | |
 | 3. Journeys (smoke N/A; Rodney report; real-Chrome run) | | | | | Report paths (local): | |
 | 4a. Restart at discovery | | | | | Stage / request id: | |

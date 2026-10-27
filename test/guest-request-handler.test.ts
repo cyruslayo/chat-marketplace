@@ -15,6 +15,7 @@ import {
 } from "../apps/local-guest/src/guest-server.js";
 import type { AssistantDomainPack } from "../apps/local-guest/src/assistant/assistant-platform.js";
 import { createCommercePack } from "../domains/commerce/src/index.js";
+import { LOCAL_COMMERCE_MODULE } from "../apps/local-guest/src/commerce-module-local.js";
 import type {
   HttpRequestLike,
   HttpResponseLike,
@@ -409,12 +410,13 @@ test("ADR 0101: a handler composed with commerce disabled leaves the Shortlet da
   }
 });
 
-test("ADR 0101: a handler composed with the default commerce option creates the commerce tables and ledger rows", async () => {
-  // Control for the test above: the same probe must find commerce artifacts when commerce is composed locally.
+test("ADR 0101: a handler composed with commerce locally creates the commerce tables and ledger rows", async () => {
+  // Control for the test above: the same probe must find commerce artifacts when commerce is composed locally. The
+  // local composition is opted into explicitly, because the default is off without COMMERCE_ENABLED=true (ADR 0104).
   const directory = await mkdtemp(join(tmpdir(), "guest-handler-local-commerce-"));
   const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite") });
   try {
-    const handler = createGuestRequestHandler({ environment, fixtureRoutes: false, sessionScopedGuestPrincipals: true });
+    const handler = createGuestRequestHandler({ environment, fixtureRoutes: false, sessionScopedGuestPrincipals: true, commerce: GUEST_COMMERCE_COMPOSITION.local, commerceModule: LOCAL_COMMERCE_MODULE });
     try {
       const transport = fakeTransport(handler);
       const response = await transport.request("GET", "/");
@@ -427,6 +429,21 @@ test("ADR 0101: a handler composed with the default commerce option creates the 
     } finally {
       await handler.close();
     }
+  } finally {
+    environment.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("ADR 0104 decision 6: a local composition with no injected commerce module fails closed at construction and creates no commerce artifacts", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "guest-handler-no-module-"));
+  const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite") });
+  try {
+    assert.throws(
+      () => createGuestRequestHandler({ environment, commerce: GUEST_COMMERCE_COMPOSITION.local, fixtureRoutes: false }),
+      (error: unknown) => error instanceof Error && error.message.includes("COMMERCE_ENABLED") && !error.message.includes("TEST-ONLY"),
+    );
+    assert.deepEqual(commerceArtifactsIn(environment.database), { tables: [], ledgerNames: [] });
   } finally {
     environment.close();
     await rm(directory, { recursive: true, force: true });

@@ -3,6 +3,26 @@
 Issue 24 (review 5 and review 3). The COMMERCE Durable Object (`CommerceMarket`) applies its migration ledger on start. The
 ledger is the only source of the `merchant_orders` shape. If it cannot reach the expected shape, the object fails closed.
 
+## 0. Commerce is off by default (ADR 0104 decision 5)
+
+Commerce is switched by `COMMERCE_ENABLED` in every environment. Unset, empty or `false` means off. Exactly `true` means on. Any other value stops startup or the build with an error that names the variable. Turning commerce on in any public deployment is an owner-only decision (ADR 0104 decision 3). Sections 1 and 4 describe the failure modes of an object that is on, unless the text says otherwise.
+
+While commerce is off, the `CommerceMarket` object:
+
+- builds no commerce pack and does not read the payment reference key pair;
+- refuses every checkout and every non-empty import with `503 COMMERCE_DISABLED`. An import with zero rows for a commerce table succeeds as an empty no-op;
+- answers a `rows` count, which the cutover reads (below).
+
+Cutover while commerce is off (`POST /_ops/cutover/complete`) checks the commerce row count before any platform or Shortlet write:
+
+| Commerce row count | Result | Written |
+| --- | --- | --- |
+| Zero | Proceeds without a commerce cutover object | Shortlet and platform cutover as usual |
+| More than zero | `409 COMMERCE_ROWS_PRESENT_WHILE_DISABLED` | Nothing |
+| The count fails or returns no usable number | `503 COMMERCE_CUTOVER_UNAVAILABLE` | Nothing |
+
+A restore that carries commerce rows into an off target is refused (`COMMERCE_DISABLED`). To restore those rows, set `COMMERCE_ENABLED=true` and rebuild the Worker first (the switch is read at build time, see `cloudflare-staging-rehearsal.md`, section 1). That change is subject to the owner decision above.
+
 ## 1. What the object does when it fails
 
 Every request to a `CommerceMarket` whose start-up failed is refused with `503` and one of these fixed codes. Nothing else
@@ -29,14 +49,14 @@ Shortlet keeps working. `GET /_ops/status` and `GET /_ops/import/verify` report 
 
 ## 3. Local Node databases (no Node migration path)
 
-The local Node runtime (`apps/local-guest`) does not run commerce migrations. Since issue 24 review 3, `CommerceOrders`
-creates no table, so a Node SQLite file gets `merchant_orders` only from the ledger. The consequences:
+By default, the local guest (`apps/local-guest`) composes commerce only when `COMMERCE_ENABLED=true`. When it is on, the guest server
+applies the commerce ledger at start-up (`apps/local-guest/src/guest-server.ts`), so a Node SQLite file gets `merchant_orders`
+from the ledger. When it is off, the local guest mounts no commerce routes and creates no commerce table. Since issue 24
+review 3, `CommerceOrders` creates no table itself. The consequences:
 
 - A local file created before the hashed-reference change has the raw `payment_reference` column. Delete it and let the
   local environment create a new one. Do not copy rows from it.
-- A fresh local file has no `merchant_orders` table until a Node migration path exists. Commerce order tests migrate their
-  own in-memory databases (`test/helpers/commerce-database.ts`). A local commerce order flow needs that path first. This is
-  an open decision, not a silent fallback.
+- Commerce order tests migrate their own in-memory databases (`test/helpers/commerce-database.ts`).
 
 ## 4. Payment reference key (ADR 0075; user decision 18 Oct 2026)
 
@@ -44,10 +64,12 @@ Each merchant order stores a keyed hash of its payment reference, not the refere
 is `<keyId>:<64 lowercase hex>`, an HMAC-SHA-256 over the trimmed reference. A plain SHA-256 could be brute-forced from an export,
 because Shortlet references are predictable.
 
-- **Secret:** `COMMERCE_REFERENCE_HMAC_KEY` (a Worker secret, set by name only, never committed). It must be at least 32 bytes.
-- **Id:** `COMMERCE_REFERENCE_HMAC_KEY_ID` (a plain var, such as `k1`). It is stored in clear with each hash, so it must not hold a secret.
-- **Node servers (outside tests):** the Node pilot servers (`apps/pilot`, `local-pilot-server.ts` and `pilot-server.ts`) and the local merchant (`apps/local-merchant`) build the commerce pack, so they need both variables set. They refuse to start without them and name the variables, never their values. The test-only key is never a fallback outside the test runner: it needs `NODE_ENV=test` and the explicit opt-in `COMMERCE_REFERENCE_TEST_KEY=allow`.
-- **Missing or short key:** the commerce object refuses every request with `503 COMMERCE_REFERENCE_KEY_INVALID`. Shortlet keeps working.
+The key pair is required only when commerce is on, that is `COMMERCE_ENABLED=true` (ADR 0104 decision 5). While commerce is off, the key is not read and this section does not apply.
+
+- **Secret:** `COMMERCE_REFERENCE_HMAC_KEY` (a Worker secret, set by name only, never committed). It must be at least 32 bytes. The Cloudflare configuration declares it only while commerce is on (`apps/cloudflare/cloudflare.config.ts`), so the default deployment needs no commerce secret. Turning commerce on means declaring and setting it before the deploy.
+- **Id:** `COMMERCE_REFERENCE_HMAC_KEY_ID` (a plain var, such as `k1`). It is stored in clear with each hash, so it must not hold a secret. It is declared only while commerce is on.
+- **Local guest and local merchant:** the local guest (`apps/local-guest`) reads the pair only when commerce is on. Outside tests, it fails to start without the pair and names the variables, never their values. The merchant back office (`apps/local-merchant`) refuses to start while commerce is off (it names `COMMERCE_ENABLED=true`), and needs the pair when it is on. The test-only key is never a fallback outside the test runner: it needs `NODE_ENV=test` and the explicit opt-in `COMMERCE_REFERENCE_TEST_KEY=allow`, and only the local guest accepts it. The Node pilot servers (`apps/pilot`) keep commerce disabled for the stays-only launch (ADR 0104 decision 1), so they do not read the pair.
+- **Missing or short key (commerce on):** the commerce object refuses every request with `503 COMMERCE_REFERENCE_KEY_INVALID`. Shortlet keeps working.
   The logged line is the fixed code only. Neither the key nor the reference is logged.
 - **Restore:** a restored `merchant_orders` row must carry a `<keyId>:<64 lowercase hex>` hash, or the import is refused with
   `INVALID_PAYMENT_REFERENCE_HASH`.

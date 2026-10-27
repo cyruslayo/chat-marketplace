@@ -56,7 +56,19 @@ $env:GEMINI_MODEL = "gemini-3.8-flash"
 npm run pilot:local:agent-smoke
 ```
 
-Free-tier guidance: run one smoke journey, avoid repeated runs, and run the browser session only after the smoke succeeds. Use `--runs 3` only for deliberate variability testing; `PILOT_AGENT_SMOKE_RUNS=3` is also supported. A provider HTTP 429 stops the smoke immediately without another request. The command does not start or reset the pilot, and it does not submit a Booking Request or start payment. Without `GEMINI_API_KEY`, it exits successfully with `Live-agent smoke not run — credentials unavailable` and writes a `NOT_RUN` report. Runtime artifacts are written under `.scratch/pilot-agent-smoke/` and are ignored by Git. Reports include journey and per-turn request counts plus sanitized provider status, never prompts, model prose, authorization headers, or credentials.
+Run one smoke journey before browser work. Keep the legacy cap at ten reserved provider attempts per journey.
+Set `--request-limit 16` for a controlled four-turn evaluation. `PILOT_AGENT_SMOKE_REQUEST_LIMIT=16` sets the same cap.
+Use `PILOT_AGENT_SMOKE_REPORT_DIRECTORY` for a fresh report directory. Retain failed reports before rerunning.
+The closed classifier requests `reasoningEffort: "none"` through the model port. The OpenAI-compatible adapter sends `reasoning_effort: "none"`.
+Its five-second deadline and 512-token bound remain unchanged. Planning retains the provider's existing reasoning settings.
+`AssistantRuntimeOptions.scopeReasoningEffort: "provider_default"` omits the classifier preference. Gemini retains its existing provider settings.
+Reports show reserved capacity and actual transport starts separately. Use `--runs 3` only for deliberate variability tests.
+`PILOT_AGENT_SMOKE_RUNS=3` also sets three journeys. A provider HTTP 429 stops the smoke immediately.
+The command does not start or reset the pilot. It does not submit a Booking Request or start payment.
+Without `GEMINI_API_KEY`, it writes a `NOT_RUN` report and exits successfully.
+Runtime artifacts go under `.scratch/pilot-agent-smoke/`. Git ignores those files.
+Reports include journey and per-turn request counts plus sanitized provider status.
+Reports do not include prompts, model prose, authorization headers, or credentials.
 
 For deliberate variability testing only:
 

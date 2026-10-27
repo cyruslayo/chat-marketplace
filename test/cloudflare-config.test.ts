@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { rm } from "node:fs/promises";
+import { dirname, relative, resolve } from "node:path";
 import { loadPilotConfiguration, type PilotEnvironmentSource } from "../apps/pilot/src/pilot-config.js";
 import { loadCloudflareConfiguration, cloudflareProvisioningState, type CloudflareEnv } from "../apps/cloudflare/src/cloudflare-config.js";
 import { openNodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
@@ -119,4 +120,33 @@ test("First boot is not provisioned until SQLite contains valid inventory and te
 test("Landing 12: cloudflare.config.ts declares PAYSTACK_CALLBACK_BASE_URL as the environment's public origin, because the guest runtime reads it from Workers process.env", () => {
   const source = readFileSync("apps/cloudflare/cloudflare.config.ts", "utf8");
   assert.match(source, /PAYSTACK_CALLBACK_BASE_URL:\s*bindings\.text\(PUBLIC_ORIGIN\[environment\]\)/);
+});
+
+/** Relative module specifiers a source file imports, with whether the import carries the cf-worker entrypoint attribute. */
+function relativeImports(source: string): { specifier: string; workerEntrypoint: boolean }[] {
+  const pattern = /\bimport\s+(?:[^;'"]*?\bfrom\s*)?["'](\.{1,2}\/[^"']*)["']([^;\n]*)/g;
+  return [...source.matchAll(pattern)].map(match => ({ specifier: match[1]!, workerEntrypoint: /type:\s*"cf-worker"/.test(match[2] ?? "") }));
+}
+
+test("The cloudflare config's relative imports resolve to existing files under the config loader's exact-specifier rule, with no .js to .ts mapping", () => {
+  // The config loader is plain Node ESM with a resolve hook: a specifier names exactly one file. Worker entrypoints
+  // (import attribute cf-worker) are built by the Worker build, not loaded by the config loader, so they are not followed.
+  const unresolved: string[] = [];
+  const reached = new Set<string>();
+  const visit = (file: string) => {
+    if (reached.has(file)) return;
+    reached.add(file);
+    for (const { specifier, workerEntrypoint } of relativeImports(readFileSync(file, "utf8"))) {
+      if (workerEntrypoint) continue;
+      const target = resolve(dirname(file), specifier);
+      if (!existsSync(target) || !statSync(target).isFile()) {
+        unresolved.push(`${relative(process.cwd(), file).replace(/\\/g, "/")} imports "${specifier}"`);
+        continue;
+      }
+      visit(target);
+    }
+  };
+  visit(resolve("apps/cloudflare/cloudflare.config.ts"));
+  assert.deepEqual(unresolved, []);
+  assert.ok([...reached].some(file => file.replace(/\\/g, "/").endsWith("/packages/commerce-switch/src/commerce-switch.ts")), "the commerce switch parser is in the config's import graph");
 });

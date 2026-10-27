@@ -28,17 +28,13 @@ import { billingPeriodStatusText, extendedStayUnitFacts } from "../../web-agent/
 import { formatBookingMoney } from "../../web-agent/src/booking-presentation.js";
 import { formatGuestDate } from "../../web-agent/src/guest-content.js";
 import type { BillingPeriodProjection } from "../../../domains/shortlet/src/index.js";
-import { createGuestShell, type StaticAsset } from "./guest-shell.js";
-import { createCommerceRouteModule } from "./commerce-route-module.js";
+import { createGuestShell, type RouteModule, type StaticAsset } from "./guest-shell.js";
+import type { GuestCommerceModule, PaymentReferenceKeys } from "./commerce-port.js";
 import { MAX_TURN_TEXT_LENGTH } from "./turn-limits.js";
 import { createLandingRouteModule } from "./landing-route-module.js";
 import { nodeLandingAssetLoader } from "./node-landing-assets.js";
 import type { LandingBinaryAssetLoader } from "./landing-assets.js";
-import {
-  createCommercePack,
-  type PaymentReferenceKeys,
-} from "../../../domains/commerce/src/index.js";
-import { commerceReferenceKeysFromProcessEnv } from "./commerce-reference-keys-local.js";
+import { commerceEnabledFromEnv } from "../../../packages/commerce-switch/src/commerce-switch.js";
 import { applySchemaMigrations } from "../../../packages/platform-core/src/schema-migrations.js";
 import {
   discoveryArtifactToA2UI,
@@ -255,6 +251,10 @@ import {
   type ModelCallBudget,
 } from "./assistant/model-call-budget.js";
 import type { AssistantModelClient } from "./assistant/assistant-model.js";
+import type { AssistantDiagnosticEvent } from "./assistant/assistant-runtime.js";
+import { SqliteModelRequestQuota, type ModelRequestQuotaPort } from "../../../packages/platform-core/src/model-request-quota.js";
+import { modelRequestQuotaLimitsFromEnvironment } from "../../../packages/platform-core/src/model-request-quota-config.js";
+import { ModelQuotaGuardClient } from "./assistant/model-quota-guard.js";
 import {
   ASSISTANT_CONFIRM_ACTION_EVENT,
   ASSISTANT_CANCEL_ACTION_EVENT,
@@ -2176,16 +2176,39 @@ export const GUEST_COMMERCE_COMPOSITION = {
 } as const;
 export type GuestCommerceComposition =
   (typeof GUEST_COMMERCE_COMPOSITION)[keyof typeof GUEST_COMMERCE_COMPOSITION];
-export const DEFAULT_GUEST_COMMERCE_COMPOSITION: GuestCommerceComposition =
-  GUEST_COMMERCE_COMPOSITION.local;
+/**
+ * The default composition follows the single commerce switch (ADR 0104). Off unless COMMERCE_ENABLED is exactly "true".
+ * An unrecognised switch value throws here, at startup, and names the variable. Hosts that pass no environment (Workers)
+ * read no process environment and so take "disabled".
+ */
+function defaultGuestCommerceComposition(): GuestCommerceComposition {
+  const env: Readonly<Record<string, string | undefined>> =
+    typeof process === "undefined" ? {} : process.env;
+  return commerceEnabledFromEnv(env)
+    ? GUEST_COMMERCE_COMPOSITION.local
+    : GUEST_COMMERCE_COMPOSITION.disabled;
+}
 /** The commerce pack's domain id (domains/commerce/src/index.ts), which the disabled composition refuses. */
 const COMMERCE_DOMAIN_PACK_ID = "commerce";
 
-/** Fails closed: a missing value takes the default; any other value that is not a known composition throws. */
+/**
+ * Fails closed: the local composition needs the commerce module from its composition root (ADR 0104 decision 6). The
+ * message names the variable and never echoes a value.
+ */
+function requireCommerceModule(module: GuestCommerceModule | undefined): GuestCommerceModule {
+  if (module === undefined) {
+    throw new Error(
+      'COMMERCE_ENABLED is on, but no commerce module is injected: commerce composition "local" needs the commerce module from its composition root (ADR 0104 decision 6). The guest server refuses to start without it.',
+    );
+  }
+  return module;
+}
+
+/** Fails closed: a missing value takes the switch-driven default; any other value that is not a known composition throws. */
 function resolveGuestCommerceComposition(
   value: unknown,
 ): GuestCommerceComposition {
-  if (value === undefined) return DEFAULT_GUEST_COMMERCE_COMPOSITION;
+  if (value === undefined) return defaultGuestCommerceComposition();
   if (
     value === GUEST_COMMERCE_COMPOSITION.local ||
     value === GUEST_COMMERCE_COMPOSITION.disabled
@@ -2195,11 +2218,16 @@ function resolveGuestCommerceComposition(
 }
 
 export interface GuestRequestHandlerOptions {
-  /** Payment reference keys for the commerce pack (user decision 18 Oct 2026). Omitted: read from the environment (see commerce-reference-keys-local). */
+  /** Payment reference keys for the commerce pack (user decision 18 Oct 2026). Omitted: the injected module reads them from the environment. */
   paymentReferenceKeys?: PaymentReferenceKeys;
   environment?: LocalGuestEnvironment;
-  /** Commerce composition on this handler's database. Default: "local". The Shortlet Worker passes "disabled" (ADR 0101). */
+  /** Commerce composition on this handler's database. Default: "local" only when COMMERCE_ENABLED is "true", otherwise "disabled" (ADR 0104). The Shortlet Worker passes "disabled" (ADR 0101). */
   commerce?: GuestCommerceComposition;
+  /**
+   * The commerce domain, injected by a composition root that ships commerce (ADR 0104 decision 6). Default: none. With the
+   * composition "local" and no module, the handler refuses to start. With the composition "disabled" the module is unused.
+   */
+  commerceModule?: GuestCommerceModule;
   clientScriptPath?: string;
   /** Slice 09a: the bundles/CSS the handler serves; the Node default is `nodeAssetLoader()` (no import-time reads). */
   assets?: AssetLoader;
@@ -2209,6 +2237,8 @@ export interface GuestRequestHandlerOptions {
   landingBinaryAssets?: LandingBinaryAssetLoader;
   geminiClient?: GeminiConciergeClient;
   modelClient?: AssistantModelClient;
+  /** Metadata-only observation for local evaluation and host telemetry. */
+  onAssistantDiagnostic?: (event: AssistantDiagnosticEvent) => void;
   conciergeMode?:
     | "deterministic"
     | "gemini"
@@ -2236,6 +2266,8 @@ export interface GuestRequestHandlerOptions {
   fixtureRoutes?: boolean;
   /** Issue 19: daily cap on model calls; when it is spent, turns use the deterministic concierge. */
   modelCallBudget?: ModelCallBudget;
+  /** Shared platform-owned per-provider-attempt quota authority. */
+  modelRequestQuota?: ModelRequestQuotaPort;
   /** Slice 26: extra domain packs registered with the assistant runtime (multi-domain shell). */
   additionalPacks?: readonly AssistantDomainPack[];
   /** Issue 19: a session's runtime (environment, SQLite connection, assistant memory) is closed after this idle time. */
@@ -2285,6 +2317,11 @@ export function createGuestRequestHandler(
     );
   }
   const commerceComposition = resolveGuestCommerceComposition(options.commerce);
+  // ADR 0104 decision 6: a composition that is on needs the injected module. Fail closed here, before any state is opened.
+  const commerceModule =
+    commerceComposition === GUEST_COMMERCE_COMPOSITION.local
+      ? requireCommerceModule(options.commerceModule)
+      : undefined;
   // ADR 0101: a handler that composes no commerce must not be given the commerce pack either.
   if (
     commerceComposition === GUEST_COMMERCE_COMPOSITION.disabled &&
@@ -2345,6 +2382,16 @@ export function createGuestRequestHandler(
     (paystackClient === undefined
       ? undefined
       : new PaystackPayments({ card: paystackClient }));
+  const modelRequestQuota = options.modelRequestQuota ?? (mode === "gemini" || mode === "openai-compatible"
+    ? new SqliteModelRequestQuota(env.database, modelRequestQuotaLimitsFromEnvironment(process.env))
+    : undefined);
+  const quotaGuard = (client: AssistantModelClient, runtimeEnvironment: LocalGuestEnvironment): AssistantModelClient => modelRequestQuota
+    ? new ModelQuotaGuardClient(
+      client,
+      modelRequestQuota,
+      { tenantId: runtimeEnvironment.config.tenantId, guestId: runtimeEnvironment.guestPrincipal().id },
+    )
+    : client;
 
   let assistantRuntime: AssistantRuntime | undefined;
   let assistantModelClient: AssistantModelClient | undefined;
@@ -2354,6 +2401,7 @@ export function createGuestRequestHandler(
     assistantModelClient = options.modelClient ?? new ScriptedAssistantModel();
     assistantRuntime = new AssistantRuntime(env, assistantModelClient, {
       additionalPacks: options.additionalPacks,
+      onDiagnostic: options.onAssistantDiagnostic,
     });
   } else if (mode === "gemini" || mode === "openai-compatible") {
     // The production pilot passes a validated client; development commands read the same settings from the environment.
@@ -2364,13 +2412,17 @@ export function createGuestRequestHandler(
       );
     if (!assistantModelClient)
       throw new Error(`CONCIERGE_MODE=${mode} requires a model client`);
+    if (production && (!modelRequestQuota || assistantModelClient.supportsProviderAttemptReservation !== true))
+      throw new Error("Production model use requires persistent quota storage and an attempt-aware adapter");
     if (options.modelCallBudget)
       assistantModelClient = new BudgetedModelClient(
         assistantModelClient,
         options.modelCallBudget,
       );
-    assistantRuntime = new AssistantRuntime(env, assistantModelClient, {
+    const guardedModelClient = quotaGuard(assistantModelClient, env);
+    assistantRuntime = new AssistantRuntime(env, guardedModelClient, {
       additionalPacks: options.additionalPacks,
+      onDiagnostic: options.onAssistantDiagnostic,
     });
   }
   const modelCallBudget = options.modelCallBudget
@@ -2493,8 +2545,8 @@ export function createGuestRequestHandler(
           ? {
               assistantRuntime: new AssistantRuntime(
                 runtimeEnvironment,
-                assistantModelClient,
-                { additionalPacks: options.additionalPacks },
+                quotaGuard(assistantModelClient, runtimeEnvironment),
+                { additionalPacks: options.additionalPacks, onDiagnostic: options.onAssistantDiagnostic },
               ),
             }
           : {}),
@@ -5461,23 +5513,20 @@ export function createGuestRequestHandler(
 
   // Local composition only. Commerce public routes read the tracking-attempts table, which only the commerce migrations
   // create (issue 27). The Shortlet Worker passes commerce: "disabled", so its object never runs the commerce ledger (ADR 0101).
-  const commerceRouteModules: ReturnType<typeof createCommerceRouteModule>[] =
-    [];
-  if (commerceComposition === GUEST_COMMERCE_COMPOSITION.local) {
+  const commerceRouteModules: RouteModule[] = [];
+  if (commerceModule !== undefined) {
     const commerceClock = () => defaultApp.environment.clock();
-    const commercePack = createCommercePack({
+    const commerce = commerceModule.compose({
       database: defaultApp.environment.database,
       clock: commerceClock,
-      paymentReferenceKeys:
-        options.paymentReferenceKeys ??
-        commerceReferenceKeysFromProcessEnv(process.env, process.env.NODE_ENV),
+      paymentReferenceKeys: options.paymentReferenceKeys,
     });
     applySchemaMigrations(
       defaultApp.environment.database,
-      commercePack.migrations,
+      commerce.migrations,
       commerceClock().toISOString(),
     );
-    commerceRouteModules.push(createCommerceRouteModule(commercePack));
+    commerceRouteModules.push(commerce.routeModule);
   }
   const shell = createGuestShell({
     assets,

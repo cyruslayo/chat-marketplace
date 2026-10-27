@@ -1,0 +1,332 @@
+TAP version 13
+# (node:131816) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC6: classifier guard failures and quota refusals emit separate metadata-only outcomes once
+ok 1 - AC6: classifier guard failures and quota refusals emit separate metadata-only outcomes once
+  ---
+  duration_ms: 86.0459
+  type: 'test'
+  ...
+# (node:175948) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: A scope redirect keeps its fixed meaning in the timeline and after refresh
+ok 2 - A scope redirect keeps its fixed meaning in the timeline and after refresh
+  ---
+  duration_ms: 2307.1394
+  type: 'test'
+  ...
+# Subtest: Assistant Shortlet search, detail, and draft continuity survive authenticated HTTP refreshes and application restarts
+ok 3 - Assistant Shortlet search, detail, and draft continuity survive authenticated HTTP refreshes and application restarts
+  ---
+  duration_ms: 2844.1113
+  type: 'test'
+  ...
+# (node:164712) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Current offer replies show authoritative amounts and stop treating expired offers as payable
+ok 4 - Current offer replies show authoritative amounts and stop treating expired offers as payable
+  ---
+  duration_ms: 925.0077
+  type: 'test'
+  ...
+# Subtest: Only a successfully created Request Draft gets a review-ready reply
+ok 5 - Only a successfully created Request Draft gets a review-ready reply
+  ---
+  duration_ms: 888.9565
+  type: 'test'
+  ...
+# Subtest: Zero-deposit price replies never claim that a deposit is collected
+ok 6 - Zero-deposit price replies never claim that a deposit is collected
+  ---
+  duration_ms: 867.7995
+  type: 'test'
+  ...
+# Subtest: Planning output has a separate configurable bound from the final reply
+ok 7 - Planning output has a separate configurable bound from the final reply
+  ---
+  duration_ms: 985.7486
+  type: 'test'
+  ...
+# Subtest: Support intent returns server-owned Active-Stay guidance for access emergencies without tools
+ok 8 - Support intent returns server-owned Active-Stay guidance for access emergencies without tools
+  ---
+  duration_ms: 836.3445
+  type: 'test'
+  ...
+# (node:60316) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Controlled live evaluation requires explicit opt-in and a bounded total attempt limit
+ok 9 - Controlled live evaluation requires explicit opt-in and a bounded total attempt limit
+  ---
+  duration_ms: 4.9529
+  type: 'test'
+  ...
+# Subtest: Blocked scenario grading rejects arbitrary generation, planner calls, and new surfaces despite unchanged database effects
+ok 10 - Blocked scenario grading rejects arbitrary generation, planner calls, and new surfaces despite unchanged database effects
+  ---
+  duration_ms: 0.6238
+  type: 'test'
+  ...
+# Subtest: AC3: a quota reservation that exceeds the request deadline cannot start transport after it resolves
+ok 11 - AC3: a quota reservation that exceeds the request deadline cannot start transport after it resolves
+  ---
+  duration_ms: 39.2313
+  type: 'test'
+  ...
+# Subtest: AC3: the shorter of the request timeout and absolute deadline bounds quota reservation
+ok 12 - AC3: the shorter of the request timeout and absolute deadline bounds quota reservation
+  ---
+  duration_ms: 117.6178
+  type: 'test'
+  ...
+# Subtest: AC3: a configured fallback provider reserves its own actual transport attempt
+ok 13 - AC3: a configured fallback provider reserves its own actual transport attempt
+  ---
+  duration_ms: 8.8188
+  type: 'test'
+  ...
+# Subtest: AC2: quota refusal and authority failure stop transport safely
+ok 14 - AC2: quota refusal and authority failure stop transport safely
+  ---
+  duration_ms: 1.761
+  type: 'test'
+  ...
+# (node:123228) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC4: exhaustion, provider refusal, and guard outage preserve authenticated deterministic pending decisions
+    # Subtest: quota: Yes
+    ok 1 - quota: Yes
+      ---
+      duration_ms: 4298.4368
+      type: 'test'
+      ...
+    # Subtest: quota: Cancel
+    ok 2 - quota: Cancel
+      ---
+      duration_ms: 2127.6444
+      type: 'test'
+      ...
+    # Subtest: storage: Yes
+    ok 3 - storage: Yes
+      ---
+      duration_ms: 1147.5716
+      type: 'test'
+      ...
+    # Subtest: storage: Cancel
+    ok 4 - storage: Cancel
+      ---
+      duration_ms: 912.0496
+      type: 'test'
+      ...
+    # Subtest: provider: Yes
+    ok 5 - provider: Yes
+      ---
+      duration_ms: 1683.029
+      type: 'test'
+      ...
+    # Subtest: provider: Cancel
+    ok 6 - provider: Cancel
+      ---
+      duration_ms: 781.0553
+      type: 'test'
+      ...
+    1..6
+ok 15 - AC4: exhaustion, provider refusal, and guard outage preserve authenticated deterministic pending decisions
+  ---
+  duration_ms: 10955.0115
+  type: 'test'
+  ...
+# Subtest: AC4: exhaustion, provider refusal, and guard outage preserve authorized conventional discovery and draft routes
+    # Subtest: healthy
+    ok 1 - healthy
+      ---
+      duration_ms: 793.0556
+      type: 'test'
+      ...
+    # Subtest: quota
+    ok 2 - quota
+      ---
+      duration_ms: 1975.5016
+      type: 'test'
+      ...
+    # Subtest: storage
+    ok 3 - storage
+      ---
+      duration_ms: 827.4996
+      type: 'test'
+      ...
+    # Subtest: provider
+    ok 4 - provider
+      ---
+      duration_ms: 842.5015
+      type: 'test'
+      ...
+    1..4
+ok 16 - AC4: exhaustion, provider refusal, and guard outage preserve authorized conventional discovery and draft routes
+  ---
+  duration_ms: 4440.245
+  type: 'test'
+  ...
+# (node:134764) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC1: shared quota configuration defaults to existing daily and per-guest limits
+ok 17 - AC1: shared quota configuration defaults to existing daily and per-guest limits
+  ---
+  duration_ms: 3.4896
+  type: 'test'
+  ...
+# Subtest: AC5: default local paid composition honors existing per-guest and tenant limit overrides
+ok 18 - AC5: default local paid composition honors existing per-guest and tenant limit overrides
+  ---
+  duration_ms: 3391.6823
+  type: 'test'
+  ...
+# Subtest: AC1: shared quota configuration uses existing environment overrides and rejects invalid bounds
+ok 19 - AC1: shared quota configuration uses existing environment overrides and rejects invalid bounds
+  ---
+  duration_ms: 2.1328
+  type: 'test'
+  ...
+# Subtest: live smoke defaults to one journey and accepts an explicit three-run request
+ok 20 - live smoke defaults to one journey and accepts an explicit three-run request
+  ---
+  duration_ms: 2.1771
+  type: 'test'
+  ...
+# Subtest: live smoke run count rejects malformed or unbounded options
+ok 21 - live smoke run count rejects malformed or unbounded options
+  ---
+  duration_ms: 1.0089
+  type: 'test'
+  ...
+# Subtest: provider request budget counts only reserved provider attempts and hard-stops at its cap
+ok 22 - provider request budget counts only reserved provider attempts and hard-stops at its cap
+  ---
+  duration_ms: 0.7297
+  type: 'test'
+  ...
+# Subtest: controlled evaluation keeps the legacy ten-attempt default and accepts an explicit sixteen-attempt cap
+ok 23 - controlled evaluation keeps the legacy ten-attempt default and accepts an explicit sixteen-attempt cap
+  ---
+  duration_ms: 0.9909
+  type: 'test'
+  ...
+# Subtest: explicit multi-run mode receives a fixed per-journey budget without unbounded growth
+ok 24 - explicit multi-run mode receives a fixed per-journey budget without unbounded growth
+  ---
+  duration_ms: 0.3586
+  type: 'test'
+  ...
+# Subtest: provider stop reason treats HTTP 429 as terminal and budget exhaustion as its own classification
+ok 25 - provider stop reason treats HTTP 429 as terminal and budget exhaustion as its own classification
+  ---
+  duration_ms: 0.57
+  type: 'test'
+  ...
+# Subtest: AC1: the smoke result JSON includes per-turn latency, model-call count and token usage when the provider returns usage
+ok 26 - AC1: the smoke result JSON includes per-turn latency, model-call count and token usage when the provider returns usage
+  ---
+  duration_ms: 11.6779
+  type: 'test'
+  ...
+# Subtest: AC1 percentiles: p50 and p95 are nearest-rank over the recorded samples and null when empty
+ok 27 - AC1 percentiles: p50 and p95 are nearest-rank over the recorded samples and null when empty
+  ---
+  duration_ms: 0.9736
+  type: 'test'
+  ...
+# Subtest: AC1 failure path: when the provider returns no usage, the report still writes and token and cost fields are unavailable instead of zero
+ok 28 - AC1 failure path: when the provider returns no usage, the report still writes and token and cost fields are unavailable instead of zero
+  ---
+  duration_ms: 174.4227
+  type: 'test'
+  ...
+# Subtest: AC2: the cost estimate comes from the OpenRouter-reported price for the model slug
+ok 29 - AC2: the cost estimate comes from the OpenRouter-reported price for the model slug
+  ---
+  duration_ms: 9.7289
+  type: 'test'
+  ...
+# Subtest: AC2 failure path: an unknown slug, a failed price fetch or a missing price leaves the cost unavailable
+ok 30 - AC2 failure path: an unknown slug, a failed price fetch or a missing price leaves the cost unavailable
+  ---
+  duration_ms: 3.3191
+  type: 'test'
+  ...
+# Subtest: AC3: no prompt, reply or key text is written to the result or report files (ADR 0075)
+ok 31 - AC3: no prompt, reply or key text is written to the result or report files (ADR 0075)
+  ---
+  duration_ms: 136.6569
+  type: 'test'
+  ...
+# Subtest: AC3: observation preserves guarded adapter capability, continuation projection, and per-call usage ownership
+ok 32 - AC3: observation preserves guarded adapter capability, continuation projection, and per-call usage ownership
+  ---
+  duration_ms: 11.2591
+  type: 'test'
+  ...
+# Subtest: AC4 guard: the benchmark document is refused unless the result file holds real live results
+ok 33 - AC4 guard: the benchmark document is refused unless the result file holds real live results
+  ---
+  duration_ms: 4.0905
+  type: 'test'
+  ...
+# (node:91344) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: The four-turn scripted reference uses the full smoke harness without credentials, network calls or live performance claims
+ok 34 - The four-turn scripted reference uses the full smoke harness without credentials, network calls or live performance claims
+  ---
+  duration_ms: 8284.4902
+  type: 'test'
+  ...
+# Subtest: Finding 2: complete consistent live evidence produces GO
+ok 35 - Finding 2: complete consistent live evidence produces GO
+  ---
+  duration_ms: 15.2283
+  type: 'test'
+  ...
+# Subtest: AC6: reserved capacity and actual transport starts are reported and validated separately
+ok 36 - AC6: reserved capacity and actual transport starts are reported and validated separately
+  ---
+  duration_ms: 3.1717
+  type: 'test'
+  ...
+# Subtest: Finding 2: empty, missing, duplicate and unknown journey stages cannot produce GO
+ok 37 - Finding 2: empty, missing, duplicate and unknown journey stages cannot produce GO
+  ---
+  duration_ms: 5.9646
+  type: 'test'
+  ...
+# Subtest: Finding 2: contradictory verdicts and journey or request counts are refused
+ok 38 - Finding 2: contradictory verdicts and journey or request counts are refused
+  ---
+  duration_ms: 12.9042
+  type: 'test'
+  ...
+# Subtest: Finding 2: a complete single journey remains INCOMPLETE for the three-journey benchmark
+ok 39 - Finding 2: a complete single journey remains INCOMPLETE for the three-journey benchmark
+  ---
+  duration_ms: 4.0824
+  type: 'test'
+  ...
+# Subtest: Finding 2: a complete failed run preserves its NO-GO evidence
+ok 40 - Finding 2: a complete failed run preserves its NO-GO evidence
+  ---
+  duration_ms: 5.0377
+  type: 'test'
+  ...
+# Subtest: Finding 2: legacy grading and malformed nested evidence cannot produce a new GO
+ok 41 - Finding 2: legacy grading and malformed nested evidence cannot produce a new GO
+  ---
+  duration_ms: 8.987
+  type: 'test'
+  ...
+1..41
+# tests 51
+# suites 0
+# pass 51
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 19483.6269

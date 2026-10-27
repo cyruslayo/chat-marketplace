@@ -18,7 +18,9 @@ export interface CloudflareEnv extends Omit<PilotEnvironmentSource, "SHORTLET_DB
   readonly SHORTLET_GUEST_CODE_HASHING_KEY?: string;
   /** 11a: the `/_ops` shared secret (secret binding; never committed). */
   readonly OPS_SHARED_SECRET?: string;
-  /** Issue 24, user decision 18 Oct 2026, ADR 0075: the keyed payment reference HMAC key (secret) and its id (var). Never logged. */
+  /** ADR 0104 decision 5: the one commerce switch; unset, empty or "false" is off, exactly "true" is on. */
+  readonly COMMERCE_ENABLED?: string;
+  /** Issue 24, user decision 18 Oct 2026, ADR 0075: the keyed payment reference HMAC key (secret) and its id (var). Never logged. Required only while commerce is on (ADR 0104). */
   readonly COMMERCE_REFERENCE_HMAC_KEY?: string;
   readonly COMMERCE_REFERENCE_HMAC_KEY_ID?: string;
   /** 11a: the Cloudflare Access team domain, e.g. `shortlet.cloudflareaccess.com`. */

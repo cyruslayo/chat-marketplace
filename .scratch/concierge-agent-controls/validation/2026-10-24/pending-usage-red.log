@@ -1,0 +1,92 @@
+TAP version 13
+# Subtest: AC1: the smoke result JSON includes per-turn latency, model-call count and token usage when the provider returns usage
+ok 1 - AC1: the smoke result JSON includes per-turn latency, model-call count and token usage when the provider returns usage
+  ---
+  duration_ms: 2.2936
+  type: 'test'
+  ...
+# Subtest: AC1 percentiles: p50 and p95 are nearest-rank over the recorded samples and null when empty
+ok 2 - AC1 percentiles: p50 and p95 are nearest-rank over the recorded samples and null when empty
+  ---
+  duration_ms: 0.1652
+  type: 'test'
+  ...
+# Subtest: AC1 failure path: when the provider returns no usage, the report still writes and token and cost fields are unavailable instead of zero
+ok 3 - AC1 failure path: when the provider returns no usage, the report still writes and token and cost fields are unavailable instead of zero
+  ---
+  duration_ms: 11.3162
+  type: 'test'
+  ...
+# Subtest: AC2: the cost estimate comes from the OpenRouter-reported price for the model slug
+ok 4 - AC2: the cost estimate comes from the OpenRouter-reported price for the model slug
+  ---
+  duration_ms: 0.6818
+  type: 'test'
+  ...
+# Subtest: AC2 failure path: an unknown slug, a failed price fetch or a missing price leaves the cost unavailable
+ok 5 - AC2 failure path: an unknown slug, a failed price fetch or a missing price leaves the cost unavailable
+  ---
+  duration_ms: 0.4696
+  type: 'test'
+  ...
+# Subtest: AC3: no prompt, reply or key text is written to the result or report files (ADR 0075)
+ok 6 - AC3: no prompt, reply or key text is written to the result or report files (ADR 0075)
+  ---
+  duration_ms: 17.4629
+  type: 'test'
+  ...
+# Subtest: AC3: observation preserves guarded adapter capability, continuation projection, and per-call usage ownership
+not ok 7 - AC3: observation preserves guarded adapter capability, continuation projection, and per-call usage ownership
+  ---
+  duration_ms: 4.9363
+  type: 'test'
+  location: 'C:\\AI2026\\chat-marketplace-controls\\test\\pilot-agent-smoke-metrics.test.ts:1:9451'
+  failureType: 'testCodeFailure'
+  error: |-
+    An outstanding provider call cannot report complete zero usage
+    + actual - expected
+    
+      {
+    +   completionTokens: 0,
+    +   modelCalls: 0,
+    +   promptTokens: 0
+    -   completionTokens: null,
+    -   modelCalls: 1,
+    -   promptTokens: null
+      }
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    modelCalls: 1
+    promptTokens: ~
+    completionTokens: ~
+  actual:
+    modelCalls: 0
+    promptTokens: 0
+    completionTokens: 0
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\pilot-agent-smoke-metrics.test.ts:282:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: AC4 guard: the benchmark document is refused unless the result file holds real live results
+ok 8 - AC4 guard: the benchmark document is refused unless the result file holds real live results
+  ---
+  duration_ms: 1.2268
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 7
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 794.5765

@@ -18,13 +18,17 @@ const failingCommerce = { request: async (): Promise<never> => { throw new Error
  * request must run inside it). Commerce is supplied by the caller; marker writes are recorded so a test can prove none ran.
  */
 async function withShortletOps<T>(
-  commerceMigration: { request: (operation: "status" | "verify" | "cutover") => Promise<unknown> },
+  commerceMigration: { request: (operation: "status" | "verify" | "cutover" | "rows") => Promise<unknown> },
   markerWrites: string[],
   run: (handler: ReturnType<typeof createOpsHandler>) => Promise<T>,
+  options: { readonly commerceEnabled?: boolean; readonly markerWritesAllowed?: boolean; readonly platformMigration?: { request: (operation: "cutover") => Promise<unknown> } } = {},
 ): Promise<T> {
   return runInDurableObject(opsStub(), async (_instance, ctx) => {
     const dependencies: OpsRouteDependencies = {
       demoEnabled: false,
+      // ADR 0104 decision 5: commerce defaults to ON here so the existing cases keep their ON meaning; OFF cases pass false.
+      commerceEnabled: options.commerceEnabled ?? true,
+      ...(options.platformMigration ? { platformMigration: options.platformMigration as OpsRouteDependencies["platformMigration"] } : {}),
       database: new DurableObjectSqlDatabase(ctx.storage),
       sharedSecret: SECRET,
       verifier: { verify: async () => true },
@@ -33,7 +37,7 @@ async function withShortletOps<T>(
       grantStore: { canActForOperator: () => false },
       sessionAuthority: { provisionAccessToken: () => { throw new Error("unused"); }, revokeAll: () => {} },
       storageBookmarks: { bookmarkForTime: async () => "bookmark", restoreOnNextSession: () => {} },
-      cutoverMarker: { read: async () => null, createIfAbsent: async (value: unknown) => { markerWrites.push(JSON.stringify(value)); throw new Error("marker write must not run"); } } as unknown as OpsRouteDependencies["cutoverMarker"],
+      cutoverMarker: { read: async () => null, createIfAbsent: async (value: unknown) => { markerWrites.push(JSON.stringify(value)); if (options.markerWritesAllowed) return { completedAt: value }; throw new Error("marker write must not run"); } } as unknown as OpsRouteDependencies["cutoverMarker"],
       audit: { record: () => {}, entries: () => [] },
       clock: () => new Date("2026-10-18T00:00:00Z"),
       tenantId: TENANT,
@@ -80,4 +84,59 @@ test("issue 24 review 6: a cutover whose commerce call fails is refused with COM
   expect(response?.status).toBe(503);
   expect(await response?.json()).toMatchObject({ ok: false, code: "COMMERCE_CUTOVER_UNAVAILABLE" });
   expect(markerWrites).toEqual([]);
+});
+
+/** Records each commerce operation, and answers the zero-row check with the given count (ADR 0101 amendment, 25 Oct 2026). */
+function recordingCommerce(calls: string[], rowCount: number) {
+  return {
+    request: async (operation: "status" | "verify" | "cutover" | "rows") => {
+      calls.push(operation);
+      return operation === "rows" ? { ok: true, rowCount } : { ok: true, cutoverCompletedAt: "2026-10-25T00:00:00.000Z" };
+    },
+  };
+}
+const platformRecorder = (calls: string[]) => ({
+  request: async (operation: "cutover") => {
+    calls.push(`platform:${operation}`);
+    return { cutoverCompletedAt: "2026-10-25T00:00:00.000Z" };
+  },
+});
+
+test("ADR 0101 amendment (25 Oct 2026): with commerce off and zero commerce rows, cutover skips the commerce object after the zero-row check", async () => {
+  const calls: string[] = [];
+  const markerWrites: string[] = [];
+  const response = await withShortletOps(recordingCommerce(calls, 0), markerWrites, handler => handler.handle(post("/_ops/cutover/complete", {})), { commerceEnabled: false, markerWritesAllowed: true, platformMigration: platformRecorder(calls) });
+  expect(response?.status).toBe(200);
+  expect(await response?.json()).toMatchObject({ ok: true, commerceCutoverCompletedAt: null });
+  // The zero-row check runs first, so a later refusal would leave the platform and Shortlet cutovers unrecorded.
+  expect(calls).toEqual(["rows", "platform:cutover"]);
+  expect(markerWrites).toHaveLength(1);
+});
+
+test("ADR 0101 amendment (25 Oct 2026): with commerce off and commerce rows present, cutover is refused with COMMERCE_ROWS_PRESENT_WHILE_DISABLED and changes nothing", async () => {
+  const calls: string[] = [];
+  const markerWrites: string[] = [];
+  const response = await withShortletOps(recordingCommerce(calls, 2), markerWrites, handler => handler.handle(post("/_ops/cutover/complete", {})), { commerceEnabled: false, markerWritesAllowed: true, platformMigration: platformRecorder(calls) });
+  expect(response?.status).toBe(409);
+  expect(await response?.json()).toMatchObject({ ok: false, code: "COMMERCE_ROWS_PRESENT_WHILE_DISABLED" });
+  expect(calls).toEqual(["rows"]);
+  expect(markerWrites).toEqual([]);
+});
+
+test("ADR 0101 amendment (25 Oct 2026): with commerce off and a failing zero-row check, cutover is refused with COMMERCE_CUTOVER_UNAVAILABLE and records nothing", async () => {
+  const markerWrites: string[] = [];
+  const calls: string[] = [];
+  const response = await withShortletOps(failingCommerce, markerWrites, handler => handler.handle(post("/_ops/cutover/complete", {})), { commerceEnabled: false, platformMigration: platformRecorder(calls) });
+  expect(response?.status).toBe(503);
+  expect(await response?.json()).toMatchObject({ ok: false, code: "COMMERCE_CUTOVER_UNAVAILABLE" });
+  expect(calls).toEqual([]);
+  expect(markerWrites).toEqual([]);
+});
+
+test("ADR 0104 decision 5: with commerce on, cutover records the platform, then the commerce object, and does not run the zero-row check", async () => {
+  const calls: string[] = [];
+  const markerWrites: string[] = [];
+  const response = await withShortletOps(recordingCommerce(calls, 5), markerWrites, handler => handler.handle(post("/_ops/cutover/complete", {})), { commerceEnabled: true, markerWritesAllowed: true, platformMigration: platformRecorder(calls) });
+  expect(response?.status).toBe(200);
+  expect(calls).toEqual(["platform:cutover", "cutover"]);
 });

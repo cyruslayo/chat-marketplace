@@ -1,0 +1,306 @@
+TAP version 13
+# Subtest: CONCIERGE_MODE must be deterministic, gemini or openai-compatible; any other value fails startup
+ok 1 - CONCIERGE_MODE must be deterministic, gemini or openai-compatible; any other value fails startup
+  ---
+  duration_ms: 11.9602
+  type: 'test'
+  ...
+# Subtest: gemini requires GEMINI_API_KEY; openai-compatible requires LLM_API_KEY, an HTTPS LLM_BASE_URL and LLM_MODEL
+ok 2 - gemini requires GEMINI_API_KEY; openai-compatible requires LLM_API_KEY, an HTTPS LLM_BASE_URL and LLM_MODEL
+  ---
+  duration_ms: 16.033
+  type: 'test'
+  ...
+# Subtest: CONCIERGE_FALLBACK=openai-compatible is accepted only with a gemini primary and requires the LLM_* settings
+ok 3 - CONCIERGE_FALLBACK=openai-compatible is accepted only with a gemini primary and requires the LLM_* settings
+  ---
+  duration_ms: 3.2914
+  type: 'test'
+  ...
+# Subtest: The fallback client uses the secondary provider only when the primary fails with a connection error, a rate limit or a server error
+ok 4 - The fallback client uses the secondary provider only when the primary fails with a connection error, a rate limit or a server error
+  ---
+  duration_ms: 10.3937
+  type: 'test'
+  ...
+# Subtest: A provider never receives another provider's rawStep; history is rebuilt from the neutral fields
+ok 5 - A provider never receives another provider's rawStep; history is rebuilt from the neutral fields
+  ---
+  duration_ms: 211.3488
+  type: 'test'
+  ...
+# Subtest: The startup banner shows the concierge mode, model and fallback, and no key
+ok 6 - The startup banner shows the concierge mode, model and fallback, and no key
+  ---
+  duration_ms: 3.1048
+  type: 'test'
+  ...
+# Subtest: AC3: a quota reservation that exceeds the request deadline cannot start transport after it resolves
+ok 7 - AC3: a quota reservation that exceeds the request deadline cannot start transport after it resolves
+  ---
+  duration_ms: 140.1104
+  type: 'test'
+  ...
+# Subtest: AC3: the shorter of the request timeout and absolute deadline bounds quota reservation
+ok 8 - AC3: the shorter of the request timeout and absolute deadline bounds quota reservation
+  ---
+  duration_ms: 296.3569
+  type: 'test'
+  ...
+# Subtest: AC3: a configured fallback provider reserves its own actual transport attempt
+ok 9 - AC3: a configured fallback provider reserves its own actual transport attempt
+  ---
+  duration_ms: 13.0901
+  type: 'test'
+  ...
+# Subtest: AC2: quota refusal and authority failure stop transport safely
+ok 10 - AC2: quota refusal and authority failure stop transport safely
+  ---
+  duration_ms: 6.9062
+  type: 'test'
+  ...
+# (node:33648) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC1: concurrent reservations cannot exceed tenant-daily or guest-hour limits across database handles
+ok 11 - AC1: concurrent reservations cannot exceed tenant-daily or guest-hour limits across database handles
+  ---
+  duration_ms: 143.5115
+  type: 'test'
+  ...
+# Subtest: AC2: reopening preserves reservations, the guest-hour limit rolls across clock boundaries, and day rollover resets tenant capacity
+ok 12 - AC2: reopening preserves reservations, the guest-hour limit rolls across clock boundaries, and day rollover resets tenant capacity
+  ---
+  duration_ms: 171.6156
+  type: 'test'
+  ...
+# Subtest: AC1: invalid identities and limits fail closed instead of creating quota records
+ok 13 - AC1: invalid identities and limits fail closed instead of creating quota records
+  ---
+  duration_ms: 62.5506
+  type: 'test'
+  ...
+# Subtest: AC2: storage failure and malformed persisted counts reject reservations safely
+ok 14 - AC2: storage failure and malformed persisted counts reject reservations safely
+  ---
+  duration_ms: 84.7682
+  type: 'test'
+  ...
+# Subtest: The request maps the system instruction, user and assistant turns, tool calls and tool results onto Chat Completions messages, and tool definitions onto tools[].function
+ok 15 - The request maps the system instruction, user and assistant turns, tool calls and tool results onto Chat Completions messages, and tool definitions onto tools[].function
+  ---
+  duration_ms: 125.578
+  type: 'test'
+  ...
+# Subtest: AC5: provider-neutral structured-output and token limits map to OpenAI-compatible parameters
+ok 16 - AC5: provider-neutral structured-output and token limits map to OpenAI-compatible parameters
+  ---
+  duration_ms: 4.2647
+  type: 'test'
+  ...
+# Subtest: AC3: each OpenAI-compatible transport attempt reserves before fetch, and refusal or an expired deadline starts no request
+ok 17 - AC3: each OpenAI-compatible transport attempt reserves before fetch, and refusal or an expired deadline starts no request
+  ---
+  duration_ms: 151.6632
+  type: 'test'
+  ...
+# Subtest: Tool calls in the response become AssistantToolCalls; a tool call with a missing id or name, or arguments that are not a JSON object, fails closed
+ok 18 - Tool calls in the response become AssistantToolCalls; a tool call with a missing id or name, or arguments that are not a JSON object, fails closed
+  ---
+  duration_ms: 77.3341
+  type: 'test'
+  ...
+# Subtest: A connection failure is retried exactly once; an HTTP error response is never retried
+ok 19 - A connection failure is retried exactly once; an HTTP error response is never retried
+  ---
+  duration_ms: 244.2596
+  type: 'test'
+  ...
+# Subtest: HTTP 429 surfaces as RateLimitError and other HTTP errors as APIError, carrying only a sanitised status and code
+ok 20 - HTTP 429 surfaces as RateLimitError and other HTTP errors as APIError, carrying only a sanitised status and code
+  ---
+  duration_ms: 28.8124
+  type: 'test'
+  ...
+# Subtest: Requests time out after the configured timeout (default matches DEFAULT_GEMINI_TIMEOUT_MS)
+ok 21 - Requests time out after the configured timeout (default matches DEFAULT_GEMINI_TIMEOUT_MS)
+  ---
+  duration_ms: 111.9981
+  type: 'test'
+  ...
+# Subtest: The adapter refuses to construct without an API key, a model, or an HTTPS base URL
+ok 22 - The adapter refuses to construct without an API key, a model, or an HTTPS base URL
+  ---
+  duration_ms: 67.0753
+  type: 'test'
+  ...
+# (node:187564) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: 02e AC1: Only node-sqlite-database.ts imports node:sqlite in production code
+ok 23 - 02e AC1: Only node-sqlite-database.ts imports node:sqlite in production code
+  ---
+  duration_ms: 649.8083
+  type: 'test'
+  ...
+# Subtest: 02e AC1: the guard fails, naming the file, when a direct import is added
+ok 24 - 02e AC1: the guard fails, naming the file, when a direct import is added
+  ---
+  duration_ms: 510.0915
+  type: 'test'
+  ...
+# Subtest: 02e AC2: No component opens a second connection to the pilot database
+ok 25 - 02e AC2: No component opens a second connection to the pilot database
+  ---
+  duration_ms: 2905.2089
+  type: 'test'
+  ...
+# Subtest: 02e AC3: The owner environment now enforces foreign keys, the same as the guest environment
+ok 26 - 02e AC3: The owner environment now enforces foreign keys, the same as the guest environment
+  ---
+  duration_ms: 1747.0327
+  type: 'test'
+  ...
+# Subtest: 02e AC4: The healthcheck reuses the shared handle and answers 200, or 503 when the database is closed
+ok 27 - 02e AC4: The healthcheck reuses the shared handle and answers 200, or 503 when the database is closed
+  ---
+  duration_ms: 2785.8209
+  type: 'test'
+  ...
+# Subtest: 02e AC4: the local pilot healthcheck reuses the shared handle
+ok 28 - 02e AC4: the local pilot healthcheck reuses the shared handle
+  ---
+  duration_ms: 2323.3167
+  type: 'test'
+  ...
+# (node:74308) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Chat turns are rate-limited per session and per client address
+ok 29 - Chat turns are rate-limited per session and per client address
+  ---
+  duration_ms: 4587.1999
+  type: 'test'
+  ...
+# Subtest: New guest sessions and operator login attempts are rate-limited per client address
+ok 30 - New guest sessions and operator login attempts are rate-limited per client address
+  ---
+  duration_ms: 6220.8447
+  type: 'test'
+  ...
+# Subtest: A daily model-call cap degrades the concierge to deterministic replies instead of erroring
+ok 31 - A daily model-call cap degrades the concierge to deterministic replies instead of erroring
+  ---
+  duration_ms: 2508.4208
+  type: 'test'
+  ...
+# Subtest: JSON bodies, the operator login form and the webhook body are size-limited
+ok 32 - JSON bodies, the operator login form and the webhook body are size-limited
+  ---
+  duration_ms: 3954.422
+  type: 'test'
+  ...
+# Subtest: Idle session runtimes are closed and evicted
+ok 33 - Idle session runtimes are closed and evicted
+  ---
+  duration_ms: 2999.1027
+  type: 'test'
+  ...
+# Subtest: /api/turn 500 responses carry a generic message
+ok 34 - /api/turn 500 responses carry a generic message
+  ---
+  duration_ms: 1193.07
+  type: 'test'
+  ...
+# Subtest: Landing 14: Sending from the landing page counts as a chat turn, and without a session as a new Guest session
+ok 35 - Landing 14: Sending from the landing page counts as a chat turn, and without a session as a new Guest session
+  ---
+  duration_ms: 4149.1699
+  type: 'test'
+  ...
+# (node:119072) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC1/AC2/AC3 — Production Guest sessions create distinct server-owned principals
+ok 36 - AC1/AC2/AC3 — Production Guest sessions create distinct server-owned principals
+  ---
+  duration_ms: 4242.3041
+  type: 'test'
+  ...
+# Subtest: Production composition uses one live runtime clock across Guest and Operator environments
+ok 37 - Production composition uses one live runtime clock across Guest and Operator environments
+  ---
+  duration_ms: 2962.5385
+  type: 'test'
+  ...
+# Subtest: Production callback HTTP completion rehydrates the confirmed Reservation and Contract
+ok 38 - Production callback HTTP completion rehydrates the confirmed Reservation and Contract
+  ---
+  duration_ms: 5454.987
+  type: 'test'
+  ...
+# Subtest: AC4/AC5/AC7/AC9/AC10/AC11/AC12/AC13 — Production Guest isolation, cookie, Origin, and fixture-route boundaries hold
+ok 39 - AC4/AC5/AC7/AC9/AC10/AC11/AC12/AC13 — Production Guest isolation, cookie, Origin, and fixture-route boundaries hold
+  ---
+  duration_ms: 4193.8795
+  type: 'test'
+  ...
+# Subtest: AC8/AC18/AC19/AC20/AC22/AC23/AC24/AC26/AC27 — Production Operator shares durable state and configured files
+ok 40 - AC8/AC18/AC19/AC20/AC22/AC23/AC24/AC26/AC27 — Production Operator shares durable state and configured files
+  ---
+  duration_ms: 3018.1706
+  type: 'test'
+  ...
+# Subtest: The production pilot passes the concierge mode and model client to the guest server explicitly
+ok 41 - The production pilot passes the concierge mode and model client to the guest server explicitly
+  ---
+  duration_ms: 4004.7006
+  type: 'test'
+  ...
+# Subtest: AC14/AC15/AC16/AC17/AC28 — Production configuration rejects deterministic or unsafe startup
+ok 42 - AC14/AC15/AC16/AC17/AC28 — Production configuration rejects deterministic or unsafe startup
+  ---
+  duration_ms: 794.6244
+  type: 'test'
+  ...
+# Subtest: Staging starts with Paystack test keys
+ok 43 - Staging starts with Paystack test keys
+  ---
+  duration_ms: 2930.7388
+  type: 'test'
+  ...
+# Subtest: Production still refuses Paystack test keys
+ok 44 - Production still refuses Paystack test keys
+  ---
+  duration_ms: 443.6377
+  type: 'test'
+  ...
+# Subtest: Any SHORTLET_DEPLOYMENT value other than production or staging fails startup; unset means production
+ok 45 - Any SHORTLET_DEPLOYMENT value other than production or staging fails startup; unset means production
+  ---
+  duration_ms: 479.4211
+  type: 'test'
+  ...
+# Subtest: Staging still requires an HTTPS public origin and persistent paths, and mounts no fixture routes
+ok 46 - Staging still requires an HTTPS public origin and persistent paths, and mounts no fixture routes
+  ---
+  duration_ms: 1786.8221
+  type: 'test'
+  ...
+# Subtest: Every staging guest and operator page shows the beta banner
+ok 47 - Every staging guest and operator page shows the beta banner
+  ---
+  duration_ms: 2420.2666
+  type: 'test'
+  ...
+# Subtest: Staging requires a configured invite code before a guest session starts
+ok 48 - Staging requires a configured invite code before a guest session starts
+  ---
+  duration_ms: 1797.7421
+  type: 'test'
+  ...
+1..48
+# tests 48
+# suites 0
+# pass 48
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 43564.4449

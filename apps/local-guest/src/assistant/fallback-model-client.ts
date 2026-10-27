@@ -9,21 +9,39 @@ import type { AssistantModelClient, AssistantModelRequest, AssistantModelRespons
  * messages from the neutral history fields, and the OpenAI-compatible adapter emits no rawStep.
  */
 export class FallbackModelClient implements AssistantModelClient {
+  readonly supportsProviderAttemptReservation = true as const;
   readonly #primary: AssistantModelClient;
   readonly #secondary: AssistantModelClient;
+  readonly #responseProviders = new WeakMap<object, AssistantModelClient>();
 
   constructor(primary: AssistantModelClient, secondary: AssistantModelClient) {
+    if (primary.supportsProviderAttemptReservation !== true || secondary.supportsProviderAttemptReservation !== true) {
+      throw new Error("Every configured model provider must support per-attempt reservations");
+    }
     this.#primary = primary;
     this.#secondary = secondary;
   }
 
   async generate(request: AssistantModelRequest): Promise<AssistantModelResponse> {
     try {
-      return await this.#primary.generate(request);
+      const response = await this.#primary.generate(request);
+      this.#responseProviders.set(response, this.#primary);
+      return response;
     } catch (error) {
       if (!isProviderUnavailable(error)) throw error;
-      return this.#secondary.generate(request);
+      const response = await this.#secondary.generate(request);
+      this.#responseProviders.set(response, this.#secondary);
+      return response;
     }
+  }
+
+  projectProviderContinuation(response: AssistantModelResponse, acceptedCalls: readonly import("./assistant-model.js").AssistantToolCall[]): unknown {
+    const selected = this.#responseProviders.get(response);
+    if (selected) return selected.projectProviderContinuation?.(response, acceptedCalls);
+    // After persistence or neutral-history reconstruction, response object identity is gone.
+    // Each adapter must still sanitize its own closed continuity format without trusting prose.
+    return this.#primary.projectProviderContinuation?.(response, acceptedCalls)
+      ?? this.#secondary.projectProviderContinuation?.(response, acceptedCalls);
   }
 }
 

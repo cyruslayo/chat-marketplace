@@ -5,12 +5,14 @@ import { assertMerchantOrdersShape, assertPaymentReferenceHashes, COMMERCE_MIGRA
 import { CommerceReferenceKeyError, COMMERCE_REFERENCE_KEY_INVALID, paymentReferenceKeysFromEnv } from "./commerce-reference-keys.js";
 import { commerceAlarmPlan } from "./commerce-alarm.js";
 import { applySchemaMigrations } from "../../../packages/platform-core/src/schema-migrations.js";
-import { checksumTables } from "../../../packages/platform-core/src/data-migration.js";
+import { checksumTables, sha256OfBytes } from "../../../packages/platform-core/src/data-migration.js";
+import { commerceEnabledFromEnv } from "../../../packages/commerce-switch/src/commerce-switch.js";
+import { COMMERCE_DISABLED, COMMERCE_ENABLED_INVALID, commerceRowCount, commerceTableExists } from "./commerce-switch.js";
 import { schemaVersion } from "../../../packages/platform-core/src/schema-migrations.js";
 import { DurableObjectSqlDatabase } from "./do-sql-database.js";
 import { commerceMigrationsWithCutover } from "./commerce-migrations.js";
 import type { CommerceObjectEnv } from "./commerce-env.js";
-import { COMMERCE_EXPORT_TABLES, lagosDate, runDailyExport, sweepExpiredExports } from "./do-export.js";
+import { COMMERCE_EXPORT_TABLES, COMMERCE_OWNED_TABLES, lagosDate, runDailyExport, sweepExpiredExports } from "./do-export.js";
 import { loadExportConfiguration } from "./export-config.js";
 import { assertCutoverOpenForImport, assertSchemaCurrent, exportTable, importBatch } from "./ops-import-core.js";
 import { completeCutoverWithMarker, cutoverStatus, createCutoverMarkerStore, reconcileCutover } from "./cutover-marker.js";
@@ -30,6 +32,11 @@ function hasExactKeys(input: Readonly<Record<string, unknown>>, keys: readonly s
   return actual.length === keys.length && keys.every(key => actual.includes(key));
 }
 
+/** The fixed refusal for every commerce request while commerce is switched off (ADR 0104 decision 5). */
+function disabledResponse(): Response {
+  return Response.json({ ok: false, code: COMMERCE_DISABLED }, { status: 503, headers: { "Cache-Control": "no-store" } });
+}
+
 /** Commerce transaction authority. It never shares SQL or a synchronous transaction with another DO (ADR 0099/0101). */
 export class CommerceMarket extends DurableObject<CommerceObjectEnv> {
   #pack: ReturnType<typeof createCommercePack> | null = null;
@@ -37,9 +44,26 @@ export class CommerceMarket extends DurableObject<CommerceObjectEnv> {
   #schemaVersion = 0;
   /** A fixed code when the schema could not be brought to the expected shape; the object then refuses every request. */
   #failure: string | null = null;
+  /** ADR 0104 decision 5: whether commerce is on. Off means no pack, no key pair and no schema migration. */
+  #enabled = false;
   constructor(ctx: DurableObjectState, env: CommerceObjectEnv) {
     super(ctx, env);
+    let enabled: boolean;
+    try {
+      enabled = commerceEnabledFromEnv({ COMMERCE_ENABLED: env.COMMERCE_ENABLED });
+    } catch {
+      // An invalid switch value refuses every request. The error names the variable; only the fixed code is kept or logged.
+      this.#failure = COMMERCE_ENABLED_INVALID;
+      console.error(COMMERCE_ENABLED_INVALID);
+      return;
+    }
+    this.#enabled = enabled;
     void ctx.blockConcurrencyWhile(async () => {
+      if (!enabled) {
+        // ADR 0104 decision 5: while off the object needs no key and runs no migration. It keeps its daily alarm for the export obligation.
+        if (await ctx.storage.getAlarm() === null) await ctx.storage.setAlarm(Date.now() + DAILY_ALARM_MS);
+        return;
+      }
       const database = new DurableObjectSqlDatabase(ctx.storage);
       try {
         // The key is read here, before the pack is built; a missing or short key fails closed (user decision 18 Oct 2026).
@@ -70,11 +94,15 @@ export class CommerceMarket extends DurableObject<CommerceObjectEnv> {
     const today = lagosDate(new Date());
     const plan = commerceAlarmPlan({ failure: this.#failure, lastExportDate: (await this.ctx.storage.get<string>("commerce:export:lastDate")) ?? null, today });
     if (plan.logCode !== null) console.error(plan.logCode);
-    if (plan.runExport) {
+    // ADR 0104 decision 5 / ADR 0101 amendment: while off, the daily export runs only when every commerce table exists. Otherwise
+    // there is nothing to export, and the object runs only its retention sweep.
+    const database = new DurableObjectSqlDatabase(this.ctx.storage);
+    const exportable = this.#enabled || COMMERCE_EXPORT_TABLES.every(table => commerceTableExists(database, table));
+    if (plan.runExport && exportable) {
       const config = loadExportConfiguration(this.env);
-      await runDailyExport({ database: new DurableObjectSqlDatabase(this.ctx.storage), exports: this.env.EXPORTS, clock: () => new Date(), ...config, tableOwner: "commerce" });
+      await runDailyExport({ database, exports: this.env.EXPORTS, clock: () => new Date(), ...config, tableOwner: "commerce" });
       await this.ctx.storage.put("commerce:export:lastDate", today);
-    } else if (plan.runRetentionSweep) {
+    } else if (plan.runRetentionSweep || plan.runExport) {
       // The owner-scoped sweep needs only the bucket, the clock, the retention and the commerce tables: no export, no database, no pack.
       try {
         const config = loadExportConfiguration(this.env);
@@ -116,6 +144,27 @@ export class CommerceMarket extends DurableObject<CommerceObjectEnv> {
     return Response.json({ ok: false, code: "payment_unavailable" }, { status: 409, headers: { "Cache-Control": "no-store" } });
   }
 
+  /**
+   * ADR 0104 decision 5 and the ADR 0101 amendment (25 Oct 2026). While commerce is off the object serves only: an empty import
+   * batch (a restore carrying no commerce rows), and the export of rows it already holds, which the export obligation (ADR 0096)
+   * still covers. A non-empty import, a cutover, and every checkout are refused with COMMERCE_DISABLED.
+   */
+  async #switchedOff(operation: string, input: Record<string, unknown>, database: DurableObjectSqlDatabase): Promise<Response> {
+    if (operation === "import" && typeof input.table === "string" && Array.isArray(input.rows) && hasExactKeys(input, OPS_KEYS.import)) {
+      if (input.rows.length === 0 && COMMERCE_OWNED_TABLES.has(input.table)) return Response.json({ ok: true, table: input.table, received: 0, statements: 0, maxParameters: 0 });
+      return disabledResponse();
+    }
+    if (operation === "export" && typeof input.table === "string" && hasExactKeys(input, OPS_KEYS.export) && COMMERCE_OWNED_TABLES.has(input.table)) {
+      // A table that was never created holds no rows, so its export is the empty export of that table.
+      if (!commerceTableExists(database, input.table)) return Response.json({ ok: true, table: input.table, rowCount: 0, sha256: await sha256OfBytes(new Uint8Array()), content: "" });
+      return Response.json({ ok: true, ...(await exportTable(database, input.table)) });
+    }
+    if ((operation === "verify" || operation === "status") && hasExactKeys(input, OPS_KEYS.metadata)) {
+      return Response.json({ ok: true, commerceEnabled: false, rowCount: commerceRowCount(database) });
+    }
+    return disabledResponse();
+  }
+
   async #internal(request: Request, path: string): Promise<Response> {
     if (request.method !== "POST") return new Response("Not found", { status: 404 });
     let body: unknown;
@@ -124,12 +173,16 @@ export class CommerceMarket extends DurableObject<CommerceObjectEnv> {
     const input = body as Record<string, unknown>;
     const tenantId = this.env.SHORTLET_TENANT_ID?.trim() ?? "";
     if (!tenantId || input.tenantId !== tenantId) return Response.json({ ok: false, code: "INVALID_SCOPE" }, { status: 403 });
-    if (path === "/_internal/checkout") return this.#checkout(input);
+    // ADR 0104 decision 5: checkout is refused with the fixed code while commerce is off.
+    if (path === "/_internal/checkout") return this.#enabled ? this.#checkout(input) : disabledResponse();
     if (!path.startsWith("/_internal/ops/")) return new Response("Not found", { status: 404 });
     const operation = path.slice("/_internal/ops/".length);
     const database = new DurableObjectSqlDatabase(this.ctx.storage);
     const marker = createCutoverMarkerStore(this.env.EXPORTS, this.ctx.id.toString(), "commerce");
     try {
+      // The zero-row check is allowed in both states (ADR 0101 amendment, 25 Oct 2026): the Worker asks it before a cutover.
+      if (operation === "rows" && hasExactKeys(input, OPS_KEYS.metadata)) return Response.json({ ok: true, rowCount: commerceRowCount(database) });
+      if (!this.#enabled) return await this.#switchedOff(operation, input, database);
       if (operation === "import" && typeof input.table === "string" && Array.isArray(input.rows) && hasExactKeys(input, OPS_KEYS.import)) {
         // Issue 24 review 10: a restored order must carry a well-formed hash. The refusal names the code only, never the values.
         if (input.table === "merchant_orders") {

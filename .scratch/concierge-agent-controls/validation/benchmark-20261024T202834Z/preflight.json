@@ -1,0 +1,9 @@
+{
+  "checkedAt": "2026-10-24T20:28:36.2616499+00:00",
+  "limitUsd": 2,
+  "usageUsd": 0.016035325,
+  "remainingUsd": 1.983964675,
+  "reset": null,
+  "model": "openai/gpt-6-luna",
+  "attemptLimit": 16
+}

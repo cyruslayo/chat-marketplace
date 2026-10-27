@@ -2,6 +2,8 @@
 
 A future Concierge Platform domain in which independent Nigerian merchants publish product offers and consumers purchase them through merchant-scoped orders.
 
+**Status (ADR 0104, accepted 25 Oct 2026): parked, off by default.** Marketplace Commerce is switched off in every environment unless `COMMERCE_ENABLED=true` is set. An unset, empty or `false` value means off, and any other value stops startup with an error that names the variable. The commerce code is kept, and the domain is parked, not cancelled.
+
 ## Participants
 
 **Merchant**:

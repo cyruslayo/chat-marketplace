@@ -52,6 +52,58 @@ test("The request maps the system instruction, user and assistant turns, tool ca
   assert.equal("tools" in noTools.requests[0]!.body, false);
 });
 
+test("AC5: provider-neutral structured-output and token limits map to OpenAI-compatible parameters", async () => {
+  const { client, requests } = clientWith(() => completion({ content: "{}" }), { baseUrl: "https://openrouter.ai/api/v1" });
+  await client.generate({
+    ...request,
+    tools: [],
+    structuredOutput: { name: "reply_plan", schema: { type: "object", additionalProperties: false }, strict: true },
+    maxOutputTokens: 128,
+  });
+  const body = requests[0]!.body;
+  assert.equal(body.max_completion_tokens, 128);
+  assert.deepEqual(body.response_format, { type: "json_schema", json_schema: { name: "reply_plan", schema: { type: "object", additionalProperties: false }, strict: true } });
+  assert.deepEqual(body.provider, { require_parameters: true });
+  assert.equal("tools" in body, false);
+});
+
+test("A closed classifier can disable reasoning without changing the planner or selected model", async () => {
+  const { client, requests } = clientWith(() => completion({ content: "{}" }), { baseUrl: "https://openrouter.ai/api/v1", model: "openai/gpt-6-luna" });
+  await client.generate({ ...request, tools: [], reasoningEffort: "none" });
+  assert.equal(requests[0]?.body.reasoning_effort, "none");
+  assert.equal(requests[0]?.body.model, "openai/gpt-6-luna");
+  await client.generate(request);
+  assert.equal("reasoning_effort" in requests[1]!.body, false);
+});
+
+test("AC3: each OpenAI-compatible transport attempt reserves before fetch, and refusal or an expired deadline starts no request", async () => {
+  let reservations = 0;
+  let fetches = 0;
+  const client = clientWith(() => {
+    fetches += 1;
+    if (fetches === 1) throw new TypeError("offline");
+    return completion({ content: "ok" });
+  }).client;
+  const response = await client.generate({
+    ...request,
+    beforeProviderAttempt: async () => { reservations += 1; },
+  });
+  assert.equal(response.text, "ok");
+  assert.equal(reservations, 2);
+  assert.equal(fetches, 2);
+
+  const refusal = new Error("quota denied");
+  const denied = clientWith(() => { throw new Error("transport must not start"); }).client;
+  await assert.rejects(denied.generate({ ...request, beforeProviderAttempt: async () => { throw refusal; } }), (error) => error === refusal);
+
+  const slowReservation = clientWith(() => { throw new Error("late transport must not start"); }).client;
+  await assert.rejects(slowReservation.generate({
+    ...request,
+    deadlineAt: Date.now() + 5,
+    beforeProviderAttempt: async () => new Promise<void>((resolve) => setTimeout(resolve, 10)),
+  }), /deadline/i);
+});
+
 test("Tool calls in the response become AssistantToolCalls; a tool call with a missing id or name, or arguments that are not a JSON object, fails closed", async () => {
   const valid = clientWith(() => completion({
     content: null,
@@ -150,4 +202,51 @@ test("The adapter refuses to construct without an API key, a model, or an HTTPS 
   assert.throws(() => new OpenAiCompatibleClient({ ...base, baseUrl: "api.deepseek.com" }), /LLM_BASE_URL/);
   assert.throws(() => new OpenAiCompatibleClient({ ...base, baseUrl: "https://user:pass@api.deepseek.com" }), /LLM_BASE_URL/);
   assert.throws(() => new OpenAiCompatibleClient({ ...base, baseUrl: "https://api.deepseek.com?key=1" }), /LLM_BASE_URL/);
+});
+
+test("finish_reason is surfaced as a closed AssistantFinishReason; unknown values map to other and an absent value stays undefined", async () => {
+  const expectations: readonly (readonly [unknown, string | undefined])[] = [
+    ["stop", "stop"], ["length", "length"], ["tool_calls", "tool_calls"], ["content_filter", "content_filter"],
+    ["function_call", "other"], ["provider_specific_stop", "other"], [42, "other"], [null, undefined], [undefined, undefined],
+  ];
+  for (const [raw, expected] of expectations) {
+    const choice: Record<string, unknown> = { index: 0, message: { role: "assistant", content: "Hello" } };
+    if (raw !== undefined) choice.finish_reason = raw;
+    const { client } = clientWith(() => jsonResponse(200, { id: "cmpl-finish", choices: [choice] }));
+    const response = await client.generate({ ...request, tools: [] });
+    assert.equal(response.finishReason, expected, String(raw));
+    assert.equal(response.text, "Hello");
+  }
+});
+
+test("finish_reason surfacing never copies provider or model text into the response metadata", async () => {
+  const canary = "PRIVATE_FINISH_CANARY";
+  const { client } = clientWith(() => jsonResponse(200, { id: "cmpl-canary", choices: [{ index: 0, message: { role: "assistant", content: `{"scope": "${canary}` }, finish_reason: canary }] }));
+  const response = await client.generate({ ...request, tools: [] });
+  assert.equal(response.finishReason, "other");
+  assert.doesNotMatch(JSON.stringify({ finishReason: response.finishReason }), new RegExp(canary));
+});
+
+test("The adapter's connection retry is not added to the scope retry (design section 14.5)", async () => {
+  const { RetryingScopeClassifier } = await import("../apps/local-guest/src/assistant/scope-classifier-retry.js");
+  const { ModelScopeClassifier } = await import("../apps/local-guest/src/assistant/scope-classifier.js");
+  const valid = JSON.stringify({ scope: "in_scope", risk: "ordinary", intents: ["search"], reasonCode: "supported",
+    slots: { city: null, neighbourhood: null, bedrooms: null, nights: null, guests: null, checkIn: null, checkOut: null } });
+  const completion = (content: string) => new Response(JSON.stringify({ id: "cmpl-retry", choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }] }),
+    { status: 200, headers: { "content-type": "application/json" } });
+  const classify = async (fetchImpl: (input: string, init: RequestInit) => Promise<Response>) => {
+    let transports = 0;
+    const client = new OpenAiCompatibleClient({ apiKey: "test-key-not-real", baseUrl: "https://example.invalid/v1", model: "test-model",
+      fetch: async (input, init) => { transports++; return fetchImpl(input, init); } });
+    const classifier = new RetryingScopeClassifier({ createAttempt: (timeoutMs: number) => new ModelScopeClassifier(client, timeoutMs) });
+    const outcome = await classifier.assess("Find a stay", { domain: "shortlet", description: "Stays", hasShortlist: false, hasSelectedStay: false, hasOffer: false }).then(() => "accepted", () => "rejected");
+    return { transports, outcome };
+  };
+  // The adapter retries one connection failure itself: two transports, one accepted verdict, and no scope-level third send.
+  let calls = 0;
+  const recovered = await classify(async () => { calls++; if (calls === 1) throw new TypeError("network down"); return completion(valid); });
+  assert.deepEqual(recovered, { transports: 2, outcome: "accepted" });
+  // Two connection failures exhaust the adapter's single retry. The scope retry adds no third transport.
+  const exhausted = await classify(async () => { throw new TypeError("network down"); });
+  assert.deepEqual(exhausted, { transports: 2, outcome: "rejected" });
 });

@@ -1,0 +1,5 @@
+
+> check
+> tsc --noEmit && tsc --noEmit -p apps/cloudflare && tsc --noEmit -p apps/cloudflare/tsconfig.test.json && tsc --noEmit -p apps/cloudflare/tsconfig.tooling.json && node scripts/check-worker-bundle.mjs
+
+Worker bundle guard: the Worker graph carries no node:sqlite or Node SQLite adapter.

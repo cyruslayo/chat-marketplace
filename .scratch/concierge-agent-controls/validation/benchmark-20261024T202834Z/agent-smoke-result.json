@@ -1,0 +1,199 @@
+{
+  "gradingProfile": "price-roles-and-status-v3",
+  "generatedAt": "2026-10-24T20:29:01.767Z",
+  "provider": "openrouter",
+  "model": "openai/gpt-6-luna",
+  "result": "FAIL",
+  "liveRun": true,
+  "credentialConfigured": true,
+  "configuredJourneyCount": 1,
+  "journeysActuallyAttempted": 1,
+  "totalReservedRequests": 6,
+  "totalProviderRequests": 6,
+  "controlOutcomeCounts": {
+    "scope_redirect": 0,
+    "scope_unavailable": 3,
+    "quota_refusal": 0,
+    "guard_failure": 3,
+    "rejected_plan_fallback": 1,
+    "support_guidance": 0,
+    "no_current_booking": 0,
+    "successful_model_handling": 1,
+    "model_handling_failure": 0,
+    "tool_denial": 0
+  },
+  "evaluationMetrics": {
+    "guardFailures": 3,
+    "falseRefusals": 0,
+    "taskCompletions": 1,
+    "prohibitedEffects": 0
+  },
+  "providerReservationsPerTurn": [
+    {
+      "journey": 1,
+      "turn": "discovery",
+      "providerRequests": 3
+    },
+    {
+      "journey": 1,
+      "turn": "refinement",
+      "providerRequests": 1
+    },
+    {
+      "journey": 1,
+      "turn": "unit inspection",
+      "providerRequests": 1
+    },
+    {
+      "journey": 1,
+      "turn": "booking intent",
+      "providerRequests": 1
+    }
+  ],
+  "providerRequestsPerTurn": [
+    {
+      "journey": 1,
+      "turn": "discovery",
+      "providerRequests": 3
+    },
+    {
+      "journey": 1,
+      "turn": "refinement",
+      "providerRequests": 1
+    },
+    {
+      "journey": 1,
+      "turn": "unit inspection",
+      "providerRequests": 1
+    },
+    {
+      "journey": 1,
+      "turn": "booking intent",
+      "providerRequests": 1
+    }
+  ],
+  "providerRequestBudget": {
+    "perJourney": 16,
+    "total": 16
+  },
+  "providerRequestBudgetExceeded": false,
+  "rateLimitOccurred": false,
+  "providerStopClassification": null,
+  "scenarios": [
+    {
+      "scenario": "run 1 discovery",
+      "falseRefusal": false,
+      "prohibitedEffects": 0,
+      "selectedApplicationOperation": "search_stays",
+      "surfaceSelected": "thread-g-live-smoke-1:discovery:search-guest-demo-001",
+      "authoritativeEntities": [
+        "unit-local-abuja-wuse2"
+      ],
+      "semanticResult": "PASS",
+      "note": "Wuse 2 filters=true; authoritative units=1; entity=true; InteractionArtifact=true; displayed prices=true; fabrication=false; render=PASS; diagnostics=provider_request:ok,provider_response:ok,application_operation:ok:search_stays,provider_request:ok,function_result_round_trip:ok,provider_response:ok"
+    },
+    {
+      "scenario": "run 1 refinement",
+      "falseRefusal": false,
+      "prohibitedEffects": 0,
+      "selectedApplicationOperation": null,
+      "surfaceSelected": null,
+      "authoritativeEntities": [
+        "unit-local-abuja-wuse2"
+      ],
+      "semanticResult": "FAIL",
+      "failureClassification": "MODEL_SELECTION_FAILURE",
+      "note": "Wuse 2 context preserved=true; refined IDs and prices are authoritative; prior results=1; zero-result projection valid=true; fabrication=false; render=PROJECTION_FAILURE; diagnostics=none"
+    },
+    {
+      "scenario": "run 1 Unit inspection",
+      "falseRefusal": false,
+      "prohibitedEffects": 0,
+      "selectedApplicationOperation": null,
+      "surfaceSelected": null,
+      "authoritativeEntities": [
+        "unit-local-abuja-wuse2"
+      ],
+      "semanticResult": "FAIL",
+      "failureClassification": "MODEL_SELECTION_FAILURE",
+      "note": "selected from current shortlist=true; authoritative detail facts=false; fabrication=false; render=PROJECTION_FAILURE; diagnostics=none"
+    },
+    {
+      "scenario": "run 1 booking intent",
+      "falseRefusal": false,
+      "prohibitedEffects": 0,
+      "selectedApplicationOperation": null,
+      "surfaceSelected": null,
+      "authoritativeEntities": [
+        "unit-local-abuja-wuse2"
+      ],
+      "semanticResult": "FAIL",
+      "failureClassification": "MODEL_SELECTION_FAILURE",
+      "note": "Request Draft=false; availability rechecked=false; application price intact=false; Guest review action=false; no submission=true; no offer/reservation/contract/payment ops=true; false confirmation/pricing=false; render=PROJECTION_FAILURE; diagnostics=none."
+    }
+  ],
+  "note": "run 1 semantic assertion failed",
+  "performance": {
+    "latency": {
+      "turnP50Ms": 5028,
+      "turnP95Ms": 7445,
+      "journeyP50Ms": 22537,
+      "journeyP95Ms": 22537,
+      "turnSamples": 4,
+      "journeySamples": 1
+    },
+    "pricing": {
+      "status": "reported",
+      "source": "openrouter-models",
+      "slug": "openai/gpt-6-luna",
+      "promptUsdPerToken": 1e-7,
+      "completionUsdPerToken": 5e-7
+    },
+    "journeys": [
+      {
+        "journey": 1,
+        "latencyMs": 22537,
+        "modelCalls": 6,
+        "promptTokens": null,
+        "completionTokens": null,
+        "tokenUsage": "unavailable",
+        "costUsd": null,
+        "costStatus": "unavailable",
+        "turns": [
+          {
+            "turn": "discovery",
+            "latencyMs": 7445,
+            "modelCalls": 3,
+            "promptTokens": 2194,
+            "completionTokens": 207,
+            "tokenUsage": "reported"
+          },
+          {
+            "turn": "refinement",
+            "latencyMs": 5025,
+            "modelCalls": 1,
+            "promptTokens": null,
+            "completionTokens": null,
+            "tokenUsage": "unavailable"
+          },
+          {
+            "turn": "unit inspection",
+            "latencyMs": 5039,
+            "modelCalls": 1,
+            "promptTokens": null,
+            "completionTokens": null,
+            "tokenUsage": "unavailable"
+          },
+          {
+            "turn": "booking intent",
+            "latencyMs": 5028,
+            "modelCalls": 1,
+            "promptTokens": null,
+            "completionTokens": null,
+            "tokenUsage": "unavailable"
+          }
+        ]
+      }
+    ]
+  }
+}

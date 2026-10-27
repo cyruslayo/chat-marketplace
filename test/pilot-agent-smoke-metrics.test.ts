@@ -3,6 +3,9 @@ import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ASSISTANT_CONTROL_OUTCOMES } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import {
   TurnUsageAccumulator,
   buildPerformanceReport,
@@ -50,6 +53,10 @@ function scenario(name: string, result: SmokeScenarioReport["semanticResult"] = 
   };
 }
 
+function zeroControlOutcomes(): Record<typeof ASSISTANT_CONTROL_OUTCOMES[number], number> {
+  return Object.fromEntries(ASSISTANT_CONTROL_OUTCOMES.map((outcome) => [outcome, 0])) as Record<typeof ASSISTANT_CONTROL_OUTCOMES[number], number>;
+}
+
 test("AC1: the smoke result JSON includes per-turn latency, model-call count and token usage when the provider returns usage", () => {
   const accumulator = new TurnUsageAccumulator();
   accumulator.record({ promptTokens: 120, completionTokens: 30 });
@@ -70,7 +77,11 @@ test("AC1: the smoke result JSON includes per-turn latency, model-call count and
     credentialConfigured: true,
     configuredJourneyCount: 1,
     journeysActuallyAttempted: 1,
+    totalReservedRequests: 3,
     totalProviderRequests: 3,
+    controlOutcomeCounts: zeroControlOutcomes(),
+    evaluationMetrics: { guardFailures: 0, falseRefusals: 0, taskCompletions: 1, prohibitedEffects: 0 },
+    providerReservationsPerTurn: [{ journey: 1, turn: "discovery", providerRequests: 2 }],
     providerRequestsPerTurn: [{ journey: 1, turn: "discovery", providerRequests: 2 }],
     providerRequestBudget: { perJourney: 10, total: 10 },
     providerRequestBudgetExceeded: false,
@@ -123,7 +134,11 @@ test("AC1 failure path: when the provider returns no usage, the report still wri
     credentialConfigured: true,
     configuredJourneyCount: 1,
     journeysActuallyAttempted: 1,
+    totalReservedRequests: 1,
     totalProviderRequests: 1,
+    controlOutcomeCounts: zeroControlOutcomes(),
+    evaluationMetrics: { guardFailures: 0, falseRefusals: 0, taskCompletions: 1, prohibitedEffects: 0 },
+    providerReservationsPerTurn: [{ journey: 1, turn: "discovery", providerRequests: 1 }],
     providerRequestsPerTurn: [{ journey: 1, turn: "discovery", providerRequests: 1 }],
     providerRequestBudget: { perJourney: 10, total: 10 },
     providerRequestBudgetExceeded: false,
@@ -220,7 +235,11 @@ test("AC3: no prompt, reply or key text is written to the result or report files
     credentialConfigured: true,
     configuredJourneyCount: 1,
     journeysActuallyAttempted: 1,
+    totalReservedRequests: 1,
     totalProviderRequests: 1,
+    controlOutcomeCounts: zeroControlOutcomes(),
+    evaluationMetrics: { guardFailures: 0, falseRefusals: 0, taskCompletions: 1, prohibitedEffects: 0 },
+    providerReservationsPerTurn: [{ journey: 1, turn: "discovery", providerRequests: 1 }],
     providerRequestsPerTurn: [{ journey: 1, turn: "discovery", providerRequests: 1 }],
     providerRequestBudget: { perJourney: 10, total: 10 },
     providerRequestBudgetExceeded: false,
@@ -247,6 +266,32 @@ test("AC3: no prompt, reply or key text is written to the result or report files
   }
 });
 
+test("AC3: observation preserves guarded adapter capability, continuation projection, and per-call usage ownership", async () => {
+  let resolveResponse: ((response: { readonly text: string; readonly usage: { readonly promptTokens: number; readonly completionTokens: number } }) => void) | undefined;
+  const inner = {
+    supportsProviderAttemptReservation: true as const,
+    generate: async () => new Promise<{ readonly text: string; readonly usage: { readonly promptTokens: number; readonly completionTokens: number } }>((resolve) => { resolveResponse = resolve; }),
+    projectProviderContinuation: () => ({ validated: true }),
+  };
+  const firstTurn = new TurnUsageAccumulator();
+  const secondTurn = new TurnUsageAccumulator();
+  let currentTurn = firstTurn;
+  const observed = observeModelClient(inner, {
+    record: () => assert.fail("capture should assign each model call to its starting turn"),
+    capture: () => currentTurn,
+  });
+  const pending = observed.generate({ systemInstruction: "test", tools: [], history: [] });
+  assert.deepEqual(firstTurn.snapshot(), { modelCalls: 1, promptTokens: null, completionTokens: null }, "An outstanding provider call cannot report complete zero usage");
+  currentTurn = secondTurn;
+  resolveResponse?.({ text: "safe", usage: { promptTokens: 7, completionTokens: 2 } });
+  await pending;
+
+  assert.equal(observed.supportsProviderAttemptReservation, true);
+  assert.deepEqual(observed.projectProviderContinuation?.({ rawStep: {} }, []), { validated: true });
+  assert.deepEqual(firstTurn.snapshot(), { modelCalls: 1, promptTokens: 7, completionTokens: 2 });
+  assert.deepEqual(secondTurn.snapshot(), { modelCalls: 0, promptTokens: 0, completionTokens: 0 });
+});
+
 test("AC4 guard: the benchmark document is refused unless the result file holds real live results", () => {
   const offline = buildSmokeResult({
     provider: "Google Gemini",
@@ -256,7 +301,11 @@ test("AC4 guard: the benchmark document is refused unless the result file holds 
     credentialConfigured: false,
     configuredJourneyCount: 3,
     journeysActuallyAttempted: 0,
+    totalReservedRequests: 0,
     totalProviderRequests: 0,
+    controlOutcomeCounts: zeroControlOutcomes(),
+    evaluationMetrics: { guardFailures: 0, falseRefusals: 0, taskCompletions: 0, prohibitedEffects: 0 },
+    providerReservationsPerTurn: [],
     providerRequestsPerTurn: [],
     providerRequestBudget: { perJourney: 10, total: 30 },
     providerRequestBudgetExceeded: false,
@@ -268,4 +317,21 @@ test("AC4 guard: the benchmark document is refused unless the result file holds 
   });
   assert.match(validateLiveBenchmarkResult(offline) ?? "", /not a live run/);
   assert.throws(() => renderBenchmarkDocument(offline));
+});
+
+test("A scope timeout before provider completion reports one pending call and unavailable usage", async () => {
+  const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
+  const usage = new TurnUsageAccumulator();
+  let resolveResponse: ((response: { usage: { promptTokens: number; completionTokens: number } }) => void) | undefined;
+  const observed = observeModelClient({ generate: async () => new Promise<{ usage: { promptTokens: number; completionTokens: number } }>((resolve) => { resolveResponse = resolve; }) }, usage);
+  const runtime = new AssistantRuntime(environment, observed, { scopeTimeoutMs: 10, scopeClassifier: {
+    assess: async () => { await observed.generate({ systemInstruction: "synthetic", tools: [], history: [] }); return undefined; },
+  } });
+  try {
+    assert.equal((await runtime.handleTurn("pending-timeout", "Hello")).ok, true);
+    assert.deepEqual(usage.snapshot(), { modelCalls: 1, promptTokens: null, completionTokens: null });
+    resolveResponse?.({ usage: { promptTokens: 7, completionTokens: 2 } });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(usage.snapshot(), { modelCalls: 1, promptTokens: 7, completionTokens: 2 });
+  } finally { environment.close(); }
 });

@@ -125,6 +125,8 @@ test("Landing 14 AC1: A failed first concierge turn keeps the message and lets t
 
 test("Landing 14 AC2: The typed text never appears in any URL, redirect location or log line", async () => {
   const secret = "My name is Ada Obi and my number is 08031234567";
+  const nonSensitiveText = "My name is Ada Obi";
+  const phone = "08031234567";
   const logged: string[] = [];
   const originals = { log: console.log, info: console.info, warn: console.warn, error: console.error, debug: console.debug };
   for (const name of Object.keys(originals) as (keyof typeof originals)[]) {
@@ -139,7 +141,9 @@ test("Landing 14 AC2: The typed text never appears in any URL, redirect location
       assert.equal(response.status, 303);
       const headerText = [...response.headers].map(([name, value]) => `${name}: ${value}`).join("\n");
       urls.push(headerText);
-      assert.ok((await view(base, response.headers.get("location")!, cookie)).includes(secret), "it is in the transcript body only");
+      const transcript = await view(base, response.headers.get("location")!, cookie);
+      assert.ok(transcript.includes(nonSensitiveText), "ordinary typed text remains in the transcript");
+      assert.ok(!transcript.includes(phone), "the transcript redacts the phone number");
     });
   } finally {
     Object.assign(console, originals);

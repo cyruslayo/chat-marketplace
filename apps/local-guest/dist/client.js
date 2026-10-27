@@ -1,6 +1,6 @@
 "use strict";
 (() => {
-  // node_modules/@cylayo/weaver-web/dist/basic/layout.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/layout.js
   function applyBasicHook(element, component) {
     element.setAttribute("data-a2ui-component", component);
   }
@@ -43,7 +43,7 @@
     return relationship.kind === "single" ? relationship.child === void 0 ? [] : [relationship.child] : relationship.children;
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic/markdown.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/markdown.js
   function appendText(document2, parent, text) {
     const lines = text.split("\n");
     lines.forEach((line, index) => {
@@ -106,7 +106,7 @@
     return [...output.childNodes];
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic/styles.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/styles.js
   var basicSpace = "var(--a2ui-space, 8px)";
   var basicRadius = "var(--a2ui-radius, 8px)";
   var basicOutline = "var(--a2ui-color-outline, rgba(0, 0, 0, 0.22))";
@@ -123,7 +123,7 @@
     appendBasicStyle(element, `border: 1px solid ${basicOutline}; border-radius: ${basicRadius}`);
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic/renderers.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/renderers.js
   var textElements = {
     h1: "h1",
     h2: "h2",
@@ -482,7 +482,7 @@
     return button;
   };
 
-  // node_modules/@cylayo/weaver-web/dist/basic/icon.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/icon.js
   var SVG_NAMESPACE = "http://www.w3.org/2000/svg";
   function createSvg(document2, svgPath) {
     const svg = document2.createElementNS(SVG_NAMESPACE, "svg");
@@ -514,7 +514,7 @@
     };
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic/inputs.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/inputs.js
   function createBasicInputRenderers(regexMatcher, dateTimeInputLocalValueResolver) {
     let opaqueId2 = 0;
     const nextId = (kind) => `weaver-basic-${kind}-${++opaqueId2}`;
@@ -874,7 +874,7 @@
       control.setAttribute(name, normalized);
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic/media.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/media.js
   var imageFits = {
     contain: "contain",
     cover: "cover",
@@ -966,7 +966,7 @@
     return { Image, Video, AudioPlayer };
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic/createBasicCatalogRendererRegistrations.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/createBasicCatalogRendererRegistrations.js
   function createBasicCatalogRendererRegistrations(options) {
     const inputs = createBasicInputRenderers(options.regexMatcher, options.dateTimeInputLocalValueResolver);
     const media = createBasicMediaRenderers(options.resourcePolicy);
@@ -992,7 +992,7 @@
     ];
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic/theme.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/theme.js
   function createBasicCatalogThemeAdapter(options) {
     return (input) => {
       if (input.catalogId !== options.catalogId)
@@ -1006,7 +1006,7 @@
     };
   }
 
-  // node_modules/@cylayo/weaver-core/dist/data-model/clone.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-model/clone.js
   function setObjectValue(target, key3, value) {
     Object.defineProperty(target, key3, {
       configurable: true,
@@ -1107,7 +1107,7 @@
     return true;
   }
 
-  // node_modules/@cylayo/weaver-core/dist/data-model/pointer.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-model/pointer.js
   var success = (value) => ({ ok: true, value });
   function parsePointer(path) {
     if (path === "/")
@@ -1179,7 +1179,7 @@
     return true;
   }
 
-  // node_modules/@cylayo/weaver-core/dist/data-context/path.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-context/path.js
   var success2 = (value) => ({ ok: true, value });
   function resolveScopedPath(path, scopeTokens) {
     if (path.startsWith("/")) {
@@ -1213,7 +1213,7 @@
     return success2({ absolutePath: formatPointer(tokens), tokens });
   }
 
-  // node_modules/@cylayo/weaver-core/dist/data-context/DataContext.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-context/DataContext.js
   var success3 = (value) => ({ ok: true, value });
   var DataContext = class _DataContext {
     #dataModel;
@@ -1285,7 +1285,7 @@
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/data-context/types.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-context/types.js
   function isDataPathBinding(value) {
     if (value === null || typeof value !== "object" || Array.isArray(value))
       return false;
@@ -1293,7 +1293,7 @@
     return keys.length === 1 && keys[0] === "path" && typeof value.path === "string";
   }
 
-  // node_modules/@cylayo/weaver-core/dist/functions/FunctionRegistry.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/functions/FunctionRegistry.js
   var key = (catalogId, name) => JSON.stringify([catalogId, name]);
   var FunctionRegistry = class {
     #catalogs;
@@ -1351,7 +1351,7 @@
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/functions/types.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/functions/types.js
   function isFunctionCall(value) {
     if (value === null || typeof value !== "object" || Array.isArray(value))
       return false;
@@ -1368,7 +1368,7 @@
     return !("returnType" in record) || typeof record.returnType === "string" && ["string", "number", "boolean", "array", "object", "any", "void"].includes(record.returnType);
   }
 
-  // node_modules/@cylayo/weaver-core/dist/functions/FunctionEvaluator.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/functions/FunctionEvaluator.js
   var MAX_DEFAULT_DEPTH = 32;
   var RecursiveFunctionFailure = class {
     error;
@@ -1666,7 +1666,7 @@
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/actions/ActionContextResolver.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/actions/ActionContextResolver.js
   function isAllowedLiteral(value) {
     return typeof value === "string" || typeof value === "boolean" || typeof value === "number" && Number.isFinite(value) || Array.isArray(value);
   }
@@ -1759,7 +1759,7 @@
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/checks/CheckEvaluator.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/checks/CheckEvaluator.js
   function actualType2(value) {
     if (value === null)
       return "null";
@@ -1903,7 +1903,7 @@
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/actions/ActionDispatcher.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/actions/ActionDispatcher.js
   function cloneActionJson(value) {
     return cloneJson(value);
   }
@@ -2105,7 +2105,7 @@
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/basic-functions/formatString.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/basic-functions/formatString.js
   var _a;
   var ExpressionParser = class {
     source;
@@ -2253,7 +2253,7 @@
     throw new Error("Unterminated interpolation");
   }
 
-  // node_modules/@cylayo/weaver-core/dist/basic-catalog/generated-basic-catalog.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/basic-catalog/generated-basic-catalog.js
   var A2UI_V091_BASIC_CATALOG_ID = "https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json";
   var A2UI_V091_BASIC_CATALOG = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -4799,7 +4799,7 @@
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/basic-catalog/index.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/basic-catalog/index.js
   function createBasicCatalogV091Registration() {
     return {
       catalogId: A2UI_V091_BASIC_CATALOG_ID,
@@ -4807,7 +4807,7 @@
     };
   }
 
-  // node_modules/@cylayo/weaver-core/dist/catalog/schema.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/catalog/schema.js
   var A2UI_CATALOG_SCHEMA = {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     type: "object",
@@ -4827,7 +4827,7 @@
     additionalProperties: true
   };
 
-  // node_modules/@cfworker/json-schema/dist/esm/deep-compare-strict.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/deep-compare-strict.js
   function deepCompareStrict(a, b) {
     const typeofa = typeof a;
     if (typeofa !== typeof b) {
@@ -4868,7 +4868,7 @@
     return a === b;
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/pointer.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/pointer.js
   function encodePointer(p) {
     return encodeURI(escapePointer(p));
   }
@@ -4876,7 +4876,7 @@
     return p.replace(/~/g, "~0").replace(/\//g, "~1");
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/dereference.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/dereference.js
   var schemaArrayKeyword = {
     prefixItems: true,
     items: true,
@@ -4997,7 +4997,7 @@
     return lookup;
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/format.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/format.js
   var DATE = /^(\d\d\d\d)-(\d\d)-(\d\d)$/;
   var DAYS = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   var TIME = /^(\d\d):(\d\d):(\d\d)(\.\d+)?(z|[+-]\d\d(?::?\d\d)?)?$/i;
@@ -5090,7 +5090,7 @@
     }
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/types.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/types.js
   var OutputFormat;
   (function(OutputFormat2) {
     OutputFormat2[OutputFormat2["Flag"] = 1] = "Flag";
@@ -5098,7 +5098,7 @@
     OutputFormat2[OutputFormat2["Detailed"] = 4] = "Detailed";
   })(OutputFormat || (OutputFormat = {}));
 
-  // node_modules/@cfworker/json-schema/dist/esm/ucs2-length.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/ucs2-length.js
   function ucs2length(s) {
     let result = 0;
     let length2 = s.length;
@@ -5117,7 +5117,7 @@
     return result;
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/validate.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/validate.js
   function validate(instance, schema, draft = "2019-09", lookup = dereference(schema), shortCircuit = true, recursiveAnchor = null, instanceLocation = "#", schemaLocation = "#", evaluated = /* @__PURE__ */ Object.create(null)) {
     if (schema === true) {
       return { valid: true, errors: [] };
@@ -5875,7 +5875,7 @@ Known schemas:
     return { valid: errors.length === 0, errors };
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/validator.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/validator.js
   var Validator = class {
     schema;
     draft;
@@ -5898,7 +5898,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/catalog/schema-validator.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/catalog/schema-validator.js
   var DRAFT = "2020-12";
   var TYPES = /* @__PURE__ */ new Set(["null", "boolean", "object", "array", "number", "string", "integer"]);
   function pointer(location2) {
@@ -6032,7 +6032,7 @@ Known schemas:
     return visit(schema, schema);
   }
 
-  // node_modules/@cylayo/weaver-core/dist/catalog/CatalogRegistry.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/catalog/CatalogRegistry.js
   var COMPONENT_ID_REF = "common_types.json#/$defs/ComponentId";
   var CHILD_LIST_REF = "common_types.json#/$defs/ChildList";
   var CHECKABLE_REF = "common_types.json#/$defs/Checkable";
@@ -6754,7 +6754,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/runtime/safety.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/runtime/safety.js
   var DEFAULT_MAX_RESOLUTION_DEPTH = 32;
   var DEFAULT_MAX_RESOLVED_INSTANCES = 1e3;
   var MAX_CONFIGURED_RESOLUTION_DEPTH = 256;
@@ -6865,7 +6865,7 @@ Known schemas:
     });
   }
 
-  // node_modules/@cylayo/weaver-core/dist/component-tree/ComponentTreeResolver.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/component-tree/ComponentTreeResolver.js
   function resolverError(error2) {
     return {
       code: error2.code === "CATALOG_NOT_FOUND" ? "CATALOG_NOT_FOUND" : "COMPONENT_STRUCTURE_NOT_FOUND",
@@ -7055,7 +7055,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/component-instances/ComponentInstanceResolver.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/component-instances/ComponentInstanceResolver.js
   function treeFailure(cause) {
     return {
       ok: false,
@@ -7264,7 +7264,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/component-properties/ComponentPropertyResolver.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/component-properties/ComponentPropertyResolver.js
   function clonePlain(value) {
     return cloneJson(value);
   }
@@ -7597,7 +7597,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/input-binding/InputBindingWriter.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/input-binding/InputBindingWriter.js
   function compatible2(kind, value) {
     switch (kind) {
       case "dynamicString":
@@ -7686,7 +7686,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/data-model/DataModel.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-model/DataModel.js
   var success4 = (value) => ({ ok: true, value });
   var DataModel = class {
     #state = {};
@@ -7906,7 +7906,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/validation.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/validation.js
   var MESSAGE_KEYS = [
     "createSurface",
     "updateComponents",
@@ -8078,12 +8078,12 @@ Known schemas:
     }
   }
 
-  // node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/client-capabilities.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/client-capabilities.js
   function buildA2UIClientCapabilities(input) {
     return { "v0.9": { supportedCatalogIds: [...input.supportedCatalogIds] } };
   }
 
-  // node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/validation-error.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/validation-error.js
   function buildA2UIValidationFailedClientMessage(input) {
     if (input.surfaceId.length === 0)
       throw new TypeError("surfaceId must not be empty");
@@ -8169,7 +8169,7 @@ Known schemas:
     return typeof value === "object" && value !== null && !Array.isArray(value);
   }
 
-  // node_modules/@cylayo/weaver-core/dist/surfaces/SurfaceStore.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/surfaces/SurfaceStore.js
   var success5 = (value) => ({ ok: true, value });
   var SurfaceStore = class {
     #surfaces = /* @__PURE__ */ new Map();
@@ -8338,7 +8338,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/message-processor/A2UIMessageProcessor.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/message-processor/A2UIMessageProcessor.js
   var A2UIMessageProcessor = class {
     store;
     catalogs;
@@ -8423,7 +8423,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/runtime/WeaverRuntime.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/runtime/WeaverRuntime.js
   function cloneRuntimeJson(value) {
     return cloneJson(value);
   }
@@ -8631,7 +8631,7 @@ Known schemas:
     };
   }
 
-  // node_modules/@cylayo/weaver-web/dist/renderers/errors.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/renderers/errors.js
   var RendererRegistryConfigurationError = class extends Error {
     code = "RENDERER_ALREADY_REGISTERED";
     catalogId;
@@ -8644,7 +8644,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-web/dist/renderers/RendererRegistry.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/renderers/RendererRegistry.js
   var key2 = (catalogId, component) => JSON.stringify([catalogId, component]);
   var RendererRegistry = class {
     #renderers = /* @__PURE__ */ new Map();
@@ -8672,7 +8672,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-web/dist/surface/WebSurfaceRenderer.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/surface/WebSurfaceRenderer.js
   var identityKey = (sourceComponentId, scopePath) => JSON.stringify([sourceComponentId, scopePath]);
   var controlIdentityKey = (sourceComponentId, scopePath, localKey) => JSON.stringify([sourceComponentId, scopePath, localKey]);
   var WebSurfaceRenderer = class {
@@ -9049,7 +9049,7 @@ Known schemas:
     return result.ok ? { ok: true, value: { ...result.value } } : structuredClone(result);
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic-web-runtime/createBasicWebRuntime.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic-web-runtime/createBasicWebRuntime.js
   function createBasicWebRuntime(config = {}) {
     const catalogId = A2UI_V091_BASIC_CATALOG_ID;
     const runtimeCreated = createWeaverRuntime({
@@ -9133,12 +9133,13 @@ Known schemas:
   // apps/local-guest/src/shortlet-runtime.ts
   function createShortletWebRuntime(options = {}) {
     const resourcePolicy = options.resourcePolicy ?? (() => void 0);
+    const commerceCatalogs = options.commerce === true ? COMMERCE_CATALOGS : [];
     const created = createBasicWebRuntime({
-      additionalCatalogs: [SHORTLET_DISCOVERY_CATALOG, SHORTLET_BOOKING_CATALOG, ...COMMERCE_CATALOGS],
+      additionalCatalogs: [SHORTLET_DISCOVERY_CATALOG, SHORTLET_BOOKING_CATALOG, ...commerceCatalogs],
       additionalRenderers: [
         ...createBasicCatalogRendererRegistrations({ catalogId: SHORTLET_DISCOVERY_CATALOG.catalogId, resourcePolicy }),
         ...createBasicCatalogRendererRegistrations({ catalogId: SHORTLET_BOOKING_CATALOG.catalogId, resourcePolicy }),
-        ...COMMERCE_CATALOGS.flatMap(({ catalogId }) => createBasicCatalogRendererRegistrations({ catalogId, resourcePolicy })),
+        ...commerceCatalogs.flatMap(({ catalogId }) => createBasicCatalogRendererRegistrations({ catalogId, resourcePolicy })),
         ...SHORTLET_RENDERERS
       ],
       ...options.safety === void 0 ? {} : { runtime: { safety: options.safety } },
@@ -9514,6 +9515,40 @@ Known schemas:
     // ADR-0015 revalidation before request submission, stated plainly.
     revalidation: "We re-check price and availability when you send",
     operatorFallback: "the Operator"
+  });
+  var GUEST_ASSISTANT_COPY = Object.freeze({
+    stayClarification: "How many nights will you be staying, and for how many guests?",
+    dateClarification: "Please give me the check-in date as YYYY-MM-DD.",
+    safeClarification: "I can help you find and compare stays, explain pricing, or check a booking status. What would you like to do?",
+    // ADR 0067 governs the support window and active-stay on-call coverage.
+    generalSupport: "General human support is available daily from 8:00 AM to 8:00 PM WAT. Use the existing support channel provided with your stay.",
+    activeStayEmergencySupport: "Active stays have 24/7 Human Incident Support. Use Active-Stay Emergency Support through your existing booking support route.",
+    detailsReady: "The current stay details are ready below.",
+    statusReady: "The current booking information is ready below.",
+    results: (count, location2) => `I found ${count} matching ${count === 1 ? "stay" : "stays"} in ${location2}.`,
+    noResults: (location2) => `I couldn't find any eligible stays matching those requirements in ${location2}.`,
+    priceUnavailable: "Current price facts are not available. Review the current stay details before you continue.",
+    details: (title, amenities, inspectionPassed) => `${title} offers ${amenities || "the listed amenities"}, entire place possession${inspectionPassed ? " and passed physical inspection" : ""}.`,
+    comparedAllIn: (first, firstTotal, firstNight, second, secondTotal, secondNight) => `Comparing both options: ${first} has an All-In Stay Total of ${firstTotal}, with a nightly rate of ${firstNight}/night; ${second} has an All-In Stay Total of ${secondTotal}, with a nightly rate of ${secondNight}/night.`,
+    comparedAllInOnly: (first, firstTotal, second, secondTotal) => `Comparing both options: ${first} has an All-In Stay Total of ${firstTotal}; ${second} has an All-In Stay Total of ${secondTotal}.`,
+    comparedIndicative: (first, firstNight, second, secondNight) => `Comparing both options: ${first} has an indicative nightly rate of ${firstNight}, while ${second} has an indicative nightly rate of ${secondNight}. Current All-In Stay Totals are not available for this comparison.`,
+    comparisonNoPrice: "I can compare the stays, but current price facts are not available.",
+    priceBreakdown: (title, total, fees, deposit) => `For ${title}, the All-In Stay Total is ${total}, including mandatory fees of ${fees}. The refundable security deposit is shown separately as ${deposit}.`,
+    draftReady: "Your Request Draft is ready to review. It has not been submitted.",
+    offerInactive: "This Conditional Booking Offer is no longer active. Review the current booking details before continuing.",
+    offerAmount: (total, due, deposit) => `The offer's All-In Stay Total is ${total}. The amount due now is ${due}. The refundable security deposit is shown separately as ${deposit}. Review the offer before accepting it.`,
+    confirmedBooking: (contractId) => `Your booking is confirmed under contract reference ${contractId}.`,
+    issuedOffer: (offerId) => `The Accommodation Provider has issued a Conditional Booking Offer under offer reference ${offerId}.`,
+    disclosedRequest: (requestId) => `Your Booking Request ${requestId} has been disclosed and is awaiting the Accommodation Provider's response.`,
+    noCurrentBooking: "You currently have no active booking or pending request."
+  });
+  var GUEST_COMMERCE_ASSISTANT_COPY = Object.freeze({
+    searchResults: (count) => `I found ${count} current product ${count === 1 ? "offer" : "offers"}. Review the Commerce results below.`,
+    offer: "I found the current Merchant Offer. Review its details on the Commerce surface.",
+    delivery: (count) => `I found ${count} current delivery ${count === 1 ? "option" : "options"}. Review the quotes below.`,
+    cart: "I updated the Store Cart. Review its current quantities and prices below.",
+    orderStatus: (status) => `The current Merchant Order status is ${status}.`,
+    safeClarification: "I can help you search products, review an offer, check delivery options, or review an order status. What would you like to do?"
   });
   var GUEST_FORBIDDEN_TERMS = Object.freeze([
     /\brevalidated\b/i,
