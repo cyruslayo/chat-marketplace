@@ -34,8 +34,8 @@ Known tooling and configuration gaps to resolve before the build (each is record
    (`node_modules/@cloudflare/vite-plugin/bin/cf-vite`) and gets `ENOENT` (issues 10b, 13). Run this rehearsal from a
    host where `npm run worker:build:staging` succeeds on a clean checkout. If it does not succeed anywhere, stop: this is a
    blocker, not a step to work around.
-2. **The staging origin is `https://staging.shortlet.ng`** (confirmed by the user). `apps/cloudflare/cloudflare.config.ts`
-   sets `PUBLIC_ORIGIN.staging` to it. Before the build, confirm that this hostname routes to the staging Worker, because
+2. **The staging origin is `https://shortlet-pilot-staging.khayutsefi.workers.dev`** (the owner chose the workers.dev URL). `apps/cloudflare/cloudflare.config.ts`
+   sets `PUBLIC_ORIGIN.staging` to it. Before the build, confirm that this URL serves the staging Worker, because
    `SHORTLET_PUBLIC_ORIGIN` and the Paystack callback base URL depend on it. The production origin is unchanged.
 3. **`pilot:local:agent-smoke` is in-process only, and stays that way by user decision.** It runs the assistant against a
    live model with no HTTP surface, and it refuses a base URL before any model call. It is never run against staging.

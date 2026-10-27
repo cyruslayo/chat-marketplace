@@ -14,7 +14,7 @@ Requested: 21 Oct 2026
 Nothing has been deployed yet.
 
 - The Worker is `apps/cloudflare`, configured through `apps/cloudflare/cloudflare.config.ts` with the `cf` CLI (`cf@1.0.0-beta.12`). It is not configured with wrangler.
-- The staging Worker is `shortlet-pilot-staging`, with origin `https://staging.shortlet.ng`.
+- The staging Worker is `shortlet-pilot-staging`, with origin `https://shortlet-pilot-staging.khayutsefi.workers.dev` (workers.dev, chosen by the owner).
 - `cf build` and `cf deploy` fail on this Windows install with `spawn …\bin\cf-vite ENOENT` (`docs/runbooks/cloudflare-staging-rehearsal.md`, gap 1; landing issue 12).
 - `apps/cloudflare/node_modules` must first be created by `node scripts/ensure-worker-deps.mjs`.
 - There is no deploy npm script. The upload is `cd apps/cloudflare && npm exec cf -- deploy --prebuilt --mode staging`.

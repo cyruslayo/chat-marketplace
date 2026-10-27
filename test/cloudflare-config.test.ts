@@ -122,6 +122,15 @@ test("Landing 12: cloudflare.config.ts declares PAYSTACK_CALLBACK_BASE_URL as th
   assert.match(source, /PAYSTACK_CALLBACK_BASE_URL:\s*bindings\.text\(PUBLIC_ORIGIN\[environment\]\)/);
 });
 
+test("Staging demo: the staging descriptor's SHORTLET_PUBLIC_ORIGIN and PAYSTACK_CALLBACK_BASE_URL both come from PUBLIC_ORIGIN.staging, which is the workers.dev origin (ADR 0087)", () => {
+  const source = readFileSync("apps/cloudflare/cloudflare.config.ts", "utf8");
+  const block = /const PUBLIC_ORIGIN: Record<PilotEnvironment, string> = \{([^}]*)\};/.exec(source)?.[1] ?? "";
+  const staging = /staging:\s*"([^"]+)"/.exec(block)?.[1];
+  assert.equal(staging, "https://shortlet-pilot-staging.khayutsefi.workers.dev");
+  assert.match(source, /SHORTLET_PUBLIC_ORIGIN:\s*bindings\.text\(PUBLIC_ORIGIN\[environment\]\)/);
+  assert.match(source, /PAYSTACK_CALLBACK_BASE_URL:\s*bindings\.text\(PUBLIC_ORIGIN\[environment\]\)/);
+});
+
 /** Relative module specifiers a source file imports, with whether the import carries the cf-worker entrypoint attribute. */
 function relativeImports(source: string): { specifier: string; workerEntrypoint: boolean }[] {
   const pattern = /\bimport\s+(?:[^;'"]*?\bfrom\s*)?["'](\.{1,2}\/[^"']*)["']([^;\n]*)/g;
