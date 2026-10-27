@@ -488,6 +488,14 @@ export class UnitDiscoveryQuery {
   }
 }
 
+/**
+ * Synthetic demo trust-record expiry (inspection, management authority, licence and insurance) for the demo seeds: twelve
+ * months past the staging clock of 27 Oct 2026. The offer check (onboarding.ts; ADR 0056, 0057, 0065) needs every trust
+ * record to outlast today plus the 90-night horizon and the 14-night stay (104 days). Refresh this constant, and the
+ * demo CSVs in apps/cloudflare/demo, before the clock comes within 104 days of it, or offers stop issuing.
+ */
+export const DEMO_TRUST_EXPIRES_ON = "2027-10-27";
+
 export function seedIssue01Units(repository: any): void {
   const eligible = {
     id: "unit-lagos-001", propertyId: "property-lagos-001",
@@ -501,20 +509,20 @@ export function seedIssue01Units(repository: any): void {
     operator: {
       id: "operator-001", status: "approved", approvedAt: "2026-01-10", legalForm: "private-company-limited-by-shares",
       cacVerified: true, responsiblePersonsVerified: true, beneficialOwnersVerified: true, paymentProviderApproved: true,
-      settlementAccountVerified: true, approvalExpiresAt: "2027-03-01"
+      settlementAccountVerified: true, approvalExpiresAt: DEMO_TRUST_EXPIRES_ON
     },
     inspection: {
       id: "inspection-001", status: "passed", inspectedAt: "2026-01-15",
-      expiresAt: "2027-01-15", materialChangePending: false, scope: INSPECTION_SCOPE
+      expiresAt: DEMO_TRUST_EXPIRES_ON, materialChangePending: false, scope: INSPECTION_SCOPE
     },
     managementAuthority: {
       id: "authority-001", propertyId: "property-lagos-001", status: "verified",
-      verifiedAt: "2026-02-01", expiresAt: "2027-02-01", permissions: AUTHORITY_PERMISSIONS
+      verifiedAt: "2026-02-01", expiresAt: DEMO_TRUST_EXPIRES_ON, permissions: AUTHORITY_PERMISSIONS
     },
     regulatory: {
-      licensing: { status: "verified", verifiedAt: "2026-01-12", expiresAt: "2027-02-15" },
+      licensing: { status: "verified", verifiedAt: "2026-01-12", expiresAt: DEMO_TRUST_EXPIRES_ON },
       insurance: {
-        status: "verified", verifiedAt: "2026-01-12", expiresAt: "2027-02-15",
+        status: "verified", verifiedAt: "2026-01-12", expiresAt: DEMO_TRUST_EXPIRES_ON,
         publicLiabilityPerOccurrenceKobo: 1000000000,
         annualAggregateKobo: 2000000000,
         propertyCoverVerified: true
