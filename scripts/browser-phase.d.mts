@@ -35,26 +35,7 @@ export function browserFileStatus(options: {
 }): BrowserFileStatus;
 export function aggregateBrowserPhase(results: readonly Pick<BrowserFileResult, "file" | "status" | "summary">[]): BrowserPhaseTotals;
 export function formatBrowserPhaseTotals(totals: BrowserPhaseTotals): string[];
-export interface WindowsBrowserWorkerIdentity {
-  readonly pid: number;
-  readonly parentProcessId: number;
-  readonly executable: string;
-  readonly creationTime: string;
-  readonly scriptToken: string;
-}
-export interface WindowsProcessTreeIdentity {
-  readonly pid: number;
-  readonly parentProcessId: number;
-  readonly executable: string;
-  readonly creationTime: string;
-}
-export function inspectWindowsWorker(pid: number, scriptToken: string): WindowsBrowserWorkerIdentity | undefined;
-export function killProcessTree(pid: number, identity?: WindowsBrowserWorkerIdentity, actions?: {
-  readonly platform?: NodeJS.Platform;
-  readonly inspectTree?: (pid: number, scriptToken: string) => readonly WindowsProcessTreeIdentity[] | undefined;
-  readonly inspectProcess?: (pid: number) => WindowsProcessTreeIdentity | undefined;
-  readonly signal?: (pid: number) => boolean;
-}): boolean;
+export function killProcessTree(pid: number): void;
 
 export function runBrowserFile(options: {
   readonly root: string;

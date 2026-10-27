@@ -1,7 +1,7 @@
 // Phase 2 of `npm test`: each real-browser file runs in its own process under a timeout. A file that stalls (a CDP call
 // or a lock that never answers, see test/helpers/cdp-transport.ts and test/helpers/chrome-devtools.ts) is killed with its
 // browser children and reported as timed out, and the run goes on with the next file. The phase still exits non-zero.
-import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 /**
  * Default per-file budget: 15 minutes. The slowest real-browser file, mobile-guest-journey-chromium, runs for about 376 s
@@ -65,67 +65,22 @@ export function formatBrowserPhaseTotals(totals) {
   ];
 }
 
-export function inspectWindowsWorker(pid, scriptToken) {
-  if (process.platform !== "win32" || !Number.isSafeInteger(pid) || pid <= 0 || typeof scriptToken !== "string" || !scriptToken.trim()) return undefined;
-  const safeToken = scriptToken.replaceAll("'", "''");
-  const script = String.raw`$p=Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" -ErrorAction Stop; if($null -eq $p){exit 3}; if([string]$p.ExecutablePath -ine '${process.execPath.replaceAll("'", "''")}' -or -not ([string]$p.CommandLine).Contains('${safeToken}')){exit 4}; [pscustomobject]@{pid=[int]$p.ProcessId; parentProcessId=[int]$p.ParentProcessId; executable=[string]$p.ExecutablePath; creationTime=$p.CreationDate.ToUniversalTime().ToString('o')} | ConvertTo-Json -Compress`;
-  try {
-    const value = JSON.parse(execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8", timeout: 5_000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] }));
-    if (value.pid !== pid || !Number.isSafeInteger(value.parentProcessId) || typeof value.executable !== "string" || !value.executable || typeof value.creationTime !== "string" || !value.creationTime) return undefined;
-    return { pid, parentProcessId: value.parentProcessId, executable: value.executable, creationTime: value.creationTime, scriptToken };
-  } catch { return undefined; }
-}
-
-function inspectWindowsProcessTree(pid, scriptToken) {
-  if (process.platform !== "win32") return undefined;
-  const safeToken = scriptToken.replaceAll("'", "''");
-  const safeExecutable = process.execPath.replaceAll("'", "''");
-  const script = String.raw`$all=@(Get-CimInstance Win32_Process -ErrorAction Stop); $root=$all | Where-Object { $_.ProcessId -eq ${pid} }; if($null -eq $root -or [string]$root.ExecutablePath -ine '${safeExecutable}' -or -not ([string]$root.CommandLine).Contains('${safeToken}')){exit 4}; $owned=@{}; $owned[[int]$root.ProcessId]=$true; $changed=$true; while($changed){$changed=$false; foreach($p in $all){if(!$owned.ContainsKey([int]$p.ProcessId) -and $owned.ContainsKey([int]$p.ParentProcessId)){$owned[[int]$p.ProcessId]=$true;$changed=$true}}}; $rows=@(foreach($p in $all){if($owned.ContainsKey([int]$p.ProcessId)){[pscustomobject]@{pid=[int]$p.ProcessId;parentProcessId=[int]$p.ParentProcessId;executable=[string]$p.ExecutablePath;creationTime=$p.CreationDate.ToUniversalTime().ToString('o')}}}); ConvertTo-Json -InputObject ([pscustomobject]@{items=@($rows)}) -Compress`;
-  try {
-    const value = JSON.parse(execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8", timeout: 5_000, windowsHide: true, stdio: ["ignore", "pipe", "ignore"] }));
-    if (!Array.isArray(value?.items)) return undefined;
-    if (!value.items.every((row) => Number.isSafeInteger(row.pid) && Number.isSafeInteger(row.parentProcessId) && typeof row.executable === "string" && row.executable && typeof row.creationTime === "string" && row.creationTime)) return undefined;
-    return value.items;
-  } catch { return undefined; }
-}
-
-// Windows process actions require an exact script-token and creation-time identity.
-export function killProcessTree(pid, identity, actions = {}) {
-  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
-  const platform = actions.platform ?? process.platform;
-  if (platform === "win32") {
-    if (!identity || identity.pid !== pid || typeof identity.scriptToken !== "string" || !identity.scriptToken.trim()) return false;
-    const tree = (actions.inspectTree ?? inspectWindowsProcessTree)(pid, identity.scriptToken);
-    if (!tree || tree.length === 0) return false;
-    const root = tree.find((row) => row.pid === pid);
-    if (!root || root.parentProcessId !== identity.parentProcessId || root.executable.toLowerCase() !== identity.executable.toLowerCase() || root.creationTime !== identity.creationTime) return false;
-    const inspect = actions.inspectProcess ?? ((processId) => {
-      const rows = (actions.inspectTree ?? inspectWindowsProcessTree)(pid, identity.scriptToken);
-      return rows?.find((row) => row.pid === processId);
-    });
-    // Kill descendants before their verified parent. Recheck identity before each PID action.
-    const depth = (row) => {
-      if (row.pid === pid) return 0;
-      let count = 0;
-      let parent = row.parentProcessId;
-      while (count < tree.length && parent !== pid) {
-        const owner = tree.find((item) => item.pid === parent);
-        if (!owner) break;
-        parent = owner.parentProcessId;
-        count += 1;
-      }
-      return parent === pid ? count + 1 : count;
-    };
-    const ordered = [...tree].sort((left, right) => depth(right) - depth(left));
-    for (const row of ordered) {
-      const actual = inspect(row.pid);
-      if (!actual || actual.pid !== row.pid || actual.parentProcessId !== row.parentProcessId || actual.creationTime !== row.creationTime || actual.executable.toLowerCase() !== row.executable.toLowerCase()) return false;
-      const result = (actions.signal ?? ((processId) => spawnSync("taskkill", ["/PID", String(processId), "/F"], { stdio: "ignore", timeout: 5_000, windowsHide: true }).status === 0))(row.pid);
-      if (!result) return false;
-    }
-    return true;
+// Kills the process and everything it started. On Windows, taskkill /T walks the tree (the Chrome children included).
+export function killProcessTree(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return;
+  if (process.platform === "win32") {
+    const result = spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore", timeout: 5_000 });
+    if (result.status === 0) return;
   }
-  try { process.kill(-pid, "SIGKILL"); return true; } catch { return false; }
+  try {
+    process.kill(process.platform === "win32" ? pid : -pid, "SIGKILL");
+  } catch {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // already gone
+    }
+  }
 }
 
 function withoutNodeTestContext(env) {
@@ -151,7 +106,6 @@ export function runBrowserFile({ root, tsx, file, extra = [], timeoutMs, log = c
       // A nested `node --test` must not inherit the parent runner's context: it would run as a subtest and exit early.
       env: withoutNodeTestContext(process.env),
     });
-    const childIdentity = process.platform === "win32" ? inspectWindowsWorker(child.pid, file) : undefined;
     let output = "";
     child.stdout.on("data", (chunk) => {
       output += chunk;
@@ -181,7 +135,7 @@ export function runBrowserFile({ root, tsx, file, extra = [], timeoutMs, log = c
     };
     timer = setTimeout(() => {
       timedOut = true;
-      killProcessTree(child.pid, childIdentity);
+      killProcessTree(child.pid);
       // A descendant can keep the pipes open after the direct child exits. Close our readers and
       // report the timeout at its deadline instead of waiting forever for the stream `close` event.
       child.stdout?.destroy();
