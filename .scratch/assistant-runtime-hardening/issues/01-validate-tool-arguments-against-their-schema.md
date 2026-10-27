@@ -73,3 +73,25 @@ Definition of Done:
 5. No invented policy string: pass (`invalid_arguments` is a closed error code, not a policy value).
 6. No restricted material in logs or audit: pass (AC7 asserts the canary is absent from the tool result and diagnostics).
 7. `npm run check` clean: pass. `npm test` zero failures: NOT MET. The affected `test:assistant` run has one pre-existing stale-date failure (above), and the full suite runs only at the batch gate. Status therefore stays `ready-for-agent` until the owner decides the expiry expectation or the batch gate runs.
+
+Review fixes (second commit on integration/concierge-controls, 28 Oct 2026). Status still `ready-for-agent`.
+
+Pre-existing failure, not caused by this issue: `Unit detail surface projects inspection facts from the authoritative Unit` (test/shortlet-assistant-evals.test.ts) expects "Inspection expiry: 1 Feb 2027", but the surface renders "27 Oct 2027". The fixture expiry changed in commit b68eecd ("refresh synthetic demo trust expiry to twelve months past the staging clock"), which is earlier than this review work. That test file is deliberately not touched here and waits on an owner decision. Because this failure sits in an affected suite, DoD item 7 stays open.
+
+Changes made in response to review:
+1. Runtime tests now prove the check runs before the task-tool path and before pack preconditions:
+   - switch_task with a numeric taskId: rejected as invalid_arguments, thread snapshot unchanged. A real second task exists, so an unchecked call would have reached UNKNOWN_TASK.
+   - start_task without `domain`: rejected as invalid_arguments, task count and thread snapshot unchanged.
+   - commerce get_offer with a numeric offerId: a spy on the pack proves validateToolCall and executeTool are never reached.
+   - shortlet get_unit_details with a numeric stayRef on a fresh thread: invalid_arguments. An unchecked call would fail the shortlist precondition with invalid_tool_for_state.
+2. Fail closed on malformed schemas. A missing or non-record root schema, a root without a properties record, a property without a type, a non-list enum or required, and non-record items or properties each return a `schema` violation and do not throw. New test: "a missing or malformed declared schema fails closed with a schema violation and does not throw".
+3. Test names now mirror the criterion text, without the "ACn:" prefix.
+4. AC8 caveat: the test checks only that the validator accepts a sample built from each declared schema. It does not exercise real pack calls. The runtime tests above cover real calls.
+5. The `!malformedArguments` guard in the `stateUnavailable` condition is not redundant. For a tool that is authorized but not offered in the current state, an unguarded call would still run `validateToolCall` before the argument result is used, so it is kept.
+
+Commands and counts (env -u LLM_API_KEY, after the review fixes):
+- `npm run check`: exit 0.
+- `npx tsx --test test/assistant-tool-argument-validation.test.ts`: 13 tests, 13 pass, 0 fail.
+- `npm run test:assistant`: 67 tests, 66 pass, 1 fail (the b68eecd expiry failure above).
+- `npx tsx --test test/assistant-pack-registry.test.ts`: 3 pass, 0 fail.
+- `npx tsx --test test/assistant-search-unknowns.test.ts`: 5 pass, 0 fail.

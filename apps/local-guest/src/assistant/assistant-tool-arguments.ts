@@ -8,9 +8,10 @@ import type { AssistantToolParameterProperty, AssistantToolParametersSchema } fr
  *
  * A violation names a schema-declared path and a closed reason. It never carries the rejected value,
  * so the error text sent back to the model and any diagnostic stay free of argument content.
+ * A declared schema that is missing or malformed fails closed with a `schema` violation; it never throws.
  */
 
-export type AssistantArgumentViolationReason = "missing" | "type" | "range" | "length" | "enum" | "unknown";
+export type AssistantArgumentViolationReason = "missing" | "type" | "range" | "length" | "enum" | "unknown" | "schema";
 
 export interface AssistantArgumentViolation {
   /** Schema path such as "nights" or "stayRefs[0]", or "arguments" for the root. Never a model-supplied value. */
@@ -28,6 +29,8 @@ const ROOT_FIELD = "arguments";
 
 /** Returns the first violation of `args` against `schema`, or undefined when every argument conforms. */
 export function findToolArgumentViolation(schema: AssistantToolParametersSchema, args: unknown): AssistantArgumentViolation | undefined {
+  // The root schema must declare its properties; a missing or malformed declaration fails closed.
+  if (!isPlainRecord(schema) || !isPlainRecord(schema.properties)) return violation("", "schema");
   return checkObject(schema, args, "");
 }
 
@@ -42,13 +45,18 @@ export function toolArgumentFailureMessage(violation: AssistantArgumentViolation
     case "unknown": return violation.field === ROOT_FIELD
       ? "An undeclared argument is not allowed."
       : `An undeclared argument is not allowed inside "${violation.field}".`;
+    case "schema": return `The declared argument schema for "${violation.field}" is unavailable, so the call is rejected.`;
   }
 }
 
 function checkObject(schema: ObjectSchema, value: unknown, path: string): AssistantArgumentViolation | undefined {
+  const properties: unknown = schema.properties ?? {};
+  const required: unknown = schema.required ?? [];
+  if (!isPlainRecord(properties) || !Array.isArray(required)) return violation(path, "schema");
+  const requiredKeys: readonly unknown[] = required;
   if (!isPlainRecord(value)) return violation(path, "type");
-  const properties = schema.properties ?? {};
-  for (const key of schema.required ?? []) {
+  for (const key of requiredKeys) {
+    if (typeof key !== "string") return violation(path, "schema");
     if (!Object.hasOwn(value, key)) return violation(childPath(path, key), "missing");
   }
   if (schema.additionalProperties === false && Object.keys(value).some((key) => !Object.hasOwn(properties, key))) {
@@ -56,16 +64,24 @@ function checkObject(schema: ObjectSchema, value: unknown, path: string): Assist
   }
   for (const [key, propertySchema] of Object.entries(properties)) {
     if (!Object.hasOwn(value, key)) continue;
-    const found = checkProperty(propertySchema, value[key], childPath(path, key));
+    const found = checkProperty(propertySchema as AssistantToolParameterProperty, value[key], childPath(path, key));
     if (found) return found;
   }
   return undefined;
 }
 
 function checkProperty(schema: AssistantToolParameterProperty, value: unknown, path: string): AssistantArgumentViolation | undefined {
-  const types = typeof schema.type === "string" ? [schema.type] : schema.type;
-  if (!types.some((type) => valueMatchesType(type, value))) return violation(path, "type");
-  if (schema.enum && !schema.enum.some((candidate) => Object.is(candidate, value))) return violation(path, "enum");
+  if (!isPlainRecord(schema)) return violation(path, "schema");
+  const declaredType: unknown = schema.type;
+  const typeNames: readonly unknown[] | undefined = typeof declaredType === "string" ? [declaredType] : asList(declaredType);
+  if (!typeNames) return violation(path, "schema");
+  if (!typeNames.some((type) => valueMatchesType(type, value))) return violation(path, "type");
+
+  if (schema.enum !== undefined) {
+    const candidates = asList(schema.enum);
+    if (!candidates) return violation(path, "schema");
+    if (!candidates.some((candidate) => Object.is(candidate, value))) return violation(path, "enum");
+  }
 
   if (typeof value === "number") {
     if ((schema.minimum !== undefined && value < schema.minimum) || (schema.maximum !== undefined && value > schema.maximum)) {
@@ -77,8 +93,8 @@ function checkProperty(schema: AssistantToolParameterProperty, value: unknown, p
       return violation(path, "length");
     }
   }
-  if (Array.isArray(value)) {
-    const items: readonly unknown[] = value;
+  const items = asList(value);
+  if (items) {
     if ((schema.minItems !== undefined && items.length < schema.minItems) || (schema.maxItems !== undefined && items.length > schema.maxItems)) {
       return violation(path, "length");
     }
@@ -89,7 +105,7 @@ function checkProperty(schema: AssistantToolParameterProperty, value: unknown, p
       }
     }
   }
-  if (isPlainRecord(value) && (schema.properties || schema.required || schema.additionalProperties === false)) {
+  if (isPlainRecord(value) && (schema.properties !== undefined || schema.required !== undefined || schema.additionalProperties === false)) {
     return checkObject(schema, value, path);
   }
   return undefined;
@@ -103,6 +119,12 @@ function childPath(parent: string, key: string): string {
   return parent === "" ? key : `${parent}.${key}`;
 }
 
+function asList(value: unknown): readonly unknown[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const list: readonly unknown[] = value;
+  return list;
+}
+
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   try {
@@ -113,8 +135,8 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   }
 }
 
-/** Closed type names from the schema subset. An unlisted type name matches nothing (fail closed). */
-function valueMatchesType(type: string, value: unknown): boolean {
+/** Closed type names from the schema subset. An unlisted or non-string type name matches nothing (fail closed). */
+function valueMatchesType(type: unknown, value: unknown): boolean {
   switch (type) {
     case "string": return typeof value === "string";
     case "integer": return typeof value === "number" && Number.isSafeInteger(value);

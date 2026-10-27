@@ -5,14 +5,35 @@ import { AssistantRuntime, type AssistantDiagnosticEvent } from "../apps/local-g
 import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/scripted-assistant-model.js";
 import type { AssistantToolParameterProperty, AssistantToolParametersSchema, AssistantToolResult } from "../apps/local-guest/src/assistant/assistant-model.js";
 import type { AssistantThreadState } from "../apps/local-guest/src/assistant/assistant-state.js";
-import { PLATFORM_TASK_TOOLS, type AssistantDomainPack } from "../apps/local-guest/src/assistant/assistant-platform.js";
+import { PLATFORM_TASK_TOOLS, TASK_START_EVENT, type AssistantDomainPack } from "../apps/local-guest/src/assistant/assistant-platform.js";
 import { findToolArgumentViolation, toolArgumentFailureMessage } from "../apps/local-guest/src/assistant/assistant-tool-arguments.js";
 import { ASSISTANT_TOOL_DEFINITIONS, createShortletAssistantPack } from "../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
 import { createCommerceAssistantPack } from "../apps/local-guest/src/assistant/commerce-assistant-pack.js";
 import { COMMERCE_TEST_REFERENCE_KEYS, migrateCommerceDatabase } from "./helpers/commerce-database.js";
+import { createFakeShopPack } from "./helpers/fake-domain-pack.js";
 
 const SEARCH_SCHEMA = ASSISTANT_TOOL_DEFINITIONS.find((tool) => tool.name === "search_stays")!.parametersSchema;
 const VALID_SEARCH = { city: "Lagos", neighbourhood: "Old Ikoyi", checkIn: null, nights: 4, guests: 2 };
+
+/**
+ * Scripted planner: a user turn whose text contains a key makes the model call the mapped tool;
+ * every tool result sent back to the model is captured in order and answered with a plain plan.
+ */
+function scriptedToolModel(turns: Readonly<Record<string, { readonly name: string; readonly args: Record<string, unknown> }>>, captured: AssistantToolResult[]): ScriptedAssistantModel {
+  return new ScriptedAssistantModel([(request) => {
+    const last = request.history.at(-1);
+    if (last?.role === "tool_results") {
+      captured.push(...last.results);
+      return { text: JSON.stringify({ kind: "clarify_stay", references: [] }) };
+    }
+    if (last?.role === "user") {
+      const key = Object.keys(turns).find((candidate) => last.text.includes(candidate));
+      const turn = key === undefined ? undefined : turns[key];
+      if (turn) return { toolCalls: [{ id: `call-${key}`, name: turn.name, args: turn.args }] };
+    }
+    return null;
+  }]);
+}
 
 /** Runs one planner turn whose only model tool call is `name` with `args`, and captures what the model receives back. */
 async function runRejectedCall(name: string, args: Record<string, unknown>, text = "Find stays in Old Ikoyi Broken") {
@@ -20,15 +41,7 @@ async function runRejectedCall(name: string, args: Record<string, unknown>, text
   const diagnostics: AssistantDiagnosticEvent[] = [];
   const results: AssistantToolResult[] = [];
   try {
-    const model = new ScriptedAssistantModel([(request) => {
-      const last = request.history.at(-1);
-      if (last?.role === "tool_results") {
-        results.push(...last.results);
-        return { text: JSON.stringify({ kind: "clarify_stay", references: [] }) };
-      }
-      if (last?.role === "user" && last.text.includes("Broken")) return { toolCalls: [{ id: "call-1", name, args }] };
-      return null;
-    }]);
+    const model = scriptedToolModel({ Broken: { name, args } }, results);
     const runtime = new AssistantRuntime(env, model, { onDiagnostic: (event) => diagnostics.push(event) });
     const response = await runtime.handleTurn("argument-validation", text);
     return { response, diagnostics, results, runtime };
@@ -74,7 +87,7 @@ function sampleValue(schema: AssistantToolParameterProperty): unknown {
   }
 }
 
-test("AC1: a tool call with a missing required argument is rejected before the tool runs, and the model receives an invalid_arguments error naming the field", async () => {
+test("a tool call with a missing required argument is rejected before the tool runs, and the model receives an invalid_arguments error naming the field", async () => {
   const { response, diagnostics, results } = await runRejectedCall("search_stays", { nights: 4, guests: 2 });
 
   assert.equal(response.ok, true);
@@ -84,7 +97,7 @@ test("AC1: a tool call with a missing required argument is rejected before the t
   assert.match(String(results[0]?.result.message), /"city"/);
 });
 
-test("AC2: a tool call with an argument of the wrong type is rejected before the tool runs", async () => {
+test("a tool call with an argument of the wrong type is rejected before the tool runs", async () => {
   const { response, diagnostics, results } = await runRejectedCall("search_stays", { city: "Lagos", nights: "four", guests: 2 });
 
   assert.equal(response.ok, true);
@@ -93,7 +106,7 @@ test("AC2: a tool call with an argument of the wrong type is rejected before the
   assert.equal(results[0]?.isError, true);
 });
 
-test("AC3: a numeric argument outside minimum/maximum is rejected before the tool runs", async () => {
+test("a numeric argument outside minimum/maximum is rejected before the tool runs", async () => {
   const { diagnostics, results } = await runRejectedCall("search_stays", { city: "Lagos", nights: 99, guests: 2 });
 
   assert.equal(executedToolCount(diagnostics), 0);
@@ -102,7 +115,7 @@ test("AC3: a numeric argument outside minimum/maximum is rejected before the too
   assert.equal(findToolArgumentViolation(SEARCH_SCHEMA, { city: "Lagos", nights: 0 })?.reason, "range");
 });
 
-test("AC4: an unknown argument is rejected when the schema sets additionalProperties false, and accepted when it does not", () => {
+test("an unknown argument is rejected when the schema sets additionalProperties false, and accepted when it does not", () => {
   const withUnknown = { ...VALID_SEARCH, unexpectedField: "x" };
   assert.equal(findToolArgumentViolation(SEARCH_SCHEMA, withUnknown)?.reason, "unknown");
 
@@ -110,7 +123,7 @@ test("AC4: an unknown argument is rejected when the schema sets additionalProper
   assert.equal(findToolArgumentViolation(open, { city: "Lagos", unexpectedField: "x" }), undefined);
 });
 
-test("AC5: a union type such as [integer, null] accepts each listed type and rejects others", () => {
+test("a union type such as [integer, null] accepts each listed type and rejects others", () => {
   const schema: AssistantToolParametersSchema = {
     type: "object",
     properties: { count: { type: ["integer", "null"] } },
@@ -125,17 +138,14 @@ test("AC5: a union type such as [integer, null] accepts each listed type and rej
   }
 });
 
-test("AC6: a rejected call leaves the thread's task state and surfaces unchanged and records a failed tool_execution diagnostic", async () => {
+test("a rejected call leaves the thread's task state and surfaces unchanged and records a failed tool_execution diagnostic", async () => {
   const env = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
   const diagnostics: AssistantDiagnosticEvent[] = [];
   try {
-    const model = new ScriptedAssistantModel([(request) => {
-      const last = request.history.at(-1);
-      if (last?.role === "tool_results") return { text: JSON.stringify({ kind: "clarify_stay", references: [] }) };
-      if (last?.role === "user" && last.text.includes("Broken")) return { toolCalls: [{ id: "bad", name: "search_stays", args: { city: "Lagos", nights: "four" } }] };
-      if (last?.role === "user") return { toolCalls: [{ id: "good", name: "search_stays", args: VALID_SEARCH }] };
-      return null;
-    }]);
+    const model = scriptedToolModel({
+      "Find stays": { name: "search_stays", args: VALID_SEARCH },
+      Broken: { name: "search_stays", args: { city: "Lagos", nights: "four" } },
+    }, []);
     const runtime = new AssistantRuntime(env, model, { onDiagnostic: (event) => diagnostics.push(event) });
     await runtime.handleTurn("argument-validation-state", "Find stays in Old Ikoyi");
     const before = runtime.getThread("argument-validation-state");
@@ -153,7 +163,7 @@ test("AC6: a rejected call leaves the thread's task state and surfaces unchanged
   }
 });
 
-test("AC7: the error message and the diagnostic do not contain the rejected argument's value", async () => {
+test("the error message and the diagnostic do not contain the rejected argument's value", async () => {
   const canary = "PRIVATE_ARGUMENT_CANARY_7319";
   const { diagnostics, results } = await runRejectedCall("search_stays", { city: "Lagos", nights: canary, guests: 2 });
 
@@ -163,7 +173,9 @@ test("AC7: the error message and the diagnostic do not contain the rejected argu
   assert.doesNotMatch(toolArgumentFailureMessage({ field: "nights", reason: "type" }), new RegExp(canary));
 });
 
-test("AC8: every existing tool definition in the shortlet and commerce packs is accepted by the validator for a valid call", () => {
+// Sample-based: this checks that the validator accepts a sample built from each declared schema.
+// It does not exercise real pack calls; the runtime tests below cover those.
+test("every existing tool definition in the shortlet and commerce packs is accepted by the validator for a valid call", () => {
   const env = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
   try {
     migrateCommerceDatabase(env.database);
@@ -187,5 +199,115 @@ test("AC8: every existing tool definition in the shortlet and commerce packs is 
     assert.ok(walked >= ASSISTANT_TOOL_DEFINITIONS.length + PLATFORM_TASK_TOOLS.length);
   } finally {
     env.close();
+  }
+});
+
+test("a switch_task call with a numeric taskId is rejected before the task-tool path changes any task", async () => {
+  const env = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
+  const results: AssistantToolResult[] = [];
+  try {
+    const model = scriptedToolModel({ "Switch broken": { name: "switch_task", args: { taskId: 7 } } }, results);
+    const runtime = new AssistantRuntime(env, model, { additionalPacks: [createFakeShopPack()] });
+    // A second task exists, so an unchecked switch would reach the task lookup (UNKNOWN_TASK) rather than change anything.
+    assert.equal(runtime.handleAssistantEvent("task-switch-numeric", TASK_START_EVENT, { domain: "shop" }).ok, true);
+    assert.equal(runtime.getThread("task-switch-numeric").tasks.length, 2);
+    const before = runtime.getThread("task-switch-numeric");
+    const snapshotBefore = threadSnapshot(before);
+
+    const response = await runtime.handleTurn("task-switch-numeric", "Switch broken");
+
+    assert.equal(response.ok, true);
+    assert.equal(results[0]?.isError, true);
+    assert.equal(results[0]?.result.error, "invalid_arguments", "validation runs before the task-tool path, so UNKNOWN_TASK never appears");
+    assert.equal(threadSnapshot(runtime.getThread("task-switch-numeric")), snapshotBefore);
+  } finally {
+    env.close();
+  }
+});
+
+test("a start_task call without its required domain is rejected before any task is created", async () => {
+  const env = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
+  const results: AssistantToolResult[] = [];
+  try {
+    const model = scriptedToolModel({ "Start broken": { name: "start_task", args: {} } }, results);
+    const runtime = new AssistantRuntime(env, model, { additionalPacks: [createFakeShopPack()] });
+    const before = runtime.getThread("task-start-missing-domain");
+    const snapshotBefore = threadSnapshot(before);
+    const taskCountBefore = before.tasks.length;
+
+    const response = await runtime.handleTurn("task-start-missing-domain", "Start broken");
+
+    assert.equal(response.ok, true);
+    assert.equal(results[0]?.result.error, "invalid_arguments");
+    assert.match(String(results[0]?.result.message), /"domain"/);
+    const after = runtime.getThread("task-start-missing-domain");
+    assert.equal(after.tasks.length, taskCountBefore);
+    assert.equal(threadSnapshot(after), snapshotBefore);
+  } finally {
+    env.close();
+  }
+});
+
+test("a commerce tool call with bad arguments is rejected before the pack's validateToolCall or executeTool runs", async () => {
+  const env = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
+  const results: AssistantToolResult[] = [];
+  try {
+    migrateCommerceDatabase(env.database);
+    const base = createCommerceAssistantPack({ database: env.database, clock: env.clock, paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS });
+    let validations = 0;
+    let executions = 0;
+    const spied: AssistantDomainPack = {
+      ...base,
+      validateToolCall: (name, args) => { validations++; return base.validateToolCall(name, args); },
+      executeTool: (name, args, context) => { executions++; return base.executeTool(name, args, context); },
+    };
+    const model = scriptedToolModel({ "Details broken": { name: "get_offer", args: { offerId: 42 } } }, results);
+    const runtime = new AssistantRuntime(env, model, { additionalPacks: [spied] });
+    assert.equal(runtime.handleAssistantEvent("commerce-bad-args", TASK_START_EVENT, { domain: "commerce" }).ok, true);
+    results.length = 0;
+    validations = 0;
+    executions = 0;
+
+    const response = await runtime.handleTurn("commerce-bad-args", "Details broken");
+
+    assert.equal(response.ok, true);
+    assert.equal(results[0]?.result.error, "invalid_arguments");
+    assert.match(String(results[0]?.result.message), /"offerId"/);
+    assert.equal(validations, 0, "validateToolCall must not be reached for a rejected commerce call");
+    assert.equal(executions, 0, "executeTool must not run for a rejected commerce call");
+  } finally {
+    env.close();
+  }
+});
+
+test("a shortlet tool call with bad arguments is rejected before the shortlet precondition check", async () => {
+  const env = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
+  const results: AssistantToolResult[] = [];
+  try {
+    // A fresh thread has no shortlist, so an unchecked call would fail the shortlet precondition with invalid_tool_for_state.
+    const model = scriptedToolModel({ "Open broken": { name: "get_unit_details", args: { stayRef: 5 } } }, results);
+    const runtime = new AssistantRuntime(env, model);
+    const response = await runtime.handleTurn("shortlet-bad-args", "Open broken");
+
+    assert.equal(response.ok, true);
+    assert.equal(results[0]?.result.error, "invalid_arguments");
+  } finally {
+    env.close();
+  }
+});
+
+test("a missing or malformed declared schema fails closed with a schema violation and does not throw", () => {
+  const malformed: readonly (readonly [string, unknown])[] = [
+    ["an undefined root schema", undefined],
+    ["a root schema without properties", { type: "object" }],
+    ["a root schema whose properties are not an object", { type: "object", properties: 5 }],
+    ["a property schema without a type", { type: "object", properties: { city: {} } }],
+    ["a property enum that is not a list", { type: "object", properties: { city: { type: "string", enum: "Lagos" } } }],
+    ["a required list that is not a list", { type: "object", properties: {}, required: "city" }],
+  ];
+  for (const [label, schema] of malformed) {
+    const violation = findToolArgumentViolation(schema as unknown as AssistantToolParametersSchema, { city: "Lagos" });
+    assert.equal(violation?.reason, "schema", label);
+    assert.doesNotThrow(() => toolArgumentFailureMessage(violation!), label);
   }
 });
