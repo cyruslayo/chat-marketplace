@@ -1,5 +1,5 @@
 import { generatePlatformId } from "../../../../packages/platform-core/src/index.js";
-import { containsExactDateToken } from "./date-tokens.js";
+import { AssistantDateProvenanceError, containsGuestDate } from "./date-tokens.js";
 import { StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
 import {
   discoveryArtifactToA2UI,
@@ -308,6 +308,7 @@ export function resolveCheckInDate(
   currentCriteriaDate?: { readonly checkIn: string; readonly isDemoDate: boolean },
   currentTurnDates?: { readonly checkIn?: string; readonly checkOut?: string },
   unknownCurrentCriteriaDate?: string,
+  now?: Date,
 ): { readonly checkIn: string; readonly isDemoDate: boolean } {
   const currentCheckIn = currentTurnDates?.checkIn;
   if (!modelCheckIn || modelCheckIn === null) {
@@ -349,13 +350,12 @@ export function resolveCheckInDate(
   }
 
   // Retain established same-thread user history when no typed current-turn role is available.
+  // ADR 0106: a guest's English day-month literal authorizes its resolved date; the planner's date must equal it.
   const priorUserText = currentTurnDates === undefined ? userTextHistory : userTextHistory.slice(0, -1);
-  if (priorUserText.some((text) => containsExactDateToken(text, modelCheckIn))) return { checkIn: modelCheckIn, isDemoDate: false };
+  if (priorUserText.some((text) => containsGuestDate(text, modelCheckIn, now))) return { checkIn: modelCheckIn, isDemoDate: false };
   throw new AssistantDateProvenanceError(`Date authority violation: model proposed date ${modelCheckIn} was not authored by user. Ask the user for explicit YYYY-MM-DD.`);
 }
 
-/** Closed diagnostic identity; current task dates and authored dates are separate authorities. */
-class AssistantDateProvenanceError extends Error {}
 
 export function executeAssistantTool(
   name: string,
@@ -400,7 +400,7 @@ export function executeAssistantTool(
         ? taskState.stayIntent.checkIn
         : undefined;
       const dateContext = hasStayDetails
-        ? resolveCheckInDate(args.checkIn as string | null | undefined, context.userTextHistory, context.demoCheckIn, currentCriteriaDate, context.currentTurnDates, unknownCurrentCriteriaDate)
+        ? resolveCheckInDate(args.checkIn as string | null | undefined, context.userTextHistory, context.demoCheckIn, currentCriteriaDate, context.currentTurnDates, unknownCurrentCriteriaDate, context.now)
         : undefined;
       const checkIn = dateContext?.checkIn;
       let checkOut: string | undefined;

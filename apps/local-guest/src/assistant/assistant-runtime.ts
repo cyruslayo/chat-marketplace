@@ -27,7 +27,7 @@ import {
   type AssistantReplyPlanKind,
 } from "./assistant-platform.js";
 import { createShortletAssistantPack } from "./shortlet-assistant-pack.js";
-import { containsExactDateToken, currentTurnDateRoles } from "./date-tokens.js";
+import { containsGuestDate, currentTurnDateRoles } from "./date-tokens.js";
 import { ModelScopeClassifier, ScopeClassificationError, assessScopeSafely, scopedMixedInput, type ScopeClassifier, type ScopeAssessment, type ConciergeIntent } from "./scope-classifier.js";
 import { RetryingScopeClassifier, ScopeClassifierRetryError, SCOPE_TOTAL_BUDGET_MS, type ScopeClassifierRetryEvent, type ScopeClassifierRetryResult } from "./scope-classifier-retry.js";
 import { ASSISTANT_CONTROL_COPY } from "./control-copy.js";
@@ -669,7 +669,7 @@ export class AssistantRuntime {
     }
     const discardUserInput = assessment.scope === "mixed";
     const validMixedLocation = assessment.slots.neighbourhood === null || packForScope.scopeLocations?.includes(assessment.slots.neighbourhood) === true;
-    if (discardUserInput && (!validMixedLocation || [assessment.slots.checkIn, assessment.slots.checkOut].some((date) => date !== null && !containsExactDateToken(originalUserText, date)))) {
+    if (discardUserInput && (!validMixedLocation || [assessment.slots.checkIn, assessment.slots.checkOut].some((date) => date !== null && !containsGuestDate(originalUserText, date, this.#environment.clock())))) {
       recordOutcome("scope_unavailable");
       return { ok: true, messages: [ASSISTANT_CONTROL_COPY.unavailable], surfaces: [], modelHandled: false,
         discardUserInput: true, controlOutcome: "scope_unavailable", tasks: this.getTaskRail(threadId) };
@@ -816,7 +816,7 @@ export class AssistantRuntime {
             taskId: candidateActiveTaskId,
             userTextHistory,
             // ADR 0106: classifier date slots bind to roles only through server-side checks; ambiguous ones carry no check-in authority.
-            currentTurnDates: currentTurnDateRoles(originalUserText, assessment.slots),
+            currentTurnDates: currentTurnDateRoles(originalUserText, assessment.slots, this.#environment.clock()),
             now: this.#environment.clock(),
             demoCheckIn: this.#environment.config.demoCheckIn,
           };
