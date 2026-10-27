@@ -121,3 +121,18 @@ test("Cold restore keeps chip dates", async () => {
     assert.equal(restarted.app.getState(threadId)?.criteria?.when?.checkIn, CHIP_CHECK_IN, "a restarted app restores the chip date");
   } finally { f.close(); }
 });
+
+test("A chip nights edit returns the strip criteria in the same response and in getState", async () => {
+  const f = datedFixture(scriptedPlanner(SCRIPT).client);
+  try {
+    const threadId = "g-c1a0000006";
+    successOf(await f.app.handleTurn(threadId, OWNER_DATED));
+    assert.equal(f.app.getState(threadId)?.criteria?.when?.nights, 3, "the search starts with three nights");
+    // Failure path before the fix: the edit response carried no criteria, so the browser kept the pre-edit strip.
+    const edited = successOf(chooseChipDates(f, threadId, "2026-11-20", 2));
+    assert.equal(edited.criteria?.when?.label, "20–22 Nov 2026 · 2 nights", "the edit response carries the edited strip");
+    assert.equal(edited.criteria?.when?.nights, 2);
+    assert.equal(f.app.getState(threadId)?.criteria?.when?.label, "20–22 Nov 2026 · 2 nights", "getState shows the same strip");
+    assert.match(edited.surfaces[0]?.conventionalRoute ?? "", /checkOut=2026-11-22/, "the results card and strip agree");
+  } finally { f.close(); }
+});

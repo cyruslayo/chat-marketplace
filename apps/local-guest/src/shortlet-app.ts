@@ -1958,11 +1958,13 @@ export class LocalGuestApp {
    * result. They are derived per response and never stored with the thread.
    */
   #withJourney(threadId: string, result: GuestTurnResult): GuestTurnResult {
-    if (!result.ok || this.#assistantRuntime) return result;
+    if (!result.ok) return result;
     const thread = this.#threads.get(threadId);
     if (!thread) return result;
-    const journey = this.#journeyFor(thread);
+    // Issue 03a AC1 applies to assistant responses too: a chip edit must return the strip it just changed.
     const criteria = this.#criteriaFor(thread);
+    if (this.#assistantRuntime) return criteria === undefined ? result : { ...result, criteria };
+    const journey = this.#journeyFor(thread);
     const surfaces = this.#withWaiting(thread, result.surfaces);
     return {
       ...result,
