@@ -9,6 +9,7 @@ import type {
   AssistantModelResponse,
 } from "./assistant-model.js";
 import { ModelRequestGuardError } from "./assistant-model.js";
+import { findToolArgumentViolation, toolArgumentFailureMessage } from "./assistant-tool-arguments.js";
 import {
   AssistantPackRegistry,
   composeSystemInstruction,
@@ -19,7 +20,6 @@ import {
   TASK_SWITCH_EVENT,
   toolsForValidatedIntents,
   toolNamesForValidatedIntents,
-  validateAssistantToolArguments,
   type AssistantDomainPack,
   type AssistantTaskSummary,
   type AssistantToolContext,
@@ -791,14 +791,18 @@ export class AssistantRuntime {
             ? taskSwitchPermitted && this.#packs.size > 1
             : activePack.id === validatedDomainId && validatedTurnToolNames.has(call.name);
           const schemaTool = offeredTool ?? (activePack.id === validatedDomainId ? activePack.toolDefinition?.(call.name) : undefined);
-          // ADR 0072/0106: validate provider arguments locally before pack execution or command routing.
-          const malformedArguments = turnAuthorized && schemaTool && !validateAssistantToolArguments(schemaTool.parametersSchema, call.args)
-            ? { code: "invalid_tool_arguments" as const, message: "The tool arguments do not match the declared schema." }
+          // ADR 0072/0075/0106: check model arguments against the offered schema before the task-tool path,
+          // pack preconditions or command routing. The message names the field and never the value.
+          const argumentViolation = turnAuthorized && schemaTool
+            ? findToolArgumentViolation(schemaTool.parametersSchema, call.args)
+            : undefined;
+          const malformedArguments = argumentViolation
+            ? { code: "invalid_arguments" as const, message: toolArgumentFailureMessage(argumentViolation) }
             : undefined;
           const precondition = !turnAuthorized || isTaskTool || malformedArguments || !offeredTool
             ? undefined
             : activePack.validateToolCall(call.name, call.args, candidateTaskState);
-          const stateUnavailable = !isTaskTool && !offeredTool && turnAuthorized
+          const stateUnavailable = !isTaskTool && !offeredTool && turnAuthorized && !malformedArguments
             ? activePack.validateToolCall(call.name, call.args, candidateTaskState)
               ?? { code: "invalid_tool_for_state" as const, message: "That operation is not available for the current Guest workflow." }
             : undefined;

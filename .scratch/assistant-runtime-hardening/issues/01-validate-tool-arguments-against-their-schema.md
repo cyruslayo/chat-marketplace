@@ -43,3 +43,33 @@ Model output is untrusted (ADR 0075). Wrong types should be rejected in one plac
 `test/assistant-tool-argument-validation.test.ts` (new) for the validator and loop behaviour, using `ScriptedAssistantModel`. Also run the affected suites: `npm run test:assistant`, `test/assistant-pack-registry.test.ts`, `test/assistant-search-unknowns.test.ts`.
 
 ## Comments
+
+Implementation (integration/concierge-controls, 28 Oct 2026). Status left at `ready-for-agent`: Definition of Done item 7 is not yet met (see below).
+
+ADRs read and applied: 0075 (values never echoed in the error text or diagnostics; field names only), 0072 (validation is a front gate; command validation unchanged), 0099 (each pack's own `toolDefinition`/`parametersSchema` is used; the platform does not copy schemas), 0106 (fail closed; unknown or unlisted type names match nothing; invalid call denies the turn). Also read 0092 and 0093 for the cold-restore context. No ADR conflicts.
+
+What changed:
+- New `apps/local-guest/src/assistant/assistant-tool-arguments.ts`: `findToolArgumentViolation` returns the first violation as `{ field, reason }` with reasons `missing`, `type`, `range`, `length`, `enum`, `unknown`. `toolArgumentFailureMessage` builds a value-free message that names the field. No new dependency.
+- `assistant-runtime.ts` tool loop: the argument check runs before the task-tool path and before `validateToolCall`. A violation returns `{ error: "invalid_arguments", message }` with `isError: true` and a `tool_execution` diagnostic with `failureClass: MODEL_SELECTION_FAILURE`. Precondition and state checks are skipped for a call that fails validation.
+- `assistant-platform.ts`: the boolean `validateAssistantToolArguments` and its helpers were removed. The precondition code `invalid_tool_arguments` is renamed `invalid_arguments` (no other references).
+
+Tests:
+- `test/assistant-tool-argument-validation.test.ts` (new): one test per acceptance criterion, AC1 to AC8, named to mirror the criteria. All 8 pass.
+
+Commands and counts:
+- `env -u LLM_API_KEY npm run check`: exit 0 (tsc for root, apps/cloudflare, tsconfig.test and tsconfig.tooling, plus the worker bundle guard).
+- `env -u LLM_API_KEY npx tsx --test test/assistant-tool-argument-validation.test.ts`: 8 tests, 8 pass, 0 fail. Before the change it failed (module missing).
+- `env -u LLM_API_KEY npm run test:assistant`: 67 tests, 66 pass, 1 fail. The failure is `Unit detail surface projects inspection facts from the authoritative Unit` in `test/shortlet-assistant-evals.test.ts`. It expects "Inspection expiry: 1 Feb 2027", but the surface renders "27 Oct 2027", which comes from `domains/shortlet/src/browse.ts` (unchanged in this branch's diff). The valid `get_unit_details` call still runs and renders, so the failure is a stale data expectation and not caused by argument validation. Not fixed here: changing an expected policy date needs an owner decision.
+- `env -u LLM_API_KEY npx tsx --test test/assistant-pack-registry.test.ts`: 3 tests, 3 pass, 0 fail.
+- `env -u LLM_API_KEY npx tsx --test test/assistant-search-unknowns.test.ts`: 5 tests, 5 pass, 0 fail.
+- `env -u LLM_API_KEY npx tsx --test test/assistant-control-metrics.test.ts test/commerce-agent-tools.test.ts test/assistant-task-rail.test.ts test/conversation-router.test.ts test/assistant-scope-controls.test.ts test/assistant-date-literal-authority.test.ts test/assistant-control-outcome-count.test.ts`: 73 tests, 73 pass, 0 fail (other suites that drive the tool loop).
+- Not run, by policy: full `npm test` and `npm run test:workers` (pre-merge gate, once per batch).
+
+Definition of Done:
+1. Every criterion has a named test: pass (AC1 to AC8, one `test()` each).
+2. Failure paths asserted: pass (missing, wrong type, out of range, unknown, unlisted union member, rejected call with unchanged state).
+3. ADRs listed and cited: pass (above).
+4. No unused injected dependency: pass (no constructor changes).
+5. No invented policy string: pass (`invalid_arguments` is a closed error code, not a policy value).
+6. No restricted material in logs or audit: pass (AC7 asserts the canary is absent from the tool result and diagnostics).
+7. `npm run check` clean: pass. `npm test` zero failures: NOT MET. The affected `test:assistant` run has one pre-existing stale-date failure (above), and the full suite runs only at the batch gate. Status therefore stays `ready-for-agent` until the owner decides the expiry expectation or the batch gate runs.
