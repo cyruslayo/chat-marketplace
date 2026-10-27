@@ -88,6 +88,8 @@ export interface AssistantDomainPack {
   readonly scopeDescription?: string;
   /** Fixed guest copy that asks for dates in a supported form when a planner date is not guest-authored (ADR 0106). */
   readonly dateClarification?: string;
+  /** Fixed guest copy that asks for missing stay details (nights, party size) when a planner search omits them (ADR 0106). */
+  readonly stayDetailsClarification?: string;
   /** Canonical structured location values; external narrative is excluded. */
   readonly scopeLocations?: readonly string[];
   /** Words that signal the user is asking for this domain, used by the router. */

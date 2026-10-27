@@ -14,6 +14,12 @@ export class AssistantDateProvenanceError extends Error {}
  */
 export class AssistantDateValidationError extends Error {}
 
+/**
+ * A planner search that carries stay details but no party size or no nights, and no earlier value in the task state.
+ * It is a rejected tool call (ADR 0106), answered with the pack's fixed stay clarification, never an application fault.
+ */
+export class AssistantStayDetailsError extends Error {}
+
 const CHECKOUT_KEYWORD = /\bcheck[\s-]*out\b/i;
 const CLAUSE_BOUNDARY = /^[\s\S]*(?:[;,.!?\n]|\d{4}-\d{2}-\d{2})/;
 

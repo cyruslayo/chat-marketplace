@@ -27,7 +27,7 @@ import {
   type AssistantReplyPlanKind,
 } from "./assistant-platform.js";
 import { createShortletAssistantPack, validatedCheckOutForNights } from "./shortlet-assistant-pack.js";
-import { AssistantDateProvenanceError, AssistantDateValidationError, containsGuestDate, currentTurnDateRoles } from "./date-tokens.js";
+import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantStayDetailsError, containsGuestDate, currentTurnDateRoles } from "./date-tokens.js";
 import { PLANNER_REQUEST_TIMEOUT_MS } from "../turn-budget.js";
 import { ModelScopeClassifier, ScopeClassificationError, assessScopeSafely, scopedMixedInput, type ScopeClassifier, type ScopeAssessment, type ConciergeIntent } from "./scope-classifier.js";
 import { RetryingScopeClassifier, ScopeClassifierRetryError, SCOPE_TOTAL_BUDGET_MS, type ScopeClassifierRetryEvent, type ScopeClassifierRetryResult } from "./scope-classifier-retry.js";
@@ -1038,14 +1038,17 @@ export class AssistantRuntime {
         this.#syncActiveTask(thread);
         return { ok: true, messages: [message], surfaces: candidateSurfaces, tasks: this.getTaskRail(threadId), modelHandled: true, discardUserInput, controlOutcome: "rejected_plan_fallback" };
       }
-      if (error instanceof AssistantDateProvenanceError || error instanceof AssistantDateValidationError) {
-        // ADR 0106: a planner date the guest did not author, or one that fails the stay rules, is a rejected tool call.
-        // The turn keeps the guest's message, commits no new task state, and asks for dates in a supported format.
+      if (error instanceof AssistantDateProvenanceError || error instanceof AssistantDateValidationError || error instanceof AssistantStayDetailsError) {
+        // ADR 0106: a planner date the guest did not author, one that fails the stay rules, or a search missing its stay
+        // details is a rejected tool call. The turn keeps the guest's message, commits no new task state, and asks the guest.
         controlOutcome = "tool_denial";
         recordOutcome(controlOutcome);
         candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
         this.#commitHistory(thread, candidateHistory, candidatePack(), thread.taskState);
-        return { ok: true, messages: [candidatePack().dateClarification ?? ASSISTANT_CONTROL_COPY.unavailable], surfaces: [], modelHandled: false,
+        const clarification = error instanceof AssistantStayDetailsError
+          ? candidatePack().stayDetailsClarification
+          : candidatePack().dateClarification;
+        return { ok: true, messages: [clarification ?? ASSISTANT_CONTROL_COPY.unavailable], surfaces: [], modelHandled: false,
           discardUserInput: false, controlOutcome, tasks: this.getTaskRail(threadId) };
       }
       recordOutcome(controlOutcome);

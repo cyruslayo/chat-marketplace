@@ -1,5 +1,5 @@
 import { generatePlatformId } from "../../../../packages/platform-core/src/index.js";
-import { AssistantDateProvenanceError, AssistantDateValidationError, containsGuestDate } from "./date-tokens.js";
+import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantStayDetailsError, containsGuestDate } from "./date-tokens.js";
 import { StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
 import {
   discoveryArtifactToA2UI,
@@ -409,6 +409,11 @@ export function executeAssistantTool(
       const nights = args.nights == null ? taskState.stayIntent.nights : Number(args.nights);
       const guests = args.guests == null ? taskState.stayIntent.partySize : Number(args.guests);
       const hasStayDetails = nights !== undefined || guests !== undefined || (args.checkIn !== undefined && args.checkIn !== null);
+      // ADR 0106: a search with stay details must name both nights and party size (in this call or the task state).
+      // A missing value is a rejected tool call answered with the fixed stay clarification, not an application fault.
+      if (hasStayDetails && (nights === undefined || guests === undefined)) {
+        throw new AssistantStayDetailsError("nights and party size are required with stay details");
+      }
       if (hasStayDetails && (!Number.isSafeInteger(nights) || nights! < 1 || (nights! > 14 && !isExtendedStayLength(nights!, context.environment.extendedStayPolicy)))) {
         throw new RangeError("nights must fit the configured Short Stay or Extended Stay range");
       }
@@ -1011,6 +1016,7 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     promptSection: SHORTLET_PROMPT_SECTION,
     scopeDescription: "Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.",
     dateClarification: GUEST_ASSISTANT_COPY.datesClarification,
+    stayDetailsClarification: GUEST_ASSISTANT_COPY.stayClarification,
     scopeLocations: [...new Set(environment.unitRepository.findAll().map((unit) => unit.location.neighbourhood))],
     toolIntentMap: {
       search: ["search_stays"],
