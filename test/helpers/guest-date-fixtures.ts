@@ -110,27 +110,52 @@ export function runtimeDiscoveryArtifact(runtime: AssistantRuntime, threadId: st
   return candidate as { readonly id: string; readonly facts: { readonly results: readonly { readonly id: string }[] } };
 }
 
-/** One scripted in-scope turn: the classifier slots the guest's text supports, and the planner's search (if any). */
+/**
+ * One scripted in-scope turn: the classifier slots and intents the guest's text supports, and the planner's one tool call
+ * (a `search_stays` search, or any other tool such as `get_unit_details`).
+ */
 export interface ScriptedTurn {
   readonly slots: Partial<ScopeSlots>;
+  readonly intents?: readonly string[];
   readonly search?: Record<string, unknown>;
+  readonly tool?: { readonly name: string; readonly args: Record<string, unknown> };
 }
 
 /**
- * A scripted OpenRouter-compatible model: each listed guest message gets its classifier verdict and one search call.
+ * A scripted OpenRouter-compatible model: each listed guest message gets its classifier verdict and one planner tool call.
  * Every planner request is appended to `planner` so tests can assert what the planner was shown.
  */
 export function scriptedPlanner(turns: Readonly<Record<string, ScriptedTurn>>, planner: CapturedRequest[] = []) {
   return clientWith((request) => {
     if (isScopeRequest(request)) {
       const turn = turns[classifiedMessage(request)];
-      return completion({ content: JSON.stringify(scopeVerdict(turn?.slots ?? {})) });
+      return completion({ content: JSON.stringify(scopeVerdict(turn?.slots ?? {}, turn?.intents)) });
     }
     if (lastRoleIsTool(request)) return completion({ content: "Search complete." });
     const text = latestUserText(request);
     const turn = text === undefined ? undefined : turns[text];
     planner.push(request);
     if (turn?.search) return searchToolCall(`search-${text?.length ?? 0}`, turn.search);
+    if (turn?.tool) return completion({ tool_calls: [{ id: `tool-${text?.length ?? 0}`, type: "function", function: { name: turn.tool.name, arguments: JSON.stringify(turn.tool.args) } }] });
     throw new Error("Unexpected offline fixture turn");
   }, OPENROUTER);
+}
+
+/** The first Button action on a surface, as the browser would send it (the guest taps the first primary control). */
+export function firstButtonAction(surface: { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] }): { readonly name: string; readonly surfaceId: string; readonly sourceComponentId: string; readonly timestamp: string; readonly context: Record<string, unknown> } {
+  let found: { readonly name: string; readonly context: Record<string, unknown> } | undefined;
+  const walk = (node: unknown): void => {
+    if (found !== undefined || node === null || typeof node !== "object") return;
+    if (Array.isArray(node)) { node.forEach(walk); return; }
+    const record = node as Record<string, unknown>;
+    const event = (record.action as { readonly event?: { readonly name?: unknown; readonly context?: unknown } } | undefined)?.event;
+    if (record.component === "Button" && event && typeof event.name === "string" && event.context !== null && typeof event.context === "object") {
+      found = { name: event.name, context: event.context as Record<string, unknown> };
+      return;
+    }
+    Object.values(record).forEach(walk);
+  };
+  walk(surface.a2uiMessages);
+  if (found === undefined) throw new Error(`surface ${surface.surfaceId} has no Button action`);
+  return { ...found, surfaceId: surface.surfaceId, sourceComponentId: "journey-test", timestamp: new Date().toISOString() };
 }
