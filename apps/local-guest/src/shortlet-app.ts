@@ -168,6 +168,7 @@ import {
 import { projectJourney, type GuestJourney } from "./journey-rail.js";
 import {
   parseGuestProjection,
+  type PersistedActiveContact,
   type PersistedAssistantContext,
   type GuestPersistentProjection,
 } from "./guest-projection.js";
@@ -638,6 +639,8 @@ interface GuestThreadState {
   discoveryArtifact: DiscoveryArtifactProjection | null;
   /** ADR 0106: the id the guest's current discovery card names; a cold restore keeps it (see `#assistantContextSearch`). */
   discoveryArtifactId: string | null;
+  /** The open contact-details surface and its resume ids; a cold restore re-renders it under the same id. */
+  activeContact: PersistedActiveContact | null;
   discoverySurfaceId: string;
   discoveryRevision: number;
   unitDetail: { readonly unitId: string; readonly artifactId: string } | null;
@@ -666,6 +669,23 @@ interface GuestThreadState {
   draftChangeContext: DiscoverySearchContext | null;
   /** Issue 14: the proposed replacement Request Draft. In memory only; a restart shows the current draft. */
   pendingDraftReplacement: PendingDraftReplacement | null;
+}
+
+/**
+ * The resume ids a contact surface keeps for its restore: primitive, bounded entries only. Contact values and revisions are
+ * never kept (ADR 0093, 0075), and the same keys are rejected by the projection parser.
+ */
+function plainResumeIds(context: JsonObject): Record<string, string | number | boolean> {
+  const kept: Record<string, string | number | boolean> = {};
+  for (const [key, value] of Object.entries(context)) {
+    if (key === "contactValue" || key === "expectedRevision" || key.length > 64) continue;
+    if (typeof value === "string") {
+      if (value.length <= 200) kept[key] = value;
+    } else if (typeof value === "number" || typeof value === "boolean") {
+      kept[key] = value;
+    }
+  }
+  return kept;
 }
 
 function isDiscoveryArtifactProjection(value: unknown): value is DiscoveryArtifactProjection {
@@ -2368,6 +2388,7 @@ export class LocalGuestApp {
       // ADR 0075/0077: Assistant searches persist safe criteria, not listing prose; current artifacts are re-queried on restore.
       discoveryArtifact: thread.assistantContext && !forCurrentRestore ? null : thread.discoveryArtifact,
       discoveryArtifactId: thread.discoveryArtifactId,
+      activeContact: thread.activeContact,
       discoverySurfaceId: thread.discoverySurfaceId,
       discoveryRevision: thread.discoveryRevision,
       unitDetail: thread.unitDetail
@@ -2407,6 +2428,9 @@ export class LocalGuestApp {
     if (surfaceId.includes(":offer:")) return OFFER_STAGE;
     if (surfaceId.includes(":payment:")) return PAYMENT_STAGE;
     if (surfaceId.includes(":booking:")) return BOOKING_STAGE;
+    // The contact-details form belongs to the stage it was opened from (see `#contactSurface`).
+    if (surfaceId.includes(":contact:phone:")) return REQUEST_STAGE;
+    if (surfaceId.includes(":contact:email:")) return PAYMENT_STAGE;
     return null;
   }
 
@@ -2525,6 +2549,7 @@ export class LocalGuestApp {
         ? structuredClone(projection.discoveryArtifact)
         : null,
       discoveryArtifactId: projection.discoveryArtifactId,
+      activeContact: projection.activeContact,
       discoverySurfaceId: projection.discoverySurfaceId,
       discoveryRevision: projection.discoveryRevision,
       unitDetail: projection.unitDetail ? { ...projection.unitDetail } : null,
@@ -2575,6 +2600,12 @@ export class LocalGuestApp {
     const environment = this.#environment;
     const surfaceId = projection.activeSurfaceId;
     if (!surfaceId) return null;
+    // ADR 0106 and 0093: the open contact-details surface is re-rendered under the id the guest holds, so its Save stays authorized.
+    const contact = projection.activeContact;
+    if (contact && contact.surfaceId === surfaceId) {
+      const restoredContact = this.#contactSurface(thread, contact.kind, { ...contact.resumeContext }, {}, surfaceId);
+      return restoredContact.ok ? (restoredContact.surfaces[0] ?? null) : null;
+    }
     try {
       if (
         projection.activeStage === UNIT_STAGE &&
@@ -2902,6 +2933,7 @@ export class LocalGuestApp {
       discoveryContext: null,
       discoveryArtifact: null,
       discoveryArtifactId: null,
+      activeContact: null,
       discoverySurfaceId: `thread-${threadId}:discovery:results`,
       discoveryRevision: 0,
       unitDetail: null,
@@ -4659,16 +4691,24 @@ export class LocalGuestApp {
     }
   }
 
+  /**
+   * A contact-details surface. `surfaceIdOverride` is used only by a cold restore, which re-renders the open surface under the id
+   * the guest holds (ADR 0106); the surface stays active and nothing is superseded. Resume ids are recorded for that restore.
+   */
   #contactSurface(
     thread: GuestThreadState,
     kind: "phone" | "email",
     resumeContext: JsonObject,
     input: { readonly value?: string; readonly error?: string } = {},
+    surfaceIdOverride?: string,
   ): GuestTurnResult {
     const stage = kind === "phone" ? REQUEST_STAGE : PAYMENT_STAGE;
-    const surfaceId = `thread-${thread.threadId}:contact:${kind}:${crypto.randomUUID()}`;
-    this.#supersede(thread, stage);
-    thread.activeSurfaces.set(stage, surfaceId);
+    const surfaceId = surfaceIdOverride ?? `thread-${thread.threadId}:contact:${kind}:${crypto.randomUUID()}`;
+    if (thread.activeSurfaces.get(stage) !== surfaceId) {
+      this.#supersede(thread, stage);
+      thread.activeSurfaces.set(stage, surfaceId);
+    }
+    thread.activeContact = { surfaceId, kind, resumeContext: plainResumeIds(resumeContext) };
     const contact = this.#environment.guestContactApp.get(
       this.#environment.guestPrincipal(),
     );

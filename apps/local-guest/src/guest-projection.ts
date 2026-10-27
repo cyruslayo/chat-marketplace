@@ -40,6 +40,36 @@ export interface GuestPersistentProjection {
   readonly searchHistory: readonly DiscoverySearchContext[];
   /** Minimal Shortlet assistant state needed to re-authorize a cold-start follow-up. */
   readonly assistantContext: PersistedAssistantContext | null;
+  /**
+   * The open contact-details surface (phone or email) and the non-secret ids its Save action resumes with. A cold restore
+   * re-renders this same surface, so the guest's Save stays authorized. Missing in older projections, which read as null.
+   */
+  readonly activeContact: PersistedActiveContact | null;
+}
+
+export interface PersistedActiveContact {
+  readonly surfaceId: string;
+  readonly kind: "phone" | "email";
+  readonly resumeContext: Readonly<Record<string, string | number | boolean>>;
+}
+
+function parseActiveContact(value: unknown): PersistedActiveContact | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.surfaceId !== "string" || value.surfaceId === "" || value.surfaceId.length > 300) return null;
+  if (value.kind !== "phone" && value.kind !== "email") return null;
+  if (!isRecord(value.resumeContext)) return null;
+  const resumeContext: Record<string, string | number | boolean> = {};
+  for (const [key, entry] of Object.entries(value.resumeContext)) {
+    // Contact values and revisions are never part of the resume context (ADR 0093, 0075).
+    if (key === "contactValue" || key === "expectedRevision" || key.length > 64) return null;
+    if (typeof entry === "string") {
+      if (entry.length > 200) return null;
+      resumeContext[key] = entry;
+    } else if (typeof entry === "number" || typeof entry === "boolean") {
+      resumeContext[key] = entry;
+    } else return null;
+  }
+  return { surfaceId: value.surfaceId, kind: value.kind, resumeContext };
 }
 
 export interface PersistedAssistantContext {
@@ -162,7 +192,11 @@ export function parseGuestProjection(value: unknown): GuestPersistentProjection 
   if (parsedHistory.some((entry) => entry === null)) return null;
   const assistantContextResult = optionalField(value.assistantContext ?? null, parseAssistantContext);
   if (!assistantContextResult.valid) return null;
+  // Missing in projections written before this field existed; a present but malformed value fails closed.
+  if (value.activeContact !== undefined && value.activeContact !== null && parseActiveContact(value.activeContact) === null) return null;
+  const activeContact = value.activeContact === undefined || value.activeContact === null ? null : parseActiveContact(value.activeContact);
   return Object.freeze({
+    activeContact,
     version: 1,
     timeline: Object.freeze(value.timeline.map((entry) => Object.freeze({ role: entry.role, text: entry.text }))),
     discoveryContext,
