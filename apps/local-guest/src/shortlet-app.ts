@@ -3753,10 +3753,7 @@ export class LocalGuestApp {
         message: resolution.reply,
       };
     thread.discoveryContext = next;
-    // ADR 0106: a check-in the guest picked with the date chip is structured guest input. Only a confirmed date
-    // becomes the assistant's server-owned date, so a later planner turn can propose it and no other date.
-    if (edit?.field === "when" && next.checkIn !== undefined && next.datesConfirmed !== false)
-      this.#assistantRuntime?.recordGuestStayDate(thread.threadId, next.checkIn);
+    this.#recordAssistantStayChip(thread, edit, next);
     if (resolution.kind !== "search")
       return {
         ok: true,
@@ -3767,6 +3764,36 @@ export class LocalGuestApp {
           : {}),
       };
     return this.#executeDiscovery(thread, resolution.filters);
+  }
+
+  /**
+   * ADR 0106: the date and guest chips are structured guest input. A confirmed check-in, its nights and a party size are
+   * recorded in the assistant's task state, so the next planner turn sees them and the assistant's persisted context
+   * keeps them. A relative or unconfirmed date is not recorded.
+   */
+  #recordAssistantStayChip(
+    thread: GuestThreadState,
+    edit: CriteriaEdit | null,
+    next: DiscoverySearchContext,
+  ): void {
+    const runtime = this.#assistantRuntime;
+    if (!runtime || !runtime.hasThread(thread.threadId) || edit === null) return;
+    const facts =
+      edit.field === "when"
+        ? {
+            ...(next.checkIn !== undefined && next.datesConfirmed !== false
+              ? { checkIn: next.checkIn }
+              : {}),
+            nights: edit.nights,
+          }
+        : edit.field === "guests"
+          ? { partySize: edit.partySize }
+          : null;
+    if (facts === null || !runtime.recordGuestStay(thread.threadId, facts)) return;
+    const context = this.#assistantContextFromState(
+      runtime.getThread(thread.threadId).taskState,
+    );
+    if (context) thread.assistantContext = context;
   }
 
   /** Issue 03a AC4: restores the previous search's criteria and re-runs it. */

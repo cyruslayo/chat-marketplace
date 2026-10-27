@@ -26,7 +26,7 @@ import {
   type AssistantReplyPlan,
   type AssistantReplyPlanKind,
 } from "./assistant-platform.js";
-import { createShortletAssistantPack } from "./shortlet-assistant-pack.js";
+import { createShortletAssistantPack, validatedCheckOutForNights } from "./shortlet-assistant-pack.js";
 import { AssistantDateProvenanceError, AssistantDateValidationError, containsGuestDate, currentTurnDateRoles } from "./date-tokens.js";
 import { PLANNER_REQUEST_TIMEOUT_MS } from "../turn-budget.js";
 import { ModelScopeClassifier, ScopeClassificationError, assessScopeSafely, scopedMixedInput, type ScopeClassifier, type ScopeAssessment, type ConciergeIntent } from "./scope-classifier.js";
@@ -519,17 +519,34 @@ export class AssistantRuntime {
   }
 
   /**
-   * ADR 0106: a check-in the guest chose through a structured control (the date chip) becomes the task's
-   * server-owned date and a guest-authored fact, so a later planner turn may propose it. Only ISO dates qualify.
+   * ADR 0106: stay facts the guest chose through a structured control (the date and guest chips) are guest-authored.
+   * - A confirmed check-in becomes the task's server-owned date and a guest-authored fact, so a planner turn may propose it.
+   * - Nights are recorded only with a guest-authored check-in and a valid stay (ADR 0023, ADR 0055). The checkout is
+   *   derived from them and checked by StayDateRange; an invalid stay records neither nights nor checkout.
+   * - A party size is recorded as a positive integer. A model-proposed fact is never recorded through this path.
    */
-  recordGuestStayDate(threadId: string, checkIn: string): boolean {
+  recordGuestStay(threadId: string, facts: { readonly checkIn?: string; readonly nights?: number; readonly partySize?: number }): boolean {
     const thread = this.#threads.get(threadId);
-    if (!thread || !/^\d{4}-\d{2}-\d{2}$/.test(checkIn)) return false;
-    thread.taskState.stayIntent.checkIn = checkIn;
-    thread.taskState.stayIntent.isDemoDate = false;
+    if (!thread) return false;
+    if (facts.checkIn !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(facts.checkIn)) return false;
+    const stay = thread.taskState.stayIntent;
+    if (facts.checkIn !== undefined) {
+      stay.checkIn = facts.checkIn;
+      stay.isDemoDate = false;
+      stay.checkOut = undefined;
+      stay.nights = undefined;
+      thread.canonicalUserFactHistory = [...(thread.canonicalUserFactHistory ?? []).filter((fact) => fact !== facts.checkIn), facts.checkIn];
+    }
+    if (facts.nights !== undefined && stay.isDemoDate === false && typeof stay.checkIn === "string") {
+      const checkOut = validatedCheckOutForNights(stay.checkIn, facts.nights, this.#environment.clock(), this.#environment.extendedStayPolicy);
+      if (checkOut !== null) {
+        stay.nights = facts.nights;
+        stay.checkOut = checkOut;
+      }
+    }
+    if (facts.partySize !== undefined && Number.isSafeInteger(facts.partySize) && facts.partySize > 0) stay.partySize = facts.partySize;
     const task = thread.tasks.find((entry) => entry.taskId === thread.activeTaskId);
     if (task) task.state = thread.taskState;
-    thread.canonicalUserFactHistory = [...(thread.canonicalUserFactHistory ?? []).filter((fact) => fact !== checkIn), checkIn];
     return true;
   }
 

@@ -90,6 +90,13 @@ This amendment does not change the verdict's authority, tool gating, the fail-cl
 - Rejected planner dates. A date-authority rejection, or a planner date that fails the stay date rules, is a rejected tool call. The turn returns `ok: true` with a dated clarification, keeps the guest's message, commits no task state, and records `tool_denial`. It no longer returns `CONCIERGE_UNAVAILABLE`. The existing closed outcome list is unchanged.
 - Turn wait. A server turn is bounded by the scope budget (8 s) plus four planner rounds, each able to make two provider attempts at 20 s (the primary and the one configured fallback): 168 s. The browser waits 188 s for the turn (20 s margin) and then reads the thread. It offers Retry only when the guest's message is not the thread's latest user entry. These are configurable engineering settings in `turn-budget.ts`. The turn wait is not a user-facing deadline, and the ADR 0079 commit boundary is unchanged.
 
+### Amendment (27 Oct 2026): structured stay facts from the criteria chips
+
+- Chip facts. The date chip and the guests chip are structured guest input. Beyond the confirmed check-in (see Structured dates above), the chip's nights and party size are guest-authored stay facts. The server records them in the assistant's task state so the next planner turn sees them and the persisted context keeps them.
+- Derivation. A confirmed check-in with chip nights gives the checkout by the same night-count rule as the planner's search (`checkOutForNights`), and StayDateRange validates it (ADR 0023 length, ADR 0055 horizon). An invalid stay records neither nights nor checkout. The check-in itself is still recorded when it is confirmed.
+- Authority. Nights and party size are not dates and carry no date authority. A planner date still needs guest text or a confirmed chip check-in. A model-proposed check-in is never recorded through this path, and a relative or unconfirmed chip date is not recorded.
+- Projection. The persisted assistant context keeps only the fields it already held (city, neighbourhood, check-in, checkout, nights, party size and the other filters). No new record is persisted (ADR 0093 minimal projection, ADR 0099 and ADR 0101).
+
 ## Constraints retained
 
 ADRs 0015, 0068–0080, 0089, 0099, 0101, 0102, and 0105 remain in force.

@@ -297,6 +297,31 @@ export function normalizeLaunchCity(raw: unknown): "Lagos" | "Abuja" | undefined
 }
 
 /**
+ * The checkout for a check-in and a night count (ADR 0023). Validity is checked by StayDateRange at the call site;
+ * this only derives the calendar date, so the same rule serves the planner and the guest's date chips (ADR 0106).
+ */
+export function checkOutForNights(checkIn: string, nights: number): string {
+  const endDate = new Date(`${checkIn}T00:00:00Z`);
+  endDate.setUTCDate(endDate.getUTCDate() + nights);
+  return endDate.toISOString().slice(0, 10);
+}
+
+/**
+ * The validated checkout for a guest's chosen check-in and nights, or null when the stay is not bookable (ADR 0023
+ * length, ADR 0055 horizon). The runtime uses this and never imports the shortlet domain itself.
+ */
+export function validatedCheckOutForNights(checkIn: string, nights: number, now: Date, policy?: ExtendedStayPolicy): string | null {
+  const checkOut = checkOutForNights(checkIn, nights);
+  try {
+    new StayDateRange(checkIn, checkOut, now, policy);
+    return checkOut;
+  } catch (error) {
+    if (error instanceof RangeError) return null;
+    throw error;
+  }
+}
+
+/**
  * Validates check-in date against date provenance rules (Item 11).
  * If checkIn is null/undefined, uses the demoCheckIn.
  * If checkIn is provided, verifies that the user explicitly authored that date.
@@ -405,11 +430,8 @@ export function executeAssistantTool(
       const checkIn = dateContext?.checkIn;
       let checkOut: string | undefined;
       if (checkIn && nights !== undefined) {
-        const startDate = new Date(`${checkIn}T00:00:00Z`);
-        if (Number.isNaN(startDate.getTime())) throw new AssistantDateValidationError("invalid checkIn date");
-        const endDate = new Date(startDate);
-        endDate.setUTCDate(endDate.getUTCDate() + nights);
-        checkOut = endDate.toISOString().slice(0, 10);
+        if (Number.isNaN(new Date(`${checkIn}T00:00:00Z`).getTime())) throw new AssistantDateValidationError("invalid checkIn date");
+        checkOut = checkOutForNights(checkIn, nights);
         try {
           new StayDateRange(checkIn, checkOut, context.now, context.environment.extendedStayPolicy);
         } catch (error) {
