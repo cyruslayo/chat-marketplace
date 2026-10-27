@@ -1,5 +1,5 @@
 import { generatePlatformId } from "../../../../packages/platform-core/src/index.js";
-import { AssistantDateProvenanceError, containsGuestDate } from "./date-tokens.js";
+import { AssistantDateProvenanceError, AssistantDateValidationError, containsGuestDate } from "./date-tokens.js";
 import { StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
 import {
   discoveryArtifactToA2UI,
@@ -326,7 +326,7 @@ export function resolveCheckInDate(
   }
 
   if (typeof modelCheckIn !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(modelCheckIn)) {
-    throw new TypeError("checkIn must be an ISO calendar date (YYYY-MM-DD) or null");
+    throw new AssistantDateValidationError("checkIn must be an ISO calendar date (YYYY-MM-DD) or null");
   }
 
   // Current typed scope slots bind explicit guest dates to their check-in/check-out roles.
@@ -406,11 +406,17 @@ export function executeAssistantTool(
       let checkOut: string | undefined;
       if (checkIn && nights !== undefined) {
         const startDate = new Date(`${checkIn}T00:00:00Z`);
-        if (Number.isNaN(startDate.getTime())) throw new TypeError("invalid checkIn date");
+        if (Number.isNaN(startDate.getTime())) throw new AssistantDateValidationError("invalid checkIn date");
         const endDate = new Date(startDate);
         endDate.setUTCDate(endDate.getUTCDate() + nights);
         checkOut = endDate.toISOString().slice(0, 10);
-        new StayDateRange(checkIn, checkOut, context.now, context.environment.extendedStayPolicy);
+        try {
+          new StayDateRange(checkIn, checkOut, context.now, context.environment.extendedStayPolicy);
+        } catch (error) {
+          // Horizon and stay-length rules on a planner date are date validation, not an application fault.
+          if (error instanceof RangeError) throw new AssistantDateValidationError(error.message);
+          throw error;
+        }
       }
 
       const maxBudgetKobo = typeof args.maxBudgetKobo === "number" && args.maxBudgetKobo > 0
@@ -982,6 +988,7 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     starterDescription: "Find an inspected apartment in Lagos or Abuja and book it.",
     promptSection: SHORTLET_PROMPT_SECTION,
     scopeDescription: "Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.",
+    dateClarification: GUEST_ASSISTANT_COPY.datesClarification,
     scopeLocations: [...new Set(environment.unitRepository.findAll().map((unit) => unit.location.neighbourhood))],
     toolIntentMap: {
       search: ["search_stays"],

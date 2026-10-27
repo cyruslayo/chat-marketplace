@@ -3744,6 +3744,10 @@ export class LocalGuestApp {
         message: resolution.reply,
       };
     thread.discoveryContext = next;
+    // ADR 0106: a check-in the guest picked with the date chip is structured guest input. Only a confirmed date
+    // becomes the assistant's server-owned date, so a later planner turn can propose it and no other date.
+    if (edit?.field === "when" && next.checkIn !== undefined && next.datesConfirmed !== false)
+      this.#assistantRuntime?.recordGuestStayDate(thread.threadId, next.checkIn);
     if (resolution.kind !== "search")
       return {
         ok: true,

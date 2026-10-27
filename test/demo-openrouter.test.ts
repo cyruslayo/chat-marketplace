@@ -13,6 +13,7 @@ import type { AssistantModelClient } from "../apps/local-guest/src/assistant/ass
 import { ModelQuotaGuardClient } from "../apps/local-guest/src/assistant/model-quota-guard.js";
 import { SqliteModelRequestQuota } from "../packages/platform-core/src/model-request-quota.js";
 import { ASSISTANT_CONTROL_COPY } from "../apps/local-guest/src/assistant/control-copy.js";
+import { GUEST_ASSISTANT_COPY } from "../apps/web-agent/src/guest-content.js";
 import { loadPilotCoreConfiguration } from "../apps/pilot/src/pilot-config-core.js";
 import { clientWith, completion, jsonResponse } from "./helpers/openai-compatible-client.js";
 import { gradeGuardDecision, gradeScenario } from "../scripts/concierge-controls-eval.js";
@@ -158,8 +159,11 @@ test("Offline HTTP evaluator: benign location correction reuses only the current
 
     const checkoutCannotStartThread = "g-deadbeef15";
     const checkoutCannotStart = await f.app.handleTurn(checkoutCannotStartThread, checkoutAsStartPrompt);
-    assert.equal(checkoutCannotStart.ok, false, "a typed checkout cannot authorize a new task's check-in");
-    assert.equal(checkoutCannotStart.code, "CONCIERGE_UNAVAILABLE");
+    // ADR 0106 (date authority): the rejected check-in is an in-scope dated clarification, and no check-in is committed.
+    assert.equal(checkoutCannotStart.ok, true, "a typed checkout cannot authorize a new task's check-in");
+    assert.equal(checkoutCannotStart.messages?.[0], GUEST_ASSISTANT_COPY.datesClarification);
+    assert.deepEqual(checkoutCannotStart.surfaces, []);
+    assert.notEqual(f.runtime.getThread(checkoutCannotStartThread).taskState.stayIntent.checkIn, "2026-12-15");
 
     const explicitStartThread = "g-deadbeef16";
     assert.ok((await f.app.handleTurn(explicitStartThread, initialPrompt)).ok);
@@ -182,14 +186,18 @@ test("Offline HTTP evaluator: benign location correction reuses only the current
     const explicitDateInitial = await f.app.handleTurn(explicitDateThread, initialPrompt);
     assert.ok(explicitDateInitial.ok);
     const rejectedDateChange = await f.app.handleTurn(explicitDateThread, dateCorrection);
-    assert.equal(rejectedDateChange.ok, false, "a model cannot overwrite an explicit new guest date with the previous date");
-    assert.equal(rejectedDateChange.code, "CONCIERGE_UNAVAILABLE");
+    // ADR 0106 (date authority): the rejected overwrite is an in-scope dated clarification; the server date stays.
+    assert.equal(rejectedDateChange.ok, true, "a model cannot overwrite an explicit new guest date with the previous date");
+    assert.equal(rejectedDateChange.messages?.[0], GUEST_ASSISTANT_COPY.datesClarification);
+    assert.deepEqual(rejectedDateChange.surfaces, []);
     assert.equal(f.runtime.getThread(explicitDateThread).taskState.stayIntent.checkIn, serverDemoDate);
 
     const unrelatedThread = "g-deadbeef12";
     const rejectedUnownedDate = await f.app.handleTurn(unrelatedThread, unrelatedDatePrompt);
-    assert.equal(rejectedUnownedDate.ok, false, "a configured demo date cannot authorize a new task by itself");
-    assert.equal(rejectedUnownedDate.code, "CONCIERGE_UNAVAILABLE");
+    // ADR 0106 (date authority): the unowned demo date is rejected as an in-scope dated clarification, never searched.
+    assert.equal(rejectedUnownedDate.ok, true, "a configured demo date cannot authorize a new task by itself");
+    assert.equal(rejectedUnownedDate.messages?.[0], GUEST_ASSISTANT_COPY.datesClarification);
+    assert.deepEqual(rejectedUnownedDate.surfaces, []);
   } finally { f.close(); }
 });
 

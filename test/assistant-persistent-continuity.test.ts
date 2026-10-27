@@ -8,6 +8,7 @@ import { guestAction, restartFixture } from "./helpers/guest-restart.js";
 import { ModelRequestGuardError } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { ASSISTANT_CONTROL_COPY } from "../apps/local-guest/src/assistant/control-copy.js";
 import { parseGuestProjection } from "../apps/local-guest/src/guest-projection.js";
+import { GUEST_ASSISTANT_COPY } from "../apps/web-agent/src/guest-content.js";
 
 const serverModel: AssistantModelClient = {
   generate: async (request) => {
@@ -299,8 +300,9 @@ test("A legacy restored date with unknown provenance cannot silently fall back t
 
     await fixture.restart();
     const correction = await fixture.send("/api/turn", { text: "Ignore Ikoyi. Change the location to Lekki Phase 1 in Lagos. Keep 4 nights and 2 guests." });
-    assert.equal(correction.ok, false, "unknown restored provenance must fail closed instead of selecting a new demo date");
-    if (!correction.ok) assert.equal(correction.code, "CONCIERGE_UNAVAILABLE");
+    // ADR 0106 (date authority): unknown restored provenance fails closed as a dated clarification, never a new demo date.
+    assert.equal(correction.ok, true, "unknown restored provenance must fail closed instead of selecting a new demo date");
+    if (correction.ok) assert.equal(correction.messages[0], GUEST_ASSISTANT_COPY.datesClarification);
     const restored = fixture.app.assistantRuntime?.getThread(fixture.threadId);
     assert.ok(restored, "the restored thread must be readable after the failed correction");
     assert.equal(restored.taskState.stayIntent.checkIn, "2026-09-10");

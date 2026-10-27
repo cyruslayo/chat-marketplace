@@ -27,7 +27,7 @@ import {
   type AssistantReplyPlanKind,
 } from "./assistant-platform.js";
 import { createShortletAssistantPack } from "./shortlet-assistant-pack.js";
-import { containsGuestDate, currentTurnDateRoles } from "./date-tokens.js";
+import { AssistantDateProvenanceError, AssistantDateValidationError, containsGuestDate, currentTurnDateRoles } from "./date-tokens.js";
 import { ModelScopeClassifier, ScopeClassificationError, assessScopeSafely, scopedMixedInput, type ScopeClassifier, type ScopeAssessment, type ConciergeIntent } from "./scope-classifier.js";
 import { RetryingScopeClassifier, ScopeClassifierRetryError, SCOPE_TOTAL_BUDGET_MS, type ScopeClassifierRetryEvent, type ScopeClassifierRetryResult } from "./scope-classifier-retry.js";
 import { ASSISTANT_CONTROL_COPY } from "./control-copy.js";
@@ -514,6 +514,21 @@ export class AssistantRuntime {
     thread.discoveryArtifactId = null;
     thread.discoveryArtifact = undefined;
     this.#syncActiveTask(thread);
+    return true;
+  }
+
+  /**
+   * ADR 0106: a check-in the guest chose through a structured control (the date chip) becomes the task's
+   * server-owned date and a guest-authored fact, so a later planner turn may propose it. Only ISO dates qualify.
+   */
+  recordGuestStayDate(threadId: string, checkIn: string): boolean {
+    const thread = this.#threads.get(threadId);
+    if (!thread || !/^\d{4}-\d{2}-\d{2}$/.test(checkIn)) return false;
+    thread.taskState.stayIntent.checkIn = checkIn;
+    thread.taskState.stayIntent.isDemoDate = false;
+    const task = thread.tasks.find((entry) => entry.taskId === thread.activeTaskId);
+    if (task) task.state = thread.taskState;
+    thread.canonicalUserFactHistory = [...(thread.canonicalUserFactHistory ?? []).filter((fact) => fact !== checkIn), checkIn];
     return true;
   }
 
@@ -1004,6 +1019,16 @@ export class AssistantRuntime {
         thread.discoveryArtifact = candidateDiscoveryArtifact;
         this.#syncActiveTask(thread);
         return { ok: true, messages: [message], surfaces: candidateSurfaces, tasks: this.getTaskRail(threadId), modelHandled: true, discardUserInput, controlOutcome: "rejected_plan_fallback" };
+      }
+      if (error instanceof AssistantDateProvenanceError || error instanceof AssistantDateValidationError) {
+        // ADR 0106: a planner date the guest did not author, or one that fails the stay rules, is a rejected tool call.
+        // The turn keeps the guest's message, commits no new task state, and asks for dates in a supported format.
+        controlOutcome = "tool_denial";
+        recordOutcome(controlOutcome);
+        candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
+        this.#commitHistory(thread, candidateHistory, candidatePack(), thread.taskState);
+        return { ok: true, messages: [candidatePack().dateClarification ?? ASSISTANT_CONTROL_COPY.unavailable], surfaces: [], modelHandled: false,
+          discardUserInput: false, controlOutcome, tasks: this.getTaskRail(threadId) };
       }
       recordOutcome(controlOutcome);
       // Rollback: thread is not mutated on error
@@ -1596,7 +1621,7 @@ function createFailureDiagnostic(
     round,
     succeeded: false,
     ...(toolName ? { toolName } : {}),
-    errorClass: error instanceof Error && ["Error", "TypeError", "RangeError", "SyntaxError", "APIError", "APIConnectionError", "RateLimitError", "AssistantDateProvenanceError", "ModelRequestGuardError"].includes(error.constructor.name) ? error.constructor.name : "UNKNOWN_ERROR",
+    errorClass: error instanceof Error && ["Error", "TypeError", "RangeError", "SyntaxError", "APIError", "APIConnectionError", "RateLimitError", "AssistantDateProvenanceError", "AssistantDateValidationError", "ModelRequestGuardError"].includes(error.constructor.name) ? error.constructor.name : "UNKNOWN_ERROR",
     failureClass: classifyFailure(stage, error),
     ...(safeStatus !== undefined ? { providerStatusCode: safeStatus } : {}),
     ...(safeCode !== undefined ? { providerErrorCode: safeCode } : {}),

@@ -4,6 +4,7 @@ import { AssistantRuntime, type AssistantDiagnosticEvent } from "../apps/local-g
 import { ModelRequestGuardError, type AssistantToolCall } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { MAX_ASSISTANT_TOOL_ROUNDS } from "../apps/local-guest/src/assistant/assistant-platform.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
+import { GUEST_ASSISTANT_COPY } from "../apps/web-agent/src/guest-content.js";
 
 test("AC6: classifier guard failures and quota refusals emit separate metadata-only outcomes once", async () => {
   for (const failure of ["malformed", "outage", "quota"] as const) {
@@ -43,7 +44,10 @@ test("Date provenance failures expose a closed diagnostic class without the reje
   }) } });
   try {
     const result = await runtime.handleTurn("date-diagnostic", "PRIVATE_GUEST_CANARY Find Ikoyi stays for four nights and two guests");
-    assert.equal(result.ok, false);
+    // ADR 0106 (date authority, this change): a rejected planner date is an in-scope dated clarification, not a failed turn.
+    assert.equal(result.ok, true);
+    assert.equal(result.controlOutcome, "tool_denial");
+    assert.deepEqual(result.messages, [GUEST_ASSISTANT_COPY.datesClarification]);
     assert.ok(diagnostics.some((event) => event.errorClass === "AssistantDateProvenanceError"));
     assert.doesNotMatch(JSON.stringify(diagnostics), /2026-09-10|PRIVATE_GUEST_CANARY/);
   } finally { environment.close(); }

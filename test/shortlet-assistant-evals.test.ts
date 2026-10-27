@@ -15,6 +15,7 @@ import {
 } from "../apps/local-guest/src/assistant/pending-action-a2ui.js";
 import { ASSISTANT_SYSTEM_INSTRUCTION } from "../apps/local-guest/src/assistant/assistant-tools.js";
 import { resolveCheckInDate } from "../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
+import { GUEST_ASSISTANT_COPY } from "../apps/web-agent/src/guest-content.js";
 
 function setupHarness() {
   const window = new Window();
@@ -695,8 +696,11 @@ test("Eval 17: Model proposing date not authored by user fails closed", async ()
   ]);
   const { runtime } = createTestRuntime(rogueModel);
   const res = await runtime.handleTurn("g-eval-17", "Find a place in Ikoyi for 3 nights for 2");
-  assert.equal(res.ok, false);
-  assert.equal(res.code, "CONCIERGE_UNAVAILABLE");
+  // ADR 0106 (date authority): a model-only date fails closed as an in-scope dated clarification, never a search or a failed turn.
+  assert.equal(res.ok, true);
+  assert.deepEqual(res.surfaces, []);
+  assert.equal(res.messages?.[0], GUEST_ASSISTANT_COPY.datesClarification);
+  assert.equal(res.code, undefined);
 });
 
 test("Date provenance reuses only the current task date and preserves its server demo flag", () => {

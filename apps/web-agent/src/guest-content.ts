@@ -27,6 +27,8 @@ export const GUEST_GLOSSARY = Object.freeze({
 export const GUEST_ASSISTANT_COPY = Object.freeze({
   stayClarification: "How many nights will you be staying, and for how many guests?",
   dateClarification: "Please give me the check-in date as YYYY-MM-DD.",
+  // ADR 0106: a planner date that the guest's text does not state is rejected and the guest is asked for dates in a form the server reads.
+  datesClarification: "I need your check-in and checkout dates before I can search. Please write them with the day, month and year, for example 20 November 2026 to 23 November 2026.",
   safeClarification: "I can help you find and compare stays, explain pricing, or check a booking status. What would you like to do?",
   // ADR 0067 governs the support window and active-stay on-call coverage.
   generalSupport: "General human support is available daily from 8:00 AM to 8:00 PM WAT. Use the existing support channel provided with your stay.",
