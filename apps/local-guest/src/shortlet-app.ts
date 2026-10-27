@@ -3101,6 +3101,9 @@ export class LocalGuestApp {
     } else if (!selected) thread.unitDetail = null;
     const activeSurface = assistant.lastSurfaces.at(-1);
     const stage = activeSurface ? this.#stageForSurfaceId(activeSurface.surfaceId) : null;
+    // ADR 0106: the planner's discovery card is the shell's current discovery surface. Adopting its id keeps the id the
+    // guest holds, the id a restore presents, and the id the View guard accepts the same; a superseded search's id is stale.
+    if (activeSurface && stage === DISCOVERY_STAGE) thread.discoverySurfaceId = activeSurface.surfaceId;
     if (stage && thread.assistantContext) {
       this.#refreshAssistantSurface(thread);
     }
@@ -3369,6 +3372,12 @@ export class LocalGuestApp {
     unit: DiscoveryArtifactProjection["facts"]["results"][number],
     route: string,
   ): GuestTurnResult {
+    // ADR 0015: the all-in price needs the stay dates. Without them the guest is asked for dates; no detail opens and no
+    // selection is recorded, so the thread stays usable.
+    const filters = artifact.facts.filters;
+    if (typeof filters?.checkIn !== "string" || typeof filters.checkOut !== "string") {
+      return { ok: true, messages: [GUEST_ASSISTANT_COPY.unitDatesClarification], surfaces: [] };
+    }
     const unitDetailArtifact = unitDetailArtifactFromProjection({
       unit,
       ...this.#stayDatesFor(thread),

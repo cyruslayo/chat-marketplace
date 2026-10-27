@@ -29,6 +29,8 @@ export const GUEST_ASSISTANT_COPY = Object.freeze({
   dateClarification: "Please give me the check-in date as YYYY-MM-DD.",
   // ADR 0106: a planner date that the guest's text does not state is rejected and the guest is asked for dates in a form the server reads.
   datesClarification: "I need your check-in and checkout dates before I can search. Please write them with the day, month and year, for example 20 November 2026 to 23 November 2026.",
+  // ADR 0015: a Unit's all-in price is quoted for the stay's dates, so opening one without dates asks for them.
+  unitDatesClarification: "Add your check-in and checkout dates to see this apartment's price for your stay. Please write them with the day, month and year, for example 20 November 2026 to 23 November 2026.",
   safeClarification: "I can help you find and compare stays, explain pricing, or check a booking status. What would you like to do?",
   // Shown when a turn is slower than a normal one; the guest is not told the request failed.
   stillWorking: "Still working on your request. A stay search can take a little longer, so please keep this page open.",

@@ -75,6 +75,18 @@ export interface DatedFixture {
 export function datedFixture(model: AssistantModelClient, diagnostics?: AssistantDiagnosticEvent[]): DatedFixture {
   const directory = mkdtempSync(join(tmpdir(), "date-literal-"));
   const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite") });
+  return { ...wireDatedApp(environment, model, diagnostics), close() { environment.close(); rmSync(directory, { recursive: true, force: true }); } };
+}
+
+/**
+ * A fresh app and runtime over the same guest store, as after an application restart. Threads are reloaded only
+ * from the persisted projection, never from the previous process's memory.
+ */
+export function restartedDatedApp(previous: DatedFixture, model: AssistantModelClient, diagnostics?: AssistantDiagnosticEvent[]): Omit<DatedFixture, "close"> {
+  return wireDatedApp(previous.environment, model, diagnostics);
+}
+
+function wireDatedApp(environment: LocalGuestEnvironment, model: AssistantModelClient, diagnostics?: AssistantDiagnosticEvent[]): Omit<DatedFixture, "close"> {
   const budget = new ModelCallBudget(10, () => environment.clock());
   const quota = new SqliteModelRequestQuota(environment.database, { clock: environment.clock, dailyTenantLimit: 3_000, hourlyGuestLimit: 60 });
   const identity = { tenantId: environment.config.tenantId, guestId: environment.config.guestId };
@@ -83,5 +95,14 @@ export function datedFixture(model: AssistantModelClient, diagnostics?: Assistan
     onDiagnostic: (event) => diagnostics?.push(event),
   });
   const app = new LocalGuestApp(environment, { assistantRuntime: runtime, modelCallBudget: budget });
-  return { environment, budget, runtime, app, close() { environment.close(); rmSync(directory, { recursive: true, force: true }); } };
+  return { environment, budget, runtime, app };
+}
+
+/** The discovery artifact the runtime holds for a thread, narrowed to the fields the guest tests read. */
+export function runtimeDiscoveryArtifact(runtime: AssistantRuntime, threadId: string): { readonly id: string; readonly facts: { readonly results: readonly { readonly id: string }[] } } | undefined {
+  const artifact: unknown = runtime.getThread(threadId).discoveryArtifact;
+  if (typeof artifact !== "object" || artifact === null) return undefined;
+  const candidate = artifact as { readonly id?: unknown; readonly facts?: { readonly results?: unknown } };
+  if (typeof candidate.id !== "string" || !Array.isArray(candidate.facts?.results)) return undefined;
+  return candidate as { readonly id: string; readonly facts: { readonly results: readonly { readonly id: string }[] } };
 }
