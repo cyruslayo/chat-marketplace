@@ -1,6 +1,6 @@
 "use strict";
 (() => {
-  // ../../../node_modules/@cylayo/weaver-web/dist/basic/layout.js
+  // node_modules/@cylayo/weaver-web/dist/basic/layout.js
   function applyBasicHook(element, component) {
     element.setAttribute("data-a2ui-component", component);
   }
@@ -43,7 +43,7 @@
     return relationship.kind === "single" ? relationship.child === void 0 ? [] : [relationship.child] : relationship.children;
   }
 
-  // ../../../node_modules/@cylayo/weaver-web/dist/basic/markdown.js
+  // node_modules/@cylayo/weaver-web/dist/basic/markdown.js
   function appendText(document2, parent, text) {
     const lines = text.split("\n");
     lines.forEach((line, index) => {
@@ -106,7 +106,7 @@
     return [...output.childNodes];
   }
 
-  // ../../../node_modules/@cylayo/weaver-web/dist/basic/styles.js
+  // node_modules/@cylayo/weaver-web/dist/basic/styles.js
   var basicSpace = "var(--a2ui-space, 8px)";
   var basicRadius = "var(--a2ui-radius, 8px)";
   var basicOutline = "var(--a2ui-color-outline, rgba(0, 0, 0, 0.22))";
@@ -123,7 +123,7 @@
     appendBasicStyle(element, `border: 1px solid ${basicOutline}; border-radius: ${basicRadius}`);
   }
 
-  // ../../../node_modules/@cylayo/weaver-web/dist/basic/renderers.js
+  // node_modules/@cylayo/weaver-web/dist/basic/renderers.js
   var textElements = {
     h1: "h1",
     h2: "h2",
@@ -482,7 +482,7 @@
     return button;
   };
 
-  // ../../../node_modules/@cylayo/weaver-web/dist/basic/icon.js
+  // node_modules/@cylayo/weaver-web/dist/basic/icon.js
   var SVG_NAMESPACE = "http://www.w3.org/2000/svg";
   function createSvg(document2, svgPath) {
     const svg = document2.createElementNS(SVG_NAMESPACE, "svg");
@@ -514,7 +514,7 @@
     };
   }
 
-  // ../../../node_modules/@cylayo/weaver-web/dist/basic/inputs.js
+  // node_modules/@cylayo/weaver-web/dist/basic/inputs.js
   function createBasicInputRenderers(regexMatcher, dateTimeInputLocalValueResolver) {
     let opaqueId2 = 0;
     const nextId = (kind) => `weaver-basic-${kind}-${++opaqueId2}`;
@@ -874,7 +874,7 @@
       control.setAttribute(name, normalized);
   }
 
-  // ../../../node_modules/@cylayo/weaver-web/dist/basic/media.js
+  // node_modules/@cylayo/weaver-web/dist/basic/media.js
   var imageFits = {
     contain: "contain",
     cover: "cover",
@@ -966,7 +966,7 @@
     return { Image, Video, AudioPlayer };
   }
 
-  // ../../../node_modules/@cylayo/weaver-web/dist/basic/createBasicCatalogRendererRegistrations.js
+  // node_modules/@cylayo/weaver-web/dist/basic/createBasicCatalogRendererRegistrations.js
   function createBasicCatalogRendererRegistrations(options) {
     const inputs = createBasicInputRenderers(options.regexMatcher, options.dateTimeInputLocalValueResolver);
     const media = createBasicMediaRenderers(options.resourcePolicy);
@@ -992,7 +992,7 @@
     ];
   }
 
-  // ../../../node_modules/@cylayo/weaver-web/dist/basic/theme.js
+  // node_modules/@cylayo/weaver-web/dist/basic/theme.js
   function createBasicCatalogThemeAdapter(options) {
     return (input) => {
       if (input.catalogId !== options.catalogId)
@@ -1006,7 +1006,7 @@
     };
   }
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/data-model/clone.js
+  // node_modules/@cylayo/weaver-core/dist/data-model/clone.js
   function setObjectValue(target, key3, value) {
     Object.defineProperty(target, key3, {
       configurable: true,
@@ -1107,7 +1107,7 @@
     return true;
   }
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/data-model/pointer.js
+  // node_modules/@cylayo/weaver-core/dist/data-model/pointer.js
   var success = (value) => ({ ok: true, value });
   function parsePointer(path) {
     if (path === "/")
@@ -1179,7 +1179,7 @@
     return true;
   }
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/data-context/path.js
+  // node_modules/@cylayo/weaver-core/dist/data-context/path.js
   var success2 = (value) => ({ ok: true, value });
   function resolveScopedPath(path, scopeTokens) {
     if (path.startsWith("/")) {
@@ -1213,7 +1213,7 @@
     return success2({ absolutePath: formatPointer(tokens), tokens });
   }
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/data-context/DataContext.js
+  // node_modules/@cylayo/weaver-core/dist/data-context/DataContext.js
   var success3 = (value) => ({ ok: true, value });
   var DataContext = class _DataContext {
     #dataModel;
@@ -1285,7 +1285,7 @@
     }
   };
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/data-context/types.js
+  // node_modules/@cylayo/weaver-core/dist/data-context/types.js
   function isDataPathBinding(value) {
     if (value === null || typeof value !== "object" || Array.isArray(value))
       return false;
@@ -1293,7 +1293,7 @@
     return keys.length === 1 && keys[0] === "path" && typeof value.path === "string";
   }
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/functions/FunctionRegistry.js
+  // node_modules/@cylayo/weaver-core/dist/functions/FunctionRegistry.js
   var key = (catalogId, name) => JSON.stringify([catalogId, name]);
   var FunctionRegistry = class {
     #catalogs;
@@ -1351,7 +1351,7 @@
     }
   };
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/functions/types.js
+  // node_modules/@cylayo/weaver-core/dist/functions/types.js
   function isFunctionCall(value) {
     if (value === null || typeof value !== "object" || Array.isArray(value))
       return false;
@@ -1368,7 +1368,7 @@
     return !("returnType" in record) || typeof record.returnType === "string" && ["string", "number", "boolean", "array", "object", "any", "void"].includes(record.returnType);
   }
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/functions/FunctionEvaluator.js
+  // node_modules/@cylayo/weaver-core/dist/functions/FunctionEvaluator.js
   var MAX_DEFAULT_DEPTH = 32;
   var RecursiveFunctionFailure = class {
     error;
@@ -1666,7 +1666,7 @@
     }
   };
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/actions/ActionContextResolver.js
+  // node_modules/@cylayo/weaver-core/dist/actions/ActionContextResolver.js
   function isAllowedLiteral(value) {
     return typeof value === "string" || typeof value === "boolean" || typeof value === "number" && Number.isFinite(value) || Array.isArray(value);
   }
@@ -1759,7 +1759,7 @@
     }
   };
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/checks/CheckEvaluator.js
+  // node_modules/@cylayo/weaver-core/dist/checks/CheckEvaluator.js
   function actualType2(value) {
     if (value === null)
       return "null";
@@ -1903,7 +1903,7 @@
     }
   };
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/actions/ActionDispatcher.js
+  // node_modules/@cylayo/weaver-core/dist/actions/ActionDispatcher.js
   function cloneActionJson(value) {
     return cloneJson(value);
   }
@@ -2105,7 +2105,7 @@
     }
   };
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/basic-functions/formatString.js
+  // node_modules/@cylayo/weaver-core/dist/basic-functions/formatString.js
   var _a;
   var ExpressionParser = class {
     source;
@@ -2253,7 +2253,7 @@
     throw new Error("Unterminated interpolation");
   }
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/basic-catalog/generated-basic-catalog.js
+  // node_modules/@cylayo/weaver-core/dist/basic-catalog/generated-basic-catalog.js
   var A2UI_V091_BASIC_CATALOG_ID = "https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json";
   var A2UI_V091_BASIC_CATALOG = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -4799,7 +4799,7 @@
     }
   };
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/basic-catalog/index.js
+  // node_modules/@cylayo/weaver-core/dist/basic-catalog/index.js
   function createBasicCatalogV091Registration() {
     return {
       catalogId: A2UI_V091_BASIC_CATALOG_ID,
@@ -4807,7 +4807,7 @@
     };
   }
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/catalog/schema.js
+  // node_modules/@cylayo/weaver-core/dist/catalog/schema.js
   var A2UI_CATALOG_SCHEMA = {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     type: "object",
@@ -4827,7 +4827,7 @@
     additionalProperties: true
   };
 
-  // ../../../node_modules/@cfworker/json-schema/dist/esm/deep-compare-strict.js
+  // node_modules/@cfworker/json-schema/dist/esm/deep-compare-strict.js
   function deepCompareStrict(a, b) {
     const typeofa = typeof a;
     if (typeofa !== typeof b) {
@@ -4868,7 +4868,7 @@
     return a === b;
   }
 
-  // ../../../node_modules/@cfworker/json-schema/dist/esm/pointer.js
+  // node_modules/@cfworker/json-schema/dist/esm/pointer.js
   function encodePointer(p) {
     return encodeURI(escapePointer(p));
   }
@@ -4876,7 +4876,7 @@
     return p.replace(/~/g, "~0").replace(/\//g, "~1");
   }
 
-  // ../../../node_modules/@cfworker/json-schema/dist/esm/dereference.js
+  // node_modules/@cfworker/json-schema/dist/esm/dereference.js
   var schemaArrayKeyword = {
     prefixItems: true,
     items: true,
@@ -4997,7 +4997,7 @@
     return lookup;
   }
 
-  // ../../../node_modules/@cfworker/json-schema/dist/esm/format.js
+  // node_modules/@cfworker/json-schema/dist/esm/format.js
   var DATE = /^(\d\d\d\d)-(\d\d)-(\d\d)$/;
   var DAYS = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   var TIME = /^(\d\d):(\d\d):(\d\d)(\.\d+)?(z|[+-]\d\d(?::?\d\d)?)?$/i;
@@ -5090,7 +5090,7 @@
     }
   }
 
-  // ../../../node_modules/@cfworker/json-schema/dist/esm/types.js
+  // node_modules/@cfworker/json-schema/dist/esm/types.js
   var OutputFormat;
   (function(OutputFormat2) {
     OutputFormat2[OutputFormat2["Flag"] = 1] = "Flag";
@@ -5098,7 +5098,7 @@
     OutputFormat2[OutputFormat2["Detailed"] = 4] = "Detailed";
   })(OutputFormat || (OutputFormat = {}));
 
-  // ../../../node_modules/@cfworker/json-schema/dist/esm/ucs2-length.js
+  // node_modules/@cfworker/json-schema/dist/esm/ucs2-length.js
   function ucs2length(s) {
     let result = 0;
     let length2 = s.length;
@@ -5117,7 +5117,7 @@
     return result;
   }
 
-  // ../../../node_modules/@cfworker/json-schema/dist/esm/validate.js
+  // node_modules/@cfworker/json-schema/dist/esm/validate.js
   function validate(instance, schema, draft = "2019-09", lookup = dereference(schema), shortCircuit = true, recursiveAnchor = null, instanceLocation = "#", schemaLocation = "#", evaluated = /* @__PURE__ */ Object.create(null)) {
     if (schema === true) {
       return { valid: true, errors: [] };
@@ -5875,7 +5875,7 @@ Known schemas:
     return { valid: errors.length === 0, errors };
   }
 
-  // ../../../node_modules/@cfworker/json-schema/dist/esm/validator.js
+  // node_modules/@cfworker/json-schema/dist/esm/validator.js
   var Validator = class {
     schema;
     draft;
@@ -5898,7 +5898,7 @@ Known schemas:
     }
   };
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/catalog/schema-validator.js
+  // node_modules/@cylayo/weaver-core/dist/catalog/schema-validator.js
   var DRAFT = "2020-12";
   var TYPES = /* @__PURE__ */ new Set(["null", "boolean", "object", "array", "number", "string", "integer"]);
   function pointer(location2) {
@@ -6032,7 +6032,7 @@ Known schemas:
     return visit(schema, schema);
   }
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/catalog/CatalogRegistry.js
+  // node_modules/@cylayo/weaver-core/dist/catalog/CatalogRegistry.js
   var COMPONENT_ID_REF = "common_types.json#/$defs/ComponentId";
   var CHILD_LIST_REF = "common_types.json#/$defs/ChildList";
   var CHECKABLE_REF = "common_types.json#/$defs/Checkable";
@@ -6754,7 +6754,7 @@ Known schemas:
     }
   };
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/runtime/safety.js
+  // node_modules/@cylayo/weaver-core/dist/runtime/safety.js
   var DEFAULT_MAX_RESOLUTION_DEPTH = 32;
   var DEFAULT_MAX_RESOLVED_INSTANCES = 1e3;
   var MAX_CONFIGURED_RESOLUTION_DEPTH = 256;
@@ -6865,7 +6865,7 @@ Known schemas:
     });
   }
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/component-tree/ComponentTreeResolver.js
+  // node_modules/@cylayo/weaver-core/dist/component-tree/ComponentTreeResolver.js
   function resolverError(error2) {
     return {
       code: error2.code === "CATALOG_NOT_FOUND" ? "CATALOG_NOT_FOUND" : "COMPONENT_STRUCTURE_NOT_FOUND",
@@ -7055,7 +7055,7 @@ Known schemas:
     }
   };
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/component-instances/ComponentInstanceResolver.js
+  // node_modules/@cylayo/weaver-core/dist/component-instances/ComponentInstanceResolver.js
   function treeFailure(cause) {
     return {
       ok: false,
@@ -7264,7 +7264,7 @@ Known schemas:
     }
   };
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/component-properties/ComponentPropertyResolver.js
+  // node_modules/@cylayo/weaver-core/dist/component-properties/ComponentPropertyResolver.js
   function clonePlain(value) {
     return cloneJson(value);
   }
@@ -7597,7 +7597,7 @@ Known schemas:
     }
   };
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/input-binding/InputBindingWriter.js
+  // node_modules/@cylayo/weaver-core/dist/input-binding/InputBindingWriter.js
   function compatible2(kind, value) {
     switch (kind) {
       case "dynamicString":
@@ -7686,7 +7686,7 @@ Known schemas:
     }
   };
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/data-model/DataModel.js
+  // node_modules/@cylayo/weaver-core/dist/data-model/DataModel.js
   var success4 = (value) => ({ ok: true, value });
   var DataModel = class {
     #state = {};
@@ -7906,7 +7906,7 @@ Known schemas:
     }
   };
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/validation.js
+  // node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/validation.js
   var MESSAGE_KEYS = [
     "createSurface",
     "updateComponents",
@@ -8078,12 +8078,12 @@ Known schemas:
     }
   }
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/client-capabilities.js
+  // node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/client-capabilities.js
   function buildA2UIClientCapabilities(input) {
     return { "v0.9": { supportedCatalogIds: [...input.supportedCatalogIds] } };
   }
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/validation-error.js
+  // node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/validation-error.js
   function buildA2UIValidationFailedClientMessage(input) {
     if (input.surfaceId.length === 0)
       throw new TypeError("surfaceId must not be empty");
@@ -8169,7 +8169,7 @@ Known schemas:
     return typeof value === "object" && value !== null && !Array.isArray(value);
   }
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/surfaces/SurfaceStore.js
+  // node_modules/@cylayo/weaver-core/dist/surfaces/SurfaceStore.js
   var success5 = (value) => ({ ok: true, value });
   var SurfaceStore = class {
     #surfaces = /* @__PURE__ */ new Map();
@@ -8338,7 +8338,7 @@ Known schemas:
     }
   };
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/message-processor/A2UIMessageProcessor.js
+  // node_modules/@cylayo/weaver-core/dist/message-processor/A2UIMessageProcessor.js
   var A2UIMessageProcessor = class {
     store;
     catalogs;
@@ -8423,7 +8423,7 @@ Known schemas:
     }
   };
 
-  // ../../../node_modules/@cylayo/weaver-core/dist/runtime/WeaverRuntime.js
+  // node_modules/@cylayo/weaver-core/dist/runtime/WeaverRuntime.js
   function cloneRuntimeJson(value) {
     return cloneJson(value);
   }
@@ -8631,7 +8631,7 @@ Known schemas:
     };
   }
 
-  // ../../../node_modules/@cylayo/weaver-web/dist/renderers/errors.js
+  // node_modules/@cylayo/weaver-web/dist/renderers/errors.js
   var RendererRegistryConfigurationError = class extends Error {
     code = "RENDERER_ALREADY_REGISTERED";
     catalogId;
@@ -8644,7 +8644,7 @@ Known schemas:
     }
   };
 
-  // ../../../node_modules/@cylayo/weaver-web/dist/renderers/RendererRegistry.js
+  // node_modules/@cylayo/weaver-web/dist/renderers/RendererRegistry.js
   var key2 = (catalogId, component) => JSON.stringify([catalogId, component]);
   var RendererRegistry = class {
     #renderers = /* @__PURE__ */ new Map();
@@ -8672,7 +8672,7 @@ Known schemas:
     }
   };
 
-  // ../../../node_modules/@cylayo/weaver-web/dist/surface/WebSurfaceRenderer.js
+  // node_modules/@cylayo/weaver-web/dist/surface/WebSurfaceRenderer.js
   var identityKey = (sourceComponentId, scopePath) => JSON.stringify([sourceComponentId, scopePath]);
   var controlIdentityKey = (sourceComponentId, scopePath, localKey) => JSON.stringify([sourceComponentId, scopePath, localKey]);
   var WebSurfaceRenderer = class {
@@ -9049,7 +9049,7 @@ Known schemas:
     return result.ok ? { ok: true, value: { ...result.value } } : structuredClone(result);
   }
 
-  // ../../../node_modules/@cylayo/weaver-web/dist/basic-web-runtime/createBasicWebRuntime.js
+  // node_modules/@cylayo/weaver-web/dist/basic-web-runtime/createBasicWebRuntime.js
   function createBasicWebRuntime(config = {}) {
     const catalogId = A2UI_V091_BASIC_CATALOG_ID;
     const runtimeCreated = createWeaverRuntime({
@@ -9611,7 +9611,26 @@ Known schemas:
     nextPayment: "Next payment",
     fitReason: "Why it fits",
     /** "Photos: 7" on a discovery card; the stay card shows it as the "1 / 7" badge over the photo. */
-    photos: "Photos"
+    photos: "Photos",
+    /** ADR 0105: the chip on every synthetic stay in the staging demo (stay cards and the unit detail). */
+    demoListing: "Demo listing",
+    /** Demo-launch issue 12: the Extended Stay's monthly price, one Billing Period's guest amount (ADR 0092). */
+    monthlyPrice: "Monthly price",
+    /** Demo-launch issue 12: the utilities and servicing statement the unit publishes (ADR 0092). */
+    utilitiesIncluded: "Utilities and servicing",
+    /** Demo-launch issue 12: the payment schedule heading and each period's label (CONTEXT.md term). */
+    paymentSchedule: "Payment schedule",
+    billingPeriod: "Billing Period",
+    /** Demo-launch issue 12: says the amount due now is the first Billing Period, not the whole stay (ADR 0092). */
+    firstPeriodOnly: "This is the first Billing Period only. Later Billing Periods are paid separately on their due dates."
+  });
+  var GUEST_DEMO_NOTICE = "Demo: illustrative listings, not live bookings.";
+  var GUEST_DEMO_TEST_PAYMENTS = "Payments use Paystack test mode with the published test card. Do not enter real personal data.";
+  var GUEST_DEMO_COPY = Object.freeze({
+    notice: GUEST_DEMO_NOTICE,
+    testPayments: GUEST_DEMO_TEST_PAYMENTS,
+    /** The banner every guest page carries in demo mode. */
+    banner: `${GUEST_DEMO_NOTICE} ${GUEST_DEMO_TEST_PAYMENTS}`
   });
   var GUEST_COMPARE_LABELS = Object.freeze({
     pick: "Compare",
@@ -9728,6 +9747,15 @@ Known schemas:
     pageTitleSuffix: "Shop"
   });
 
+  // apps/web-agent/src/booking-presentation.ts
+  function formatBookingDateTime(iso) {
+    return formatWatDateTime(iso);
+  }
+  function formatBookingDeadline(iso) {
+    const dateTime = formatBookingDateTime(iso);
+    return dateTime === "time unavailable" ? "Payment deadline unavailable" : `Pay by ${dateTime}`;
+  }
+
   // apps/web-agent/src/discovery-a2ui.ts
   function formatNgnKobo(kobo) {
     return formatMoney(kobo);
@@ -9748,15 +9776,6 @@ Known schemas:
     { key: "bathrooms", label: "Bathrooms", value: (unit) => String(unit.bathrooms) },
     { key: "sleeps", label: "Sleeps", value: (unit) => String(unit.capacity) }
   ];
-
-  // apps/web-agent/src/booking-presentation.ts
-  function formatBookingDateTime(iso) {
-    return formatWatDateTime(iso);
-  }
-  function formatBookingDeadline(iso) {
-    const dateTime = formatBookingDateTime(iso);
-    return dateTime === "time unavailable" ? "Payment deadline unavailable" : `Pay by ${dateTime}`;
-  }
 
   // apps/local-guest/src/conversational-shell.ts
   function createConversationShellState() {
@@ -9937,10 +9956,14 @@ Known schemas:
     return `<ol class="ui-steps">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>`;
   }
   function confirmationScreenHtml(content, ticket, breakdown) {
-    return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}<section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}</section><div class="request-actions"><a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Back to your conversation</a><a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.detailsHref)}">View booking details</a></div><section class="ui-panel booking-details" id="booking-details" tabindex="-1"><h2>Booking details</h2><p>${escapeHtml(content.details)}</p></section></section>`;
+    return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}<section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}</section><div class="request-actions"><a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Back to your conversation</a><a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.detailsHref)}">View booking details</a>${content.scheduleHref ? `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.scheduleHref)}">View payment schedule</a>` : ""}</div><section class="ui-panel booking-details" id="booking-details" tabindex="-1"><h2>Booking details</h2><p>${escapeHtml(content.details)}</p></section></section>`;
   }
   function signInOfferHtml(content) {
     return `<section class="ui-panel" data-sign-in-offer aria-labelledby="sign-in-offer-title"><h2 id="sign-in-offer-title">${escapeHtml(GUEST_ACCOUNT_COPY.offerTitle)}</h2><p>${escapeHtml(GUEST_ACCOUNT_COPY.offerIntro)}</p><form method="post" action="/account/sign-in"><div class="ui-field"><label class="ui-field__label" for="sign-in-offer-email">${escapeHtml(GUEST_ACCOUNT_COPY.emailLabel)}</label><input id="sign-in-offer-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" maxlength="254" required value="${escapeHtml(content.email)}"></div><input type="hidden" name="return" value="${escapeHtml(content.returnPath)}"><button class="ui-button ui-button--secondary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.offerButton)}</button></form></section>`;
+  }
+  function paymentScheduleHtml(schedule) {
+    const periods = schedule.periods.map((text) => `<li>${escapeHtml(text)}</li>`).join("");
+    return `<section class="ui-panel" aria-label="${escapeHtml(schedule.heading)}"><h2>${escapeHtml(schedule.heading)}</h2><p>${escapeHtml(schedule.firstPeriodOnly)}</p><ol>${periods}</ol></section>`;
   }
   function requestScreenHtml(content, ticket, breakdown, actionTotal) {
     const form = (action, primary) => `<form method="post" action="${escapeHtml(action.path)}">${action.surfaceId === void 0 ? "" : `<input type="hidden" name="surfaceId" value="${escapeHtml(action.surfaceId)}">`}<button class="ui-button ui-button--${primary ? "primary" : "secondary"} ui-button--block" type="submit"${action.surfaceId === "" ? " disabled" : ""}>${escapeHtml(action.label)}</button></form>`;
@@ -9949,10 +9972,13 @@ Known schemas:
     const deadline = content.deadline === void 0 ? "" : `<p class="request-deadline"><time class="waiting-deadline-time" datetime="${escapeHtml(content.deadline.iso)}">${escapeHtml(content.deadline.text)}</time><span class="waiting-countdown"></span></p>`;
     const editable = content.state === "draft" || content.state === "review";
     const sum = editable && actionTotal !== void 0 ? `<p class="ui-action-bar__sum"><strong>${escapeHtml(actionTotal)}</strong><span class="ui-money-metadata">${GUEST_GLOSSARY.allInStayTotal}</span></p>` : "";
-    return `<section class="request-screen" data-request-state="${content.state}"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">${GUEST_GLOSSARY.bookingRequest}</p><h2>${escapeHtml(content.title)}</h2>${statusHtml(content.tone, content.status)}</header>${banner}<div class="request-ticket">${ticket}</div>${who}<div class="request-breakdown">${breakdown}</div>${content.provider === void 0 ? "" : `<p class="request-provider">${escapeHtml(content.provider)}</p>`}${content.sentAt === void 0 ? "" : `<p class="ui-field__hint">${escapeHtml(content.sentAt)}</p>`}${deadline}<section class="ui-panel request-next"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>${content.notes.length ? `<div class="request-notes">${content.notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</div>` : ""}<div class="request-actions${editable ? " ui-action-bar" : ""}">${sum}${form(content.primary, true)}${content.secondary === void 0 ? "" : form(content.secondary, false)}</div></section>`;
+    return `<section class="request-screen" data-request-state="${content.state}"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">${GUEST_GLOSSARY.bookingRequest}</p><h2>${escapeHtml(content.title)}</h2>${statusHtml(content.tone, content.status)}</header>${banner}<div class="request-ticket">${ticket}</div>${who}<div class="request-breakdown">${breakdown}</div>${content.schedule === void 0 ? "" : paymentScheduleHtml(content.schedule)}${content.provider === void 0 ? "" : `<p class="request-provider">${escapeHtml(content.provider)}</p>`}${content.sentAt === void 0 ? "" : `<p class="ui-field__hint">${escapeHtml(content.sentAt)}</p>`}${deadline}<section class="ui-panel request-next"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>${content.notes.length ? `<div class="request-notes">${content.notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</div>` : ""}<div class="request-actions${editable ? " ui-action-bar" : ""}">${sum}${form(content.primary, true)}${content.secondary === void 0 ? "" : form(content.secondary, false)}</div></section>`;
   }
   function statusHtml(tone, text) {
     return statusBadge(text, tone);
+  }
+  function demoListingChipHtml() {
+    return `<span class="ui-chip ui-chip--demo" data-demo-listing>${escapeHtml(GUEST_FACT_LABELS.demoListing)}</span>`;
   }
   function photoCountHtml(count) {
     if (count === void 0 || !Number.isInteger(count) || count < 2) return "";
@@ -9967,7 +9993,7 @@ Known schemas:
       (fact) => `<span class="ui-fact">${icon(fact.icon)}${escapeHtml(fact.text)}</span>`
     ).join("");
     const deposit = parts.deposit === void 0 ? "" : `<p class="ui-money-metadata">+ ${escapeHtml(parts.deposit)} ${GUEST_FACT_LABELS.refundableSecurityDeposit}</p>`;
-    return `${stayPhotoHtml(parts)}<p class="ui-stay-card__where">${icon("pin")}${escapeHtml(parts.where)}</p><h2 class="ui-stay-card__title"><a href="${href}">${escapeHtml(parts.title)}</a></h2><div class="ui-stay-card__facts" aria-label="Stay facts">${facts}</div><div class="ui-stay-card__total"><p class="ui-money-total">${escapeHtml(parts.total)}</p><p class="ui-money-metadata">${escapeHtml(parts.totalLabel)}</p>${deposit}</div><a class="ui-button ui-button--primary ui-button--block ui-stay-card__view" href="${href}">${GUEST_GLOSSARY.viewUnit}<span class="ui-sr-only">: ${escapeHtml(parts.title)}</span></a>`;
+    return `${stayPhotoHtml(parts)}${parts.demoListing === true ? demoListingChipHtml() : ""}<p class="ui-stay-card__where">${icon("pin")}${escapeHtml(parts.where)}</p><h2 class="ui-stay-card__title"><a href="${href}">${escapeHtml(parts.title)}</a></h2><div class="ui-stay-card__facts" aria-label="Stay facts">${facts}</div><div class="ui-stay-card__total"><p class="ui-money-total">${escapeHtml(parts.total)}</p><p class="ui-money-metadata">${escapeHtml(parts.totalLabel)}</p>${deposit}</div><a class="ui-button ui-button--primary ui-button--block ui-stay-card__view" href="${href}">${GUEST_GLOSSARY.viewUnit}<span class="ui-sr-only">: ${escapeHtml(parts.title)}</span></a>`;
   }
   function resultRowPartsHtml(parts) {
     const thumb = parts.photoSrc === void 0 ? icon("photo") : `<img src="${escapeHtml(parts.photoSrc)}" alt="" width="64" height="64" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
@@ -10114,6 +10140,12 @@ Known schemas:
     if (tileFacts.some((tile) => !tile.fact || tile.fact.value.trim() === ""))
       return;
     root.classList.add("unit-detail-root");
+    const demoCaption = [...root.children].find((child) => child.textContent?.trim() === GUEST_FACT_LABELS.demoListing);
+    if (demoCaption) {
+      const template = document.createElement("template");
+      template.innerHTML = demoListingChipHtml();
+      demoCaption.replaceWith(template.content);
+    }
     const images = [];
     for (const child of root.children) {
       if (!(child instanceof HTMLImageElement)) break;
@@ -10187,6 +10219,21 @@ Known schemas:
       });
       sheet.append(template.content);
     }
+    const extendedFacts = [
+      findFact(children, GUEST_FACT_LABELS.monthlyPrice),
+      findFact(children, GUEST_FACT_LABELS.utilitiesIncluded)
+    ].filter((fact) => fact !== void 0);
+    if (extendedFacts.length > 0) {
+      const block = document.createElement("div");
+      block.className = "unit-detail-extended";
+      for (const fact of extendedFacts) {
+        const line = document.createElement("p");
+        line.className = "ui-money-metadata";
+        line.textContent = fact.element.textContent?.trim() ?? "";
+        block.append(line);
+      }
+      sheet.append(block);
+    }
     if (aboutHeading) {
       const description = aboutHeading.nextElementSibling;
       const text = description?.textContent ?? "";
@@ -10200,6 +10247,7 @@ Known schemas:
     priceLabel?.remove();
     amount?.remove();
     deposit?.element.remove();
+    for (const fact of extendedFacts) fact.element.remove();
     const amenitiesNodes = amenitiesHeading ? [
       amenitiesHeading,
       ...amenitiesHeading.nextElementSibling ? [amenitiesHeading.nextElementSibling] : []
@@ -10549,6 +10597,7 @@ Known schemas:
       );
       const view = buttons[0];
       const parts = {
+        ...children.some((child) => child.textContent?.trim() === GUEST_FACT_LABELS.demoListing) ? { demoListing: true } : {},
         href: `/stays/${encodeURIComponent(unitId)}`,
         title: title.textContent?.trim() ?? "",
         where: where.value,

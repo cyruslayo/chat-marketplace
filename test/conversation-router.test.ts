@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { temporaryDatabasePath } from "./helpers/temporary-database.js";
 import test from "node:test";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
@@ -8,7 +9,7 @@ import { createFakeShopPack } from "./helpers/fake-domain-pack.js";
 let testDbIndex = 0;
 function createTestRuntime(model: ScriptedAssistantModel) {
   testDbIndex++;
-  const databasePath = `.scratch/local-guest/router_test_${testDbIndex}_${Date.now()}.sqlite`;
+  const databasePath = temporaryDatabasePath(`router_test_${testDbIndex}_${Date.now()}.sqlite`);
   const env = LocalGuestEnvironment.openNode({ databasePath });
   const runtime = new AssistantRuntime(env, model, { additionalPacks: [createFakeShopPack()] });
   return { env, runtime };
@@ -16,7 +17,7 @@ function createTestRuntime(model: ScriptedAssistantModel) {
 
 test("AC2: an intent for another registered domain produces a confirmation, never a silent task switch", async () => {
   const runtime = new AssistantRuntime(
-    LocalGuestEnvironment.openNode({ databasePath: `.scratch/local-guest/router_confirm_${Date.now()}.sqlite` }),
+    LocalGuestEnvironment.openNode({ databasePath: temporaryDatabasePath(`router_confirm_${Date.now()}.sqlite`) }),
     new ScriptedAssistantModel([]),
     { additionalPacks: [createFakeShopPack()] },
   );

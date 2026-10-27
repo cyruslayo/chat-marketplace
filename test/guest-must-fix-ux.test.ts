@@ -192,8 +192,8 @@ test("The back office shows apartment and owner names, not raw ids", () => {
 });
 
 test("Conventional search and booking pages work where chat fails", async () => {
-  // The AI concierge is down: every model call fails as if the provider were unreachable.
-  const failingModel: AssistantModelClient = { generate: async () => { throw Object.assign(new Error("provider down"), { status: 503 }); } };
+  // A rejected credential fails closed; transient 503 errors now recover through the deterministic concierge (demo AC3).
+  const failingModel: AssistantModelClient = { generate: async () => { throw Object.assign(new Error("provider rejected credentials"), { status: 401 }); } };
   const fixture = await productionFixture({ environment: { CONCIERGE_MODE: "gemini", GEMINI_API_KEY: "gemini-offline" } });
   const server = startPilotServer({ port: 0, configuration: fixture.configuration, paystackClient: fixture.paystack, modelClient: failingModel });
   try {
