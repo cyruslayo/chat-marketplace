@@ -229,6 +229,13 @@ export async function terminateOwnedChromeProcess(
   killProcessTree(proc.pid);
   const stopped = await exited;
   if (!stopped && proc.exitCode === null && proc.signalCode === null) {
+    // Windows taskkill can finish before Node dispatches the child's exit event on a loaded event loop.
+    // Confirm absence with the OS; permission errors and a live/reused PID still fail closed.
+    try {
+      process.kill(proc.pid, 0);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "ESRCH") return;
+    }
     throw new Error(
       `Launched Chrome process ${proc.pid} did not exit within ${timeoutMs} ms after termination was requested`,
     );

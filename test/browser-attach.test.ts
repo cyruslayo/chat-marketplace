@@ -158,3 +158,15 @@ test("Owned-browser termination waits for the launched process to exit", async (
     if (child.pid !== undefined && child.exitCode === null && child.signalCode === null) killProcessTree(child.pid);
   }
 });
+
+test("Owned-browser termination accepts a stopped Windows process before its exit event arrives", { skip: process.platform !== "win32" }, async () => {
+  const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+  assert.ok(child.pid !== undefined);
+  try {
+    // taskkill is synchronous; a zero deadline exposes a delayed Node exit event after the OS has stopped the child.
+    await terminateOwnedChromeProcess(child, 0);
+    assert.throws(() => process.kill(child.pid!, 0), { code: "ESRCH" });
+  } finally {
+    if (child.pid !== undefined && child.exitCode === null && child.signalCode === null) killProcessTree(child.pid);
+  }
+});
