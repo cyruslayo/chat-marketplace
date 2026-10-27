@@ -195,7 +195,7 @@ HTTPS calls. Set `SHORTLET_OPS_URL` to the deployment's origin and the tools
 call the `/_ops` routes instead:
 
 - `SHORTLET_OPS_URL` — the pilot origin (https, or http only for `localhost`).
-- `SHORTLET_OPS_SECRET` — the `X-Shortlet-Ops-Secret` shared-secret value.
+- `SHORTLET_OPS_SECRET` — the operator CLI's variable for the `X-Shortlet-Ops-Secret` shared-secret value. It holds the same value as the Worker's `OPS_SHARED_SECRET` secret.
 - `CF_ACCESS_CLIENT_ID` / `CF_ACCESS_CLIENT_SECRET` — the Cloudflare Access
   service-token credentials.
 

@@ -35,7 +35,7 @@ Nothing has been deployed yet.
 1. Generate `SHORTLET_GUEST_CODE_HASHING_KEY` (at least 32 characters), `OPS_SHARED_SECRET` and `COMMERCE_REFERENCE_HMAC_KEY`. Hand them to the owner. Never write them to the repo or logs.
 2. Set the build environment: `SHORTLET_DEMO=enabled`, `CONCIERGE_MODE=openai-compatible`, `LLM_BASE_URL=https://openrouter.ai/api/v1`, `LLM_MODEL=<slug from issue 02>`, `LLM_PROVIDER_LABEL=openrouter`, and `CONCIERGE_DAILY_MODEL_CALL_CAP` (the owner picks the value; a suggestion is 1500).
 3. Build with the workaround: `node scripts/ensure-worker-deps.mjs`, then `node apps/cloudflare/node_modules/@cloudflare/vite-plugin/bin/cf-vite build --mode staging`.
-4. Set the secrets: `LLM_API_KEY`, `PAYSTACK_SECRET_KEY`, `SHORTLET_GUEST_CODE_HASHING_KEY`, `OPS_SHARED_SECRET`, `COMMERCE_REFERENCE_HMAC_KEY`, and optionally `RESEND_API_KEY`.
+4. Set the secrets: `LLM_API_KEY`, `PAYSTACK_SECRET_KEY`, `SHORTLET_GUEST_CODE_HASHING_KEY`, `OPS_SHARED_SECRET`. Set `RESEND_API_KEY` only if it was set at build time (with `SHORTLET_NOTIFICATION_FROM` and `SHORTLET_OPERATOR_ALERT_EMAILS`). `GEMINI_API_KEY` is declared only for `CONCIERGE_MODE=gemini`, which this demo does not use. `COMMERCE_REFERENCE_HMAC_KEY` is declared only when commerce is on (ADR 0104), so it is not part of this demo.
 5. Deploy with `npm exec cf -- deploy --prebuilt --mode staging` from `apps/cloudflare`.
 6. Provision with `npm run demo:provision -- --origin <origin>` (issue 05).
 7. Point the Paystack **test-mode** webhook at the deployed webhook route, and confirm `PAYSTACK_CALLBACK_BASE_URL` equals the origin (ADR 0087).

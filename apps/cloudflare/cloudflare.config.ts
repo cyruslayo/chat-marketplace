@@ -10,7 +10,8 @@ import { commerceEnabledFromEnv } from "../../packages/commerce-switch/src/comme
  * and the Static Assets that serve the browser bundles and CSS (09a/09b). `--mode staging` and `--mode production`
  * are complete, separate deployments: different Worker, bucket and Durable Object names.
  *
- * Secrets (Paystack, Gemini, Resend) are declared with `bindings.secret()` and never carry a value here; supply them
+ * Secrets are declared with `bindings.secret()` and never carry a value here. Gemini and Resend are declared only when their
+ * deployment uses them (see GEMINI_CONCIERGE and RESEND_CONFIGURED below); supply them
  * through the `cf` secret workflow or a local, git-ignored `.dev.vars` (see `.dev.vars.example`).
  */
 
@@ -22,6 +23,18 @@ type PilotEnvironment = "development" | "staging" | "production";
  * commerce is on, so the default deployment needs no commerce secret.
  */
 const COMMERCE_ON = commerceEnabledFromEnv({ COMMERCE_ENABLED: process.env.COMMERCE_ENABLED });
+
+/**
+ * GEMINI_API_KEY is declared only for CONCIERGE_MODE=gemini. The concierge loader trims the mode and defaults it to deterministic
+ * (apps/local-guest/src/assistant/concierge-configuration.ts), so the same trimmed comparison selects the Gemini provider here.
+ */
+const GEMINI_CONCIERGE = process.env.CONCIERGE_MODE?.trim() === "gemini";
+
+/**
+ * RESEND_API_KEY is declared only when it is set and non-empty at build time. Its presence enables guest email sign-in, and it must
+ * come with SHORTLET_NOTIFICATION_FROM and SHORTLET_OPERATOR_ALERT_EMAILS or the Worker refuses to start (pilot-config-core.ts).
+ */
+const RESEND_CONFIGURED = (process.env.RESEND_API_KEY?.trim() ?? "") !== "";
 
 /** The public origin each deployment serves (the Paystack callback origin must equal this, ADR 0087). */
 const PUBLIC_ORIGIN: Record<PilotEnvironment, string> = {
@@ -111,13 +124,14 @@ function workerFor(environment: PilotEnvironment) {
       // 12a: export retention and the orphaned-receipt grace period (defaults are the approved values).
       ...optionalText("SHORTLET_EXPORT_RETENTION_DAYS"),
       ...optionalText("SHORTLET_RECEIPT_ORPHAN_GRACE_HOURS"),
-      // Secrets: names declared here, values never committed (cf secret workflow or .dev.vars).
+      // Secrets: names declared here, values never committed (cf secret workflow or .dev.vars). The four required secrets are always
+      // declared. GEMINI_API_KEY and RESEND_API_KEY are optional: a deployment that does not use them must not be asked for them.
       PAYSTACK_SECRET_KEY: bindings.secret(),
-      GEMINI_API_KEY: bindings.secret(),
       LLM_API_KEY: bindings.secret(),
-      RESEND_API_KEY: bindings.secret(),
       SHORTLET_GUEST_CODE_HASHING_KEY: bindings.secret(),
       OPS_SHARED_SECRET: bindings.secret(),
+      ...(GEMINI_CONCIERGE ? { GEMINI_API_KEY: bindings.secret() } : {}),
+      ...(RESEND_CONFIGURED ? { RESEND_API_KEY: bindings.secret() } : {}),
       // ADR 0104 decision 5: the switch is always declared; the key pair is declared only while it is on.
       COMMERCE_ENABLED: bindings.text(COMMERCE_ON ? "true" : "false"),
       ...(COMMERCE_ON

@@ -57,8 +57,7 @@ evidence log or chat):
   `PAYSTACK_ENVIRONMENT=test` (set by the config), `CONCIERGE_MODE`, `COMMERCE_ENABLED` (read from the operator's shell at build time; off unless exactly `true`, ADR 0104 decision 5), and optional `CF_ACCESS_TEAM_DOMAIN`,
   `CF_ACCESS_AUD`, `SHORTLET_EXPORT_RETENTION_DAYS`, `SHORTLET_RECEIPT_ORPHAN_GRACE_HOURS`,
   `SHORTLET_NOTIFICATION_FROM`, `SHORTLET_OPERATOR_ALERT_EMAILS`, `SHORTLET_NOTIFICATION_SWEEP_SECONDS`.
-- Secrets declared with `bindings.secret()`: `PAYSTACK_SECRET_KEY` (a **test** key), `GEMINI_API_KEY`,
-  `RESEND_API_KEY`, `OPS_SHARED_SECRET`, and, only when commerce is on, `COMMERCE_REFERENCE_HMAC_KEY` (commerce payment reference key, ADR 0075; the id is the plain var `COMMERCE_REFERENCE_HMAC_KEY_ID`). Commerce is off by default, so the default staging build declares no commerce secret.
+- Secrets declared with `bindings.secret()`: always `PAYSTACK_SECRET_KEY` (a **test** key), `LLM_API_KEY`, `SHORTLET_GUEST_CODE_HASHING_KEY` and `OPS_SHARED_SECRET`. Declared only when used: `GEMINI_API_KEY` only when `CONCIERGE_MODE=gemini`; `RESEND_API_KEY` only when it is set and non-empty at build time, and then together with `SHORTLET_NOTIFICATION_FROM` and `SHORTLET_OPERATOR_ALERT_EMAILS` (the Worker refuses to start with a partial set, and a fake value is unsafe). The demo staging build (`CONCIERGE_MODE=openai-compatible`, no Resend variables) declares neither. Also, only when commerce is on, `COMMERCE_REFERENCE_HMAC_KEY` (commerce payment reference key, ADR 0075; the id is the plain var `COMMERCE_REFERENCE_HMAC_KEY_ID`). Commerce is off by default, so the default staging build declares no commerce secret.
 
 ## 1. Build and deploy staging (issue step 1)
 
@@ -95,7 +94,7 @@ npm exec cf -- workers secrets bulk --help
 npm exec cf -- deploy --help
 ```
 
-- Set each secret by **name** only: `PAYSTACK_SECRET_KEY`, `GEMINI_API_KEY`, `RESEND_API_KEY`, `OPS_SHARED_SECRET`, and, only when commerce is on (step 3), `COMMERCE_REFERENCE_HMAC_KEY`.
+- Set each secret by **name** only: `PAYSTACK_SECRET_KEY`, `LLM_API_KEY`, `SHORTLET_GUEST_CODE_HASHING_KEY`, `OPS_SHARED_SECRET`; `GEMINI_API_KEY` only when `CONCIERGE_MODE=gemini`; `RESEND_API_KEY` only when it was set at build time (with its two notification variables); and, only when commerce is on (step 3), `COMMERCE_REFERENCE_HMAC_KEY`. Set only the names the build declared (`worker.config.json`).
 - Prefer the form that takes values interactively or from standard input, so no value enters shell history.
 - If a secrets file is used, create it outside the repository, use only the names above (the commerce key only when commerce is on), and delete it
   immediately after the deploy. Never commit it, never paste it into chat and never write a value into a log.
