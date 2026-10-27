@@ -70,7 +70,7 @@ import {
   discoveryFallbackMessage,
   type DiscoveryArtifactProjection,
 } from "../../../apps/web-agent/src/index.js";
-import { unitDetailArtifactFromProjection } from "../../../apps/web/src/unit-detail-artifact.js";
+import { unitDetailArtifactFromProjection, unitDetailArtifactId } from "../../../apps/web/src/unit-detail-artifact.js";
 import {
   errorPage,
   escapeHtml,
@@ -1098,6 +1098,8 @@ export class LocalGuestApp {
     });
     const result = adapter.search({ ...filters });
     thread.discoveryArtifact = result.artifact;
+    // ADR 0106: the results on screen name this artifact, so a cold restore keeps this id.
+    thread.discoveryArtifactId = result.artifact.id;
     thread.activeSurfaces.set(DISCOVERY_STAGE, thread.discoverySurfaceId);
     this.#emitTransition(thread, "unit.discovery.results_produced", {
       aggregateType: "discovery",
@@ -2583,10 +2585,10 @@ export class LocalGuestApp {
           (candidate) => candidate.id === projection.unitDetail?.unitId,
         );
         if (unit) {
-          const unitSurfaceId = unitDetailSurfaceId(
-            thread.threadId,
-            projection.discoveryRevision,
-          );
+          // ADR 0106: a unit the planner opened keeps the surface id the guest holds; a shell-opened unit keeps its own id.
+          const unitSurfaceId = surfaceId.includes(":unit:")
+            ? surfaceId
+            : unitDetailSurfaceId(thread.threadId, projection.discoveryRevision);
           thread.activeSurfaces.set(UNIT_STAGE, unitSurfaceId);
           return {
             surfaceId: unitSurfaceId,
@@ -2993,8 +2995,9 @@ export class LocalGuestApp {
         ...(context.maxBudgetKobo === undefined ? {} : { budget: { kobo: context.maxBudgetKobo, per: "stay" as const } }),
       };
       thread.searchHistory = [thread.discoveryContext];
+      // ADR 0106: the detail's artifact is the unit-detail artifact the detail card's Request to Book names, never the discovery artifact.
       thread.unitDetail = context.selectedUnitId && thread.discoveryArtifact.facts.results.some((unit) => unit.id === context.selectedUnitId)
-        ? { unitId: context.selectedUnitId, artifactId: thread.discoveryArtifact.id }
+        ? { unitId: context.selectedUnitId, artifactId: unitDetailArtifactId(context.selectedUnitId, thread.discoveryArtifact.projectionVersion) }
         : null;
     } catch {
       thread.discoveryArtifact = null;
@@ -3135,13 +3138,21 @@ export class LocalGuestApp {
     if (selected && thread.discoveryArtifact) {
       const ref = assistant.taskState.shortlist.find((stay) => stay.stayRef === selected);
       const unit = ref ? thread.discoveryArtifact.facts.results.find((candidate) => candidate.id === ref.unitId) : undefined;
-      thread.unitDetail = unit ? { unitId: unit.id, artifactId: thread.discoveryArtifact.id } : null;
+      // ADR 0106: the same unit-detail artifact id `#openUnitDetail` issues, so the detail's Request to Book stays authorized.
+      thread.unitDetail = unit ? { unitId: unit.id, artifactId: unitDetailArtifactId(unit.id, thread.discoveryArtifact.projectionVersion) } : null;
     } else if (!selected) thread.unitDetail = null;
     const activeSurface = assistant.lastSurfaces.at(-1);
     const stage = activeSurface ? this.#stageForSurfaceId(activeSurface.surfaceId) : null;
     // ADR 0106: the planner's discovery card is the shell's current discovery surface. Adopting its id keeps the id the
     // guest holds, the id a restore presents, and the id the View guard accepts the same; a superseded search's id is stale.
     if (activeSurface && stage === DISCOVERY_STAGE) thread.discoverySurfaceId = activeSurface.surfaceId;
+    // ADR 0106: a unit the planner opens is the shell's active unit surface, so the guest's next action on that card is authorized
+    // and the discovery card it came from goes stale, as the planner's own bookkeeping says.
+    if (activeSurface && stage === UNIT_STAGE) {
+      this.#supersede(thread, DISCOVERY_STAGE);
+      this.#supersede(thread, COMPARE_STAGE);
+      thread.activeSurfaces.set(UNIT_STAGE, activeSurface.surfaceId);
+    }
     if (stage && thread.assistantContext) {
       this.#refreshAssistantSurface(thread);
     }
