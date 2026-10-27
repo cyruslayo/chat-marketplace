@@ -18,6 +18,12 @@ export interface GuestPersistentProjection {
   /** Accumulated conversational discovery context (ADR-0004, ADR-0074). */
   readonly discoveryContext: DiscoverySearchContext | null;
   readonly discoveryArtifact: DiscoveryArtifactProjection | null;
+  /**
+   * ADR 0106: the server-issued id of the discovery artifact the guest holds. A cold restore re-queries current facts
+   * but keeps this id, so the card's View action still names the shell's authoritative artifact. Absent in projections
+   * written before this field existed, which read as null.
+   */
+  readonly discoveryArtifactId: string | null;
   readonly discoverySurfaceId: string;
   readonly discoveryRevision: number;
   readonly unitDetail: { readonly unitId: string; readonly artifactId: string } | null;
@@ -140,6 +146,8 @@ export function parseGuestProjection(value: unknown): GuestPersistentProjection 
   const nullableString = (candidate: unknown): candidate is string | null => candidate === null || typeof candidate === "string";
   if (!nullableString(value.draftId) || !nullableString(value.requestId) || !nullableString(value.offerId)) return null;
   if (!nullableString(value.activeStage) || !nullableString(value.activeSurfaceId)) return null;
+  const discoveryArtifactId = value.discoveryArtifactId === undefined ? null : value.discoveryArtifactId;
+  if (!nullableString(discoveryArtifactId) || discoveryArtifactId?.trim() === "" || (discoveryArtifactId?.length ?? 0) > 200) return null;
   const discoveryContext = parseDiscoverySearchContext(value.discoveryContext);
   if (value.discoveryContext !== undefined && value.discoveryContext !== null && discoveryContext === null) return null;
   const artifact = optionalField(value.discoveryArtifact, isDiscoveryArtifact);
@@ -159,6 +167,7 @@ export function parseGuestProjection(value: unknown): GuestPersistentProjection 
     timeline: Object.freeze(value.timeline.map((entry) => Object.freeze({ role: entry.role, text: entry.text }))),
     discoveryContext,
     discoveryArtifact: artifact.value === null ? null : structuredClone(artifact.value),
+    discoveryArtifactId,
     discoverySurfaceId: value.discoverySurfaceId,
     discoveryRevision: value.discoveryRevision,
     unitDetail: unitDetail.value === null ? null : Object.freeze({ ...unitDetail.value }),

@@ -165,6 +165,8 @@ export interface AssistantShortletRestoreInput {
   readonly tenantId: string;
   readonly taskState: AssistantTaskState;
   readonly canonicalUserFacts: readonly string[];
+  /** ADR 0106: the shell's rebuilt discovery artifact, keyed to the id the guest's card holds. */
+  readonly discoveryArtifact?: { readonly id: string };
 }
 
 interface AssistantEventContext {
@@ -512,8 +514,9 @@ export class AssistantRuntime {
     thread.activeSurfaces.clear();
     thread.supersededSurfaces.clear();
     thread.lastSurfaces = [];
-    thread.discoveryArtifactId = null;
-    thread.discoveryArtifact = undefined;
+    // ADR 0106: the restored artifact is the same one the shell holds, so a View action has one authoritative artifact.
+    thread.discoveryArtifactId = input.discoveryArtifact?.id ?? null;
+    thread.discoveryArtifact = input.discoveryArtifact;
     this.#syncActiveTask(thread);
     return true;
   }

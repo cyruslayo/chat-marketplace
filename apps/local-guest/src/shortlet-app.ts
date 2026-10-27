@@ -636,6 +636,8 @@ interface GuestThreadState {
   readonly geminiHistory: Content[];
   discoveryContext: DiscoverySearchContext | null;
   discoveryArtifact: DiscoveryArtifactProjection | null;
+  /** ADR 0106: the id the guest's current discovery card names; a cold restore keeps it (see `#assistantContextSearch`). */
+  discoveryArtifactId: string | null;
   discoverySurfaceId: string;
   discoveryRevision: number;
   unitDetail: { readonly unitId: string; readonly artifactId: string } | null;
@@ -2363,6 +2365,7 @@ export class LocalGuestApp {
           : { ...thread.discoveryContext },
       // ADR 0075/0077: Assistant searches persist safe criteria, not listing prose; current artifacts are re-queried on restore.
       discoveryArtifact: thread.assistantContext && !forCurrentRestore ? null : thread.discoveryArtifact,
+      discoveryArtifactId: thread.discoveryArtifactId,
       discoverySurfaceId: thread.discoverySurfaceId,
       discoveryRevision: thread.discoveryRevision,
       unitDetail: thread.unitDetail
@@ -2519,6 +2522,7 @@ export class LocalGuestApp {
       discoveryArtifact: projection.discoveryArtifact
         ? structuredClone(projection.discoveryArtifact)
         : null,
+      discoveryArtifactId: projection.discoveryArtifactId,
       discoverySurfaceId: projection.discoverySurfaceId,
       discoveryRevision: projection.discoveryRevision,
       unitDetail: projection.unitDetail ? { ...projection.unitDetail } : null,
@@ -2895,6 +2899,7 @@ export class LocalGuestApp {
       threadId,
       discoveryContext: null,
       discoveryArtifact: null,
+      discoveryArtifactId: null,
       discoverySurfaceId: `thread-${threadId}:discovery:results`,
       discoveryRevision: 0,
       unitDetail: null,
@@ -2941,7 +2946,17 @@ export class LocalGuestApp {
     };
   }
 
-  #assistantContextSearch(thread: GuestThreadState, context: PersistedAssistantContext, currentArtifact?: DiscoveryArtifactProjection): void {
+  /**
+   * Makes the discovery artifact for an assistant context the thread's authoritative one. A planner search leaves its artifact in
+   * the runtime and the sync adopts that artifact; a cold restore re-queries the context (ADR 0077/0080) and passes the persisted
+   * `keepArtifactId`, so the re-queried facts take over the id the guest's card already names (ADR 0106).
+   */
+  #assistantContextSearch(
+    thread: GuestThreadState,
+    context: PersistedAssistantContext,
+    currentArtifact?: DiscoveryArtifactProjection,
+    keepArtifactId: string | null = null,
+  ): void {
     const filters = {
       location: context.city,
       ...(context.neighbourhood ? { neighbourhood: context.neighbourhood } : {}),
@@ -2959,7 +2974,15 @@ export class LocalGuestApp {
         && (context.neighbourhood === undefined || currentFilters.neighbourhood === context.neighbourhood)
         && (context.checkIn === undefined || currentFilters.checkIn === context.checkIn)
         && (context.checkOut === undefined || currentFilters.checkOut === context.checkOut);
-      thread.discoveryArtifact = matchesContext ? currentArtifact : this.#environment.discoveryQuery.search(filters);
+      let artifact: DiscoveryArtifactProjection;
+      if (currentArtifact !== undefined && matchesContext) artifact = currentArtifact;
+      else {
+        const searched = this.#environment.discoveryQuery.search(filters);
+        // ADR 0106: a rebuild for the persisted context keeps the id the guest's card names. Only the facts are re-queried.
+        artifact = keepArtifactId === null ? searched : { ...searched, id: keepArtifactId };
+      }
+      thread.discoveryArtifact = artifact;
+      thread.discoveryArtifactId = artifact.id;
       thread.discoveryContext = {
         city: context.city,
         ...(context.neighbourhood ? { neighbourhood: context.neighbourhood } : {}),
@@ -2975,6 +2998,7 @@ export class LocalGuestApp {
         : null;
     } catch {
       thread.discoveryArtifact = null;
+      thread.discoveryArtifactId = null;
       thread.unitDetail = null;
     }
   }
@@ -2983,7 +3007,12 @@ export class LocalGuestApp {
     if (!thread.assistantContext) return;
     const runtime = this.#assistantRuntime;
     const currentArtifact = runtime?.hasThread(thread.threadId) ? runtime.getThread(thread.threadId).discoveryArtifact : undefined;
-    this.#assistantContextSearch(thread, thread.assistantContext, isDiscoveryArtifactProjection(currentArtifact) ? currentArtifact : undefined);
+    this.#assistantContextSearch(
+      thread,
+      thread.assistantContext,
+      isDiscoveryArtifactProjection(currentArtifact) ? currentArtifact : undefined,
+      thread.discoveryArtifactId,
+    );
   }
 
   #refreshAssistantSurface(thread: GuestThreadState): void {
@@ -3070,7 +3099,14 @@ export class LocalGuestApp {
     const canonicalUserFacts = context.isDemoDate === false
       ? [context.checkIn, context.checkOut].filter((fact): fact is string => typeof fact === "string")
       : [];
-    runtime.restoreShortletState(threadId, { principalId: this.#environment.guestPrincipal().id, tenantId: this.#environment.config.tenantId, taskState: state, canonicalUserFacts });
+    // ADR 0106: the runtime and the shell share one authoritative discovery artifact after a restore.
+    runtime.restoreShortletState(threadId, {
+      principalId: this.#environment.guestPrincipal().id,
+      tenantId: this.#environment.config.tenantId,
+      taskState: state,
+      canonicalUserFacts,
+      ...(thread.discoveryArtifact ? { discoveryArtifact: thread.discoveryArtifact } : {}),
+    });
   }
 
   #syncAssistantPersistence(threadId: string, thread: GuestThreadState): void {
