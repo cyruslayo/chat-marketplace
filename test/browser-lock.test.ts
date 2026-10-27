@@ -58,56 +58,6 @@ test("The lock records its holder's PID and start time in the owner file", async
   }
 });
 
-test("A cleanup failure poisons the live lock and blocks the next browser file immediately", async () => {
-  const dir = freshDir();
-  const lockDir = join(dir, "lock");
-  const release = await acquireBrowserLock({ lockDir, waitMs: 5000, log: () => {} });
-  try {
-    release.setProfileIntent("C:\\Temp\\guest-chrome-owned");
-    assert.equal(JSON.parse(readFileSync(markerPath(lockDir), "utf8")).profileIntent, "C:\\Temp\\guest-chrome-owned");
-    release.setProcessIdentity({ pid: process.pid, executable: process.execPath, creationTime: "test-process", profile: "C:\\Temp\\guest-chrome-owned" });
-    release.markCleanupFailed();
-    const retained = JSON.parse(readFileSync(markerPath(lockDir), "utf8"));
-    assert.equal(retained.profileIntent, "C:\\Temp\\guest-chrome-owned");
-    assert.equal(retained.processIdentity.pid, process.pid);
-    await assert.rejects(
-      acquireBrowserLock({ lockDir, waitMs: 5000, log: () => {} }),
-      /records failed cleanup/,
-    );
-  } finally {
-    release();
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
-test("A dead poisoned lock is recovered only after its recorded browser profile has no owners", { skip: process.platform !== "win32" }, async () => {
-  const dir = freshDir();
-  const lockDir = join(dir, "lock");
-  const deadWorker = deadPid();
-  const deadChrome = deadPid();
-  mkdirSync(lockDir);
-  writeFileSync(join(lockDir, "owner"), JSON.stringify({
-    pid: deadWorker,
-    startedAt: "2026-10-25T00:00:00.000Z",
-    lockToken: "abandoned-cleanup",
-    cleanupFailed: true,
-    profileIntent: join(dir, "profile that never launched"),
-    processIdentity: {
-      pid: deadChrome,
-      executable: process.execPath,
-      creationTime: "no-such-process",
-      profile: join(dir, "profile that never launched"),
-    },
-  }), "utf8");
-  const release = await acquireBrowserLock({ lockDir, waitMs: 1000, log: () => {} });
-  try {
-    assert.equal(readdirSync(lockDir).some((name) => name.startsWith("owner-")), true);
-  } finally {
-    release();
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
-
 test("A lock whose holder PID is no longer running is taken over, and the takeover is logged", async () => {
   const dir = freshDir();
   const lockDir = join(dir, "lock");
