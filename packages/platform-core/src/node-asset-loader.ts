@@ -3,9 +3,14 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AssetLoader, AssetName } from "./asset-loader.js";
 
-/** Node-only file so the Workers composition never touches `node:fs` (slice 09a). */
-const packageDirectory = dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = join(packageDirectory, "..", "..", "..");
+/**
+ * Node-only file so the Workers composition never touches `node:fs` (slice 09a). Module scope must not read
+ * `import.meta.url`: Workers see it as undefined, so the path is resolved here, only when a loader is created.
+ */
+function repoRootDirectory(): string {
+  const packageDirectory = dirname(fileURLToPath(import.meta.url));
+  return join(packageDirectory, "..", "..", "..");
+}
 
 /**
  * `nodeAssetLoader()` resolves today's paths — the client bundle at `apps/local-guest/dist/` (or the
@@ -15,6 +20,7 @@ const REPO_ROOT = join(packageDirectory, "..", "..", "..");
 export function nodeAssetLoader(
   options: { readonly clientScriptPath?: string } = {},
 ): AssetLoader {
+  const REPO_ROOT = repoRootDirectory();
   const clientScriptPath =
     options.clientScriptPath ??
     join(REPO_ROOT, "apps", "local-guest", "dist", "client.js");
