@@ -166,6 +166,7 @@ test("The cloudflare config's relative imports resolve to existing files under t
 const DESCRIPTOR_BUILD_VARIABLES = [
   "CONCIERGE_MODE", "GEMINI_API_KEY", "LLM_API_KEY", "RESEND_API_KEY", "COMMERCE_ENABLED",
   "COMMERCE_REFERENCE_HMAC_KEY", "COMMERCE_REFERENCE_HMAC_KEY_ID", "SHORTLET_NOTIFICATION_FROM", "SHORTLET_OPERATOR_ALERT_EMAILS",
+  "CF_ACCESS_TEAM_DOMAIN", "CF_ACCESS_AUD",
 ] as const;
 
 interface DescriptorBinding { readonly type: string; readonly value?: string }
@@ -229,4 +230,21 @@ test("COMMERCE_ENABLED stays false and no commerce HMAC key is declared when uns
   assert.deepEqual(env.COMMERCE_ENABLED, { type: "text", value: "false" });
   assert.equal("COMMERCE_REFERENCE_HMAC_KEY" in env, false);
   assert.equal("COMMERCE_REFERENCE_HMAC_KEY_ID" in env, false);
+});
+
+test("CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD are carried into the staging descriptor when set at build time", () => {
+  // ADR 0105 / 11a: the Access issuer and audience the /_ops verifier needs. The team domain is a bare host; the verifier adds https://.
+  const teamDomain = "example-team.cloudflareaccess.com";
+  const audience = "0000000000000000000000000000000000000000000000000000000000000000";
+  const { env, raw } = stagingDescriptor({ CF_ACCESS_TEAM_DOMAIN: teamDomain, CF_ACCESS_AUD: audience });
+  assert.deepEqual(env.CF_ACCESS_TEAM_DOMAIN, { type: "text", value: teamDomain });
+  assert.deepEqual(env.CF_ACCESS_AUD, { type: "text", value: audience });
+  assert.equal(declaredSecrets(env).includes("CF_ACCESS_AUD"), false, "the audience is a text binding, not a secret");
+  assert.equal(raw.includes(teamDomain), true);
+});
+
+test("CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD are omitted from the staging descriptor when unset (fail-closed default)", () => {
+  const { env } = stagingDescriptor({});
+  assert.equal("CF_ACCESS_TEAM_DOMAIN" in env, false);
+  assert.equal("CF_ACCESS_AUD" in env, false);
 });

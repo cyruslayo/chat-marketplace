@@ -54,10 +54,12 @@ evidence log or chat):
 
 - Non-secret vars declared in `cloudflare.config.ts` for `staging`: `SHORTLET_PUBLIC_ORIGIN`, `SHORTLET_TENANT_ID`,
   `SHORTLET_DEPLOYMENT=staging` (set by the config), `SHORTLET_BETA_INVITE_CODE` (operator-supplied for staging),
-  `PAYSTACK_ENVIRONMENT=test` (set by the config), `CONCIERGE_MODE`, `COMMERCE_ENABLED` (read from the operator's shell at build time; off unless exactly `true`, ADR 0104 decision 5), and optional `CF_ACCESS_TEAM_DOMAIN`,
-  `CF_ACCESS_AUD`, `SHORTLET_EXPORT_RETENTION_DAYS`, `SHORTLET_RECEIPT_ORPHAN_GRACE_HOURS`,
+  `PAYSTACK_ENVIRONMENT=test` (set by the config), `CONCIERGE_MODE`, `COMMERCE_ENABLED` (read from the operator's shell at build time; off unless exactly `true`, ADR 0104 decision 5), `CF_ACCESS_TEAM_DOMAIN` and
+  `CF_ACCESS_AUD` (both required for the demo staging build, because `/_ops` sits behind Cloudflare Access; see the paragraph below), and optional `SHORTLET_EXPORT_RETENTION_DAYS`, `SHORTLET_RECEIPT_ORPHAN_GRACE_HOURS`,
   `SHORTLET_NOTIFICATION_FROM`, `SHORTLET_OPERATOR_ALERT_EMAILS`, `SHORTLET_NOTIFICATION_SWEEP_SECONDS`.
 - Secrets declared with `bindings.secret()`: always `PAYSTACK_SECRET_KEY` (a **test** key), `LLM_API_KEY`, `SHORTLET_GUEST_CODE_HASHING_KEY` and `OPS_SHARED_SECRET`. Declared only when used: `GEMINI_API_KEY` only when `CONCIERGE_MODE=gemini`; `RESEND_API_KEY` only when it is set and non-empty at build time, and then together with `SHORTLET_NOTIFICATION_FROM` and `SHORTLET_OPERATOR_ALERT_EMAILS` (the Worker refuses to start with a partial set, and a fake value is unsafe). The demo staging build (`CONCIERGE_MODE=openai-compatible`, no Resend variables) declares neither. Also, only when commerce is on, `COMMERCE_REFERENCE_HMAC_KEY` (commerce payment reference key, ADR 0075; the id is the plain var `COMMERCE_REFERENCE_HMAC_KEY_ID`). Commerce is off by default, so the default staging build declares no commerce secret.
+
+- `/_ops` and `demo:provision` (ADR 0105): the Worker's `/_ops` routes need both the shared secret (`OPS_SHARED_SECRET`) and a valid Cloudflare Access JWT whose issuer and audience match `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD`. Without both build-time values the verifier refuses everything (fail closed). The Access application must be path-scoped to `/_ops` only, so the public guest and demo routes stay open. When Access fronts `/_ops`, `scripts/demo-provision.ts` also needs `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` in its environment (the Access service token pair, supplied at run time and never written to a file). These are names only; the values are never committed.
 
 ## 1. Build and deploy staging (issue step 1)
 
