@@ -83,6 +83,13 @@ Diagnostics and telemetry record only closed codes and counts: the number of att
 
 This amendment does not change the verdict's authority, tool gating, the fail-closed rule in the existing text above, or the approved model and provider defaults (ADR 0105).
 
+### Amendment (27 Oct 2026): guest date literals, dated clarification, and the turn wait
+
+- Date authority. A date authorizes a classifier or planner role when the guest's own text states it as an ISO token or as an English day-month literal that resolves to that date (`date-literals.ts`): for example `20 November 2026`, `20 Nov`, `Fri 20 Nov`, `November 20, 2026`. A year-omitted literal resolves to the nearest on-or-after occurrence in Africa/Lagos, and only inside the 90-day booking horizon (ADR 0055, ADR 0092). Relative words, numeric slash forms, invalid or past dates, dates beyond the horizon, and weekdays that contradict the date stay unresolved. The planner's date must still equal a guest literal. A model-only date stays unauthorized.
+- Structured dates. A check-in chosen with the date chip and confirmed by the guest becomes the assistant's server-owned date and a guest-authored fact. A pending relative phrase does not.
+- Rejected planner dates. A date-authority rejection, or a planner date that fails the stay date rules, is a rejected tool call. The turn returns `ok: true` with a dated clarification, keeps the guest's message, commits no task state, and records `tool_denial`. It no longer returns `CONCIERGE_UNAVAILABLE`. The existing closed outcome list is unchanged.
+- Turn wait. A server turn is bounded by the scope budget (8 s) plus four planner rounds, each able to make two provider attempts at 20 s (the primary and the one configured fallback): 168 s. The browser waits 188 s for the turn (20 s margin) and then reads the thread. It offers Retry only when the guest's message is not the thread's latest user entry. These are configurable engineering settings in `turn-budget.ts`. The turn wait is not a user-facing deadline, and the ADR 0079 commit boundary is unchanged.
+
 ## Constraints retained
 
 ADRs 0015, 0068–0080, 0089, 0099, 0101, 0102, and 0105 remain in force.

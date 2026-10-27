@@ -28,6 +28,7 @@ import {
 } from "./assistant-platform.js";
 import { createShortletAssistantPack } from "./shortlet-assistant-pack.js";
 import { AssistantDateProvenanceError, AssistantDateValidationError, containsGuestDate, currentTurnDateRoles } from "./date-tokens.js";
+import { PLANNER_REQUEST_TIMEOUT_MS } from "../turn-budget.js";
 import { ModelScopeClassifier, ScopeClassificationError, assessScopeSafely, scopedMixedInput, type ScopeClassifier, type ScopeAssessment, type ConciergeIntent } from "./scope-classifier.js";
 import { RetryingScopeClassifier, ScopeClassifierRetryError, SCOPE_TOTAL_BUDGET_MS, type ScopeClassifierRetryEvent, type ScopeClassifierRetryResult } from "./scope-classifier-retry.js";
 import { ASSISTANT_CONTROL_COPY } from "./control-copy.js";
@@ -722,7 +723,7 @@ export class AssistantRuntime {
           systemInstruction: composeSystemInstruction(candidatePack()),
           tools: taskTools(),
           history: this.#boundedHistory(candidateHistory, candidatePack(), candidateTaskState),
-          timeoutMs: 20_000,
+          timeoutMs: PLANNER_REQUEST_TIMEOUT_MS,
           structuredOutput: { name: "assistant_reply_plan", schema: replyPlanSchema(successfulToolNames(turnRawResults)), strict: true },
           maxOutputTokens: this.#maxPlanningOutputTokens,
         });

@@ -4,6 +4,7 @@ import type { AssistantTaskState, AssistantTurnSurface } from "./assistant-state
 import type { PendingAssistantAction } from "./pending-actions.js";
 import type { LocalGuestEnvironment } from "../fixture.js";
 import type { CommandPrincipal } from "../../../../packages/platform-core/src/envelope.js";
+import { MAX_PLANNER_TOOL_ROUNDS } from "../turn-budget.js";
 
 /**
  * The platform half of the concierge agent (ADR 0099: the platform owns the Agent; a pack
@@ -11,8 +12,8 @@ import type { CommandPrincipal } from "../../../../packages/platform-core/src/en
  * shortlet pack lives in `shortlet-assistant-pack.ts`.
  */
 
-/** Bounded tool rounds: the loop never runs longer than this. */
-export const MAX_ASSISTANT_TOOL_ROUNDS = 4;
+/** Bounded tool rounds: the loop never runs longer than this. The value is shared with the browser's turn budget. */
+export const MAX_ASSISTANT_TOOL_ROUNDS = MAX_PLANNER_TOOL_ROUNDS;
 
 /** The domain-agnostic preamble the runtime prefixes to every pack's prompt section. */
 export const ASSISTANT_PLATFORM_PREAMBLE = `You are the Shortlet Guest Assistant.

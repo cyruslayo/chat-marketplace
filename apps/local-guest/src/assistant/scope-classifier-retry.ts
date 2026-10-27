@@ -1,5 +1,6 @@
 import { ModelRequestGuardError, type AssistantFinishReason } from "./assistant-model.js";
 import { ScopeClassificationError, type ScopeClassifier, type ScopeContext, type ScopeFailureReason } from "./scope-classifier.js";
+import { SCOPE_CLASSIFIER_BUDGET_MS } from "../turn-budget.js";
 
 /**
  * ADR 0106 amendment (26 Oct 2026): one bounded retry of the default scope classifier.
@@ -13,7 +14,7 @@ export const SCOPE_RETRY_ELIGIBLE_REASONS: readonly ScopeFailureReason[] = [
 /** ADR 0106 amendment: the first attempt keeps its 5 s cap; the retry is capped at 3 s; the whole classifier stage gets 8 s. */
 export const SCOPE_FIRST_ATTEMPT_TIMEOUT_MS = 5_000;
 export const SCOPE_RETRY_TIMEOUT_MS = 3_000;
-export const SCOPE_TOTAL_BUDGET_MS = 8_000;
+export const SCOPE_TOTAL_BUDGET_MS = SCOPE_CLASSIFIER_BUDGET_MS;
 /** ADR 0106 amendment: a retry starts only when at least this much of the total budget remains. */
 export const SCOPE_MIN_RETRY_BUDGET_MS = 2_000;
 

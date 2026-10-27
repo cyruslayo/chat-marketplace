@@ -9519,7 +9519,11 @@ Known schemas:
   var GUEST_ASSISTANT_COPY = Object.freeze({
     stayClarification: "How many nights will you be staying, and for how many guests?",
     dateClarification: "Please give me the check-in date as YYYY-MM-DD.",
+    // ADR 0106: a planner date that the guest's text does not state is rejected and the guest is asked for dates in a form the server reads.
+    datesClarification: "I need your check-in and checkout dates before I can search. Please write them with the day, month and year, for example 20 November 2026 to 23 November 2026.",
     safeClarification: "I can help you find and compare stays, explain pricing, or check a booking status. What would you like to do?",
+    // Shown when a turn is slower than a normal one; the guest is not told the request failed.
+    stillWorking: "Still working on your request. A stay search can take a little longer, so please keep this page open.",
     // ADR 0067 governs the support window and active-stay on-call coverage.
     generalSupport: "General human support is available daily from 8:00 AM to 8:00 PM WAT. Use the existing support channel provided with your stay.",
     activeStayEmergencySupport: "Active stays have 24/7 Human Incident Support. Use Active-Stay Emergency Support through your existing booking support route.",
@@ -9781,6 +9785,26 @@ Known schemas:
     cartPageTitle: "Shopping cart",
     pageTitleSuffix: "Shop"
   });
+
+  // apps/local-guest/src/turn-budget.ts
+  var SCOPE_CLASSIFIER_BUDGET_MS = 8e3;
+  var PLANNER_REQUEST_TIMEOUT_MS = 2e4;
+  var MAX_PLANNER_TOOL_ROUNDS = 4;
+  var PLANNER_PROVIDER_ATTEMPTS = 2;
+  var SERVER_TURN_MAX_MS = SCOPE_CLASSIFIER_BUDGET_MS + MAX_PLANNER_TOOL_ROUNDS * PLANNER_PROVIDER_ATTEMPTS * PLANNER_REQUEST_TIMEOUT_MS;
+  var CLIENT_TURN_TRANSPORT_MARGIN_MS = PLANNER_REQUEST_TIMEOUT_MS;
+  var CLIENT_TURN_TIMEOUT_MS = SERVER_TURN_MAX_MS + CLIENT_TURN_TRANSPORT_MARGIN_MS;
+  var CLIENT_REQUEST_TIMEOUT_MS = 1e4;
+  var TURN_STILL_WORKING_AFTER_MS = 1e4;
+
+  // apps/local-guest/src/guest-turn-recovery.ts
+  function turnEntriesSince(timeline, text) {
+    for (let index = timeline.length - 1; index >= 0; index -= 1) {
+      const entry = timeline[index];
+      if (entry?.role === "user") return entry.text === text ? timeline.slice(index + 1) : void 0;
+    }
+    return void 0;
+  }
 
   // apps/web-agent/src/booking-presentation.ts
   function formatBookingDateTime(iso) {
@@ -11858,14 +11882,15 @@ Known schemas:
     }
     return false;
   }
-  async function postJson(path, body) {
+  async function postJson(path, body, timeoutMs = CLIENT_REQUEST_TIMEOUT_MS) {
     const response = await fetch(path, body === void 0 ? {} : {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
       // ADR-0079 bounds establishment; aborting the client wait never rolls back
-      // a command that the server may already have committed.
-      signal: AbortSignal.timeout(1e4)
+      // a command that the server may already have committed. A turn waits for the
+      // server's worst case (turn-budget.ts), so the wait ends only after the server can finish.
+      signal: AbortSignal.timeout(timeoutMs)
     });
     if (!response.ok) throw new Error(`Guest request failed with HTTP ${response.status}`);
     return readGuestResponse(await response.json());
@@ -11879,19 +11904,40 @@ Known schemas:
     workingStatus.textContent = next ? "Working on your request\u2026 Your stay details will stay here." : "";
     if (next) announce("Message sent. The concierge is working on your request.");
   }
+  async function showLandedTurn(text) {
+    try {
+      const response = await postJson(`/api/state?threadId=${encodeURIComponent(threadId)}`);
+      if (!response.ok || !response.timeline) return false;
+      const entries = turnEntriesSince(response.timeline, text);
+      if (entries === void 0) return false;
+      for (const entry of entries) addTimelineEntry(entry);
+      await refreshServerState();
+      return true;
+    } catch {
+      return false;
+    }
+  }
   async function sendTurn(text) {
     if (isLoading) return;
     setLoading(true);
+    const stillWorking = setTimeout(() => {
+      workingStatus.textContent = GUEST_ASSISTANT_COPY.stillWorking;
+    }, TURN_STILL_WORKING_AFTER_MS);
     try {
-      if (renderResponse(await postJson("/api/turn", { threadId, text }))) {
+      if (renderResponse(await postJson("/api/turn", { threadId, text }, CLIENT_TURN_TIMEOUT_MS))) {
         if (composerInput.value.trim() === text) composerInput.value = "";
       }
     } catch {
-      addRetryTurn("The concierge is temporarily unavailable. Your message is still in the composer; please try again.", () => {
-        void sendTurn(text);
-      });
-      announce("The concierge is temporarily unavailable. Your message remains in the composer.", true);
+      if (await showLandedTurn(text)) {
+        if (composerInput.value.trim() === text) composerInput.value = "";
+      } else {
+        addRetryTurn("The concierge is temporarily unavailable. Your message is still in the composer; please try again.", () => {
+          void sendTurn(text);
+        });
+        announce("The concierge is temporarily unavailable. Your message remains in the composer.", true);
+      }
     } finally {
+      clearTimeout(stillWorking);
       setLoading(false);
     }
   }
@@ -12005,7 +12051,7 @@ Known schemas:
   }
   async function fetchCommittedWork() {
     try {
-      const response = await fetch("/api/committed-work", { signal: AbortSignal.timeout(1e4) });
+      const response = await fetch("/api/committed-work", { signal: AbortSignal.timeout(CLIENT_REQUEST_TIMEOUT_MS) });
       if (!response.ok) return null;
       const body = await response.json();
       if (!isRecord3(body) || body.ok !== true || !Array.isArray(body.committedWork) || !body.committedWork.every(isCommittedWork)) return null;
