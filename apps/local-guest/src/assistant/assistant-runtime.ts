@@ -45,6 +45,15 @@ import {
   type AssistantStayReference,
 } from "./assistant-state.js";
 import { TurnTransaction, syncActiveTask } from "./assistant-turn-transaction.js";
+import type { AssistantControlOutcome, AssistantToolEffectCode } from "./assistant-platform.js";
+import {
+  PENDING_ACTION_STAGE,
+  type AssistantStageHandler,
+  type StageProjection,
+  type StageToolExecution,
+  type StageTurnContext,
+} from "./assistant-stage-handler.js";
+import { BOOKING_STAGE, DISCOVERY_STAGE, OFFER_STAGE, PAYMENT_STAGE, REQUEST_STAGE, UNIT_STAGE, proposalStillAuthorised } from "./shortlet-stage-handlers.js";
 import {
   isExplicitConfirmation,
   isExplicitCancellation,
@@ -56,11 +65,7 @@ import {
 } from "./pending-action-a2ui.js";
 import { redactSensitiveData } from "../../../../packages/platform-core/src/redaction.js";
 
-export const ASSISTANT_CONTROL_OUTCOMES = [
-  "scope_redirect", "scope_unavailable", "quota_refusal", "guard_failure", "rejected_plan_fallback",
-  "support_guidance", "no_current_booking", "successful_model_handling", "model_handling_failure", "tool_denial",
-] as const;
-export type AssistantControlOutcome = typeof ASSISTANT_CONTROL_OUTCOMES[number];
+export { ASSISTANT_CONTROL_OUTCOMES, type AssistantControlOutcome, type AssistantToolEffectCode } from "./assistant-platform.js";
 
 /**
  * Why a planner turn stopped (issue 02). Present on a turn that reached the planner loop; scope redirects and
@@ -143,7 +148,6 @@ export type AssistantFailureClass =
   /** ADR 0106: a local product quota refusal, reported as a control outcome and never as a model or provider fault. */
   | "QUOTA_REFUSED";
 
-export type AssistantToolEffectCode = "request_draft_created_availability_checked_not_reserved";
 
 export interface AssistantDiagnosticEvent {
   readonly stage: AssistantDiagnosticStage;
@@ -225,13 +229,6 @@ interface AssistantEventContext {
   readonly confirmedTotalKobo?: unknown;
 }
 
-const DISCOVERY_STAGE = "discovery";
-const UNIT_STAGE = "unit";
-const PENDING_ACTION_STAGE = "pending_action";
-const REQUEST_STAGE = "request";
-const OFFER_STAGE = "offer";
-const PAYMENT_STAGE = "payment";
-const BOOKING_STAGE = "booking";
 export const DEFAULT_ASSISTANT_REPLY_MAX_OUTPUT_TOKENS = 128;
 export const DEFAULT_ASSISTANT_PLANNING_MAX_OUTPUT_TOKENS = 1024;
 export const DEFAULT_ASSISTANT_HISTORY_MAX_STEPS = 32;
@@ -296,20 +293,13 @@ function parseReplyPlan(response: AssistantModelResponse, results: readonly Assi
   if (record.references.some((reference) => !allowed.has(reference))) return "reference_not_in_results";
   return { kind: record.kind as AssistantReplyPlanKind, references: record.references as string[] };
 }
-/**
- * ADR 0074: whether an open proposal still names the stay the search now holds. The stay, its unit, dates and party must all
- * be unchanged. A proposal without a stay reference (an offer or checkout action) has no stay to match, so a search removes it.
- */
-function proposalStillAuthorised(action: PendingAssistantAction | null | undefined, state: AssistantTaskState): boolean {
-  if (!action) return true;
-  const refs = action.authoritativeReferences;
-  if (!refs.stayRef) return false;
-  const stay = state.shortlist.find((candidate) => candidate.stayRef === refs.stayRef);
-  return stay !== undefined
-    && stay.unitId === refs.unitId
-    && state.stayIntent.checkIn === refs.checkIn
-    && state.stayIntent.checkOut === refs.checkOut
-    && state.stayIntent.partySize === refs.partySize;
+/** Runs the stage handlers in order; the first handler that claims the execution answers for it. */
+function projectWithHandlers(handlers: readonly AssistantStageHandler[], input: StageToolExecution, turn: StageTurnContext): StageProjection | undefined {
+  for (const handler of handlers) {
+    const projection = handler.project?.(input, turn);
+    if (projection) return projection;
+  }
+  return undefined;
 }
 
 export class AssistantRuntime {
@@ -927,9 +917,7 @@ export class AssistantRuntime {
           } else if (plan.kind === "support_guidance") {
             controlOutcome = "support_guidance";
           }
-          if (latestResults.some((result) => result.name === "get_booking_status" && result.result.status === "no_active_booking")) {
-            controlOutcome = "no_current_booking";
-          }
+          controlOutcome = candidatePack().replyControlOutcome?.(latestResults) ?? controlOutcome;
           finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "")
             ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
           candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
@@ -1031,20 +1019,13 @@ export class AssistantRuntime {
           const execution = candidatePack().executeTool(call.name, call.args, toolContext);
           hasSuccessfulApplicationOperation = true;
           const resultCount = getSafeResultCount(execution.result);
-          const effectCode: AssistantToolEffectCode | undefined = call.name === "prepare_request_draft"
-            && execution.result.operation === "request_draft.create"
-            && execution.result.created === true
-            && execution.result.availabilityChecked === true
-            && execution.result.inventoryReserved === false
-            ? "request_draft_created_availability_checked_not_reserved"
-            : undefined;
           this.#diagnose({
             stage: activeStage,
             round,
             toolName: safeAssistantToolName(call.name, this.#packs),
             succeeded: true,
             ...(resultCount !== undefined ? { resultCount } : {}),
-            ...(effectCode ? { effectCode } : {}),
+            ...(execution.effectCode ? { effectCode: execution.effectCode } : {}),
           });
           roundRawResults.push({ callId: call.id, name: call.name, result: execution.result });
           toolResults.push({
@@ -1054,72 +1035,36 @@ export class AssistantRuntime {
           });
 
           // Application projections are generated server-side from authoritative operation results.
+          // The pack's stage handlers claim an execution first (issue 04). The platform files a pending confirmation and a
+          // projected surface itself, after them, under the owning pack's id (ADR 0099).
           activeStage = "projection";
-          if (call.name === "search_stays") {
-            // ADR 0074: a search that changes the proposed stay, unit, dates or party removes the proposal's authority. An
-            // unchanged result keeps it.
-            if (!proposalStillAuthorised(tx.taskState.pendingAction, tx.taskState) && replacePendingProposal(tx.taskState, "search_changed")) {
-              tx.supersede(PENDING_ACTION_STAGE);
-            }
-            // Supersede any previous search or details
-            tx.supersede(DISCOVERY_STAGE);
-            tx.supersede(UNIT_STAGE);
-
-            if (!execution.discoveryArtifact) {
-              throw new Error("Authoritative discovery did not return an artifact");
-            }
-            tx.discoveryArtifactId = execution.discoveryArtifact.id;
-            tx.discoveryArtifact = execution.discoveryArtifact;
-            const surfaceId = `thread-${threadId}:discovery:${execution.discoveryArtifact.id}`;
-            tx.activeSurfaces.set(DISCOVERY_STAGE, surfaceId);
-            activeStage = "a2ui";
-            tx.surfaces.push({
-              surfaceId,
-              a2uiMessages: candidatePack().discoverySurface(execution.discoveryArtifact, surfaceId),
-            });
-          } else if (call.name === "get_unit_details") {
-            const stayRef = String(call.args.stayRef ?? "").trim();
-            const stay = tx.taskState.shortlist.find((s) => s.stayRef === stayRef);
-            if (stay) {
-              const surfaceId = `thread-${threadId}:unit:detail`;
-              tx.supersede(DISCOVERY_STAGE);
-              tx.supersede(UNIT_STAGE);
-              tx.activeSurfaces.set(UNIT_STAGE, surfaceId);
-
-              const checkIn = tx.taskState.stayIntent.checkIn ?? this.#environment.config.demoCheckIn;
-              const checkOut = tx.taskState.stayIntent.checkOut ?? this.#environment.config.demoCheckOut;
-              if (!checkOut) throw new Error("The selected stay has no checkout date");
-              activeStage = "a2ui";
-              const a2uiMessages = candidatePack().unitDetailSurface({ unitId: stay.unitId, checkIn, checkOut, surfaceId });
-
-              tx.surfaces.push({ surfaceId, a2uiMessages });
-            }
-          } else if (execution.requestDraftSurface) {
-            const surface = execution.requestDraftSurface;
-            tx.supersede(DISCOVERY_STAGE);
-            tx.supersede(UNIT_STAGE);
-            tx.supersede(REQUEST_STAGE);
-            tx.activeSurfaces.set(REQUEST_STAGE, surface.surfaceId);
-            activeStage = "a2ui";
-            tx.surfaces.push({ surfaceId: surface.surfaceId, a2uiMessages: surface.a2uiMessages });
+          const claim = projectWithHandlers(candidatePack().stageHandlers ?? [], { toolName: call.name, args: call.args, execution }, {
+            threadId,
+            tx,
+            pack: candidatePack(),
+            environment: this.#environment,
+            setStage: (stage) => { activeStage = stage; },
+          });
+          if (claim) {
+            if (claim.surface) tx.addSurface(claim.surface, claim.fallbackMessage);
           } else if (execution.pendingActionCreated) {
             // Consequential action proposed -> create confirmation card surface
             const action = execution.pendingActionCreated;
             tx.taskState.replacedPendingAction = null;
             const surfaceId = `thread-${threadId}:pending-action:${action.id}`;
             tx.supersede(PENDING_ACTION_STAGE);
-            tx.activeSurfaces.set(PENDING_ACTION_STAGE, surfaceId);
+            tx.place(PENDING_ACTION_STAGE, surfaceId);
 
             activeStage = "a2ui";
             const a2uiMessages = candidatePack().pendingActionSurface(action, surfaceId);
-            tx.surfaces.push({ surfaceId, a2uiMessages });
+            tx.addSurface({ surfaceId, a2uiMessages });
           } else if (execution.projectedSurface) {
             const surface = execution.projectedSurface;
-            const stage = `commerce:${surface.kind}`;
+            const stage = `${candidatePack().id}:${surface.kind}`;
             tx.supersede(stage);
-            tx.activeSurfaces.set(stage, surface.surfaceId);
+            tx.place(stage, surface.surfaceId);
             activeStage = "a2ui";
-            tx.surfaces.push({ surfaceId: surface.surfaceId, a2uiMessages: surface.a2uiMessages });
+            tx.addSurface({ surfaceId: surface.surfaceId, a2uiMessages: surface.a2uiMessages });
           }
         }
 
@@ -1211,7 +1156,7 @@ export class AssistantRuntime {
         // The fallback replaces the failure outcome, so this turn is counted once as the fallback.
         controlOutcome = "rejected_plan_fallback";
         recordOutcome(controlOutcome);
-        const message = fallbackForProjectedOperation(tx.surfaces[0]?.surfaceId ?? "");
+        const message = tx.fallbackMessage;
         candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
         this.#commitHistory(thread, candidateHistory, candidatePack(), tx.taskState);
         tx.commit(thread, { state: true, tasks: true, discovery: true, lastSurfaces: tx.surfaces });
@@ -1811,11 +1756,4 @@ function classifyFailure(stage: AssistantDiagnosticStage, error: unknown): Assis
     default:
       return "MODEL_SELECTION_FAILURE";
   }
-}
-
-function fallbackForProjectedOperation(surfaceId: string): string {
-  if (surfaceId.includes(":discovery:")) return "Your current search results are ready below. You can refine them or open a stay.";
-  if (surfaceId.includes(":unit:")) return "The selected stay details are ready below.";
-  if (surfaceId.includes(":request:draft:")) return "Your Request Draft is ready to review below. It has not been submitted.";
-  return "The requested information is ready below.";
 }

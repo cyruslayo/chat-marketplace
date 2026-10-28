@@ -23,6 +23,7 @@ import type {
 } from "./assistant-state.js";
 import type { PendingAssistantAction } from "./pending-actions.js";
 import { pendingActionToA2UI } from "./pending-action-a2ui.js";
+import { SHORTLET_STAGE_HANDLERS } from "./shortlet-stage-handlers.js";
 import {
   ASSISTANT_PLATFORM_PREAMBLE,
   type AssistantDomainPack,
@@ -813,6 +814,7 @@ export function executeAssistantTool(
       return {
         result: { operation: "request_draft.create", created: true, availabilityChecked: true, inventoryReserved: false },
         updatedTaskState: taskState,
+        effectCode: "request_draft_created_availability_checked_not_reserved",
         requestDraftSurface: { draftId: draft.draftId, surfaceId, a2uiMessages: requestDraftArtifactToA2UI({ artifact, surfaceId }) },
       };
     }
@@ -1068,6 +1070,11 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     projectStateSummary: (state, limits) => ({ city: state.stayIntent.location === "Lagos" || state.stayIntent.location === "Abuja" ? state.stayIntent.location : null, hasShortlist: state.shortlist.length > 0, shortlistRefs: state.shortlist.slice(0, limits.maxItems).map((stay) => stay.stayRef), selectedStayRef: state.selectedStayRef ?? null, checkIn: state.stayIntent.checkIn ?? null, checkOut: state.stayIntent.checkOut ?? null, nights: state.stayIntent.nights ?? null, partySize: state.stayIntent.partySize ?? null, hasSelectedStay: Boolean(state.selectedStayRef), hasPendingAction: Boolean(state.pendingAction) }),
     taskSummary: shortletTaskSummary,
     renderReply: (plan, results, text) => renderShortletReply(plan, results, text, environment.clock()),
+    // ADR 0106: a booking status with no active booking is reported as its own control outcome.
+    replyControlOutcome: (results) => results.some((result) => result.name === "get_booking_status" && result.result.status === "no_active_booking")
+      ? "no_current_booking"
+      : undefined,
+    stageHandlers: SHORTLET_STAGE_HANDLERS,
     discoverySurface: (artifact, surfaceId) => discoveryArtifactToA2UI({ artifact: artifact as never, surfaceId, demo: environment.config.demo === true }),
     unitDetailSurface: ({ unitId, checkIn, checkOut, surfaceId }) => {
       const unit = environment.unitRepository.findById(unitId);

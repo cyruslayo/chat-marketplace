@@ -1,4 +1,5 @@
-import type { AssistantToolDefinition } from "./assistant-model.js";
+import type { AssistantToolDefinition, AssistantToolResult } from "./assistant-model.js";
+import type { AssistantStageHandler } from "./assistant-stage-handler.js";
 import type { ConciergeIntent } from "./scope-classifier.js";
 import type { AssistantTaskState, AssistantTurnSurface } from "./assistant-state.js";
 import type { PendingAssistantAction } from "./pending-actions.js";
@@ -43,6 +44,15 @@ export interface AssistantToolContext {
   }) => { readonly surfaceId: string; readonly artifactId: string; readonly unitProjections: readonly unknown[] };
 }
 
+export const ASSISTANT_CONTROL_OUTCOMES = [
+  "scope_redirect", "scope_unavailable", "quota_refusal", "guard_failure", "rejected_plan_fallback",
+  "support_guidance", "no_current_booking", "successful_model_handling", "model_handling_failure", "tool_denial",
+] as const;
+export type AssistantControlOutcome = typeof ASSISTANT_CONTROL_OUTCOMES[number];
+
+/** ADR 0106/0079: a closed code for one application effect this turn produced. Diagnostics only. */
+export type AssistantToolEffectCode = "request_draft_created_availability_checked_not_reserved";
+
 export interface AssistantToolExecutionResult {
   readonly result: Record<string, unknown>;
   readonly updatedTaskState: AssistantTaskState;
@@ -51,6 +61,8 @@ export interface AssistantToolExecutionResult {
   readonly searchSurfacePayload?: { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] };
   readonly requestDraftSurface?: { readonly draftId: string; readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] };
   readonly projectedSurface?: { readonly kind: "discovery" | "cart" | "checkout" | "order"; readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] };
+  /** Diagnostics only: the closed effect code of this execution, set by the pack that ran it (issue 04). */
+  readonly effectCode?: AssistantToolEffectCode;
 }
 
 export interface AssistantSurfaceMessages {
@@ -119,7 +131,11 @@ export interface AssistantDomainPack {
   cardPaymentSurface(artifact: unknown, surfaceId: string): readonly unknown[];
   bookingContractSurface(artifact: unknown, surfaceId: string): readonly unknown[];
   /** Validates references and renders a reply from current server-owned operation data. */
-  renderReply?(plan: AssistantReplyPlan | undefined, results: readonly import("./assistant-model.js").AssistantToolResult[], latestUserText: string): string;
+  renderReply?(plan: AssistantReplyPlan | undefined, results: readonly AssistantToolResult[], latestUserText: string): string;
+  /** A control outcome the pack's current results imply for a reply (for example no current booking). Undefined keeps the runtime's outcome. */
+  replyControlOutcome?(results: readonly AssistantToolResult[]): AssistantControlOutcome | undefined;
+  /** Issue 04: the pack's stage handlers, called in order for each authoritative execution and for confirmed pending actions. */
+  readonly stageHandlers?: readonly AssistantStageHandler[];
   /** Re-reads authoritative truth before a proposed booking request is confirmed. */
   revalidateProposal(action: PendingAssistantAction): { readonly ok: true } | { readonly ok: false; readonly code: string; readonly message: string };
   /** Optional pack-owned command adapter; the pack must route through the platform ActionSpec gate. */
