@@ -918,7 +918,7 @@ export class AssistantRuntime {
           } else if (plan.kind === "support_guidance") {
             controlOutcome = "support_guidance";
           }
-          controlOutcome = candidatePack().replyControlOutcome?.(latestResults) ?? controlOutcome;
+          controlOutcome = this.#replyControlOutcome(latestResults) ?? controlOutcome;
           finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "")
             ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
           candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
@@ -1289,7 +1289,10 @@ export class AssistantRuntime {
       // Platform action surfaces are filed under the owning pack's id (the generic projected-surface path).
       const checkoutStage = `${pack.id}:checkout`;
       const activeSurfaceId = tx.activeSurfaces.get(checkoutStage);
-      if (!activeTask || !pack?.handlePlatformAction || !activeSurfaceId || context?.surfaceId !== activeSurfaceId || context.taskId !== activeTask.taskId) {
+      // ADR 0099 section 3: a pack runs only the platform actions it names, in its own namespace (`<pack id>.`), through its own
+      // handler, on its own surface. The check is per pack, so no pack can run another pack's action.
+      const ownNamespace = eventName.startsWith(`${pack.id}.`);
+      if (!ownNamespace || !activeTask || !pack?.handlePlatformAction || !activeSurfaceId || context?.surfaceId !== activeSurfaceId || context.taskId !== activeTask.taskId) {
         return { ok: false, code: "STALE_SURFACE", message: "That checkout confirmation is no longer active." };
       }
       const result = pack.handlePlatformAction({
@@ -1357,6 +1360,18 @@ export class AssistantRuntime {
     }
 
     return { ok: false, code: "UNSUPPORTED_EVENT", message: "Unknown assistant action." };
+  }
+
+  /**
+   * ADR 0106: the control outcome the registered packs imply for this reply. Every registered pack is asked, in registry order, and
+   * the first defined answer wins, as the platform always checked the results regardless of the active task.
+   */
+  #replyControlOutcome(results: readonly AssistantToolResult[]): AssistantControlOutcome | undefined {
+    for (const id of this.#packs.ids()) {
+      const outcome = this.#packs.packFor(id)?.replyControlOutcome?.(results);
+      if (outcome !== undefined) return outcome;
+    }
+    return undefined;
   }
 
   /** The shell task rail: each task's domain, label, status, active flag and badge, in task order. */

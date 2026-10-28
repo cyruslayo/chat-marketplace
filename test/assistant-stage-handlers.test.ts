@@ -258,3 +258,55 @@ test("A pack's effect code reaches the tool diagnostics and its reply control ou
     assert.equal(toolEvent?.effectCode, EFFECT_CODE);
   } finally { environment.close(); }
 });
+
+test("a projected surface is filed under <pack id>:<kind>, so the commerce pack's cart surface is commerce:cart", async () => {
+  // The commerce key is the generic path (no commerce handler objects, issue 04 decision a). A pack with id "commerce" pins it.
+  const commerce = shopPack({
+    id: "commerce",
+    label: "Shop",
+    stageHandlers: [],
+    executeTool: (name, _args, context): AssistantToolExecutionResult => {
+      if (name === "shop_break") throw new Error("unused");
+      return {
+        result: { resultCount: 1 },
+        updatedTaskState: context.taskState,
+        projectedSurface: { kind: "cart", surfaceId: "task-stage-1:commerce-cart:1", a2uiMessages: [] },
+      };
+    },
+  });
+  const model = new RecordingTurnModel((_request, index) => index % 2 === 0 ? CALL_SEARCH("call-commerce") : PLAN_REPLY);
+  const { environment, runtime } = open(model, [commerce]);
+  try {
+    runtime.handleAssistantEvent(SHOP_THREAD, TASK_START_EVENT, { domain: "commerce" });
+    const output = await runtime.handleTurn(SHOP_THREAD, "shop for a kettle");
+    assert.equal(output.surfaces?.[0]?.surfaceId, "task-stage-1:commerce-cart:1");
+    assert.equal(runtime.getThread(SHOP_THREAD).activeSurfaces.get("commerce:cart"), "task-stage-1:commerce-cart:1");
+  } finally { environment.close(); }
+});
+
+test("a failed turn's fallback copy is the handler's copy, not a lookup on the surface id (an intentional change)", async () => {
+  // The surface id contains ':discovery:', which the old id-substring lookup would have answered with the discovery copy.
+  // The copy now comes from the pack that filed the surface, so the generic copy is correct here.
+  const pack = shopPack({
+    stageHandlers: [],
+    executeTool: (name, _args, context): AssistantToolExecutionResult => {
+      if (name === "shop_break") throw new Error("The shop provider is unavailable.");
+      return {
+        result: { resultCount: 1 },
+        updatedTaskState: context.taskState,
+        projectedSurface: { kind: "cart", surfaceId: `thread-${SHOP_THREAD}:discovery:crafted`, a2uiMessages: [] },
+      };
+    },
+  });
+  const model = new RecordingTurnModel(() => ({ toolCalls: [
+    { id: "call-ok", name: "shop_search", args: {} },
+    { id: "call-break", name: "shop_break", args: {} },
+  ] }));
+  const { environment, runtime } = open(model, [pack]);
+  try {
+    startShopTask(runtime);
+    const output = await runtime.handleTurn(SHOP_THREAD, "shop and then break");
+    assert.equal(output.controlOutcome, "rejected_plan_fallback");
+    assert.deepEqual(output.messages, ["The requested information is ready below."]);
+  } finally { environment.close(); }
+});
