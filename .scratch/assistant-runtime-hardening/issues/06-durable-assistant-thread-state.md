@@ -40,3 +40,11 @@ The Cloudflare Agents SDK's useful idea is one Durable Object per conversation w
 (Write the findings, the chosen option and the follow-up task issues here, then resolve.)
 
 ## Comments
+
+### Reviewer finding (28 Oct 2026): a confirm can resurrect an executed proposal during an in-flight turn
+
+Not fixed in issue 03. It needs one mutating run per thread (ADR 0070), which is this issue's scope.
+
+Probe (reviewer): a typed turn is in flight, a confirm for the same proposal lands while it runs. `handleTurn` clones the task state at `assistant-runtime.ts` (`let candidateTaskState = cloneTaskState(thread.taskState)`, about line 692), and the clone is committed as a whole at the end of the turn (about lines 1159 and 1207). The confirm executes the proposal and commits, then the in-flight turn commits its older clone, so the executed proposal is restored as pending. A later typed yes can then send the request again, and the stale card is live again.
+
+Required by this issue: serialise mutating turns per thread (one active run; a second mutating event waits or is refused), and commit a task-state change as a delta, not as a whole clone, so an earlier clone cannot restore an executed action. Covered by a test that interleaves a confirm inside a planner round.
