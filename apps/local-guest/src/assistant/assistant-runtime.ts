@@ -44,6 +44,7 @@ import {
   replacePendingProposal,
   type AssistantStayReference,
 } from "./assistant-state.js";
+import { TurnTransaction, syncActiveTask } from "./assistant-turn-transaction.js";
 import {
   isExplicitConfirmation,
   isExplicitCancellation,
@@ -547,7 +548,7 @@ export class AssistantRuntime {
     if (!proposalStillAuthorised(state.pendingAction, state) && replacePendingProposal(state, "search_changed")) {
       thread.activeSurfaces.delete(PENDING_ACTION_STAGE);
     }
-    this.#syncActiveTask(thread);
+    syncActiveTask(thread);
     return true;
   }
 
@@ -556,7 +557,7 @@ export class AssistantRuntime {
     const thread = this.getThread(threadId);
     if (!replacePendingProposal(thread.taskState, reason)) return;
     thread.activeSurfaces.delete(PENDING_ACTION_STAGE);
-    this.#syncActiveTask(thread);
+    syncActiveTask(thread);
   }
 
   /** With more than one domain registered, a cross-domain intent asks for confirmation rather than switching. */
@@ -642,7 +643,7 @@ export class AssistantRuntime {
     if (action && input.pendingActionSurfaceId === `thread-${threadId}:pending-action:${action.id}`) {
       thread.activeSurfaces.set(PENDING_ACTION_STAGE, input.pendingActionSurfaceId);
     }
-    this.#syncActiveTask(thread);
+    syncActiveTask(thread);
     return true;
   }
 
@@ -730,21 +731,12 @@ export class AssistantRuntime {
     };
     const thread = this.getThread(threadId);
 
-    // 1. Transactional Candidates (Item 24)
-    // Work on clones so provider/tool failures don't leave partial state
-    let candidateTaskState = cloneTaskState(thread.taskState);
-    let candidateActiveTaskId = thread.activeTaskId;
-    const candidateTasks: AssistantTask[] = thread.tasks.map((task) => ({ ...task }));
+    // 1. Transactional candidates (Item 24, ADR 0070): every change goes to `tx`; the thread changes only at a commit site.
+    const tx = new TurnTransaction(thread);
     const candidateHistory = this.#sanitizeHistory(thread.conversationHistory);
-    const candidateSurfaces: AssistantTurnSurface[] = [];
-    let candidateActiveSurfaces = new Map<string, string>(thread.activeSurfaces);
-    let candidateSuperseded = new Set<string>(thread.supersededSurfaces);
-    let candidateLastSurfaces: readonly AssistantTurnSurface[] = thread.lastSurfaces;
-    let candidateDiscoveryArtifactId = thread.discoveryArtifactId;
-    let candidateDiscoveryArtifact = thread.discoveryArtifact;
 
     // The active task decides the active pack: its tools, prompt and projections.
-    const candidateDomain = () => candidateTasks.find((task) => task.taskId === candidateActiveTaskId)?.domain ?? this.#activePack.id;
+    const candidateDomain = () => tx.tasks.find((task) => task.taskId === tx.activeTaskId)?.domain ?? this.#activePack.id;
     const candidatePack = () => this.#packs.packFor(candidateDomain()) ?? this.#activePack;
     let validatedDomainId: string | undefined;
     let validatedTurnIntents: readonly ConciergeIntent[] = [];
@@ -754,63 +746,42 @@ export class AssistantRuntime {
     const taskTools = () => {
       const pack = candidatePack();
       const domainTools = pack.id === validatedDomainId
-        ? toolsForValidatedIntents(pack, candidateTaskState, validatedTurnIntents)
+        ? toolsForValidatedIntents(pack, tx.taskState, validatedTurnIntents)
         : [];
       const taskTools = this.#packs.size > 1 && taskSwitchPermitted ? PLATFORM_TASK_TOOLS : [];
       return [...taskTools, ...domainTools];
     };
 
-    const supersede = (stage: string) => {
-      const surfaceId = candidateActiveSurfaces.get(stage);
-      if (surfaceId) {
-        candidateSuperseded.add(surfaceId);
-        candidateActiveSurfaces.delete(stage);
-      }
-    };
-
     // 2. Check for Pending Action Confirmation in Natural Language (Item 13, 15)
     // ADR 0074: a typed confirmation or cancellation attempt after a replaced proposal sends nothing. Only such an attempt
     // consumes the notice; an unrelated typed turn leaves it.
-    if (!candidateTaskState.pendingAction && candidateTaskState.replacedPendingAction) {
+    if (!tx.taskState.pendingAction && tx.taskState.replacedPendingAction) {
       // The notice is consumed only by an explicit confirmation or cancellation attempt (assistant-state.ts). An unrelated turn
       // leaves it in place, so the next yes still gets the replaced reply.
       const attemptsConfirmation = isExplicitConfirmation(text) || isExplicitCancellation(text);
       if (attemptsConfirmation) {
-        candidateTaskState.replacedPendingAction = null;
-        thread.taskState = candidateTaskState;
+        tx.taskState.replacedPendingAction = null;
         thread.conversationHistory.push({ role: "user", text: redactSensitiveData(text) as string });
         thread.conversationHistory.push({ role: "assistant", text: "Server reply delivered." });
-        this.#commitHistory(thread, thread.conversationHistory, candidatePack(), candidateTaskState);
-        thread.activeSurfaces = candidateActiveSurfaces;
-        thread.supersededSurfaces = candidateSuperseded;
-        thread.lastSurfaces = candidateLastSurfaces;
-        this.#syncActiveTask(thread);
+        this.#commitHistory(thread, thread.conversationHistory, candidatePack(), tx.taskState);
+        tx.commit(thread, { state: true, tasks: false, discovery: false, lastSurfaces: tx.lastSurfaces });
         return { ok: true, messages: [ASSISTANT_CONTROL_COPY.proposalReplaced], surfaces: [], tasks: this.getTaskRail(threadId) };
       }
     }
 
-    if (candidateTaskState.pendingAction && !candidateTaskState.pendingAction.executed) {
+    if (tx.taskState.pendingAction && !tx.taskState.pendingAction.executed) {
       if (isExplicitConfirmation(text)) {
-        const execution = this.#executePendingAction(threadId, candidateTaskState.pendingAction, {
-          candidateTaskState,
-          candidateActiveSurfaces,
-          candidateSuperseded,
-          supersede,
-        });
+        const execution = this.#executePendingAction(threadId, tx.taskState.pendingAction, tx);
 
         if (!execution.ok) {
           return { ok: false, code: execution.code, message: execution.message };
         }
 
         // Action completed: commit state transaction
-        thread.taskState = candidateTaskState;
         thread.conversationHistory.push({ role: "user", text: redactSensitiveData(text) as string });
         thread.conversationHistory.push({ role: "assistant", text: "Server reply delivered." });
-        this.#commitHistory(thread, thread.conversationHistory, candidatePack(), candidateTaskState);
-        thread.activeSurfaces = candidateActiveSurfaces;
-        thread.supersededSurfaces = candidateSuperseded;
-        thread.lastSurfaces = execution.surfaces.length > 0 ? execution.surfaces : candidateLastSurfaces;
-        this.#syncActiveTask(thread);
+        this.#commitHistory(thread, thread.conversationHistory, candidatePack(), tx.taskState);
+        tx.commit(thread, { state: true, tasks: false, discovery: false, lastSurfaces: execution.surfaces.length > 0 ? execution.surfaces : tx.lastSurfaces });
 
         return {
           ok: true,
@@ -821,19 +792,15 @@ export class AssistantRuntime {
       }
 
       if (isExplicitCancellation(text)) {
-        const action = candidateTaskState.pendingAction;
-        candidateTaskState.pendingAction = null;
-        supersede(PENDING_ACTION_STAGE);
+        const action = tx.taskState.pendingAction;
+        tx.taskState.pendingAction = null;
+        tx.supersede(PENDING_ACTION_STAGE);
 
         // Commit cancellation
-        thread.taskState = candidateTaskState;
         thread.conversationHistory.push({ role: "user", text: redactSensitiveData(text) as string });
         thread.conversationHistory.push({ role: "assistant", text: "Server reply delivered." });
-        this.#commitHistory(thread, thread.conversationHistory, candidatePack(), candidateTaskState);
-        thread.activeSurfaces = candidateActiveSurfaces;
-        thread.supersededSurfaces = candidateSuperseded;
-        thread.lastSurfaces = candidateLastSurfaces;
-        this.#syncActiveTask(thread);
+        this.#commitHistory(thread, thread.conversationHistory, candidatePack(), tx.taskState);
+        tx.commit(thread, { state: true, tasks: false, discovery: false, lastSurfaces: tx.lastSurfaces });
 
         return {
           ok: true,
@@ -862,7 +829,7 @@ export class AssistantRuntime {
     let scopeFailureOutcome: "quota_refusal" | "guard_failure" | undefined;
     const assessment = text.length > this.#maxInputCharacters ? undefined : await assessScopeSafely(this.#scopeClassifier, safeUserText, {
       domain: packForScope.id, description: packForScope.scopeDescription ?? packForScope.label,
-      hasShortlist: candidateTaskState.shortlist.length > 0, hasSelectedStay: Boolean(candidateTaskState.selectedStayRef), hasOffer: Boolean(candidateTaskState.currentOfferId),
+      hasShortlist: tx.taskState.shortlist.length > 0, hasSelectedStay: Boolean(tx.taskState.selectedStayRef), hasOffer: Boolean(tx.taskState.currentOfferId),
     }, this.#scopeOuterTimeoutMs, (error) => {
       // A retry failure carries the stage's decisive error; the first failure's outcome stands for refused or skipped retries (ADR 0106 amendment).
       const cause = error instanceof ScopeClassifierRetryError ? error.failure : error;
@@ -934,7 +901,7 @@ export class AssistantRuntime {
         const modelResponse = await this.#modelClient.generate({
           systemInstruction: composeSystemInstruction(candidatePack()),
           tools: taskTools(),
-          history: this.#boundedHistory(candidateHistory, candidatePack(), candidateTaskState),
+          history: this.#boundedHistory(candidateHistory, candidatePack(), tx.taskState),
           timeoutMs: plannerTimeoutMs,
           structuredOutput: { name: "assistant_reply_plan", schema: replyPlanSchema(successfulToolNames(turnRawResults)), strict: true },
           maxOutputTokens: this.#maxPlanningOutputTokens,
@@ -994,9 +961,9 @@ export class AssistantRuntime {
             : undefined;
           const precondition = !turnAuthorized || isTaskTool || malformedArguments || !offeredTool
             ? undefined
-            : activePack.validateToolCall(call.name, call.args, candidateTaskState);
+            : activePack.validateToolCall(call.name, call.args, tx.taskState);
           const stateUnavailable = !isTaskTool && !offeredTool && turnAuthorized && !malformedArguments
-            ? activePack.validateToolCall(call.name, call.args, candidateTaskState)
+            ? activePack.validateToolCall(call.name, call.args, tx.taskState)
               ?? { code: "invalid_tool_for_state" as const, message: "That operation is not available for the current Guest workflow." }
             : undefined;
           const invalidCall = !turnAuthorized || !schemaTool
@@ -1021,25 +988,25 @@ export class AssistantRuntime {
           }
           acceptedCalls.push(call);
           if (this.#isPlatformTaskTool(call.name)) {
-            const previousActiveTaskId = candidateActiveTaskId;
-            const previousTaskState = candidateTaskState;
+            const previousActiveTaskId = tx.activeTaskId;
+            const previousTaskState = tx.taskState;
             const applied = this.#applyTaskTool(
               call.name,
               call.args,
-              candidateTasks,
-              candidateActiveTaskId,
-              candidateTaskState,
-              { activeSurfaces: candidateActiveSurfaces, supersededSurfaces: candidateSuperseded, lastSurfaces: candidateLastSurfaces },
+              tx.tasks,
+              tx.activeTaskId,
+              tx.taskState,
+              { activeSurfaces: tx.activeSurfaces, supersededSurfaces: tx.supersededSurfaces, lastSurfaces: tx.lastSurfaces },
             );
             // ADR 0074: a switch that changes the active task removes the proposal of the task the guest left. A refused switch (unknown
             // task or domain) returns the same active task, so this guard alone keeps the proposal. The `error` field needs no separate
             // check: applyTaskTool never changes the active task on an error.
             if (applied.activeTaskId !== previousActiveTaskId) replacePendingProposal(previousTaskState, "task_switched");
-            candidateTaskState = applied.state;
-            candidateActiveTaskId = applied.activeTaskId;
-            candidateActiveSurfaces = applied.workspace.activeSurfaces;
-            candidateSuperseded = applied.workspace.supersededSurfaces;
-            candidateLastSurfaces = applied.workspace.lastSurfaces;
+            tx.taskState = applied.state;
+            tx.activeTaskId = applied.activeTaskId;
+            tx.activeSurfaces = applied.workspace.activeSurfaces;
+            tx.supersededSurfaces = applied.workspace.supersededSurfaces;
+            tx.lastSurfaces = applied.workspace.lastSurfaces;
             const safeTaskResult = typeof applied.result.started === "string"
               ? { started: applied.result.started }
               : typeof applied.result.switched === "string"
@@ -1050,9 +1017,9 @@ export class AssistantRuntime {
           }
           const toolContext: AssistantToolContext = {
             environment: this.#environment,
-            taskState: candidateTaskState,
+            taskState: tx.taskState,
             threadId,
-            taskId: candidateActiveTaskId,
+            taskId: tx.activeTaskId,
             userTextHistory,
             // ADR 0106: classifier date slots bind to roles only through server-side checks; ambiguous ones carry no check-in authority.
             currentTurnDates: currentTurnDateRoles(originalUserText, assessment.slots, this.#environment.clock()),
@@ -1091,68 +1058,68 @@ export class AssistantRuntime {
           if (call.name === "search_stays") {
             // ADR 0074: a search that changes the proposed stay, unit, dates or party removes the proposal's authority. An
             // unchanged result keeps it.
-            if (!proposalStillAuthorised(candidateTaskState.pendingAction, candidateTaskState) && replacePendingProposal(candidateTaskState, "search_changed")) {
-              supersede(PENDING_ACTION_STAGE);
+            if (!proposalStillAuthorised(tx.taskState.pendingAction, tx.taskState) && replacePendingProposal(tx.taskState, "search_changed")) {
+              tx.supersede(PENDING_ACTION_STAGE);
             }
             // Supersede any previous search or details
-            supersede(DISCOVERY_STAGE);
-            supersede(UNIT_STAGE);
+            tx.supersede(DISCOVERY_STAGE);
+            tx.supersede(UNIT_STAGE);
 
             if (!execution.discoveryArtifact) {
               throw new Error("Authoritative discovery did not return an artifact");
             }
-            candidateDiscoveryArtifactId = execution.discoveryArtifact.id;
-            candidateDiscoveryArtifact = execution.discoveryArtifact;
+            tx.discoveryArtifactId = execution.discoveryArtifact.id;
+            tx.discoveryArtifact = execution.discoveryArtifact;
             const surfaceId = `thread-${threadId}:discovery:${execution.discoveryArtifact.id}`;
-            candidateActiveSurfaces.set(DISCOVERY_STAGE, surfaceId);
+            tx.activeSurfaces.set(DISCOVERY_STAGE, surfaceId);
             activeStage = "a2ui";
-            candidateSurfaces.push({
+            tx.surfaces.push({
               surfaceId,
               a2uiMessages: candidatePack().discoverySurface(execution.discoveryArtifact, surfaceId),
             });
           } else if (call.name === "get_unit_details") {
             const stayRef = String(call.args.stayRef ?? "").trim();
-            const stay = candidateTaskState.shortlist.find((s) => s.stayRef === stayRef);
+            const stay = tx.taskState.shortlist.find((s) => s.stayRef === stayRef);
             if (stay) {
               const surfaceId = `thread-${threadId}:unit:detail`;
-              supersede(DISCOVERY_STAGE);
-              supersede(UNIT_STAGE);
-              candidateActiveSurfaces.set(UNIT_STAGE, surfaceId);
+              tx.supersede(DISCOVERY_STAGE);
+              tx.supersede(UNIT_STAGE);
+              tx.activeSurfaces.set(UNIT_STAGE, surfaceId);
 
-              const checkIn = candidateTaskState.stayIntent.checkIn ?? this.#environment.config.demoCheckIn;
-              const checkOut = candidateTaskState.stayIntent.checkOut ?? this.#environment.config.demoCheckOut;
+              const checkIn = tx.taskState.stayIntent.checkIn ?? this.#environment.config.demoCheckIn;
+              const checkOut = tx.taskState.stayIntent.checkOut ?? this.#environment.config.demoCheckOut;
               if (!checkOut) throw new Error("The selected stay has no checkout date");
               activeStage = "a2ui";
               const a2uiMessages = candidatePack().unitDetailSurface({ unitId: stay.unitId, checkIn, checkOut, surfaceId });
 
-              candidateSurfaces.push({ surfaceId, a2uiMessages });
+              tx.surfaces.push({ surfaceId, a2uiMessages });
             }
           } else if (execution.requestDraftSurface) {
             const surface = execution.requestDraftSurface;
-            supersede(DISCOVERY_STAGE);
-            supersede(UNIT_STAGE);
-            supersede(REQUEST_STAGE);
-            candidateActiveSurfaces.set(REQUEST_STAGE, surface.surfaceId);
+            tx.supersede(DISCOVERY_STAGE);
+            tx.supersede(UNIT_STAGE);
+            tx.supersede(REQUEST_STAGE);
+            tx.activeSurfaces.set(REQUEST_STAGE, surface.surfaceId);
             activeStage = "a2ui";
-            candidateSurfaces.push({ surfaceId: surface.surfaceId, a2uiMessages: surface.a2uiMessages });
+            tx.surfaces.push({ surfaceId: surface.surfaceId, a2uiMessages: surface.a2uiMessages });
           } else if (execution.pendingActionCreated) {
             // Consequential action proposed -> create confirmation card surface
             const action = execution.pendingActionCreated;
-            candidateTaskState.replacedPendingAction = null;
+            tx.taskState.replacedPendingAction = null;
             const surfaceId = `thread-${threadId}:pending-action:${action.id}`;
-            supersede(PENDING_ACTION_STAGE);
-            candidateActiveSurfaces.set(PENDING_ACTION_STAGE, surfaceId);
+            tx.supersede(PENDING_ACTION_STAGE);
+            tx.activeSurfaces.set(PENDING_ACTION_STAGE, surfaceId);
 
             activeStage = "a2ui";
             const a2uiMessages = candidatePack().pendingActionSurface(action, surfaceId);
-            candidateSurfaces.push({ surfaceId, a2uiMessages });
+            tx.surfaces.push({ surfaceId, a2uiMessages });
           } else if (execution.projectedSurface) {
             const surface = execution.projectedSurface;
             const stage = `commerce:${surface.kind}`;
-            supersede(stage);
-            candidateActiveSurfaces.set(stage, surface.surfaceId);
+            tx.supersede(stage);
+            tx.activeSurfaces.set(stage, surface.surfaceId);
             activeStage = "a2ui";
-            candidateSurfaces.push({ surfaceId: surface.surfaceId, a2uiMessages: surface.a2uiMessages });
+            tx.surfaces.push({ surfaceId: surface.surfaceId, a2uiMessages: surface.a2uiMessages });
           }
         }
 
@@ -1184,7 +1151,7 @@ export class AssistantRuntime {
         const finalModelResponse = await this.#modelClient.generate({
           systemInstruction: composeSystemInstruction(candidatePack()),
           tools: [],
-          history: this.#boundedHistory(candidateHistory, candidatePack(), candidateTaskState),
+          history: this.#boundedHistory(candidateHistory, candidatePack(), tx.taskState),
           timeoutMs: summaryTimeoutMs,
           structuredOutput: { name: "assistant_reply_plan", schema: replyPlanSchema(successfulToolNames(turnRawResults)), strict: true },
           maxOutputTokens: this.#maxReplyOutputTokens,
@@ -1206,22 +1173,14 @@ export class AssistantRuntime {
       }
 
       // 4. Commit Transaction (Item 24)
-      thread.taskState = candidateTaskState;
-      thread.tasks = candidateTasks;
-      thread.activeTaskId = candidateActiveTaskId;
-      this.#commitHistory(thread, candidateHistory, candidatePack(), candidateTaskState);
-      thread.activeSurfaces = candidateActiveSurfaces;
-      thread.supersededSurfaces = candidateSuperseded;
-      thread.lastSurfaces = candidateSurfaces.length > 0 ? candidateSurfaces : candidateLastSurfaces;
-      thread.discoveryArtifactId = candidateDiscoveryArtifactId;
-      thread.discoveryArtifact = candidateDiscoveryArtifact;
-      this.#syncActiveTask(thread);
+      this.#commitHistory(thread, candidateHistory, candidatePack(), tx.taskState);
+      tx.commit(thread, { state: true, tasks: true, discovery: true, lastSurfaces: tx.surfaces.length > 0 ? tx.surfaces : tx.lastSurfaces });
       recordOutcome(controlOutcome);
       // Set by the reply branch (`reply`) or the summary call after the round cap (`round_limit`), never both.
       const output: AssistantTurnOutput = {
         ok: true,
         messages: [finalAssistantReply],
-        surfaces: candidateSurfaces,
+        surfaces: tx.surfaces,
         tasks: this.getTaskRail(threadId),
         modelHandled: true,
         discardUserInput,
@@ -1248,23 +1207,15 @@ export class AssistantRuntime {
       }
       if (!turnDeadline) this.#diagnose(createFailureDiagnostic(activeStage, round, activeToolName, error));
       emitStop();
-      if (hasSuccessfulApplicationOperation && candidateSurfaces.length > 0) {
+      if (hasSuccessfulApplicationOperation && tx.surfaces.length > 0) {
         // The fallback replaces the failure outcome, so this turn is counted once as the fallback.
         controlOutcome = "rejected_plan_fallback";
         recordOutcome(controlOutcome);
-        const message = fallbackForProjectedOperation(candidateSurfaces[0]?.surfaceId ?? "");
+        const message = fallbackForProjectedOperation(tx.surfaces[0]?.surfaceId ?? "");
         candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
-        thread.taskState = candidateTaskState;
-        thread.tasks = candidateTasks;
-        thread.activeTaskId = candidateActiveTaskId;
-        this.#commitHistory(thread, candidateHistory, candidatePack(), candidateTaskState);
-        thread.activeSurfaces = candidateActiveSurfaces;
-        thread.supersededSurfaces = candidateSuperseded;
-        thread.lastSurfaces = candidateSurfaces;
-        thread.discoveryArtifactId = candidateDiscoveryArtifactId;
-        thread.discoveryArtifact = candidateDiscoveryArtifact;
-        this.#syncActiveTask(thread);
-        return { ok: true, messages: [message], surfaces: candidateSurfaces, tasks: this.getTaskRail(threadId), modelHandled: true, discardUserInput, controlOutcome: "rejected_plan_fallback", stopReason };
+        this.#commitHistory(thread, candidateHistory, candidatePack(), tx.taskState);
+        tx.commit(thread, { state: true, tasks: true, discovery: true, lastSurfaces: tx.surfaces });
+        return { ok: true, messages: [message], surfaces: tx.surfaces, tasks: this.getTaskRail(threadId), modelHandled: true, discardUserInput, controlOutcome: "rejected_plan_fallback", stopReason };
       }
       if (toolDenial) {
         // ADR 0106: a planner date the guest did not author, one that fails the stay rules, or a search missing its stay
@@ -1340,42 +1291,19 @@ export class AssistantRuntime {
     }
   }
 
-  /** Mirrors the thread's active workspace back onto the active task object. */
-  #syncActiveTask(thread: AssistantThreadState): void {
-    const active = thread.tasks.find((task) => task.taskId === thread.activeTaskId);
-    if (!active) return;
-    active.state = thread.taskState;
-    active.activeSurfaces = thread.activeSurfaces;
-    active.supersededSurfaces = thread.supersededSurfaces;
-    active.lastSurfaces = thread.lastSurfaces;
-  }
-
   handleAssistantEvent(threadId: string, eventName: string, context: AssistantEventContext | null | undefined): AssistantTurnOutput {
     const thread = this.getThread(threadId);
-    const candidateTasks = thread.tasks.map((task) => ({ ...task }));
-    let candidateTaskState = cloneTaskState(thread.taskState);
-    let candidateActiveSurfaces = new Map<string, string>(thread.activeSurfaces);
-    let candidateSuperseded = new Set<string>(thread.supersededSurfaces);
-    let candidateLastSurfaces: readonly AssistantTurnSurface[] = thread.lastSurfaces;
-    const candidateSurfaces: AssistantTurnSurface[] = [];
-
-    const supersede = (stage: string) => {
-      const surfaceId = candidateActiveSurfaces.get(stage);
-      if (surfaceId) {
-        candidateSuperseded.add(surfaceId);
-        candidateActiveSurfaces.delete(stage);
-      }
-    };
+    const tx = new TurnTransaction(thread);
 
     if (eventName === TASK_START_EVENT || eventName === TASK_SWITCH_EVENT) {
-      const previousTaskState = candidateTaskState;
+      const previousTaskState = tx.taskState;
       const applied = this.#applyTaskTool(
         eventName === TASK_SWITCH_EVENT ? "switch_task" : "start_task",
         { domain: context?.domain, taskId: context?.taskId },
-        candidateTasks,
+        tx.tasks,
         thread.activeTaskId,
-        candidateTaskState,
-        { activeSurfaces: candidateActiveSurfaces, supersededSurfaces: candidateSuperseded, lastSurfaces: candidateLastSurfaces },
+        tx.taskState,
+        { activeSurfaces: tx.activeSurfaces, supersededSurfaces: tx.supersededSurfaces, lastSurfaces: tx.lastSurfaces },
       );
       const error = applied.result.error;
       if (typeof error === "string") {
@@ -1385,20 +1313,15 @@ export class AssistantRuntime {
       // and a same-task switch rewrites that task's stored state from the committed state (#syncActiveTask below), so the removal
       // is then overwritten. Removing a guard here changes no behaviour (issue 03 Comments).
       replacePendingProposal(previousTaskState, "task_switched");
-      candidateTaskState = applied.state;
-      candidateActiveSurfaces = applied.workspace.activeSurfaces;
-      candidateSuperseded = applied.workspace.supersededSurfaces;
-      candidateLastSurfaces = applied.workspace.lastSurfaces;
+      tx.taskState = applied.state;
+      tx.activeSurfaces = applied.workspace.activeSurfaces;
+      tx.supersededSurfaces = applied.workspace.supersededSurfaces;
+      tx.lastSurfaces = applied.workspace.lastSurfaces;
 
-      thread.taskState = candidateTaskState;
-      thread.tasks = candidateTasks;
-      thread.activeTaskId = applied.activeTaskId;
-      thread.activeSurfaces = candidateActiveSurfaces;
-      thread.supersededSurfaces = candidateSuperseded;
-      thread.lastSurfaces = candidateLastSurfaces;
-      this.#syncActiveTask(thread);
+      tx.activeTaskId = applied.activeTaskId;
+      tx.commit(thread, { state: true, tasks: true, discovery: false, lastSurfaces: tx.lastSurfaces });
 
-      const activeDomain = candidateTasks.find((task) => task.taskId === applied.activeTaskId)?.domain;
+      const activeDomain = tx.tasks.find((task) => task.taskId === applied.activeTaskId)?.domain;
       const activeLabel = (activeDomain ? this.#packs.packFor(activeDomain) : undefined)?.label ?? "new";
       const message = eventName === TASK_SWITCH_EVENT
         ? `Switched to your ${activeLabel} task.`
@@ -1407,18 +1330,20 @@ export class AssistantRuntime {
       return {
         ok: true,
         messages: [message],
-        surfaces: candidateLastSurfaces,
+        surfaces: tx.lastSurfaces,
         tasks: this.getTaskRail(threadId),
       };
     }
 
-    const actionTask = candidateTasks.find((task) => task.taskId === thread.activeTaskId);
+    const actionTask = tx.tasks.find((task) => task.taskId === thread.activeTaskId);
     const actionPack = actionTask ? this.#packs.packFor(actionTask.domain) : undefined;
     if (actionPack?.platformActionNames?.includes(eventName)) {
       const activeTask = actionTask;
       const pack = actionPack;
-      const activeSurfaceId = candidateActiveSurfaces.get("commerce:checkout");
-      if (activeTask?.domain !== "commerce" || !pack?.handlePlatformAction || !activeSurfaceId || context?.surfaceId !== activeSurfaceId || context.taskId !== activeTask.taskId) {
+      // Platform action surfaces are filed under the owning pack's id (the generic projected-surface path).
+      const checkoutStage = `${pack.id}:checkout`;
+      const activeSurfaceId = tx.activeSurfaces.get(checkoutStage);
+      if (!activeTask || !pack?.handlePlatformAction || !activeSurfaceId || context?.surfaceId !== activeSurfaceId || context.taskId !== activeTask.taskId) {
         return { ok: false, code: "STALE_SURFACE", message: "That checkout confirmation is no longer active." };
       }
       const result = pack.handlePlatformAction({
@@ -1429,39 +1354,31 @@ export class AssistantRuntime {
         activeSurfaceId,
       });
       if (!result.ok) return { ok: false, code: result.code, message: result.message };
-      supersede("commerce:checkout");
+      tx.supersede(checkoutStage);
       const resultSurfaces = result.surface ? [result.surface] : [];
       if (result.surface) {
-        candidateActiveSurfaces.set("commerce:checkout", result.surface.surfaceId);
-        candidateSurfaces.push(result.surface);
+        tx.place(checkoutStage, result.surface.surfaceId);
+        tx.surfaces.push(result.surface);
       }
-      thread.activeSurfaces = candidateActiveSurfaces;
-      thread.supersededSurfaces = candidateSuperseded;
-      thread.lastSurfaces = resultSurfaces.length > 0 ? resultSurfaces : candidateLastSurfaces;
-      this.#syncActiveTask(thread);
+      tx.commit(thread, { state: false, tasks: false, discovery: false, lastSurfaces: resultSurfaces.length > 0 ? resultSurfaces : tx.lastSurfaces });
       return { ok: true, messages: [result.message], surfaces: resultSurfaces, tasks: this.getTaskRail(threadId) };
     }
 
     if (eventName === ASSISTANT_CONFIRM_ACTION_EVENT || eventName === ASSISTANT_CANCEL_ACTION_EVENT) {
       // ADR-0074: only the current authoritative surface retains action authority.
-      const activeSurfaceId = candidateActiveSurfaces.get(PENDING_ACTION_STAGE);
+      const activeSurfaceId = tx.activeSurfaces.get(PENDING_ACTION_STAGE);
       if (!activeSurfaceId || context?.surfaceId !== activeSurfaceId) {
         return { ok: false, code: "STALE_SURFACE", message: "That action is no longer active." };
       }
     }
 
     if (eventName === ASSISTANT_CANCEL_ACTION_EVENT) {
-      if (!candidateTaskState.pendingAction || candidateTaskState.pendingAction.id !== context?.actionId) {
+      if (!tx.taskState.pendingAction || tx.taskState.pendingAction.id !== context?.actionId) {
         return { ok: false, code: "STALE_SURFACE", message: "That action is no longer active." };
       }
-      candidateTaskState.pendingAction = null;
-      supersede(PENDING_ACTION_STAGE);
-
-      thread.taskState = candidateTaskState;
-      thread.activeSurfaces = candidateActiveSurfaces;
-      thread.supersededSurfaces = candidateSuperseded;
-      thread.lastSurfaces = candidateLastSurfaces;
-      this.#syncActiveTask(thread);
+      tx.clearPendingAction();
+      tx.supersede(PENDING_ACTION_STAGE);
+      tx.commit(thread, { state: true, tasks: false, discovery: false, lastSurfaces: tx.lastSurfaces });
 
       return {
         ok: true,
@@ -1472,27 +1389,18 @@ export class AssistantRuntime {
     }
 
     if (eventName === ASSISTANT_CONFIRM_ACTION_EVENT) {
-      const action = candidateTaskState.pendingAction;
+      const action = tx.taskState.pendingAction;
       if (!action || action.id !== context?.actionId || action.executed) {
         return { ok: false, code: "STALE_SURFACE", message: "That action is no longer active." };
       }
 
-      const execution = this.#executePendingAction(threadId, action, {
-        candidateTaskState,
-        candidateActiveSurfaces,
-        candidateSuperseded,
-        supersede,
-      });
+      const execution = this.#executePendingAction(threadId, action, tx);
 
       if (!execution.ok) {
         return { ok: false, code: execution.code, message: execution.message };
       }
 
-      thread.taskState = candidateTaskState;
-      thread.activeSurfaces = candidateActiveSurfaces;
-      thread.supersededSurfaces = candidateSuperseded;
-      thread.lastSurfaces = execution.surfaces.length > 0 ? execution.surfaces : candidateLastSurfaces;
-      this.#syncActiveTask(thread);
+      tx.commit(thread, { state: true, tasks: false, discovery: false, lastSurfaces: execution.surfaces.length > 0 ? execution.surfaces : tx.lastSurfaces });
 
       return {
         ok: true,
@@ -1552,12 +1460,7 @@ export class AssistantRuntime {
   #executePendingAction(
     threadId: string,
     action: PendingAssistantAction,
-    context: {
-      candidateTaskState: AssistantTaskState;
-      candidateActiveSurfaces: Map<string, string>;
-      candidateSuperseded: Set<string>;
-      supersede: (stage: string) => void;
-    },
+    tx: TurnTransaction,
   ): { ok: true; message: string; surfaces: { surfaceId: string; a2uiMessages: readonly unknown[] }[] } | { ok: false; code: string; message: string } {
     if (action.executed) {
       return { ok: false, code: "STALE_SURFACE", message: "This action was already executed." };
@@ -1574,7 +1477,7 @@ export class AssistantRuntime {
       return { ok: false, code: "STALE_SURFACE", message: "This action has expired or is no longer authorized." };
     }
 
-    context.supersede(PENDING_ACTION_STAGE);
+    tx.supersede(PENDING_ACTION_STAGE);
 
     switch (action.type) {
       case "request_to_book": {
@@ -1589,7 +1492,7 @@ export class AssistantRuntime {
         // Pre-execution revalidation: re-read current Unit/discovery truth for the same Unit, dates, and party size.
         const verdict = this.#packForThread(threadId).revalidateProposal(action);
         if (!verdict.ok) {
-          context.candidateTaskState.pendingAction = null;
+          tx.clearPendingAction();
           return { ok: false, code: verdict.code, message: verdict.message };
         }
 
@@ -1609,13 +1512,13 @@ export class AssistantRuntime {
 
         // POST-AUTHORITATIVE-COMMIT RECONCILIATION:
         // Booking request has committed. Record it authoritatively in working state.
-        context.candidateTaskState.currentBookingRequestId = disclosed.requestId;
-        context.candidateTaskState.goal = "book_stay";
-        context.candidateTaskState.pendingAction = null;
+        tx.taskState.currentBookingRequestId = disclosed.requestId;
+        tx.taskState.goal = "book_stay";
+        tx.clearPendingAction();
 
         const requestSurfaceId = `thread-${threadId}:request:${disclosed.requestId}`;
-        context.supersede(UNIT_STAGE);
-        context.candidateActiveSurfaces.set(REQUEST_STAGE, requestSurfaceId);
+        tx.supersede(UNIT_STAGE);
+        tx.place(REQUEST_STAGE, requestSurfaceId);
 
         let requestArtifact: ReturnType<typeof environment.bookingRequestApp.getArtifact>;
         try {
@@ -1649,9 +1552,9 @@ export class AssistantRuntime {
           const { offerId } = environment.config.demoRequestAcceptor === undefined
             ? environment.simulateOperatorAcceptance(disclosed.requestId)
             : environment.acceptDisclosedRequest(disclosed.requestId);
-          context.candidateTaskState.currentOfferId = offerId;
+          tx.taskState.currentOfferId = offerId;
           const offerSurfaceId = `thread-${threadId}:offer:${offerId}`;
-          context.candidateActiveSurfaces.set(OFFER_STAGE, offerSurfaceId);
+          tx.place(OFFER_STAGE, offerSurfaceId);
 
           const offerArtifact = environment.conditionalOfferApp.getArtifact(offerId, guest);
 
@@ -1708,12 +1611,12 @@ export class AssistantRuntime {
           || refs.stayTotalKobo !== offerArtifact.facts.allInStayTotalKobo
           || refs.refundableDepositKobo !== offerArtifact.facts.refundableSecurityDepositKobo
           || refs.totalDueNowKobo !== offerArtifact.facts.totalAmountDueNowKobo) {
-          context.candidateTaskState.pendingAction = null;
+          tx.clearPendingAction();
           return { ok: false, code: "STALE_SURFACE", message: "The offer changed. Review the current offer before accepting." };
         }
         const acceptAction = offerArtifact.actions.find((a) => a.type === "accept");
         if (!acceptAction) {
-          context.candidateTaskState.pendingAction = null;
+          tx.clearPendingAction();
           return { ok: false, code: "ACTION_NOT_AUTHORIZED", message: "Offer cannot be accepted in current state." };
         }
 
@@ -1727,11 +1630,11 @@ export class AssistantRuntime {
 
         // POST-AUTHORITATIVE-COMMIT RECONCILIATION:
         // Offer acceptance committed. Pending action consumed, cannot replay.
-        context.candidateTaskState.pendingAction = null;
+        tx.clearPendingAction();
 
         const paymentSurfaceId = `thread-${threadId}:payment:${offerId}`;
-        context.supersede(OFFER_STAGE);
-        context.candidateActiveSurfaces.set(PAYMENT_STAGE, paymentSurfaceId);
+        tx.supersede(OFFER_STAGE);
+        tx.place(PAYMENT_STAGE, paymentSurfaceId);
 
         try {
           const paymentArtifact = this.#environment.cardPaymentApp.getArtifact(offerId, this.#environment.guestPrincipal());
@@ -1767,7 +1670,7 @@ export class AssistantRuntime {
         try {
           paymentArtifact = this.#environment.cardPaymentApp.getArtifact(offerId, this.#environment.guestPrincipal());
         } catch {
-          context.candidateTaskState.pendingAction = null;
+          tx.clearPendingAction();
           return { ok: false, code: "STALE_SURFACE", message: "Payment checkout is no longer available for this offer." };
         }
 
@@ -1776,7 +1679,7 @@ export class AssistantRuntime {
           || (refs.stayTotalKobo !== undefined && refs.stayTotalKobo !== paymentArtifact.facts.allInStayTotalKobo)
           || (refs.refundableDepositKobo !== undefined && refs.refundableDepositKobo !== paymentArtifact.facts.refundableSecurityDepositKobo)
           || (refs.totalDueNowKobo !== undefined && refs.totalDueNowKobo !== paymentArtifact.facts.amountDueNowKobo)) {
-          context.candidateTaskState.pendingAction = null;
+          tx.clearPendingAction();
           return { ok: false, code: "STALE_SURFACE", message: "Payment details or amounts have changed. Please review the updated checkout." };
         }
 
@@ -1801,14 +1704,14 @@ export class AssistantRuntime {
         // POST-AUTHORITATIVE-COMMIT RECONCILIATION:
         // Payment committed. Reservation and contract recorded. Action consumed, cannot replay.
         const contractId = outcome.bookingContract.contractId;
-        context.candidateTaskState.currentReservationId = outcome.reservation.reservationId;
-        context.candidateTaskState.currentContractId = contractId;
-        context.candidateTaskState.pendingAction = null;
+        tx.taskState.currentReservationId = outcome.reservation.reservationId;
+        tx.taskState.currentContractId = contractId;
+        tx.clearPendingAction();
 
         const paymentSurfaceId = `thread-${threadId}:payment:confirmed:${offerId}`;
         const bookingSurfaceId = `thread-${threadId}:booking:${contractId}`;
-        context.supersede(PAYMENT_STAGE);
-        context.candidateActiveSurfaces.set(BOOKING_STAGE, bookingSurfaceId);
+        tx.supersede(PAYMENT_STAGE);
+        tx.place(BOOKING_STAGE, bookingSurfaceId);
 
         try {
           const updatedPaymentArtifact = this.#environment.cardPaymentApp.getArtifact(offerId, this.#environment.guestPrincipal());
