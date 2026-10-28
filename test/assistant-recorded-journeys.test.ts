@@ -91,3 +91,32 @@ test("The four named journeys are committed as recordings and pass.", async () =
   assert.deepEqual(afterSwitch[3]!.messages, [CANCEL_COPY]);
   assert.equal(afterSwitch[3]!.surfaces.length, 0, "no request or pending surface remains after the cancel");
 });
+
+test("The recorder refuses a recording whose cancel turn still leaves a pending surface or a fallback outcome.", () => {
+  const definition = definitionOf("confirmation-cancelled");
+  const committed = loadRecording("confirmation-cancelled").turns as JourneyTurnOutput[];
+  assert.deepEqual(intendedOutcomeViolations(definition, committed), [], "the committed recording passes");
+
+  const withPending = committed.map((turn, index) => index === 2
+    ? { ...turn, surfaces: [{ surfaceId: "thread-g-d1a0000403:pending-action:pa-generated-id-1", componentTypes: [] }] }
+    : turn);
+  assert.ok(intendedOutcomeViolations(definition, withPending).some((message) => /leaves a pending surface/.test(message)));
+
+  const withFallback = committed.map((turn, index) => index === 2
+    ? { ...turn, messages: ["I can help you find and compare stays, explain pricing, or check a booking status. What would you like to do?"], controlOutcome: "rejected_plan_fallback" }
+    : turn);
+  const fallbackViolations = intendedOutcomeViolations(definition, withFallback);
+  assert.ok(fallbackViolations.some((message) => /is not the cancel copy/.test(message)));
+  assert.ok(fallbackViolations.some((message) => /fallback outcome rejected_plan_fallback/.test(message)));
+});
+
+test("A stale confirm button must be refused with its expected code, or the recording is refused.", () => {
+  const base = definitionOf("cancel-after-task-switch");
+  const definition = { ...base, guestTurns: [{ text: "Request the first one." }, { text: "Confirm the Booking Request from the earlier card", button: { ofTurn: 0, expect: "STALE_SURFACE" } }] };
+  const row = (guestText: string, extra: Partial<JourneyTurnOutput>): JourneyTurnOutput => ({ guestText, ok: true, messages: [], surfaces: [], tasks: [], ...extra });
+  const first = row("Request the first one.", { surfaces: [{ surfaceId: "thread-g-d1a0000404:pending-action:pa-generated-id-1", componentTypes: [] }] });
+  const refused = row("Confirm the Booking Request from the earlier card", { ok: false, code: "STALE_SURFACE", messages: [], surfaces: [] });
+  assert.deepEqual(intendedOutcomeViolations(definition, [first, refused]), [], "a stale press refused as STALE_SURFACE passes");
+  assert.ok(intendedOutcomeViolations(definition, [first, { ...refused, code: "INVALID_THREAD" }]).some((message) => /was not refused as STALE_SURFACE/.test(message)));
+  assert.ok(intendedOutcomeViolations(definition, [first, row("Confirm the Booking Request from the earlier card", { surfaces: [{ surfaceId: "thread-g-d1a0000404:request:req-1", componentTypes: [] }] })]).some((message) => /was not refused/.test(message)), "a press that sends a request is not a pass");
+});

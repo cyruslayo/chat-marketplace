@@ -127,10 +127,16 @@ export class RecordingModelClient implements AssistantModelClient {
   }
 }
 
-/** The comparable projection of a request: the fields the issue fixes for divergence (tool names, roles, call names). */
+const GENERATED_UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
+
+/**
+ * The comparable projection of a request: tool names, the structured-output name, and every history step's role, text,
+ * tool-call names and arguments, and tool-result names and payloads. Runtime-minted UUIDs (draft and pending ids) differ
+ * between runs, so each distinct UUID is replaced by its order of first appearance within this request, on both sides.
+ */
 function comparable(request: RecordedRequest | AssistantModelRequest): string {
   const source: RecordedRequest = "tools" in request ? neutralRequest(request) : request;
-  return JSON.stringify({
+  const projected = JSON.stringify({
     tools: source.toolNames,
     structured: source.structuredOutputName ?? null,
     history: source.history.map((step) => {
@@ -139,11 +145,17 @@ function comparable(request: RecordedRequest | AssistantModelRequest): string {
         case "assistant":
           return [step.role, step.text];
         case "tool_calls":
-          return [step.role, step.calls.map((call) => call.name)];
+          return [step.role, step.calls.map((call) => [call.name, call.args])];
         case "tool_results":
-          return [step.role, step.results.map((result) => result.name)];
+          return [step.role, step.results.map((result) => [result.name, result.isError, result.result])];
       }
     }),
+  });
+  const seen = new Map<string, number>();
+  return projected.replace(GENERATED_UUID, (id) => {
+    const index = seen.get(id) ?? seen.size + 1;
+    seen.set(id, index);
+    return `uuid#${index}`;
   });
 }
 
@@ -156,7 +168,7 @@ export function divergenceReason(expected: RecordedRequest, actual: AssistantMod
   const liveTools = actual.tools.map((tool) => tool.name).join(",");
   if (recordedTools !== liveTools) return `tools offered differ (recorded [${recordedTools}], runtime [${liveTools}])`;
   if (expected.history.length !== actual.history.length) return `history length differs (recorded ${expected.history.length}, runtime ${actual.history.length})`;
-  return "history roles, text or tool-call names differ";
+  return "history roles, text, tool-call arguments or tool-result payloads differ";
 }
 
 /**

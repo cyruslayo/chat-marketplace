@@ -10,6 +10,7 @@ import { ASSISTANT_TOOL_DEFINITIONS } from "../apps/local-guest/src/assistant/as
 import type { AssistantConversationStep, AssistantModelRequest } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 import { FallbackModelClient } from "../apps/local-guest/src/assistant/fallback-model-client.js";
+import { withProviderAttemptHook } from "./helpers/assistant-attempt-model.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 
 test("GeminiInteractionsClient maps request to Interactions API shape without live network", async () => {
@@ -537,11 +538,8 @@ test("FallbackModelClient reprojects sanitized signed continuity after history r
     if (requests.length === 1) return { id: "fallback-search-turn", status: "completed", steps: [thought, call] } as Interactions.Interaction;
     return { id: `fallback-reply-${requests.length}`, status: "completed", steps: [{ type: "model_output", content: [{ type: "text", text: JSON.stringify({ kind: "clarify_stay", references: [] }) }] }] } as Interactions.Interaction;
   } } } });
-  const secondary = { supportsProviderAttemptReservation: true as const,
-    generate: async (request: AssistantModelRequest) => {
-      await request.beforeProviderAttempt?.();
-      return { text: JSON.stringify({ kind: "clarify_stay", references: [] }) };
-    } };
+  // The secondary provider answers a clarification and calls the attempt hook first, as a real adapter does (shared helper).
+  const secondary = withProviderAttemptHook({ generate: async () => ({ text: JSON.stringify({ kind: "clarify_stay", references: [] }) }) });
   const env = LocalGuestEnvironment.openNode({ databasePath: `.scratch/eval-test/fallback_continuity_${Date.now()}.sqlite` });
   try {
     const runtime = new AssistantRuntime(env, new FallbackModelClient(primary, secondary), { scopeClassifier: approvedTestScope });

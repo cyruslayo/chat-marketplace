@@ -15,6 +15,8 @@ import {
   type RecordedExchange,
 } from "../apps/local-guest/src/assistant/assistant-recording.js";
 import { RECORDINGS_DIRECTORY } from "./helpers/assistant-recordings.js";
+import { DEFAULT_LOCAL_GUEST_CONFIG } from "../apps/local-guest/src/fixture.js";
+import { credentialFindings } from "../scripts/record-assistant-journey.js";
 
 // Unit tests for the recording and replay clients (issue 03), with the record script's refusal (AC4).
 
@@ -128,7 +130,7 @@ test("Replay fails with an error naming the step when the runtime's request dive
 
 test("The record script refuses to run against anything other than the local fixture database.", async () => {
   // The guard accepts the in-memory fixture and the default local guest fixture file, and nothing else.
-  const fixturePath = ".scratch/local-guest/guest_fixture.sqlite";
+  const fixturePath = DEFAULT_LOCAL_GUEST_CONFIG.databasePath;
   assert.doesNotThrow(() => assertLocalFixtureDatabase(":memory:", fixturePath));
   assert.doesNotThrow(() => assertLocalFixtureDatabase(fixturePath, fixturePath));
   for (const refused of ["staging.sqlite", "/var/lib/shortlet/production.sqlite", ".scratch/local-guest/other.sqlite", ""]) {
@@ -167,4 +169,74 @@ test("ReplayModelClient answers with neutral fields only and asks the attempt ho
   assert.equal(hooked, 1);
   assert.equal(replay.supportsProviderAttemptReservation, true);
   assert.deepEqual(neutralRequest(requestWith([{ role: "user", text: "Hi" }])).toolNames, ["search_stays"]);
+});
+
+test("Replay comparison fails when only tool-call arguments or tool-result payloads change.", async () => {
+  const recorder = new RecordingModelClient(providerReturning("Reply."));
+  await recorder.generate(requestWith([
+    { role: "user", text: "Find a stay" },
+    { role: "tool_calls", calls: [{ id: "c1", name: "search_stays", args: { city: "Lagos" } }] },
+  ]));
+  await recorder.generate(requestWith([
+    { role: "user", text: "Find a stay" },
+    { role: "tool_results", results: [{ callId: "c1", name: "search_stays", result: { resultCount: 1 } }] },
+  ]));
+  const [argsRecorded, resultRecorded] = recorder.exchanges;
+  const argsReplay = new ReplayModelClient([argsRecorded!]);
+  await assert.rejects(
+    argsReplay.generate(requestWith([
+      { role: "user", text: "Find a stay" },
+      { role: "tool_calls", calls: [{ id: "c1", name: "search_stays", args: { city: "Abuja" } }] },
+    ])),
+    (error: unknown) => error instanceof AssistantReplayDivergenceError && error.step === 0,
+  );
+  const resultReplay = new ReplayModelClient([resultRecorded!]);
+  await assert.rejects(
+    resultReplay.generate(requestWith([
+      { role: "user", text: "Find a stay" },
+      { role: "tool_results", results: [{ callId: "c1", name: "search_stays", result: { resultCount: 2 } }] },
+    ])),
+    (error: unknown) => error instanceof AssistantReplayDivergenceError && error.step === 0,
+  );
+});
+
+test("Replay comparison fails on a same-length history whose text differs.", async () => {
+  const recorder = new RecordingModelClient(providerReturning("Reply."));
+  await recorder.generate(requestWith([{ role: "user", text: "Find a stay in Ikoyi" }]));
+  const replay = new ReplayModelClient(recorder.exchanges);
+  // "Ikoyi" and "Yaba" are both five characters: only the text differs, not the length or the roles.
+  await assert.rejects(
+    replay.generate(requestWith([{ role: "user", text: "Find a stay in Yaba" }])),
+    (error: unknown) => error instanceof AssistantReplayDivergenceError && error.step === 0 && /history roles, text/.test(error.message),
+  );
+  assert.equal(replay.remaining, 1, "a diverged call does not consume the recorded step");
+});
+
+test("The record script refuses a recording whose text carries credential-like content, and names only the pattern.", () => {
+  assert.deepEqual(credentialFindings('{"turns":[{"messages":["Hello"]}]}'), []);
+  assert.deepEqual(credentialFindings('{"header":"Bearer abcdefghijklmnop"}'), ["bearer token"]);
+  assert.deepEqual(credentialFindings('{"header":"Authorization: none"}'), ["authorization header"]);
+  const configured = "configured-key-value-123";
+  assert.deepEqual(credentialFindings(`{"note":"${configured}"}`, [configured]), ["configured provider key value"]);
+  // The finding is a pattern name; the matched text itself is never returned.
+  assert.ok(credentialFindings('{"x":"sk-abcdefghijk"}').every((name) => !name.includes("sk-")));
+});
+
+test("Live recording needs an explicit --out directory outside test/fixtures, and never overwrites committed recordings.", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "live-out-refusal-"));
+  const run = (args: string[]) => new Promise<{ code: number | null; stderr: string }>((done) => {
+    execFile(process.execPath, ["--import", "tsx", join(REPOSITORY_ROOT, "scripts", "record-assistant-journey.ts"), ...args], { cwd: REPOSITORY_ROOT, timeout: 120_000, env: { ...process.env, ASSISTANT_RECORD_LIVE: "1" } }, (error, _stdout, stderr) => {
+      done({ code: error ? (typeof error.code === "number" ? error.code : 1) : 0, stderr: String(stderr) });
+    });
+  });
+  try {
+    const missing = await run(["missing-information-clarification"]);
+    assert.notEqual(missing.code, 0);
+    assert.match(missing.stderr, /needs an explicit --out directory/);
+    const inside = await run(["missing-information-clarification", "--out", RECORDINGS_DIRECTORY]);
+    assert.notEqual(inside.code, 0);
+    assert.match(inside.stderr, /outside test[\/]fixtures/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
