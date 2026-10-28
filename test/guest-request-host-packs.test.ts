@@ -11,7 +11,9 @@ import { STAGING_LIKE_START, SteppedClock } from "./helpers/assistant-turn-model
 
 /**
  * Host coverage (ADR 0099 section 6, issue 04 follow-up). Each concierge mode that guest-server.ts builds a runtime for runs one
- * Shortlet turn through createGuestRequestHandler. A host that drops the Shortlet pack fails here: the search tool is not offered.
+ * Shortlet turn through createGuestRequestHandler. A host that drops the Shortlet pack from a site fails here, but not at the search
+ * assertion: a site that passes no pack has no pack left, so the runtime constructor throws (the zero-pack guard, ADR 0099 section 6),
+ * createGuestRequestHandler throws, and the test errors. The search assertion is reached only when the site passes its pack.
  * The modes use the scripted model (no provider, no secrets). The session-scoped turn goes through the per-session runtime, the
  * other through the default application.
  */

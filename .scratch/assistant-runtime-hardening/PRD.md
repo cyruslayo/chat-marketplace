@@ -33,10 +33,13 @@ Borrow the parts of those frameworks that this runtime lacks, as small changes t
 | [04](issues/04-split-assistant-runtime-into-stage-handlers.md) | Split `assistant-runtime.ts` into one handler per stage, behind a small shared interface (what "graph" frameworks give, without the dependency) |
 | [05](issues/05-trace-assistant-turns-with-otel-genai-names.md) | Diagnostics named after the OpenTelemetry GenAI conventions |
 | [06](issues/06-durable-assistant-thread-state.md) | Durable per-thread state and a single mutating run per thread (the useful idea in the Cloudflare Agents SDK) |
+| [07](issues/07-move-the-shortlet-public-api-out-of-the-runtime.md) | Move the Shortlet public API and `validatedCheckOutForNights` out of the runtime (follow-up to issue 04 decision b; blocked by 04) |
 
 ## Order
 
 01, 02 and 03 are independent and small. 04 waits for all three: 03 gives the split a behaviour safety net, and 01 and 02 change the tool loop that 04 moves. 05 and 06 wait for 04.
+
+07 follows 04: it moves the Shortlet public API and `validatedCheckOutForNights` out of the runtime, which 04 left there with the owner's acceptance (decision b). It is not part of the 01 to 06 order above.
 
 ## Out of scope
 

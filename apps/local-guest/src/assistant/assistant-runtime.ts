@@ -76,6 +76,9 @@ export { ASSISTANT_CONTROL_OUTCOMES, type AssistantControlOutcome, type Assistan
  * - `turn_deadline`: the whole-turn deadline was reached before the turn's next model call.
  * - `tool_denial`: a planner date or stay detail the guest did not give was rejected; the turn returns a dated
  *   clarification (ok: true) and commits no task state. Not a failure: the guest is asked for the detail.
+ *   It also covers a refused task (issue 04 follow-up): a turn on a task whose pack is not registered, or whose active task id
+ *   matches no task. That turn returns the task-list copy (ok: true), calls no planner, runs no pack rule and commits nothing.
+ *   It refuses before the planner loop, so it carries no stop reason.
  * - `error`: a failure path (the failure class stays on the diagnostics).
  *
  * `turn_stop` diagnostics follow the same list. `succeeded` is true for `reply`, `round_limit` and `tool_denial`, and
@@ -448,7 +451,9 @@ export class AssistantRuntime {
   /** The active task's domain when no pack is registered for it, otherwise undefined. */
   #unregisteredActiveDomain(thread: AssistantThreadState): string | undefined {
     const task = thread.tasks.find((entry) => entry.taskId === thread.activeTaskId);
-    return task && !this.#packs.packFor(task.domain) ? task.domain : undefined;
+    // A dangling active task id (no task matches it) is refused the same way (closed, not a throw).
+    if (!task) return thread.activeTaskId;
+    return this.#packs.packFor(task.domain) ? undefined : task.domain;
   }
 
   #isPlatformTaskTool(name: string): boolean {
@@ -743,7 +748,7 @@ export class AssistantRuntime {
     // Fail closed (issue 04 follow-up): a task whose pack is not registered on this runtime is refused. No other pack answers for it.
     if (this.#unregisteredActiveDomain(thread) !== undefined) {
       recordOutcome("tool_denial");
-      return { ok: true, messages: [ASSISTANT_CONTROL_COPY.unavailable], surfaces: [], modelHandled: false, discardUserInput: true, controlOutcome: "tool_denial", tasks: this.getTaskRail(threadId) };
+      return { ok: true, messages: [ASSISTANT_CONTROL_COPY.unregisteredTask], surfaces: [], modelHandled: false, discardUserInput: true, controlOutcome: "tool_denial", tasks: this.getTaskRail(threadId) };
     }
 
     // 1. Transactional candidates (Item 24, ADR 0070): every change goes to `tx`; the thread changes only at a commit site.
@@ -1270,7 +1275,7 @@ export class AssistantRuntime {
     const thread = this.getThread(threadId);
     // Fail closed (issue 04 follow-up): on a task whose pack is not registered, only leaving it (a task start or switch) is allowed.
     if (eventName !== TASK_START_EVENT && eventName !== TASK_SWITCH_EVENT && this.#unregisteredActiveDomain(thread) !== undefined) {
-      return { ok: false, code: "UNKNOWN_DOMAIN", message: "That domain is not registered." };
+      return { ok: false, code: "UNKNOWN_DOMAIN", message: ASSISTANT_CONTROL_COPY.unregisteredTask };
     }
     const tx = new TurnTransaction(thread);
 
@@ -1475,7 +1480,7 @@ export class AssistantRuntime {
 
     // Issue 04: the pack's confirm handler for this kind runs only after the checks above (ADR 0070, 0074, 0075).
     const pack = this.#packForThread(threadId);
-    if (!pack) return { ok: false, code: "UNKNOWN_DOMAIN", message: "That domain is not registered." };
+    if (!pack) return { ok: false, code: "UNKNOWN_DOMAIN", message: ASSISTANT_CONTROL_COPY.unregisteredTask };
     const handler = pack.stageHandlers?.find((candidate) => candidate.confirms === action.type);
     if (!handler?.confirm) {
       return { ok: false, code: "UNSUPPORTED_ACTION", message: "Unsupported action." };

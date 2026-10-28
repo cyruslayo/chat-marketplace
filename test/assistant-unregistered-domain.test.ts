@@ -5,10 +5,11 @@ import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-ru
 import { TASK_START_EVENT, TASK_SWITCH_EVENT, type AssistantDomainPack } from "../apps/local-guest/src/assistant/assistant-platform.js";
 import type { AssistantModelResponse, AssistantToolDefinition } from "../apps/local-guest/src/assistant/assistant-model.js";
 import type { PendingAssistantAction } from "../apps/local-guest/src/assistant/pending-actions.js";
-import { ASSISTANT_CONFIRM_ACTION_EVENT } from "../apps/local-guest/src/assistant/pending-action-a2ui.js";
+import { ASSISTANT_CANCEL_ACTION_EVENT, ASSISTANT_CONFIRM_ACTION_EVENT } from "../apps/local-guest/src/assistant/pending-action-a2ui.js";
+import { ASSISTANT_CONTROL_COPY } from "../apps/local-guest/src/assistant/control-copy.js";
 import { approvedTestScope } from "./helpers/assistant-scope.js";
 import { createFakeShopPack } from "./helpers/fake-domain-pack.js";
-import { RecordingTurnModel, STAGING_LIKE_START, SteppedClock } from "./helpers/assistant-turn-model.js";
+import { RecordingTurnModel, STAGING_LIKE_START, SteppedClock, threadSnapshot } from "./helpers/assistant-turn-model.js";
 
 /**
  * Fail closed on an unregistered task domain (issue 04 follow-up). A task whose pack is not registered on this runtime, for
@@ -132,5 +133,72 @@ test("a switch to a task whose pack is not registered is refused, and the active
     assert.equal(output.ok, false);
     assert.equal(output.code, "UNKNOWN_DOMAIN");
     assert.equal(runtime.getThread(THREAD).activeTaskId, shop, "the active task is unchanged");
+  } finally { environment.close(); }
+});
+
+function pendingAction(environment: LocalGuestEnvironment, id: string): PendingAssistantAction {
+  return {
+    id, threadId: THREAD, guestActorId: environment.config.guestId, tenantId: environment.config.tenantId,
+    type: "request_to_book", authoritativeReferences: {}, summary: "Request this stay.",
+    createdAt: "2026-10-27T08:30:00Z", expiresAt: "2026-10-27T12:00:00Z", executed: false,
+  };
+}
+
+test("a cancel on a persisted shortlet task served without the Shortlet pack is refused: UNKNOWN_DOMAIN, nothing changes, the proposal stays", () => {
+  const counter = { executions: 0 };
+  const { environment, runtime } = open([countingShopPack(counter)], new RecordingTurnModel(() => REPLY));
+  try {
+    persistedShortletThread(runtime);
+    const thread = runtime.getThread(THREAD);
+    thread.taskState.pendingAction = pendingAction(environment, "pa-cancel");
+    thread.activeSurfaces.set("pending_action", `thread-${THREAD}:pending-action:pa-cancel`);
+    const before = threadSnapshot(thread);
+    const output = runtime.handleAssistantEvent(THREAD, ASSISTANT_CANCEL_ACTION_EVENT, {
+      surfaceId: `thread-${THREAD}:pending-action:pa-cancel`, actionId: "pa-cancel",
+    });
+    assert.equal(output.ok, false);
+    assert.equal(output.code, "UNKNOWN_DOMAIN");
+    assert.equal(threadSnapshot(runtime.getThread(THREAD)), before, "the thread is unchanged");
+    assert.equal(runtime.getThread(THREAD).taskState.pendingAction?.id, "pa-cancel", "the pending action is NOT cleared");
+  } finally { environment.close(); }
+});
+
+test("an unknown platform event on a persisted shortlet task served without the Shortlet pack is refused: UNKNOWN_DOMAIN, nothing changes", () => {
+  const counter = { executions: 0 };
+  const { environment, runtime } = open([countingShopPack(counter)], new RecordingTurnModel(() => REPLY));
+  try {
+    persistedShortletThread(runtime);
+    const thread = runtime.getThread(THREAD);
+    thread.taskState.pendingAction = pendingAction(environment, "pa-unknown");
+    thread.activeSurfaces.set("pending_action", `thread-${THREAD}:pending-action:pa-unknown`);
+    const before = threadSnapshot(thread);
+    const output = runtime.handleAssistantEvent(THREAD, "platform.unknown.event", { actionId: "pa-unknown" });
+    assert.equal(output.ok, false);
+    assert.equal(output.code, "UNKNOWN_DOMAIN", "refused before the event is looked up, not UNSUPPORTED_EVENT");
+    assert.equal(threadSnapshot(runtime.getThread(THREAD)), before, "the thread is unchanged");
+    assert.equal(runtime.getThread(THREAD).taskState.pendingAction?.id, "pa-unknown", "the pending action is NOT cleared");
+  } finally { environment.close(); }
+});
+
+test("a dangling active task id is refused as a closed outcome, not a throw, and the guest is pointed to another task", async () => {
+  const counter = { executions: 0 };
+  let plannerCalls = 0;
+  const { environment, runtime } = open([countingShopPack(counter)], new RecordingTurnModel(() => { plannerCalls += 1; return REPLY; }));
+  try {
+    runtime.handleAssistantEvent(THREAD, TASK_START_EVENT, { domain: "shop" });
+    runtime.getThread(THREAD).activeTaskId = "task-no-such-task";
+    const before = threadSnapshot(runtime.getThread(THREAD));
+    const output = await runtime.handleTurn(THREAD, "Show me a kettle");
+    assert.equal(output.ok, true);
+    assert.equal(output.modelHandled, false);
+    assert.equal(output.controlOutcome, "tool_denial");
+    assert.equal(output.messages?.[0], ASSISTANT_CONTROL_COPY.unregisteredTask);
+    assert.notEqual(output.messages?.[0], ASSISTANT_CONTROL_COPY.unavailable, "the copy is not the generic retry wording");
+    assert.match(output.messages?.[0] ?? "", /task list/, "the guest is pointed to switching task");
+    assert.equal(plannerCalls, 0);
+    assert.equal(counter.executions, 0);
+    assert.equal(threadSnapshot(runtime.getThread(THREAD)), before, "nothing is committed");
+    const confirm = runtime.handleAssistantEvent(THREAD, ASSISTANT_CONFIRM_ACTION_EVENT, { actionId: "pa-none", surfaceId: "none" });
+    assert.equal(confirm.code, "UNKNOWN_DOMAIN");
   } finally { environment.close(); }
 });

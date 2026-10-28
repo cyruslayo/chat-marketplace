@@ -249,3 +249,39 @@ Tests were written first (red) for each behaviour change, and each red run was o
 - `npm run test:assistant`: 67/67.
 - Mutations (each restored byte for byte): zero-packs throw removed (1 failing test); reviewer's probe import added (1 failing test); turn guard removed (1 failing test); the three guest-server Shortlet-pack sites (2, 4 and 3 failing tests); the candidatePack fallback restored (equivalent, see item 1).
 - Not run: real-Chrome files (not run per instruction), the capture sweeps, full `npm test`, `npm run test:workers` (batch gate).
+
+### Final follow-up after 4d25be0 (28 Oct 2026)
+
+Tests were written first where behaviour changed. All commands ran with `env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow` (the repo's test defaults from `scripts/test-env-defaults.mjs`). Real-Chrome files were not run.
+
+1. **Cancel and unknown platform event (blocking gap).** `test/assistant-unregistered-domain.test.ts` adds two tests on a persisted shortlet task served without the Shortlet pack. A cancel is refused with `UNKNOWN_DOMAIN`, the thread snapshot (`threadSnapshot`) is unchanged and the pending action is not cleared. An unknown platform event (`platform.unknown.event`) is refused as `UNKNOWN_DOMAIN` (before the event lookup, not `UNSUPPORTED_EVENT`) with the same before/after snapshot. Mutation: `handleAssistantEvent`'s guard set to `if (false)` fails 3 tests in that file (the two new ones and the existing confirmation test).
+
+2. **Boundary bypass (blocking).** The domain-import pattern is now `\b(?:import|export)\b[^;]*?["']\.\/(?:shortlet|commerce)[^"']*["']`. It matches a regular or type import, a side-effect import, a re-export (`export … from`) and a dynamic import (`import(…)`), in either quote form, single or multi-line. The test title is corrected to say what it checks. Probes: 9 forms flagged, 2 clean forms not flagged. Mutations, each appended to the runtime and restored byte for byte, each fail the boundary test: side-effect `import './shortlet-stage-handlers.js';`, re-export `export { … } from './shortlet-stage-handlers.js';`, shortlet dynamic `void import('./shortlet-stage-handlers.js')`, and commerce dynamic `void import('./commerce-assistant-pack.js')`.
+
+3. **Follow-up issue 07 (created).** `.scratch/assistant-runtime-hardening/issues/07-move-the-shortlet-public-api-out-of-the-runtime.md`: Status `needs-triage`, `Blocked by: 04`, with Why, What to build, an ADR table, acceptance criteria and Tests, in the format of issues 01 to 06. It covers the six methods, `validatedCheckOutForNights`, the `"shortlet"` literal and the pending-card id template. It is linked from:
+   - the PRD table (row 07) and the PRD order section;
+   - the allowlist `followUp` strings (`issue 07 (07-move-the-shortlet-public-api-out-of-the-runtime.md)`);
+   - this Comments section.
+   The boundary test fails if an allowlist entry cites the file and the file does not exist, and checks that the issue names every moved method and says `Blocked by: 04`.
+
+4. **Dangling active task id (low, source fix).** `activeTaskId` matching no task is now refused the same way as an unregistered domain. Before the fix, `candidatePack()` threw outside any try, from `handleTurn`'s scope stage. Test: "a dangling active task id is refused as a closed outcome, not a throw": `ok: true`, `controlOutcome: "tool_denial"`, no planner call, no pack rule, no commit, and the task-list copy. Mutation (the guard's dangling branch removed, `return undefined`) fails that test.
+
+5. **Refusal copy and doc comment (low).** New copy key `ASSISTANT_CONTROL_COPY.unregisteredTask`: "This task is not available in this conversation any more. Choose another task from the task list, or start a new one, to continue." It replaces the generic retry copy in the turn refusal and in the event refusals (`UNKNOWN_DOMAIN` messages). No copy test pins a key by name, so none changed. The `tool_denial` doc comment in `assistant-runtime.ts` now documents the refusal of an unregistered or dangling task: no planner, no pack rule, no commit, no stop reason (it refuses before the planner loop). The ADR 0106 outcome list is unchanged; no outcome was added.
+
+6. **Host test header (low).** `test/guest-request-host-packs.test.ts`: the header now says that a site dropping its pack fails in the constructor (the zero-pack guard), not at the search assertion, and that the assertion is reached only when the pack is passed.
+
+**Boundary test.** The allowlist's `followUp` values name issue 04 decision a, or issue 07 by file name; the existence check for the file is in the test.
+
+**Mutation results (all restored byte for byte; `assistant-runtime.ts` checked after each).**
+- Event guard `if (false)`: 3 failing tests (unregistered-domain file).
+- Dangling-task branch removed: 1 failing test.
+- Side-effect import, re-export, shortlet dynamic import, commerce dynamic import: 1 failing boundary test each.
+- Earlier in this issue (unchanged by this follow-up): zero-packs throw removed, reviewer's probe import, turn guard removed, the three guest-server Shortlet-pack sites (2, 4, 3 failures).
+
+**Commands and counts.**
+- `npm run check` (includes the worker bundle guard): exit 0.
+- New and changed files: `test/assistant-unregistered-domain.test.ts` 8/8, `test/assistant-runtime-boundary.test.ts` 5/5, `test/guest-request-host-packs.test.ts` 6/6, `test/assistant-host-composition.test.ts` 7/7, `test/assistant-stage-handlers.test.ts` 8/8, `test/assistant-platform-action-gate.test.ts` 4/4, `test/assistant-reply-control-outcome.test.ts` 2/2, `test/assistant-shortlet-stage-behaviour.test.ts` 3/3. Total 43/43.
+- Batch B: `assistant-recorded-journeys`, `assistant-recording-clients`, `assistant-cold-journey`, `assistant-turn-stop-cold-restore`, `assistant-turn-stop-reasons`, `assistant-tool-argument-validation`, `assistant-pending-action-restore`, `assistant-proposal-replacement`, `assistant-proposal-supersession`, `assistant-where-chip`, `assistant-artifact-authority`, `assistant-booking-journey`: 111/111.
+- Batch A: `shortlet-assistant-evals`, `assistant-control-metrics`, `assistant-control-outcome-count`, `assistant-task-rail`, `assistant-tool-authorization`, `commerce-agent-tools`, `conversation-router`, `demo-extended-assistant`, `guest-request-handler`: 96/96.
+- `npm run test:assistant`: 67/67.
+- Not run: real-Chrome files, full `npm test`, `npm run test:workers` (batch gate).
