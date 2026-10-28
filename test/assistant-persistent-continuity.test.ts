@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AssistantModelClient } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { LocalGuestApp } from "../apps/local-guest/src/guest-server.js";
 import { guestAction, restartFixture } from "./helpers/guest-restart.js";
@@ -175,13 +176,13 @@ test("Assistant Shortlet search, detail, and draft continuity survive authentica
 
     const wrongOwner = LocalGuestEnvironment.openNode({ databasePath: fixture.databasePath, guestId: "guest-other-owner" });
     try {
-      const app = new LocalGuestApp(wrongOwner, { assistantRuntime: new AssistantRuntime(wrongOwner, serverModel) });
+      const app = new LocalGuestApp(wrongOwner, { assistantRuntime: new ShortletAssistantRuntime(wrongOwner, serverModel) });
       assert.equal(app.getState(fixture.threadId), undefined, "a different principal cannot restore this assistant projection");
       assert.equal(await app.conventionalBookingPage("draft", draftId, wrongOwner.guestPrincipal()), null);
     } finally { wrongOwner.close(); }
     const wrongTenant = LocalGuestEnvironment.openNode({ databasePath: fixture.databasePath, tenantId: "tenant-other" });
     try {
-      const app = new LocalGuestApp(wrongTenant, { assistantRuntime: new AssistantRuntime(wrongTenant, serverModel) });
+      const app = new LocalGuestApp(wrongTenant, { assistantRuntime: new ShortletAssistantRuntime(wrongTenant, serverModel) });
       assert.equal(app.getState(fixture.threadId), undefined, "a different tenant cannot restore this assistant projection");
     } finally { wrongTenant.close(); }
   } finally {

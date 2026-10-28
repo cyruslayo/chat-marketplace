@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { LocalGuestEnvironment } from "../../apps/local-guest/src/fixture.js";
 import { LocalGuestApp } from "../../apps/local-guest/src/shortlet-app.js";
 import { AssistantRuntime, type AssistantDiagnosticEvent } from "../../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./assistant-runtime-host.js";
 import { BudgetedModelClient, ModelCallBudget } from "../../apps/local-guest/src/assistant/model-call-budget.js";
 import type { AssistantModelClient } from "../../apps/local-guest/src/assistant/assistant-model.js";
 import type { AssistantDomainPack } from "../../apps/local-guest/src/assistant/assistant-platform.js";
@@ -105,7 +106,7 @@ export function wireDatedApp(environment: LocalGuestEnvironment, model: Assistan
   const quota = new SqliteModelRequestQuota(environment.database, { clock: environment.clock, dailyTenantLimit: 3_000, hourlyGuestLimit: 60 });
   const identity = { tenantId: environment.config.tenantId, guestId: environment.config.guestId };
   const guarded = new ModelQuotaGuardClient(model, quota, identity);
-  const runtime = new AssistantRuntime(environment, new BudgetedModelClient(guarded, budget), {
+  const runtime = new ShortletAssistantRuntime(environment, new BudgetedModelClient(guarded, budget), {
     onDiagnostic: (event) => diagnostics?.push(event),
     additionalPacks,
   });

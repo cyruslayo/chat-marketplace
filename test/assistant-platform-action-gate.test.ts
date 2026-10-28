@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import { TASK_START_EVENT, type AssistantDomainPack } from "../apps/local-guest/src/assistant/assistant-platform.js";
 import { createFakeShopPack } from "./helpers/fake-domain-pack.js";
 import { RecordingTurnModel, STAGING_LIKE_START, SteppedClock } from "./helpers/assistant-turn-model.js";
@@ -34,7 +35,7 @@ function openGate(pack: AssistantDomainPack) {
     initialGuestPhoneNumber: null,
     initialGuestContactEmail: null,
   });
-  const runtime = new AssistantRuntime(environment, new RecordingTurnModel(() => ({ text: "{}" })), { additionalPacks: [pack] });
+  const runtime = new ShortletAssistantRuntime(environment, new RecordingTurnModel(() => ({ text: "{}" })), { additionalPacks: [pack] });
   runtime.handleAssistantEvent(THREAD, TASK_START_EVENT, { domain: "shop" });
   return { environment, runtime };
 }

@@ -23,7 +23,7 @@ import type {
 } from "./assistant-state.js";
 import type { PendingAssistantAction } from "./pending-actions.js";
 import { pendingActionToA2UI } from "./pending-action-a2ui.js";
-import { SHORTLET_STAGE_HANDLERS } from "./shortlet-stage-handlers.js";
+import { SHORTLET_STAGE_HANDLERS, proposalStillAuthorised } from "./shortlet-stage-handlers.js";
 import {
   ASSISTANT_PLATFORM_PREAMBLE,
   type AssistantDomainPack,
@@ -1075,6 +1075,7 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
       ? "no_current_booking"
       : undefined,
     stageHandlers: SHORTLET_STAGE_HANDLERS,
+    proposalStillAuthorised,
     discoverySurface: (artifact, surfaceId) => discoveryArtifactToA2UI({ artifact: artifact as never, surfaceId, demo: environment.config.demo === true }),
     unitDetailSurface: ({ unitId, checkIn, checkOut, surfaceId }) => {
       const unit = environment.unitRepository.findById(unitId);

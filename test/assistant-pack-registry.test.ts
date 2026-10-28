@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/scripted-assistant-model.js";
 import {
   ASSISTANT_PLATFORM_PREAMBLE,
@@ -43,7 +44,7 @@ function createTestRuntime(model: ScriptedAssistantModel) {
   testDbIndex++;
   const databasePath = `.scratch/local-guest/packregistry_test_${testDbIndex}_${Date.now()}.sqlite`;
   const env = LocalGuestEnvironment.openNode({ databasePath });
-  return { env, runtime: new AssistantRuntime(env, model) };
+  return { env, runtime: new ShortletAssistantRuntime(env, model) };
 }
 
 test("AC1: the runtime has no import from domains/shortlet or shortlet web-agent converters", () => {

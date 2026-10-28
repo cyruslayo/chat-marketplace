@@ -1,5 +1,6 @@
 import type { CommandPrincipal } from "../../../../packages/platform-core/src/index.js";
 import { replacePendingProposal, type AssistantTaskState } from "./assistant-state.js";
+import { pendingProposalAuthorised } from "./assistant-platform.js";
 import type { PendingAssistantAction } from "./pending-actions.js";
 import { PENDING_ACTION_STAGE, retireOwnStages, type AssistantStageHandler, type StageTurnContext } from "./assistant-stage-handler.js";
 
@@ -47,7 +48,7 @@ const discoveryHandler: AssistantStageHandler = {
   project({ toolName, execution }, turn: StageTurnContext) {
     if (toolName !== "search_stays") return undefined;
     const { tx } = turn;
-    if (!proposalStillAuthorised(tx.taskState.pendingAction, tx.taskState) && replacePendingProposal(tx.taskState, "search_changed")) {
+    if (!pendingProposalAuthorised(turn.pack, tx.taskState) && replacePendingProposal(tx.taskState, "search_changed")) {
       tx.supersede(PENDING_ACTION_STAGE);
     }
     retireOwnStages(discoveryHandler, turn);

@@ -6,6 +6,7 @@ import test from "node:test";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { LocalGuestApp } from "../apps/local-guest/src/shortlet-app.js";
 import { AssistantRuntime, type AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import { loadConciergeConfiguration } from "../apps/local-guest/src/assistant/concierge-configuration.js";
 import { BudgetedModelClient, ModelCallBudget } from "../apps/local-guest/src/assistant/model-call-budget.js";
 import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/scripted-assistant-model.js";
@@ -28,7 +29,7 @@ function fixture(model: AssistantModelClient, diagnostics?: AssistantDiagnosticE
   const quota = new SqliteModelRequestQuota(environment.database, { clock: environment.clock, ...limits });
   const identity = { tenantId: environment.config.tenantId, guestId: environment.config.guestId };
   const guarded = new ModelQuotaGuardClient(model, quota, identity);
-  const runtime = new AssistantRuntime(environment, new BudgetedModelClient(guarded, budget), {
+  const runtime = new ShortletAssistantRuntime(environment, new BudgetedModelClient(guarded, budget), {
     onDiagnostic: (event) => diagnostics?.push(event),
   });
   const app = new LocalGuestApp(environment, { assistantRuntime: runtime, modelCallBudget: budget });

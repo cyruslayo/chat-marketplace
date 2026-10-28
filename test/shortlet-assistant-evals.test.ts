@@ -7,6 +7,7 @@ import { createBasicWebRuntime } from "@cylayo/weaver-web";
 import type { A2UIServerMessage, A2UIClientActionMessage } from "@cylayo/weaver-core";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/scripted-assistant-model.js";
 import type { AssistantModelClient, AssistantModelRequest } from "../apps/local-guest/src/assistant/assistant-model.js";
 import {
@@ -61,7 +62,7 @@ function createTestRuntime(model: AssistantModelClient = new ScriptedAssistantMo
   const databasePath = temporaryDatabasePath(`eval_test_${testDbIndex}_${Date.now()}.sqlite`);
   const env = LocalGuestEnvironment.openNode({ databasePath });
   testEnvironments.push(env);
-  const runtime = new AssistantRuntime(env, model, { scopeClassifier: approvedTestScope, ...options });
+  const runtime = new ShortletAssistantRuntime(env, model, { scopeClassifier: approvedTestScope, ...options });
   return { env, runtime };
 }
 
@@ -536,7 +537,7 @@ test("Expired pending actions fail closed before executing", async () => {
     clock: () => now,
   });
   testEnvironments.push(env);
-  const runtime = new AssistantRuntime(env, new ScriptedAssistantModel());
+  const runtime = new ShortletAssistantRuntime(env, new ScriptedAssistantModel());
   await runtime.handleTurn("g-expired-action", "I need a place in Ikoyi for 4 nights for 2 guests");
   await runtime.handleTurn("g-expired-action", "Request the first one.");
   now = new Date("2026-09-03T10:16:00Z");
@@ -779,7 +780,7 @@ test("Server-only diagnostics identify provider, tool, and continuation stages w
   testDbIndex++;
   const env = LocalGuestEnvironment.openNode({ databasePath: temporaryDatabasePath(`diagnostic_${testDbIndex}_${Date.now()}.sqlite`) });
   testEnvironments.push(env);
-  const runtime = new AssistantRuntime(env, model, { scopeClassifier: approvedTestScope, onDiagnostic: (event) => events.push(event) });
+  const runtime = new ShortletAssistantRuntime(env, model, { scopeClassifier: approvedTestScope, onDiagnostic: (event) => events.push(event) });
 
   const response = await runtime.handleTurn("diagnostic-thread", "Lagos for two nights and one guest");
 
@@ -798,7 +799,7 @@ test("Server-only diagnostics safely expose provider status and code while the g
   testDbIndex++;
   const env = LocalGuestEnvironment.openNode({ databasePath: temporaryDatabasePath(`diagnostic_error_${testDbIndex}_${Date.now()}.sqlite`) });
   testEnvironments.push(env);
-  const runtime = new AssistantRuntime(env, model, { scopeClassifier: approvedTestScope, onDiagnostic: (event) => events.push(event) });
+  const runtime = new ShortletAssistantRuntime(env, model, { scopeClassifier: approvedTestScope, onDiagnostic: (event) => events.push(event) });
 
   const response = await runtime.handleTurn("diagnostic-error", "private conversation content");
 
@@ -829,7 +830,7 @@ test("Server-only diagnostics discard malformed provider metadata that could car
   testDbIndex++;
   const env = LocalGuestEnvironment.openNode({ databasePath: temporaryDatabasePath(`diagnostic_malformed_${testDbIndex}_${Date.now()}.sqlite`) });
   testEnvironments.push(env);
-  const runtime = new AssistantRuntime(env, model, { scopeClassifier: approvedTestScope, onDiagnostic: (event) => events.push(event) });
+  const runtime = new ShortletAssistantRuntime(env, model, { scopeClassifier: approvedTestScope, onDiagnostic: (event) => events.push(event) });
 
   await runtime.handleTurn("diagnostic-malformed", "private prompt");
 
@@ -1140,8 +1141,8 @@ test("AC5: reply token limits are configurable engineering bounds and reject inv
   await runtime.handleTurn("ac5-configurable-limit", "Hello");
   assert.equal(captured?.maxOutputTokens, 77);
   assert.equal(captured?.structuredOutput?.name, "assistant_reply_plan");
-  assert.throws(() => new AssistantRuntime(env, model, { maxReplyOutputTokens: 0 }), /maxReplyOutputTokens/);
-  assert.throws(() => new AssistantRuntime(env, model, { maxReplyOutputTokens: 4097 }), /maxReplyOutputTokens/);
+  assert.throws(() => new ShortletAssistantRuntime(env, model, { maxReplyOutputTokens: 0 }), /maxReplyOutputTokens/);
+  assert.throws(() => new ShortletAssistantRuntime(env, model, { maxReplyOutputTokens: 4097 }), /maxReplyOutputTokens/);
 });
 
 test("AC6: deterministic pending confirmations and conventional routes remain available", async () => {

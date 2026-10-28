@@ -240,6 +240,7 @@ import {
 } from "./gemini-concierge.js";
 import type { Content } from "@google/genai";
 import { AssistantRuntime } from "./assistant/assistant-runtime.js";
+import { createShortletAssistantPack } from "./assistant/shortlet-assistant-pack.js";
 import type { AssistantDomainPack } from "./assistant/assistant-platform.js";
 import { ScriptedAssistantModel } from "./assistant/scripted-assistant-model.js";
 import {
@@ -2400,6 +2401,8 @@ export function createGuestRequestHandler(
   if (mode === "assistant-offline") {
     assistantModelClient = options.modelClient ?? new ScriptedAssistantModel();
     assistantRuntime = new AssistantRuntime(env, assistantModelClient, {
+      // ADR 0099 section 6: the host (this composition root) supplies the Shortlet pack.
+      packs: [createShortletAssistantPack(env)],
       additionalPacks: options.additionalPacks,
       onDiagnostic: options.onAssistantDiagnostic,
     });
@@ -2421,6 +2424,7 @@ export function createGuestRequestHandler(
       );
     const guardedModelClient = quotaGuard(assistantModelClient, env);
     assistantRuntime = new AssistantRuntime(env, guardedModelClient, {
+      packs: [createShortletAssistantPack(env)],
       additionalPacks: options.additionalPacks,
       onDiagnostic: options.onAssistantDiagnostic,
     });
@@ -2546,7 +2550,7 @@ export function createGuestRequestHandler(
               assistantRuntime: new AssistantRuntime(
                 runtimeEnvironment,
                 quotaGuard(assistantModelClient, runtimeEnvironment),
-                { additionalPacks: options.additionalPacks, onDiagnostic: options.onAssistantDiagnostic },
+                { packs: [createShortletAssistantPack(runtimeEnvironment)], additionalPacks: options.additionalPacks, onDiagnostic: options.onAssistantDiagnostic },
               ),
             }
           : {}),

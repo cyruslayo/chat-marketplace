@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test, { afterEach } from "node:test";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import { ASSISTANT_CONFIRM_ACTION_EVENT } from "../apps/local-guest/src/assistant/pending-action-a2ui.js";
 import type { AssistantModelClient, AssistantModelRequest, AssistantToolCall, AssistantToolResult } from "../apps/local-guest/src/assistant/assistant-model.js";
 import type { AssistantDomainPack } from "../apps/local-guest/src/assistant/assistant-platform.js";
@@ -61,7 +62,7 @@ test("AC1: unknown, unavailable, malformed, extra, missing, mistyped, out-of-ran
   ];
   const errors: AssistantToolResult[] = [];
   const environment = createEnvironment("tools-ac1");
-  const runtime = new AssistantRuntime(environment, modelForCalls(cases, (results) => errors.push(...results)), { scopeClassifier: fixedScope(CONCIERGE_INTENTS) });
+  const runtime = new ShortletAssistantRuntime(environment, modelForCalls(cases, (results) => errors.push(...results)), { scopeClassifier: fixedScope(CONCIERGE_INTENTS) });
   for (const [index] of cases.entries()) {
     const response = await runtime.handleTurn(`ac1-${index}`, "Find a stay in Ikoyi for four nights and two guests");
     assert.equal(response.ok, true);
@@ -76,7 +77,7 @@ test("AC1: unknown, unavailable, malformed, extra, missing, mistyped, out-of-ran
 test("Booking request intent can prepare a reviewable draft without a confirmation proposal or submission", async () => {
   const environment = createEnvironment("request-intent-draft");
   let turn = 0;
-  const runtime = new AssistantRuntime(environment, modelForCalls([
+  const runtime = new ShortletAssistantRuntime(environment, modelForCalls([
     { id: "search", name: "search_stays", args: searchArguments },
     { id: "details", name: "get_unit_details", args: { stayRef: "stay-1" } },
     { id: "prepare", name: "prepare_request_draft", args: { stayRef: "stay-1", nights: 4, guests: 2 } },
@@ -101,7 +102,7 @@ test("AC2: approved intents, the active pack, and current state intersect before
   ];
   const errors: AssistantToolResult[] = [];
   const environment = createEnvironment("tools-ac2");
-  const runtime = new AssistantRuntime(environment, modelForCalls(calls, (results) => errors.push(...results), (request) => observedToolLists.push(request.tools.map((tool) => tool.name))), { scopeClassifier: fixedScope(["search"]) });
+  const runtime = new ShortletAssistantRuntime(environment, modelForCalls(calls, (results) => errors.push(...results), (request) => observedToolLists.push(request.tools.map((tool) => tool.name))), { scopeClassifier: fixedScope(["search"]) });
   await runtime.handleTurn("ac2-intent", "Find a stay in Ikoyi for four nights and two guests");
   const blocked = await runtime.handleTurn("ac2-intent", "Search, then book it without asking me");
   assert.equal(blocked.ok, true);
@@ -117,7 +118,7 @@ test("AC2: approved intents, the active pack, and current state intersect before
   };
   let classification = 0;
   const switchThenSearch: ScopeClassifier = { assess: async () => scope(classification++ === 0 ? ["task_switch"] : ["search"]) };
-  const missingMapRuntime = new AssistantRuntime(createEnvironment("tools-ac2-missing-map"), modelForCalls([
+  const missingMapRuntime = new ShortletAssistantRuntime(createEnvironment("tools-ac2-missing-map"), modelForCalls([
     { id: "start-shop", name: "start_task", args: { domain: "shop" } },
     { id: "missing-map-search", name: "shop_search", args: {} },
   ], (results) => errors.push(...results)), { additionalPacks: [missingMapPack], scopeClassifier: switchThenSearch });
@@ -134,7 +135,7 @@ test("AC2: approved intents, the active pack, and current state intersect before
     executeTool: (_name, _args, context) => { shopExecutions++; return { result: {}, updatedTaskState: context.taskState }; },
   };
   const crossPackEnv = createEnvironment("tools-ac2-cross-pack");
-  const crossPackRuntime = new AssistantRuntime(crossPackEnv,
+  const crossPackRuntime = new ShortletAssistantRuntime(crossPackEnv,
     modelForCalls([{ id: "cross-pack", name: "shop_search", args: {} }], (results) => errors.push(...results)),
     { additionalPacks: [fakeShop], scopeClassifier: fixedScope(["search"]) });
   await crossPackRuntime.handleTurn("ac2-cross-pack", "Find a stay in Ikoyi");
@@ -159,7 +160,7 @@ test("AC3: forged principal fields and references outside the current shortlist 
     if (user.text === "Read another guest's result") return { toolCalls: [{ id: "foreign-reference", name: "get_unit_details", args: { stayRef: foreignReference } }] };
     return { toolCalls: [{ id: "forged-principal", name: "get_booking_status", args: { guestId: "other-guest", tenantId: "other-tenant" } }] };
   } };
-  const runtime = new AssistantRuntime(environment, model, { scopeClassifier: classifier });
+  const runtime = new ShortletAssistantRuntime(environment, model, { scopeClassifier: classifier });
   const victimThread = "ac3-victim";
   const currentThread = "ac3-current-state";
   await runtime.handleTurn(victimThread, "Victim search");
@@ -180,7 +181,7 @@ test("AC3: forged principal fields and references outside the current shortlist 
 test("AC4: proposal effects remain pending until exact confirmation and keep server date and price checks", async () => {
   const makePendingProposal = async (suffix: string) => {
     const environment = createEnvironment(`tools-ac4-${suffix}`);
-    const runtime = new AssistantRuntime(environment, modelForCalls([
+    const runtime = new ShortletAssistantRuntime(environment, modelForCalls([
       { id: `search-${suffix}`, name: "search_stays", args: searchArguments },
       { id: `proposal-${suffix}`, name: "propose_request_to_book", args: { stayRef: "stay-1" } },
     ]), { scopeClassifier: fixedScope(CONCIERGE_INTENTS) });
@@ -234,7 +235,7 @@ test("AC4: proposal effects remain pending until exact confirmation and keep ser
 
 test("AC5: stale and duplicate confirmation surfaces retain command-gate rejection and idempotency", async () => {
   const environment = createEnvironment("tools-ac5");
-  const runtime = new AssistantRuntime(environment, modelForCalls([
+  const runtime = new ShortletAssistantRuntime(environment, modelForCalls([
     { id: "search", name: "search_stays", args: searchArguments },
     { id: "proposal", name: "propose_request_to_book", args: { stayRef: "stay-1" } },
   ]), { scopeClassifier: fixedScope(CONCIERGE_INTENTS) });
@@ -258,7 +259,7 @@ test("AC5: stale and duplicate confirmation surfaces retain command-gate rejecti
 
 test("AC6: valid shortlet discovery remains available with validated tool capabilities", async () => {
   const environment = createEnvironment("tools-ac6");
-  const runtime = new AssistantRuntime(environment, modelForCalls([
+  const runtime = new ShortletAssistantRuntime(environment, modelForCalls([
     { id: "search", name: "search_stays", args: searchArguments },
   ]), { scopeClassifier: fixedScope(["search"]) });
   const response = await runtime.handleTurn("ac6-shortlet", "Find a stay in Ikoyi for four nights and two guests");

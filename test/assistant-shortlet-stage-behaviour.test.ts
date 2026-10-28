@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime, type AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import type { AssistantModelResponse } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { approvedTestScope } from "./helpers/assistant-scope.js";
 import { RecordingTurnModel, STAGING_LIKE_START, SteppedClock } from "./helpers/assistant-turn-model.js";
@@ -26,7 +27,7 @@ function open(plan: (index: number) => AssistantModelResponse) {
     initialGuestContactEmail: null,
   });
   const diagnostics: AssistantDiagnosticEvent[] = [];
-  const runtime = new AssistantRuntime(environment, model, { scopeClassifier: approvedTestScope, onDiagnostic: (event) => diagnostics.push(event) });
+  const runtime = new ShortletAssistantRuntime(environment, model, { scopeClassifier: approvedTestScope, onDiagnostic: (event) => diagnostics.push(event) });
   return { environment, runtime, diagnostics };
 }
 

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime, type AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import { ModelScopeClassifier, ScopeClassificationError, assessScopeResponse, parseScopeAssessment, scopeVerdictCodes, type ScopeContext, type ScopeFailureReason } from "../apps/local-guest/src/assistant/scope-classifier.js";
 import { clientWith, jsonResponse } from "./helpers/openai-compatible-client.js";
 import { MALFORMED_REPLACEMENT_CODES, MALFORMED_SHAPES, NAMED_EDGE_CASES, SCOPE_ALLOWED, SCOPE_ALLOWED_JSON, legacyScopeOutcome, seededScopeCorpus } from "./helpers/scope-classifier-corpus.js";
@@ -57,7 +58,7 @@ test("Classifier shapes: runtime diagnostics name the closed code for each malfo
     t.after(() => environment.close());
     const diagnostics: AssistantDiagnosticEvent[] = [];
     // The canary rides in the user message. Appending it to the response would change the defect the shape names.
-    const runtime = new AssistantRuntime(environment, { generate: async (request) =>
+    const runtime = new ShortletAssistantRuntime(environment, { generate: async (request) =>
       request.structuredOutput?.name === "concierge_scope" ? { text: shape.text, finishReason: "stop" } : { text: "{}" } }, {
       onDiagnostic: (event) => diagnostics.push(event),
     });
@@ -146,7 +147,7 @@ test("Scope failure finishReason is recorded alongside the shape code, and accep
   const environment = LocalGuestEnvironment.openNode({ databasePath: temporaryDatabasePath("scope-finish-reason.sqlite") });
   t.after(() => environment.close());
   const diagnostics: AssistantDiagnosticEvent[] = [];
-  const runtime = new AssistantRuntime(environment, { generate: async (request) =>
+  const runtime = new ShortletAssistantRuntime(environment, { generate: async (request) =>
     request.structuredOutput?.name === "concierge_scope" ? { text: truncated, finishReason: "length" } : { text: "{}" } }, {
     onDiagnostic: (event) => diagnostics.push(event),
   });

@@ -172,3 +172,38 @@ Tests were written first where a behaviour changed. Commands run with `env -u LL
 - `env -u LLM_API_KEY npm run test:assistant`: 67 tests, 67 pass, 0 fail.
 - Mutations (each restored from backup, file bytes verified): M1 to M8 each fail their target test (exit 1).
 - Not run: full `npm test`, `npm run test:workers` (batch gate).
+
+### Owner decision (b): the host composes the packs (28 Oct 2026, separate commit after the review fixes)
+
+**Decision.** ADR 0099 section 6: the host is the composition root. The runtime constructs no Shortlet pack, and the proposal-authority rule (ADR 0074) is a pack hook, not a Shortlet import. Owner-approved on the coordinator's instruction, with the follow-up scope below.
+
+**What changed.**
+- `AssistantRuntimeOptions.packs` (new): the host's packs; the first is the default active pack. `additionalPacks` still registers after them. A runtime with no pack throws at construction ("The assistant runtime needs at least one domain pack from its host"). That is a host configuration error, not a runtime path.
+- The runtime no longer imports or constructs `createShortletAssistantPack` and no longer imports `proposalStillAuthorised`.
+- `AssistantDomainPack.proposalStillAuthorised?(action, taskState)` (new hook) and `pendingProposalAuthorised(pack, state)` (platform, assistant-platform.ts). With no proposal the answer is true. With a proposal, only the pack's hook can keep it, and a pack without the hook is treated as NOT authorised (fail closed; the proposal is removed, never kept by default).
+- The shortlet pack implements the hook with the unchanged rule (`proposalStillAuthorised` in shortlet-stage-handlers.ts). The discovery handler and `applyDiscoveryShortlist` both call `pendingProposalAuthorised`.
+- Hosts pass the Shortlet pack: `apps/local-guest/src/guest-server.ts` (three runtime constructions, including the cold-restore path), `scripts/assistant-live-smoke.ts` and `scripts/pilot-agent-smoke.ts`. No `dist/*.js` changed (`client.ts` is untouched; no `client.js` regeneration).
+- Tests: the 32 test files that construct the runtime use `ShortletAssistantRuntime` (`test/helpers/assistant-runtime-host.ts`), a subclass whose constructor supplies the Shortlet pack first, as the host does. The behaviour of those tests is unchanged. The raw class is used only by the new composition test.
+
+**Tests first.** The boundary allowlist had its two entries removed (createShortletAssistantPack, proposalStillAuthorised). The boundary test then failed red on exactly those two matches. `test/assistant-host-composition.test.ts` was written first and failed (the helper it imports did not exist yet). It covers: a runtime with only a fake pack registers only that pack; a runtime without the Shortlet pack refuses a Shortlet tool with `tool_denial` and does not throw; a Shortlet confirmation returns `UNSUPPORTED_ACTION`, with no throw; a pack's hook keeps its proposal; a pack without the hook removes it (fail closed); and `pendingProposalAuthorised` defaults.
+
+**Boundary allowlist after this decision.** `createShortletAssistantPack` and `proposalStillAuthorised` are no longer allowed. The import pattern for `proposalStillAuthorised` is now the import from a `./shortlet…` module, so the platform's generic hook name is not a false match. Remaining allowlist entries, each labelled: the restoreShortletState `"shortlet"` check; `validatedCheckOutForNights` (import and recordGuestStay); the four template surface keys; and the commerce kind union. Mutation check: a re-added `createShortletAssistantPack` import to the runtime fails the boundary test (restored byte for byte afterwards).
+
+**ADR table (this decision).**
+
+| ADR | Constraint | Where it bites |
+|---|---|---|
+| 0099 section 6 | Hosts are composition roots only; no business rules in a host | The runtime takes `packs` from the host; the Shortlet pack is constructed in guest-server, the scripts and the test host, not in the runtime |
+| 0099 section 4 | Packs declare; the platform consumes declarations; no pack reaches into platform internals | The proposal rule is a declared hook; the platform calls it through the pack interface |
+| 0074 | Proposal authority fails closed; a stale proposal is removed, never kept | `pendingProposalAuthorised`: no hook means not authorised; `applyDiscoveryShortlist` and the discovery handler use it |
+| 0070 | One mutating run per thread; interaction ids separate from domain ids | Unchanged; the transaction and the commit sites are not touched by this decision |
+| 0106 | Cold restore is the normal path; closed outcomes | guest-server's cold-restore construction now passes the same Shortlet pack; the cold suites pass unchanged |
+
+**Follow-up issue (not in this commit).** The Shortlet public API remains on the runtime, to be moved in a follow-up issue: `restoreShortletState`, `recordGuestStay`, `recordGuestArea`, `selectShortletUnit`, `clearShortletSelection`, `applyDiscoveryShortlist`; the `"shortlet"` domain check in `restoreShortletState`; the pending-card id template in `restoreShortletState`; and the `validatedCheckOutForNights` import. Raise this as a new issue under the assistant-runtime-hardening effort before its merge; it is recorded here, not filed.
+
+**Commands and counts (this decision).**
+- `env -u LLM_API_KEY npm run check` (includes the worker bundle guard): exit 0.
+- Swapped and new test files (32 files, including `test/assistant-host-composition.test.ts` 6 tests, `test/assistant-runtime-boundary.test.ts` 3 tests, and the shortlet-behaviour, reply-control, platform-gate and stage-handler files): 249 tests, 247 pass, 2 fail. The 2 failures are in `test/commerce-surfaces-chromium.test.ts` (real Chromium timeouts, "Visible Northstar Tote"). AGENTS.md lists this file as an accepted failure while commerce is not shipping. Not fixed, not edited.
+- Named suites: `test/assistant-runtime-boundary.test.ts`, `test/assistant-stage-handlers.test.ts`, `test/assistant-tool-argument-validation.test.ts`, `test/assistant-recorded-journeys.test.ts`, `test/assistant-recording-clients.test.ts`, `test/assistant-cold-journey.test.ts`, `test/assistant-turn-stop-cold-restore.test.ts`, `test/assistant-pending-action-restore.test.ts`, `test/assistant-proposal-replacement.test.ts`, `test/assistant-proposal-supersession.test.ts`, `test/assistant-where-chip.test.ts`, `test/assistant-artifact-authority.test.ts`, `test/assistant-booking-journey.test.ts`: 109 tests, 109 pass, 0 fail.
+- `env -u LLM_API_KEY npm run test:assistant`: 67 tests, 67 pass, 0 fail.
+- Not run: full `npm test` and `npm run test:workers` (batch gate).

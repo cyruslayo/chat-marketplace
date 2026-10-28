@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ASSISTANT_CONTROL_OUTCOMES } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import {
@@ -324,7 +325,7 @@ test("A scope timeout before provider completion reports one pending call and un
   const usage = new TurnUsageAccumulator();
   let resolveResponse: ((response: { usage: { promptTokens: number; completionTokens: number } }) => void) | undefined;
   const observed = observeModelClient({ generate: async () => new Promise<{ usage: { promptTokens: number; completionTokens: number } }>((resolve) => { resolveResponse = resolve; }) }, usage);
-  const runtime = new AssistantRuntime(environment, observed, { scopeTimeoutMs: 10, scopeClassifier: {
+  const runtime = new ShortletAssistantRuntime(environment, observed, { scopeTimeoutMs: 10, scopeClassifier: {
     assess: async () => { await observed.generate({ systemInstruction: "synthetic", tools: [], history: [] }); return undefined; },
   } });
   try {

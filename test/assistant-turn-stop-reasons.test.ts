@@ -13,6 +13,7 @@ import type { AssistantModelRequest, AssistantModelResponse } from "../apps/loca
 import { MAX_ASSISTANT_TOOL_ROUNDS } from "../apps/local-guest/src/assistant/assistant-platform.js";
 import { LocalGuestApp } from "../apps/local-guest/src/shortlet-app.js";
 import { RecordingTurnModel, STAGING_LIKE_START, SteppedClock, threadSnapshot } from "./helpers/assistant-turn-model.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 
 // On the staging-like clock the fixture's demo check-in is set inside the booking horizon; a null check-in resolves to it.
 const STAGING_DEMO_CHECK_IN = "2026-12-20";
@@ -45,7 +46,7 @@ function openTurnRuntime(model: RecordingTurnModel, clock: SteppedClock, options
     initialGuestContactEmail: null,
   });
   const diagnostics: AssistantDiagnosticEvent[] = [];
-  const runtime = new AssistantRuntime(environment, model, { ...options, onDiagnostic: (event) => diagnostics.push(event) });
+  const runtime = new ShortletAssistantRuntime(environment, model, { ...options, onDiagnostic: (event) => diagnostics.push(event) });
   const app = new LocalGuestApp(environment, { assistantRuntime: runtime });
   return { environment, runtime, app, diagnostics };
 }
@@ -335,7 +336,7 @@ test("The model-call timeout and turn deadline default to 20 000 ms and SERVER_T
   for (const invalid of [{ modelCallTimeoutMs: 0 }, { modelCallTimeoutMs: 999 }, { modelCallTimeoutMs: 300_001 }, { modelCallTimeoutMs: 1.5 }, { turnDeadlineMs: -1 }, { turnDeadlineMs: 999 }, { turnDeadlineMs: 300_001 }]) {
     const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:", clock: new SteppedClock(STAGING_LIKE_START).now });
     try {
-      assert.throws(() => new AssistantRuntime(environment, new RecordingTurnModel(() => REPLY), invalid), /between 1000 and 300000/);
+      assert.throws(() => new ShortletAssistantRuntime(environment, new RecordingTurnModel(() => REPLY), invalid), /between 1000 and 300000/);
     } finally { environment.close(); }
   }
 });

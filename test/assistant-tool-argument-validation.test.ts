@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime, type AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/scripted-assistant-model.js";
 import type { AssistantToolParameterProperty, AssistantToolParametersSchema, AssistantToolResult } from "../apps/local-guest/src/assistant/assistant-model.js";
 import type { AssistantThreadState, AssistantTaskState } from "../apps/local-guest/src/assistant/assistant-state.js";
@@ -42,7 +43,7 @@ async function runRejectedCall(name: string, args: Record<string, unknown>, text
   const results: AssistantToolResult[] = [];
   try {
     const model = scriptedToolModel({ Broken: { name, args } }, results);
-    const runtime = new AssistantRuntime(env, model, { onDiagnostic: (event) => diagnostics.push(event) });
+    const runtime = new ShortletAssistantRuntime(env, model, { onDiagnostic: (event) => diagnostics.push(event) });
     const response = await runtime.handleTurn("argument-validation", text);
     return { response, diagnostics, results, runtime };
   } finally {
@@ -155,7 +156,7 @@ test("a rejected call leaves the thread's task state and surfaces unchanged and 
       "Find stays": { name: "search_stays", args: VALID_SEARCH },
       Broken: { name: "search_stays", args: { city: "Lagos", nights: "four" } },
     }, []);
-    const runtime = new AssistantRuntime(env, model, { onDiagnostic: (event) => diagnostics.push(event) });
+    const runtime = new ShortletAssistantRuntime(env, model, { onDiagnostic: (event) => diagnostics.push(event) });
     await runtime.handleTurn("argument-validation-state", "Find stays in Old Ikoyi");
     const before = runtime.getThread("argument-validation-state");
     assert.ok(before.activeSurfaces.size > 0, "a valid search must leave surfaces so the comparison is meaningful");
@@ -216,7 +217,7 @@ test("a switch_task call with a numeric taskId is rejected before the task-tool 
   const results: AssistantToolResult[] = [];
   try {
     const model = scriptedToolModel({ "Switch broken": { name: "switch_task", args: { taskId: 7 } } }, results);
-    const runtime = new AssistantRuntime(env, model, { additionalPacks: [createFakeShopPack()] });
+    const runtime = new ShortletAssistantRuntime(env, model, { additionalPacks: [createFakeShopPack()] });
     // A second task exists, so an unchecked switch would reach the task lookup (UNKNOWN_TASK) rather than change anything.
     assert.equal(runtime.handleAssistantEvent("task-switch-numeric", TASK_START_EVENT, { domain: "shop" }).ok, true);
     assert.equal(runtime.getThread("task-switch-numeric").tasks.length, 2);
@@ -239,7 +240,7 @@ test("a start_task call without its required domain is rejected before any task 
   const results: AssistantToolResult[] = [];
   try {
     const model = scriptedToolModel({ "Start broken": { name: "start_task", args: {} } }, results);
-    const runtime = new AssistantRuntime(env, model, { additionalPacks: [createFakeShopPack()] });
+    const runtime = new ShortletAssistantRuntime(env, model, { additionalPacks: [createFakeShopPack()] });
     const before = runtime.getThread("task-start-missing-domain");
     const snapshotBefore = threadSnapshot(before);
     const taskCountBefore = before.tasks.length;
@@ -271,7 +272,7 @@ test("a commerce tool call with bad arguments is rejected before the pack's vali
       executeTool: (name, args, context) => { executions++; return base.executeTool(name, args, context); },
     };
     const model = scriptedToolModel({ "Details broken": { name: "get_offer", args: { offerId: 42 } } }, results);
-    const runtime = new AssistantRuntime(env, model, { additionalPacks: [spied] });
+    const runtime = new ShortletAssistantRuntime(env, model, { additionalPacks: [spied] });
     assert.equal(runtime.handleAssistantEvent("commerce-bad-args", TASK_START_EVENT, { domain: "commerce" }).ok, true);
     results.length = 0;
     validations = 0;
@@ -295,7 +296,7 @@ test("a shortlet tool call with bad arguments is rejected before the shortlet pr
   try {
     // A fresh thread has no shortlist, so an unchecked call would fail the shortlet precondition with invalid_tool_for_state.
     const model = scriptedToolModel({ "Open broken": { name: "get_unit_details", args: { stayRef: 5 } } }, results);
-    const runtime = new AssistantRuntime(env, model);
+    const runtime = new ShortletAssistantRuntime(env, model);
     const response = await runtime.handleTurn("shortlet-bad-args", "Open broken");
 
     assert.equal(response.ok, true);

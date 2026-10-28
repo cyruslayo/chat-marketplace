@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { LocalGuestApp } from "../apps/local-guest/src/shortlet-app.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/scripted-assistant-model.js";
 import { approvedTestScope } from "./helpers/assistant-scope.js";
 import { temporaryDatabasePath } from "./helpers/temporary-database.js";
@@ -19,7 +20,7 @@ test("Context AC3 integration: rejected model call and raw step stay absent afte
   const classifier = { assess: async () => ({ scope: "in_scope" as const, risk: "ordinary" as const, intents: ["search" as const], reasonCode: "supported",
     slots: { city: "Lagos", neighbourhood: "Old Ikoyi", bedrooms: null, nights: 2, guests: 2, checkIn: null, checkOut: null } }) };
   let first = true;
-  const runtime = new AssistantRuntime(env, { generate: async () => {
+  const runtime = new ShortletAssistantRuntime(env, { generate: async () => {
     if (first) { first = false; return { toolCalls: [{ id: "bad-call", name: "poison-tool-name", args: { guestId: "private-guest" } }], rawStep: [{ type: "model_output", content: [{ type: "text", text: "RAW-STEP-POISON" }] }] }; }
     return { text: JSON.stringify({ kind: "clarify_stay", references: [] }) };
   } }, { scopeClassifier: classifier });
@@ -33,7 +34,7 @@ test("Context AC3 integration: rejected model call and raw step stay absent afte
   const restarted = remoteEnvironment();
   t.after(() => restarted.close());
   const requests: string[] = [];
-  const freshRuntime = new AssistantRuntime(restarted, { generate: async (request) => {
+  const freshRuntime = new ShortletAssistantRuntime(restarted, { generate: async (request) => {
     requests.push(JSON.stringify(request));
     return { text: JSON.stringify({ kind: "clarify_stay", references: [] }) };
   } }, { scopeClassifier: approvedTestScope });
@@ -51,7 +52,7 @@ test("Scope AC6 integration: rejected input stays absent through remote-port per
   });
   const env = remoteEnvironment();
   t.after(() => env.close());
-  const runtime = new AssistantRuntime(env, new ScriptedAssistantModel(), { scopeClassifier: {
+  const runtime = new ShortletAssistantRuntime(env, new ScriptedAssistantModel(), { scopeClassifier: {
     assess: async () => ({ scope: "out_of_scope", risk: "ordinary", intents: [], reasonCode: "outside",
       slots: { city: null, neighbourhood: null, bedrooms: null, nights: null, guests: null, checkIn: null, checkOut: null } }),
   } });
@@ -67,7 +68,7 @@ test("Scope AC6 integration: rejected input stays absent through remote-port per
   t.after(() => restarted.close());
   const requests: string[] = [];
   const offline = new ScriptedAssistantModel();
-  const freshRuntime = new AssistantRuntime(restarted, { generate: async (request) => {
+  const freshRuntime = new ShortletAssistantRuntime(restarted, { generate: async (request) => {
     requests.push(JSON.stringify(request));
     return offline.generate(request);
   } }, { scopeClassifier: approvedTestScope });

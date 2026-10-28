@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AssistantRuntime, type AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import { ModelRequestGuardError, type AssistantToolCall } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { MAX_ASSISTANT_TOOL_ROUNDS } from "../apps/local-guest/src/assistant/assistant-platform.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
@@ -11,7 +12,7 @@ test("AC6: classifier guard failures and quota refusals emit separate metadata-o
     const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
     const diagnostics: AssistantDiagnosticEvent[] = [];
     try {
-      const runtime = new AssistantRuntime(environment, { generate: async () => { throw new Error("Planner cannot run"); } }, {
+      const runtime = new ShortletAssistantRuntime(environment, { generate: async () => { throw new Error("Planner cannot run"); } }, {
         onDiagnostic: (event) => diagnostics.push(event),
         scopeClassifier: { assess: async () => {
           if (failure === "quota") throw new ModelRequestGuardError("quota_denied");
@@ -36,7 +37,7 @@ test("AC6: classifier guard failures and quota refusals emit separate metadata-o
 test("Date provenance failures expose a closed diagnostic class without the rejected date or guest text", async () => {
   const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
   const diagnostics: AssistantDiagnosticEvent[] = [];
-  const runtime = new AssistantRuntime(environment, { generate: async () => ({ toolCalls: [
+  const runtime = new ShortletAssistantRuntime(environment, { generate: async () => ({ toolCalls: [
     { id: "date-probe", name: "search_stays", args: { city: "Lagos", neighbourhood: "Old Ikoyi", checkIn: "2026-09-10", nights: 4, guests: 2 } },
   ] }) }, { onDiagnostic: (event) => diagnostics.push(event), scopeClassifier: { assess: async () => ({
     scope: "in_scope", risk: "ordinary", intents: ["search"], reasonCode: "supported",
@@ -73,7 +74,7 @@ test("Reply plan rejections record one closed reason on the final-text and post-
     const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
     const diagnostics: AssistantDiagnosticEvent[] = [];
     try {
-      const runtime = new AssistantRuntime(environment, { generate: async () => ({ text }) }, {
+      const runtime = new ShortletAssistantRuntime(environment, { generate: async () => ({ text }) }, {
         onDiagnostic: (event) => diagnostics.push(event), scopeClassifier: { assess: async () => inScopeAssessment },
       });
       const result = await runtime.handleTurn(`plan-final-${expected}`, "Show me options");
@@ -87,7 +88,7 @@ test("Reply plan rejections record one closed reason on the final-text and post-
   const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
   const diagnostics: AssistantDiagnosticEvent[] = [];
   try {
-    const runtime = new AssistantRuntime(environment, { generate: async (request) => (request.tools ?? []).length === 0
+    const runtime = new ShortletAssistantRuntime(environment, { generate: async (request) => (request.tools ?? []).length === 0
       ? { text: JSON.stringify({ kind: "show_results", references: [canary] }) }
       : { toolCalls: [searchCall] } }, {
       onDiagnostic: (event) => diagnostics.push(event), scopeClassifier: { assess: async () => inScopeAssessment },
@@ -106,7 +107,7 @@ test("A local quota refusal after a tool round trip is a non-model failure with 
   const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
   const diagnostics: AssistantDiagnosticEvent[] = [];
   try {
-    const runtime = new AssistantRuntime(environment, { generate: async (request) => (request.tools ?? []).length === 0
+    const runtime = new ShortletAssistantRuntime(environment, { generate: async (request) => (request.tools ?? []).length === 0
       ? (() => { throw new ModelRequestGuardError("quota_denied"); })()
       : { toolCalls: [searchCall] } }, {
       onDiagnostic: (event) => diagnostics.push(event), scopeClassifier: { assess: async () => inScopeAssessment },
@@ -125,7 +126,7 @@ test("Other local guard stops keep their existing diagnostic classes", async () 
     const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
     const diagnostics: AssistantDiagnosticEvent[] = [];
     try {
-      const runtime = new AssistantRuntime(environment, { generate: async () => { throw new ModelRequestGuardError(code); } }, {
+      const runtime = new ShortletAssistantRuntime(environment, { generate: async () => { throw new ModelRequestGuardError(code); } }, {
         onDiagnostic: (event) => diagnostics.push(event), scopeClassifier: { assess: async () => inScopeAssessment },
       });
       await runtime.handleTurn(`guard-${code}`, "Find stays in Old Ikoyi");
@@ -142,7 +143,7 @@ test("AC6 retry: classifier retry telemetry is metadata-only and separate from t
   const diagnostics: AssistantDiagnosticEvent[] = [];
   try {
     const model = new ScriptedClassifierModel([{ response: { text: `${TRAILING_TEXT_CLASSIFIER_TEXT} PRIVATE_RETRY_METRICS_CANARY` } }, { response: { text: VALID_CLASSIFIER_TEXT } }]);
-    const runtime = new AssistantRuntime(environment, model, { onDiagnostic: (event) => diagnostics.push(event) });
+    const runtime = new ShortletAssistantRuntime(environment, model, { onDiagnostic: (event) => diagnostics.push(event) });
     const result = await runtime.handleTurn("metrics-retry", "PRIVATE_RETRY_INPUT_CANARY Find a stay");
     assert.equal(result.controlOutcome, "successful_model_handling");
     const retry = environment.telemetry.events().filter((event) => event.type === "assistant.classifier.retry.v1");

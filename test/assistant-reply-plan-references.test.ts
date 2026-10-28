@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AssistantRuntime, type AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import type { AssistantModelRequest, AssistantModelResponse, AssistantToolCall } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { SHORTLET_PROMPT_SECTION } from "../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
@@ -29,7 +30,7 @@ async function runTurn(id: string, planner: ReturnType<typeof scriptedPlanner>, 
   const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
   const diagnostics: AssistantDiagnosticEvent[] = [];
   try {
-    const runtime = new AssistantRuntime(environment, planner, { onDiagnostic: (event) => diagnostics.push(event), scopeClassifier: scope });
+    const runtime = new ShortletAssistantRuntime(environment, planner, { onDiagnostic: (event) => diagnostics.push(event), scopeClassifier: scope });
     const result = await runtime.handleTurn(id, "Find me a stay in Old Ikoyi for four nights");
     return { result, diagnostics, messages: result.messages ?? [] };
   } finally { environment.close(); }

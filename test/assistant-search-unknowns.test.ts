@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/scripted-assistant-model.js";
 import { ASSISTANT_TOOL_DEFINITIONS, SHORTLET_PROMPT_SECTION } from "../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
 import { temporaryDatabasePath } from "./helpers/temporary-database.js";
@@ -16,7 +17,7 @@ test("Discovery preserves unknown nights, guests and bedrooms instead of filteri
     } }] };
   }]);
   try {
-    const runtime = new AssistantRuntime(environment, model);
+    const runtime = new ShortletAssistantRuntime(environment, model);
     const result = await runtime.handleTurn("unknown-search", "Show me apartments in Ikoyi.");
     const state = runtime.getThread("unknown-search").taskState;
     assert.equal(result.ok, true);
@@ -48,7 +49,7 @@ test("Unknown refinement values preserve a prior explicit bedroom count", async 
     } }] };
   }]);
   try {
-    const runtime = new AssistantRuntime(environment, model);
+    const runtime = new ShortletAssistantRuntime(environment, model);
     await runtime.handleTurn("preserve-search", "Show me two-bedroom apartments in Ikoyi.");
     await runtime.handleTurn("preserve-search", "Show me the options again.");
     const state = runtime.getThread("preserve-search").taskState;
@@ -66,7 +67,7 @@ test("An explicit zero-bedroom studio filter remains distinct from an unknown be
     ? { text: "See the studios." }
     : { toolCalls: [{ id: "studio", name: "search_stays", args: { city: "Lagos", neighbourhood: "Old Ikoyi", bedrooms: 0 } }] }]);
   try {
-    const runtime = new AssistantRuntime(environment, model);
+    const runtime = new ShortletAssistantRuntime(environment, model);
     await runtime.handleTurn("studio", "Show me studios in Ikoyi.");
     const state = runtime.getThread("studio").taskState;
     assert.equal(state.stayIntent.bedrooms, 0);
@@ -89,7 +90,7 @@ test("Unit detail gives the model the same authoritative demo quote shown on its
       args: /open/i.test(step.text) ? { stayRef: "stay-1" } : { city: "Lagos", neighbourhood: "Old Ikoyi" } }] };
   }]);
   try {
-    const runtime = new AssistantRuntime(environment, model);
+    const runtime = new ShortletAssistantRuntime(environment, model);
     await runtime.handleTurn("detail-quote", "Show me apartments in Ikoyi.");
     const response = await runtime.handleTurn("detail-quote", "Open the first one.");
     const stay = runtime.getThread("detail-quote").taskState.shortlist[0]!;

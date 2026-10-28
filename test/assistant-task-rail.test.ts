@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/scripted-assistant-model.js";
 import { TASK_SWITCH_EVENT } from "../apps/local-guest/src/assistant/assistant-platform.js";
 import { createFakeShopPack } from "./helpers/fake-domain-pack.js";
@@ -11,7 +12,7 @@ function createTestRuntime(model: ScriptedAssistantModel) {
   testDbIndex++;
   const databasePath = `.scratch/local-guest/taskrail_test_${testDbIndex}_${Date.now()}.sqlite`;
   const env = LocalGuestEnvironment.openNode({ databasePath });
-  const runtime = new AssistantRuntime(env, model, { additionalPacks: [createFakeShopPack()] });
+  const runtime = new ShortletAssistantRuntime(env, model, { additionalPacks: [createFakeShopPack()] });
   return { env, runtime };
 }
 

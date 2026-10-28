@@ -136,10 +136,24 @@ export interface AssistantDomainPack {
   replyControlOutcome?(results: readonly AssistantToolResult[]): AssistantControlOutcome | undefined;
   /** Issue 04: the pack's stage handlers, called in order for each authoritative execution and for confirmed pending actions. */
   readonly stageHandlers?: readonly AssistantStageHandler[];
+  /**
+   * ADR 0074 (issue 04 decision b): whether an open proposal still names the stay this pack's search holds. A pack that does not
+   * supply it is treated as not authorising the proposal (fail closed, see pendingProposalAuthorised).
+   */
+  proposalStillAuthorised?(action: PendingAssistantAction, taskState: AssistantTaskState): boolean;
   /** Re-reads authoritative truth before a proposed booking request is confirmed. */
   revalidateProposal(action: PendingAssistantAction): { readonly ok: true } | { readonly ok: false; readonly code: string; readonly message: string };
   /** Optional pack-owned command adapter; the pack must route through the platform ActionSpec gate. */
   handlePlatformAction?(input: { readonly actionName: string; readonly context: Record<string, unknown>; readonly principal: CommandPrincipal; readonly taskId: string; readonly activeSurfaceId?: string }): { readonly ok: true; readonly message: string; readonly surface?: AssistantTurnSurface } | { readonly ok: false; readonly code: string; readonly message: string };
+}
+
+/**
+ * ADR 0074: no open proposal is authorised by default. With no proposal the answer is true; with a proposal, only the pack's own
+ * hook can keep it, and a pack without the hook does not.
+ */
+export function pendingProposalAuthorised(pack: AssistantDomainPack, state: AssistantTaskState): boolean {
+  if (!state.pendingAction) return true;
+  return pack.proposalStillAuthorised?.(state.pendingAction, state) === true;
 }
 
 /** Returns only tools declared for both validated intents and the pack's current state. */

@@ -9,6 +9,7 @@ import {
 import { ASSISTANT_TOOL_DEFINITIONS } from "../apps/local-guest/src/assistant/assistant-tools.js";
 import type { AssistantConversationStep, AssistantModelRequest } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import { FallbackModelClient } from "../apps/local-guest/src/assistant/fallback-model-client.js";
 import { withProviderAttemptHook } from "./helpers/assistant-attempt-model.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
@@ -462,7 +463,7 @@ test("AssistantRuntime keeps Gemini tool continuity and replaces legacy final pr
   });
   const env = LocalGuestEnvironment.openNode({ databasePath: `.scratch/eval-test/runtime_protocol_${Date.now()}.sqlite` });
   try {
-    const response = await new AssistantRuntime(env, client, { scopeClassifier: approvedTestScope }).handleTurn("runtime-protocol", "Ikoyi for four nights and two guests");
+    const response = await new ShortletAssistantRuntime(env, client, { scopeClassifier: approvedTestScope }).handleTurn("runtime-protocol", "Ikoyi for four nights and two guests");
 
     assert.equal(response.ok, true);
     assert.equal(response.messages?.[0], "I found 1 matching stay in Old Ikoyi.");
@@ -510,7 +511,7 @@ test("AssistantRuntime keeps Gemini signed continuity paired when one call in a 
   });
   const env = LocalGuestEnvironment.openNode({ databasePath: `.scratch/eval-test/mixed_context_${Date.now()}.sqlite` });
   try {
-    const runtime = new AssistantRuntime(env, client, { scopeClassifier: approvedTestScope });
+    const runtime = new ShortletAssistantRuntime(env, client, { scopeClassifier: approvedTestScope });
     const response = await runtime.handleTurn("mixed-context", "Ikoyi for two nights and two guests");
     assert.equal(response.ok, true);
     assert.equal(requests.length, 2);
@@ -542,7 +543,7 @@ test("FallbackModelClient reprojects sanitized signed continuity after history r
   const secondary = withProviderAttemptHook({ generate: async () => ({ text: JSON.stringify({ kind: "clarify_stay", references: [] }) }) });
   const env = LocalGuestEnvironment.openNode({ databasePath: `.scratch/eval-test/fallback_continuity_${Date.now()}.sqlite` });
   try {
-    const runtime = new AssistantRuntime(env, new FallbackModelClient(primary, secondary), { scopeClassifier: approvedTestScope });
+    const runtime = new ShortletAssistantRuntime(env, new FallbackModelClient(primary, secondary), { scopeClassifier: approvedTestScope });
     await runtime.handleTurn("fallback-context", "Ikoyi for two nights and two guests");
     await runtime.handleTurn("fallback-context", "Tell me about that stay");
     const input = requests[2]!.input;

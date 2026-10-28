@@ -4,6 +4,7 @@ import { approvedTestScope } from "./helpers/assistant-scope.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { createShortletAssistantPack } from "../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import type { AssistantModelRequest, AssistantToolResult } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { temporaryDatabasePath } from "./helpers/temporary-database.js";
 
@@ -45,17 +46,17 @@ test("Planning output has a separate configurable bound from the final reply", a
   t.after(() => env.close());
   const requests: AssistantModelRequest[] = [];
   const model = { generate: async (request: AssistantModelRequest) => { requests.push(request); return { text: "{}" }; } };
-  const runtime = new AssistantRuntime(env, model, { scopeClassifier: approvedTestScope, maxPlanningOutputTokens: 777, maxReplyOutputTokens: 77 });
+  const runtime = new ShortletAssistantRuntime(env, model, { scopeClassifier: approvedTestScope, maxPlanningOutputTokens: 777, maxReplyOutputTokens: 77 });
   await runtime.handleTurn("bounds", "Hello");
   assert.equal(requests[0]?.maxOutputTokens, 777);
-  assert.throws(() => new AssistantRuntime(env, model, { maxPlanningOutputTokens: 0 }), /maxPlanningOutputTokens/);
+  assert.throws(() => new ShortletAssistantRuntime(env, model, { maxPlanningOutputTokens: 0 }), /maxPlanningOutputTokens/);
 });
 
 test("Support intent returns server-owned Active-Stay guidance for access emergencies without tools", async (t) => {
   const env = LocalGuestEnvironment.openNode({ databasePath: temporaryDatabasePath("reply-support.sqlite") });
   t.after(() => env.close());
   const requests: AssistantModelRequest[] = [];
-  const runtime = new AssistantRuntime(env, {
+  const runtime = new ShortletAssistantRuntime(env, {
     generate: async (request) => {
       requests.push(request);
       return { text: JSON.stringify({ kind: "support_guidance", references: [] }) };

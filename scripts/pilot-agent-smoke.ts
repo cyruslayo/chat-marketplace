@@ -168,13 +168,14 @@ if (!credential && !scripted) {
   await writeReports("NOT_RUN", entries, "Live-agent smoke not run — credentials unavailable", journeysAttempted);
   console.log("Live-agent smoke not run — credentials unavailable");
 } else {
-  const [fixtureModule, runtimeModule, modelModule, openAiModule, pilotModule, shortletModule] = await Promise.all([
+  const [fixtureModule, runtimeModule, modelModule, openAiModule, pilotModule, shortletModule, shortletPackModule] = await Promise.all([
     import("../apps/local-guest/src/fixture.js"),
     import("../apps/local-guest/src/assistant/assistant-runtime.js"),
     import("../apps/local-guest/src/assistant/gemini-interactions-client.js"),
     import("../apps/local-guest/src/assistant/openai-compatible-client.js"),
     import("../apps/pilot/src/local-pilot.js"),
     import("../domains/shortlet/src/index.js"),
+    import("../apps/local-guest/src/assistant/shortlet-assistant-pack.js"),
   ]);
   const { LocalGuestEnvironment } = fixtureModule;
   const { AssistantRuntime } = runtimeModule;
@@ -284,6 +285,7 @@ if (!credential && !scripted) {
       journeysAttempted++;
       let turnDiagnostics: AssistantDiagnosticEvent[] = [];
       const runtime = new AssistantRuntime(environment, modelClient, {
+        packs: [shortletPackModule.createShortletAssistantPack(environment)],
         onDiagnostic: (event: AssistantDiagnosticEvent) => {
           turnDiagnostics.push(event);
         },

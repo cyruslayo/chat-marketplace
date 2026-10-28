@@ -19,13 +19,14 @@ import {
   TASK_SWITCH_EVENT,
   toolsForValidatedIntents,
   toolNamesForValidatedIntents,
+  pendingProposalAuthorised,
   type AssistantDomainPack,
   type AssistantTaskSummary,
   type AssistantToolContext,
   type AssistantReplyPlan,
   type AssistantReplyPlanKind,
 } from "./assistant-platform.js";
-import { createShortletAssistantPack, validatedCheckOutForNights } from "./shortlet-assistant-pack.js";
+import { validatedCheckOutForNights } from "./shortlet-assistant-pack.js";
 import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantStayDetailsError, containsGuestDate, currentTurnDateRoles } from "./date-tokens.js";
 import { PLANNER_REQUEST_TIMEOUT_MS, SERVER_TURN_MAX_MS } from "../turn-budget.js";
 import { ModelScopeClassifier, ScopeClassificationError, assessScopeSafely, scopedMixedInput, type ScopeClassifier, type ScopeAssessment, type ConciergeIntent } from "./scope-classifier.js";
@@ -53,7 +54,6 @@ import {
   type StageToolExecution,
   type StageTurnContext,
 } from "./assistant-stage-handler.js";
-import { proposalStillAuthorised } from "./shortlet-stage-handlers.js";
 
 import {
   isExplicitConfirmation,
@@ -202,6 +202,8 @@ export interface AssistantRuntimeOptions {
   readonly modelCallTimeoutMs?: number;
   /** Whole-turn limit, measured from the start of the turn on the environment clock (issue 02, ADR 0079). */
   readonly turnDeadlineMs?: number;
+  /** The packs the host composes (ADR 0099 section 6). The first is the default active pack. The runtime constructs none. */
+  readonly packs?: readonly AssistantDomainPack[];
 }
 
 export interface AssistantShortletRestoreInput {
@@ -359,8 +361,10 @@ export class AssistantRuntime {
       onAttempt: (event) => this.#recordClassifierRetry(event),
     });
     this.#scopeOuterTimeoutMs = options.scopeClassifier ? this.#scopeTimeoutMs : SCOPE_TOTAL_BUDGET_MS;
-    this.#packs.register(createShortletAssistantPack(environment));
-    for (const pack of options.additionalPacks ?? []) this.#packs.register(pack);
+    const hostedPacks = [...(options.packs ?? []), ...(options.additionalPacks ?? [])];
+    // ADR 0099 section 6: the host is the composition root. A runtime with no pack has nothing to run, so the host must supply one.
+    if (hostedPacks.length === 0) throw new Error("The assistant runtime needs at least one domain pack from its host");
+    for (const pack of hostedPacks) this.#packs.register(pack);
   }
 
   get #activePack(): AssistantDomainPack {
@@ -536,7 +540,7 @@ export class AssistantRuntime {
     }
     state.shortlist = shortlist.map((stay) => ({ ...stay, amenities: [...stay.amenities] }));
     if (state.selectedStayRef && !shortlist.some((stay) => stay.stayRef === state.selectedStayRef)) state.selectedStayRef = undefined;
-    if (!proposalStillAuthorised(state.pendingAction, state) && replacePendingProposal(state, "search_changed")) {
+    if (!pendingProposalAuthorised(this.#packForThread(threadId), state) && replacePendingProposal(state, "search_changed")) {
       thread.activeSurfaces.delete(PENDING_ACTION_STAGE);
     }
     syncActiveTask(thread);

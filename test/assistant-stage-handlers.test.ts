@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime, type AssistantDiagnosticEvent, type AssistantTurnOutput } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import type { AssistantModelResponse, AssistantToolDefinition } from "../apps/local-guest/src/assistant/assistant-model.js";
 import {
   TASK_START_EVENT,
@@ -105,7 +106,7 @@ function open(model: RecordingTurnModel, packs: readonly AssistantDomainPack[], 
     initialGuestContactEmail: null,
   });
   const diagnostics: AssistantDiagnosticEvent[] = [];
-  const runtime = new AssistantRuntime(environment, model, {
+  const runtime = new ShortletAssistantRuntime(environment, model, {
     additionalPacks: packs,
     scopeClassifier: approvedTestScope,
     onDiagnostic: (event) => diagnostics.push(event),
@@ -245,7 +246,7 @@ test("A pack's effect code reaches the tool diagnostics and its reply control ou
   const events: AssistantDiagnosticEvent[] = [];
   const model = new RecordingTurnModel((_request, index) => index % 2 === 0 ? CALL_SEARCH("call-effect") : PLAN_REPLY);
   const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:", clock: new SteppedClock(STAGING_LIKE_START).now, initialGuestPhoneNumber: null, initialGuestContactEmail: null });
-  const runtime = new AssistantRuntime(environment, model, {
+  const runtime = new ShortletAssistantRuntime(environment, model, {
     additionalPacks: [shopPack({ replyControlOutcome: (results) => results.some((result) => result.name === "shop_search") ? "no_current_booking" : undefined })],
     scopeClassifier: approvedTestScope,
     onDiagnostic: (event) => events.push(event),

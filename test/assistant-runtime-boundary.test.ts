@@ -36,7 +36,7 @@ const PATTERNS: readonly { readonly id: string; readonly source: string }[] = [
   { id: "domain literal shortlet", source: `["'\`]shortlet["'\`]` },
   { id: "domain literal commerce", source: `["'\`]commerce["'\`]` },
   { id: "shortlet import: createShortletAssistantPack", source: `\\bcreateShortletAssistantPack\\b` },
-  { id: "shortlet import: proposalStillAuthorised", source: `\\bproposalStillAuthorised\\b` },
+  { id: "shortlet import: proposalStillAuthorised", source: `import\\s*\\{[^}]*\\bproposalStillAuthorised\\b[^}]*\\}\\s*from\\s*["']\\.\\/shortlet` },
   { id: "shortlet import: validatedCheckOutForNights", source: `\\bvalidatedCheckOutForNights\\b` },
   { id: "template stage key", source: `\\$\\{[^}]+\\}:(\\$\\{|[a-z_])` },
 ];
@@ -48,10 +48,6 @@ const PATTERNS: readonly { readonly id: string; readonly source: string }[] = [
 const ALLOWLIST: readonly { readonly file: string; readonly pattern: string; readonly count: number; readonly label: string }[] = [
   { file: "assistant-runtime.ts", pattern: "domain literal shortlet", count: 2,
     label: "restoreShortletState's Shortlet domain check. Shortlet public API, follow-up issue (issue 04 decision b)." },
-  { file: "assistant-runtime.ts", pattern: "shortlet import: createShortletAssistantPack", count: 2,
-    label: "pending owner decision (issue 04 decision b): the runtime's import and its default registration. Moves to the host (ADR 0099 section 6)." },
-  { file: "assistant-runtime.ts", pattern: "shortlet import: proposalStillAuthorised", count: 2,
-    label: "pending owner decision (issue 04 decision b): the import and applyDiscoveryShortlist's call. Moves behind a pack hook." },
   { file: "assistant-runtime.ts", pattern: "shortlet import: validatedCheckOutForNights", count: 2,
     label: "Shortlet public API: the import and recordGuestStay's checkout derivation. Follow-up issue (issue 04 decision b, remaining Shortlet API)." },
   { file: "assistant-runtime.ts", pattern: "template stage key", count: 4,

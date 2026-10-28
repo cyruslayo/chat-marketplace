@@ -14,6 +14,7 @@ import { commerceDiscoveryPresentation, commerceDiscoverySurface, commerceCartSu
 import { createShortletWebRuntime } from "../apps/local-guest/src/shortlet-runtime.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/scripted-assistant-model.js";
 import { TASK_START_EVENT } from "../apps/local-guest/src/assistant/assistant-platform.js";
 import { COMMERCE_CHECKOUT_CONFIRM_ACTION } from "../apps/web-agent/src/commerce-presentation.js";
@@ -62,7 +63,7 @@ async function scriptedCommerceFixture(checkoutExecutor?: CommerceCheckoutExecut
     projectionLimits,
     authorizeOrderStatus: ({ context: toolContext }) => toolContext.environment.guestPrincipal().id === env.guestPrincipal().id,
   });
-  const assistant = new AssistantRuntime(env, scriptedModel, { additionalPacks: [pack] });
+  const assistant = new ShortletAssistantRuntime(env, scriptedModel, { additionalPacks: [pack] });
   const threadId = `commerce-script-${crypto.randomUUID()}`;
   await assistant.handleTurn(threadId, "I want to shop");
   assert.equal(assistant.handleAssistantEvent(threadId, TASK_START_EVENT, { domain: "commerce" }).ok, true);
@@ -99,7 +100,7 @@ test("AC6: development commerce search works only after task selection and expos
   commerce.directory.createStore({ id: "scripted-store", merchantId: "scripted-merchant", slug: "soap-store", name: "Soap Store", status: "active" });
   commerce.catalogue.createProduct({ id: "scripted-product", name: "Soap", category: "Care" });
   commerce.catalogue.createOffer({ id: "scripted-offer", productId: "scripted-product", storeId: "scripted-store", priceKobo: 500, stock: 2 });
-  const runtime = new AssistantRuntime(environment, model, { additionalPacks: [createCommerceAssistantPack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database: environment.database, clock: environment.clock })] });
+  const runtime = new ShortletAssistantRuntime(environment, model, { additionalPacks: [createCommerceAssistantPack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database: environment.database, clock: environment.clock })] });
   const intent = await runtime.handleTurn("scripted-commerce", "I want to shop");
   assert.match(intent.messages?.[0] ?? "", /Start a Commerce search/);
   const started = runtime.handleAssistantEvent("scripted-commerce", TASK_START_EVENT, { domain: "commerce" });
@@ -452,7 +453,7 @@ test("Distinct guest tasks in separate threads keep development Commerce carts i
         return { text: JSON.stringify({ kind: "clarify_stay", references: [] }) };
       } };
     };
-    const makeRuntime = (environment: LocalGuestEnvironment) => new AssistantRuntime(environment, makeModel(), {
+    const makeRuntime = (environment: LocalGuestEnvironment) => new ShortletAssistantRuntime(environment, makeModel(), {
       additionalPacks: [createCommerceAssistantPack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database: environment.database, clock: environment.clock })],
       scopeClassifier: approvedTestScope,
     });

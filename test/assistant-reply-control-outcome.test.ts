@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime, type AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import type { AssistantModelResponse } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { approvedTestScope } from "./helpers/assistant-scope.js";
 import { createFakeShopPack } from "./helpers/fake-domain-pack.js";
@@ -24,7 +25,7 @@ function open(model: RecordingTurnModel, extraPacks: ReturnType<typeof createFak
     initialGuestContactEmail: null,
   });
   const diagnostics: AssistantDiagnosticEvent[] = [];
-  const runtime = new AssistantRuntime(environment, model, {
+  const runtime = new ShortletAssistantRuntime(environment, model, {
     additionalPacks: extraPacks,
     scopeClassifier: approvedTestScope,
     onDiagnostic: (event) => diagnostics.push(event),

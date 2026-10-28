@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import { ModelRequestGuardError, type AssistantModelClient, type AssistantToolCall } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 
@@ -36,7 +37,7 @@ test("Each turn records exactly one control outcome, equal to the outcome it ret
     scriptedCalls = 0;
     const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
     try {
-      const runtime = new AssistantRuntime(environment, { generate: scenario.generate }, { scopeClassifier: { assess: scenario.assess } });
+      const runtime = new ShortletAssistantRuntime(environment, { generate: scenario.generate }, { scopeClassifier: { assess: scenario.assess } });
       const result = await runtime.handleTurn(`one-outcome-${index}`, "A benign request");
       const counted = environment.telemetry.events().filter((event) => event.type === "assistant.control.outcome.v1").map((event) => event.outcome);
       assert.equal(result.controlOutcome, scenario.expected, scenario.expected);
@@ -56,7 +57,7 @@ test("A recovered classifier retry records one control outcome for the turn it r
   for (const [index, scenario] of cases.entries()) {
     const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
     try {
-      const runtime = new AssistantRuntime(environment, new ScriptedClassifierModel(scenario.steps), {});
+      const runtime = new ShortletAssistantRuntime(environment, new ScriptedClassifierModel(scenario.steps), {});
       const result = await runtime.handleTurn(`retry-count-${index}`, "A benign request");
       const counted = environment.telemetry.events().filter((event) => event.type === "assistant.control.outcome.v1").map((event) => event.outcome);
       assert.equal(result.controlOutcome, scenario.expected, scenario.expected);
