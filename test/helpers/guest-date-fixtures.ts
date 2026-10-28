@@ -1,6 +1,6 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { LocalGuestEnvironment } from "../../apps/local-guest/src/fixture.js";
 import { LocalGuestApp } from "../../apps/local-guest/src/shortlet-app.js";
 import { AssistantRuntime, type AssistantDiagnosticEvent } from "../../apps/local-guest/src/assistant/assistant-runtime.js";
@@ -68,6 +68,10 @@ export interface DatedFixture {
   readonly budget: ModelCallBudget;
   readonly runtime: AssistantRuntime;
   readonly app: LocalGuestApp;
+  /** The SQLite file the environment opened, when the fixture was opened over one (needed for a true restart). */
+  readonly databasePath?: string;
+  /** The openNode configuration, without the database path, so a restart composes the same environment. */
+  readonly openConfig?: Omit<NonNullable<Parameters<typeof LocalGuestEnvironment.openNode>[0]>, "databasePath">;
   close(): void;
 }
 
@@ -81,13 +85,27 @@ export const LIVE_LIKE_CLOCK = (): Date => new Date("2026-10-27T10:00:00Z");
  */
 export function datedFixture(model: AssistantModelClient, diagnostics?: AssistantDiagnosticEvent[], options: { readonly clock?: () => Date; readonly stagingGuest?: boolean; readonly paystackClient?: NonNullable<Parameters<typeof LocalGuestEnvironment.openNode>[0]>["paystackClient"] } = {}): DatedFixture {
   const directory = mkdtempSync(join(tmpdir(), "date-literal-"));
-  const environment = LocalGuestEnvironment.openNode({
-    databasePath: join(directory, "guest.sqlite"),
+  const openConfig = {
     ...(options.clock ? { clock: options.clock } : {}),
     ...(options.paystackClient ? { paystackClient: options.paystackClient } : {}),
     ...(options.stagingGuest ? { initialGuestPhoneNumber: null, initialGuestContactEmail: null } : {}),
-  });
-  return { ...wireDatedApp(environment, model, diagnostics), close() { environment.close(); rmSync(directory, { recursive: true, force: true }); } };
+  };
+  const databasePath = join(directory, "guest.sqlite");
+  const environment = LocalGuestEnvironment.openNode({ databasePath, ...openConfig });
+  return { ...wireDatedApp(environment, model, diagnostics), databasePath, openConfig, close() { environment.close(); rmSync(directory, { recursive: true, force: true }); } };
+}
+
+/**
+ * A true restart (ADR 0106 cold restore): the previous environment is closed, then a NEW LocalGuestEnvironment is opened
+ * over the same SQLite file. The new environment owns a new ConditionalOfferManager and an empty offer cache, as a Worker
+ * rebuilt after eviction does. `clock` overrides the clock for the restarted process (for example, past an offer's deadline).
+ */
+export function trueRestartedDatedApp(previous: DatedFixture, model: AssistantModelClient, diagnostics?: AssistantDiagnosticEvent[], overrides: { readonly clock?: () => Date } = {}): DatedFixture {
+  if (previous.databasePath === undefined || previous.openConfig === undefined) throw new Error("trueRestartedDatedApp needs a fixture opened over a database file");
+  previous.environment.close();
+  const environment = LocalGuestEnvironment.openNode({ ...previous.openConfig, ...(overrides.clock ? { clock: overrides.clock } : {}), databasePath: previous.databasePath });
+  const directory = dirname(previous.databasePath);
+  return { ...wireDatedApp(environment, model, diagnostics), databasePath: previous.databasePath, openConfig: previous.openConfig, close() { environment.close(); rmSync(directory, { recursive: true, force: true }); } };
 }
 
 /**

@@ -277,32 +277,33 @@ test("Token test 2 — Restart does not recreate the old token from public ident
   }
 });
 
-test("Token test 3 — A stale pre-restart token cannot authorize a changed surface", async () => {
-  const f = await restartFixture();
+test("Token test 3 — A pre-restart token authorizes the unchanged restored surface, and fails closed once the offer changes", async () => {
+  // Owner decision (defect C, Option 2): the digest of a token issued before a restart stays valid for that offer, so the
+  // guest's held token still accepts the unchanged offer. A changed offer (here, past its payment window) fails closed.
+  const unchanged = await restartFixture();
   try {
-    const before = await f.advance("offer");
+    const before = await unchanged.advance("offer");
     const preRestartAction = guestAction(before.surfaces[0]!);
     const preRestartToken = (preRestartAction.context as { confirmationToken?: string })?.confirmationToken;
     assert.ok(preRestartToken);
 
-    await f.restart();
-    const state = await f.state();
-    assert.equal(state.ok, true);
-    if (!state.ok) return;
-    const freshAction = guestAction(state.surfaces[0]!);
-
-    // Attempting to use the old pre-restart token on the restored surface must fail closed
-    const staleActionWithOldToken = {
-      ...freshAction,
-      context: {
-        ...(freshAction.context as Record<string, unknown>),
-        confirmationToken: preRestartToken,
-      },
-    };
-    const result = await f.send("/api/event", staleActionWithOldToken);
-    assert.equal(result.ok, false, "stale pre-restart token must fail closed on restored surface");
+    await unchanged.restart();
+    const accepted = await unchanged.send("/api/event", preRestartAction);
+    assert.equal(accepted.ok, true, "the pre-restart token still authorizes the unchanged offer");
   } finally {
-    await f.close();
+    await unchanged.close();
+  }
+
+  const changed = await restartFixture();
+  try {
+    const before = await changed.advance("offer");
+    const preRestartAction = guestAction(before.surfaces[0]!);
+    changed.setTime("2026-09-03T10:31:00Z");
+    await changed.restart();
+    const rejected = await changed.send("/api/event", preRestartAction);
+    assert.equal(rejected.ok, false, "a pre-restart token must fail closed once the offer has changed");
+  } finally {
+    await changed.close();
   }
 });
 

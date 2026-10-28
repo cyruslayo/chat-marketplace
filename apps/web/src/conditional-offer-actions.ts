@@ -7,6 +7,7 @@ import {
   type ConditionalOfferArtifact,
 } from "./conditional-offer-artifact.js";
 import { ConditionalOfferApplication } from "./conditional-offer-application.js";
+import { confirmationTokenDigest } from "../../../domains/shortlet/src/index.js";
 
 export const CONDITIONAL_OFFER_ACCEPT_EVENT = "shortlet.conditional-offer.accept";
 
@@ -51,7 +52,12 @@ function conditionalOfferAcceptSpec(application: ConditionalOfferApplication): A
       { expected: (context) => context.offerVersion, actual: (artifact) => artifact.facts.offerVersion },
       { expected: (context) => context.projectionVersion, actual: (artifact) => artifact.projectionVersion },
     ],
-    isAuthorized: (context, artifact) => artifact.actions.some((candidate) => candidate.type === "accept" && candidate.confirmationToken === context.confirmationToken),
+    // ADR 0086 / ADR 0106: the presented token must match one of the offer's valid digests. A restored process holds
+    // digests, not the plaintext of tokens already issued, so an equality check on the plaintext would fail closed for the live guest.
+    isAuthorized: (context, artifact) => {
+      const presented = confirmationTokenDigest(context.confirmationToken);
+      return artifact.actions.some((candidate) => candidate.type === "accept" && candidate.confirmationTokenDigests?.includes(presented) === true);
+    },
     command: (context) => ({ commandName: "conditional_offer.accept", payload: { offerId: context.offerId, confirmationToken: context.confirmationToken } }),
     run: ({ context, principal }) => {
       application.accept({ offerId: context.offerId, confirmationToken: context.confirmationToken, expectedVersion: context.offerVersion, principal });
