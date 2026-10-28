@@ -12,12 +12,14 @@ import {
   type RecordedExchange,
 } from "../../apps/local-guest/src/assistant/assistant-recording.js";
 import { createFakeShopPack } from "./fake-domain-pack.js";
-import { LIVE_LIKE_CLOCK, wireDatedApp, type DatedFixture } from "./guest-date-fixtures.js";
+import { withProviderAttemptHook } from "./assistant-attempt-model.js";
+import { LIVE_LIKE_CLOCK, STAGING_GUEST_CONFIG, firstButtonAction, wireDatedApp } from "./guest-date-fixtures.js";
 
 /**
  * Shared recorded-journey code for issue 03: the four named journeys, the cold-restore runner that drives them, the
- * turn-output projection that recordings store and replays compare, and the loader for committed recordings.
- * All data is synthetic (ADR 0075): placeholder stays, dates on the staging-like clock and no personal details.
+ * turn-output projection that recordings store and replays compare, the intended-outcome guard the recorder applies, and
+ * the loader for committed recordings. All data is synthetic (ADR 0075): placeholder stays, dates on the staging-like clock
+ * and no personal details.
  */
 
 export const RECORDINGS_DIRECTORY = resolve(fileURLToPath(new URL("../fixtures/assistant-recordings/", import.meta.url)));
@@ -25,10 +27,17 @@ export const RECORDINGS_DIRECTORY = resolve(fileURLToPath(new URL("../fixtures/a
 /** The planner's answer to one guest text: a tool call, or the typed clarification reply (ADR 0106). */
 export type PlannerAnswer = { readonly tool: string; readonly args: Readonly<Record<string, unknown>> } | "clarify_stay";
 
-export interface RecordedGuestTurn {
+/**
+ * One step of a journey. A typed text (`text`) goes through the runtime's own path; `cancel` marks a typed cancellation that
+ * must settle deterministically; `button` sends the confirm button of the pending-action surface an earlier turn (`ofTurn`,
+ * zero-based) returned, and `expect` names the closed code the refusal must carry.
+ */
+export interface RecordedGuestStep {
   readonly text: string;
   /** Omitted when the runtime settles the text without the planner (a deterministic confirmation or cancellation). */
   readonly planner?: PlannerAnswer;
+  readonly cancel?: true;
+  readonly button?: { readonly ofTurn: number; readonly expect?: string };
 }
 
 export interface RecordedJourneyDefinition {
@@ -38,11 +47,14 @@ export interface RecordedJourneyDefinition {
   readonly description: string;
   /** Registers the fake shop pack, so a task switch is offered (the planner gets `start_task`). */
   readonly withSecondDomain: boolean;
-  readonly guestTurns: readonly RecordedGuestTurn[];
+  readonly guestTurns: readonly RecordedGuestStep[];
 }
 
 const SEARCH_IKOYI = { city: "Lagos", neighbourhood: "Old Ikoyi", checkIn: "2026-12-14", nights: 4, guests: 2 };
 const SEARCH_LEKKI = { city: "Lagos", neighbourhood: "Lekki Phase 1", checkIn: "2026-12-14", nights: 4, guests: 2 };
+const PROPOSE_REQUEST = { tool: "propose_request_to_book", args: { stayRef: "stay-1" } } as const;
+
+export const CANCEL_COPY = "Action cancelled. Let me know how else I can help.";
 
 export const RECORDED_JOURNEYS: readonly RecordedJourneyDefinition[] = [
   {
@@ -70,24 +82,24 @@ export const RECORDED_JOURNEYS: readonly RecordedJourneyDefinition[] = [
   {
     name: "confirmation-cancelled",
     threadId: "g-d1a0000403",
-    description: "A Booking Request is proposed for confirmation and the guest cancels it; nothing is sent.",
+    description: "A Booking Request is proposed for confirmation and the guest types a cancellation; the pending action is cleared and nothing is sent.",
     withSecondDomain: false,
     guestTurns: [
       { text: "I need a place in Ikoyi for 4 nights for 2 guests from 14 December 2026", planner: { tool: "search_stays", args: SEARCH_IKOYI } },
-      { text: "Request the first one.", planner: { tool: "propose_request_to_book", args: { stayRef: "stay-1" } } },
-      { text: "No, cancel that." },
+      { text: "Request the first one.", planner: PROPOSE_REQUEST },
+      { text: "No, cancel that.", cancel: true },
     ],
   },
   {
-    name: "stale-confirmation-after-task-switch",
+    name: "cancel-after-task-switch",
     threadId: "g-d1a0000404",
-    description: "A Booking Request awaits confirmation, the guest switches to another domain, and the old confirmation is then given.",
+    description: "A Booking Request awaits confirmation, the guest switches to another domain, and the guest then types a cancellation: the open Booking Request is cancelled, not sent.",
     withSecondDomain: true,
     guestTurns: [
       { text: "I need a place in Ikoyi for 4 nights for 2 guests from 14 December 2026", planner: { tool: "search_stays", args: SEARCH_IKOYI } },
-      { text: "Request the first one.", planner: { tool: "propose_request_to_book", args: { stayRef: "stay-1" } } },
+      { text: "Request the first one.", planner: PROPOSE_REQUEST },
       { text: "Start a new task in shop", planner: { tool: "start_task", args: { domain: "shop" } } },
-      { text: "Yes" },
+      { text: "No, cancel that.", cancel: true },
     ],
   },
 ];
@@ -108,6 +120,8 @@ export interface JourneyTurnOutput {
   readonly guestText: string;
   readonly ok: boolean;
   readonly code?: string;
+  /** The control outcome the runtime reported for a typed turn, when it reported one. */
+  readonly controlOutcome?: string;
   readonly messages: readonly string[];
   readonly surfaces: readonly { readonly surfaceId: string; readonly componentTypes: readonly string[] }[];
   readonly tasks: readonly { readonly taskId: string; readonly domain: string; readonly status: string; readonly active: boolean }[];
@@ -135,20 +149,16 @@ export function outputOf(guestText: string, result: GuestTurnResult): JourneyTur
   return {
     guestText,
     ok: true,
+    ...(result.assistantControlOutcome ? { controlOutcome: result.assistantControlOutcome } : {}),
     messages: [...result.messages],
     surfaces: result.surfaces.map((surface) => ({ surfaceId: surface.surfaceId, componentTypes: componentTypesOf(surface) })),
     tasks: (result.tasks ?? []).map((task) => ({ taskId: task.taskId, domain: task.domain, status: task.status, active: task.active })),
   };
 }
 
-/** The staging-like local environment: in-memory fixture store, staging clock, guest with no phone or email. */
+/** The staging-like local environment: the given store (in-memory by default), staging clock, guest with no phone or email. */
 export function openJourneyEnvironment(databasePath: string = ":memory:"): LocalGuestEnvironment {
-  return LocalGuestEnvironment.openNode({
-    databasePath,
-    clock: LIVE_LIKE_CLOCK,
-    initialGuestPhoneNumber: null,
-    initialGuestContactEmail: null,
-  });
+  return LocalGuestEnvironment.openNode({ databasePath, clock: LIVE_LIKE_CLOCK, ...STAGING_GUEST_CONFIG });
 }
 
 /** Typed reply plan for a finished tool round (ADR 0106): the kind follows the tool that succeeded. */
@@ -161,29 +171,23 @@ function replyAfter(results: readonly { readonly name: string }[]): AssistantMod
 }
 
 /**
- * The scripted model behind the provider contract: it claims per-attempt reservation and calls the request's attempt hook
- * before answering, as a real adapter does before each transport. The quota guard requires both.
+ * The classifier's advisory slots come from the journey's planned search, as a live classifier would extract them from the
+ * guest's own text. Every other verdict is the scripted one.
  */
-class AttemptAwareScriptedModel implements AssistantModelClient {
-  readonly supportsProviderAttemptReservation = true as const;
-  readonly #inner: ScriptedAssistantModel;
+class ScopeSlotsModel implements AssistantModelClient {
   readonly #definition: RecordedJourneyDefinition;
+  readonly #inner: AssistantModelClient;
 
-  constructor(definition: RecordedJourneyDefinition, inner: ScriptedAssistantModel) {
+  constructor(definition: RecordedJourneyDefinition, inner: AssistantModelClient) {
     this.#definition = definition;
     this.#inner = inner;
   }
 
   async generate(request: AssistantModelRequest): Promise<AssistantModelResponse> {
-    await request.beforeProviderAttempt?.();
     const response = await this.#inner.generate(request);
     return request.structuredOutput?.name === "concierge_scope" ? this.#scopeVerdict(request, response) : response;
   }
 
-  /**
-   * The classifier's advisory slots come from the journey's planned search, as a live classifier would extract them from
-   * the guest's own text. Only the slots for a planned search are filled; every other verdict is the scripted one.
-   */
   #scopeVerdict(request: AssistantModelRequest, response: AssistantModelResponse): AssistantModelResponse {
     const last = request.history.at(-1);
     if (last?.role !== "user") return response;
@@ -197,11 +201,12 @@ class AttemptAwareScriptedModel implements AssistantModelClient {
 }
 
 /**
- * The offline model for a journey. The scope classifier and the deterministic confirmations come from the scripted model;
- * each planner answer is the one the journey definition names, so no keyword heuristic decides a recorded turn.
+ * The offline model for a journey, behind the provider contract. The scope classifier and the deterministic confirmations
+ * come from the scripted model; each planner answer is the one the journey definition names, so no keyword heuristic
+ * decides a recorded turn.
  */
 export function journeyScriptedModel(definition: RecordedJourneyDefinition): AssistantModelClient {
-  return new AttemptAwareScriptedModel(definition, new ScriptedAssistantModel([
+  const scripted = new ScriptedAssistantModel([
     (request: AssistantModelRequest) => {
       const last = request.history.at(-1);
       if (last?.role === "tool_results") return replyAfter(last.results);
@@ -211,12 +216,14 @@ export function journeyScriptedModel(definition: RecordedJourneyDefinition): Ass
       if (turn.planner === "clarify_stay") return { text: JSON.stringify({ kind: "clarify_stay", references: [] }) };
       return { toolCalls: [{ id: `call-${request.history.length}`, name: turn.planner.tool, args: { ...turn.planner.args } }] };
     },
-  ]));
+  ]);
+  return withProviderAttemptHook(new ScopeSlotsModel(definition, scripted));
 }
 
 /**
- * Runs a journey's guest turns against the environment. Before every turn a new application and runtime are built over the
- * same store, as on each Worker request (a cold restore), and the thread is loaded before the turn is sent.
+ * Runs a journey's steps against the environment. Before every step a new application and runtime are built over the same
+ * store, as on each Worker request (a cold restore), and the thread is loaded before the step is sent. A button step sends
+ * the confirm event of the pending-action surface an earlier turn returned, exactly as the guest's card would.
  */
 export async function runJourney(
   definition: RecordedJourneyDefinition,
@@ -225,10 +232,21 @@ export async function runJourney(
 ): Promise<JourneyTurnOutput[]> {
   const shopPacks = definition.withSecondDomain ? [createFakeShopPack()] : undefined;
   const outputs: JourneyTurnOutput[] = [];
-  for (const turn of definition.guestTurns) {
-    const fixture: Omit<DatedFixture, "close"> = wireDatedApp(environment, model, undefined, shopPacks);
+  const results: GuestTurnResult[] = [];
+  for (const step of definition.guestTurns) {
+    const fixture = wireDatedApp(environment, model, undefined, shopPacks);
     fixture.app.getState(definition.threadId);
-    outputs.push(outputOf(turn.text, await fixture.app.handleTurn(definition.threadId, turn.text)));
+    let result: GuestTurnResult;
+    if (step.button) {
+      const source = results[step.button.ofTurn];
+      const card = source?.ok ? source.surfaces.find((surface) => /:pending-action:/.test(surface.surfaceId)) : undefined;
+      if (!card) throw new Error(`journey ${definition.name}: turn ${step.button.ofTurn + 1} returned no pending-action surface`);
+      result = await fixture.app.handleEventAsync(definition.threadId, firstButtonAction(card));
+    } else {
+      result = await fixture.app.handleTurn(definition.threadId, step.text);
+    }
+    results.push(result);
+    outputs.push(outputOf(step.text, result));
   }
   return normaliseGeneratedIds(outputs);
 }
@@ -257,6 +275,41 @@ export function normaliseGeneratedIds(outputs: readonly JourneyTurnOutput[]): Jo
   }));
 }
 
+const FALLBACK_OUTCOMES = ["rejected_plan_fallback", "scope_redirect", "scope_unavailable", "model_handling_failure", "guard_failure", "quota_refusal"];
+const PENDING_SURFACE = /:pending-action:/;
+const REQUEST_SURFACE = /:request:/;
+
+/**
+ * The intended outcomes a journey's recording must show (issue 03 follow-up). The recorder refuses to write a recording that
+ * breaks one, and the journey test asserts the same list, so a regression cannot record its way past the check.
+ * - A typed cancellation settles deterministically: the cancel copy, no pending surface, no request, no fallback outcome.
+ * - A button press on a stale confirmation is refused with the expected code, and no request surface is opened.
+ */
+export function intendedOutcomeViolations(definition: RecordedJourneyDefinition, turns: readonly JourneyTurnOutput[]): string[] {
+  const violations: string[] = [];
+  definition.guestTurns.forEach((step, index) => {
+    const turn = turns[index];
+    if (!turn) {
+      violations.push(`${definition.name}: turn ${index + 1} is missing`);
+      return;
+    }
+    if (step.cancel) {
+      if (!turn.ok || JSON.stringify(turn.messages) !== JSON.stringify([CANCEL_COPY])) violations.push(`${definition.name}: turn ${index + 1} is not the cancel copy`);
+      if (turn.surfaces.some((surface) => PENDING_SURFACE.test(surface.surfaceId))) violations.push(`${definition.name}: turn ${index + 1} leaves a pending surface`);
+      if (turn.surfaces.some((surface) => REQUEST_SURFACE.test(surface.surfaceId))) violations.push(`${definition.name}: turn ${index + 1} opens a request`);
+      if (turn.controlOutcome !== undefined && FALLBACK_OUTCOMES.includes(turn.controlOutcome)) violations.push(`${definition.name}: turn ${index + 1} ends in fallback outcome ${turn.controlOutcome}`);
+    }
+    if (step.button?.expect !== undefined) {
+      if (turn.ok || turn.code !== step.button.expect) violations.push(`${definition.name}: turn ${index + 1} was not refused as ${step.button.expect}`);
+      if (!turn.ok && turn.messages.length > 0) violations.push(`${definition.name}: turn ${index + 1} carries messages on a refusal`);
+    }
+    if (step.button && turn.surfaces.some((surface) => REQUEST_SURFACE.test(surface.surfaceId))) {
+      violations.push(`${definition.name}: turn ${index + 1} opens a request`);
+    }
+  });
+  return violations;
+}
+
 /** Loads a committed recording and checks the file is a recording of this format. */
 export function loadRecording(journey: string): AssistantJourneyRecording {
   const parsed: unknown = JSON.parse(readFileSync(join(RECORDINGS_DIRECTORY, `${journey}.json`), "utf8"));
@@ -273,7 +326,7 @@ export function definitionOf(name: string): RecordedJourneyDefinition {
   return found;
 }
 
-/** Replays a recording through fresh applications, one per turn, and returns the turn outputs the replay produced. */
+/** Replays a recording through fresh applications, one per step, and returns the turn outputs the replay produced. */
 export async function replayJourney(recording: AssistantJourneyRecording): Promise<{ turns: JourneyTurnOutput[]; replay: ReplayModelClient }> {
   const definition = definitionOf(recording.journey);
   const environment = openJourneyEnvironment();
@@ -286,3 +339,4 @@ export async function replayJourney(recording: AssistantJourneyRecording): Promi
     environment.close();
   }
 }
+

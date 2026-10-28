@@ -1,5 +1,6 @@
 import type { DiscoveryArtifactProjection } from "../../../apps/web-agent/src/index.js";
 import { parseDiscoverySearchContext, type DiscoverySearchContext } from "./concierge.js";
+import type { PendingAssistantAction } from "./assistant/pending-actions.js";
 
 /**
  * Server-owned durable interaction projection for one Guest thread (ADR-0070,
@@ -45,6 +46,60 @@ export interface GuestPersistentProjection {
    * re-renders this same surface, so the guest's Save stays authorized. Missing in older projections, which read as null.
    */
   readonly activeContact: PersistedActiveContact | null;
+  /**
+   * Issue 03 follow-up: the assistant's open Booking Request (or other) confirmation, and the surface id the guest holds
+   * for it. A cold restore keeps both, so the typed and button confirm or cancel paths still find the action (ADR 0106:
+   * deterministic confirmations keep their path). Missing in older projections, which read as null.
+   */
+  readonly pendingAction: PersistedPendingAction | null;
+  readonly pendingActionSurfaceId: string | null;
+}
+
+/** The pending action as the runtime holds it, validated field by field on restore. Executed actions are never stored. */
+export type PersistedPendingAction = PendingAssistantAction;
+
+const PENDING_ACTION_TYPES: readonly string[] = ["request_to_book", "accept_offer", "start_checkout"];
+const PENDING_REFERENCE_STRINGS = ["stayRef", "unitId", "checkIn", "checkOut", "requestId", "offerId", "offerStatus"] as const;
+const PENDING_REFERENCE_NUMBERS = ["partySize", "stayTotalKobo", "refundableDepositKobo", "totalDueNowKobo", "offerVersion", "projectionVersion"] as const;
+
+/** Fail closed: any malformed field, an executed action or an unknown type returns null (the action is not restored). */
+export function parsePersistedPendingAction(value: unknown): PersistedPendingAction | null {
+  if (!isRecord(value)) return null;
+  const text = (candidate: unknown, max: number): candidate is string => typeof candidate === "string" && candidate.length > 0 && candidate.length <= max;
+  if (!text(value.id, 120) || !/^pa-[A-Za-z0-9-]+$/.test(value.id)) return null;
+  if (!text(value.threadId, 200) || !text(value.guestActorId, 200) || !text(value.tenantId, 200)) return null;
+  if (typeof value.type !== "string" || !PENDING_ACTION_TYPES.includes(value.type)) return null;
+  if (!text(value.summary, 1000)) return null;
+  if (!text(value.createdAt, 40) || Number.isNaN(Date.parse(value.createdAt))) return null;
+  if (!text(value.expiresAt, 40) || Number.isNaN(Date.parse(value.expiresAt))) return null;
+  if (value.executed !== false) return null;
+  if (!isRecord(value.authoritativeReferences)) return null;
+  const source = value.authoritativeReferences;
+  const references: Record<string, string | number> = {};
+  for (const key of PENDING_REFERENCE_STRINGS) {
+    const entry = source[key];
+    if (entry === undefined) continue;
+    if (!text(entry, 200)) return null;
+    references[key] = entry;
+  }
+  for (const key of PENDING_REFERENCE_NUMBERS) {
+    const entry = source[key];
+    if (entry === undefined) continue;
+    if (typeof entry !== "number" || !Number.isFinite(entry)) return null;
+    references[key] = entry;
+  }
+  return {
+    id: value.id,
+    threadId: value.threadId,
+    guestActorId: value.guestActorId,
+    tenantId: value.tenantId,
+    type: value.type as PendingAssistantAction["type"],
+    authoritativeReferences: references as PendingAssistantAction["authoritativeReferences"],
+    summary: value.summary,
+    createdAt: value.createdAt,
+    expiresAt: value.expiresAt,
+    executed: false,
+  };
 }
 
 export interface PersistedActiveContact {
@@ -195,8 +250,15 @@ export function parseGuestProjection(value: unknown): GuestPersistentProjection 
   // Missing in projections written before this field existed; a present but malformed value fails closed.
   if (value.activeContact !== undefined && value.activeContact !== null && parseActiveContact(value.activeContact) === null) return null;
   const activeContact = value.activeContact === undefined || value.activeContact === null ? null : parseActiveContact(value.activeContact);
+  // Missing in projections written before this field existed; a present but malformed value fails closed.
+  if (value.pendingAction !== undefined && value.pendingAction !== null && parsePersistedPendingAction(value.pendingAction) === null) return null;
+  const pendingAction = value.pendingAction === undefined || value.pendingAction === null ? null : parsePersistedPendingAction(value.pendingAction);
+  if (value.pendingActionSurfaceId !== undefined && value.pendingActionSurfaceId !== null && (typeof value.pendingActionSurfaceId !== "string" || value.pendingActionSurfaceId.length > 300)) return null;
+  const pendingActionSurfaceId = typeof value.pendingActionSurfaceId === "string" ? value.pendingActionSurfaceId : null;
   return Object.freeze({
     activeContact,
+    pendingAction,
+    pendingActionSurfaceId,
     version: 1,
     timeline: Object.freeze(value.timeline.map((entry) => Object.freeze({ role: entry.role, text: entry.text }))),
     discoveryContext,

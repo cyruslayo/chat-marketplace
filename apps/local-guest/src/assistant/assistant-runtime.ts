@@ -200,6 +200,11 @@ export interface AssistantShortletRestoreInput {
   readonly tenantId: string;
   readonly taskState: AssistantTaskState;
   readonly canonicalUserFacts: readonly string[];
+  /**
+   * Issue 03 follow-up (ADR 0106): the pending confirmation's surface id the guest holds, restored with the pending action so
+   * its button events stay authorised under the same id. Ignored unless it names the restored action.
+   */
+  readonly pendingActionSurfaceId?: string;
   /** ADR 0106: the shell's rebuilt discovery artifact, keyed to the id the guest's card holds. */
   readonly discoveryArtifact?: { readonly id: string };
 }
@@ -581,6 +586,12 @@ export class AssistantRuntime {
     // ADR 0106: the restored artifact is the same one the shell holds, so a View action has one authoritative artifact.
     thread.discoveryArtifactId = input.discoveryArtifact?.id ?? null;
     thread.discoveryArtifact = input.discoveryArtifact;
+    // Issue 03 follow-up (ADR 0106): re-key the open confirmation under the surface id the guest holds. A surface id that does
+    // not name this action is not restored, so its button events fail closed as STALE_SURFACE.
+    const action = state.pendingAction;
+    if (action && input.pendingActionSurfaceId && input.pendingActionSurfaceId.endsWith(`:pending-action:${action.id}`)) {
+      thread.activeSurfaces.set(PENDING_ACTION_STAGE, input.pendingActionSurfaceId);
+    }
     this.#syncActiveTask(thread);
     return true;
   }

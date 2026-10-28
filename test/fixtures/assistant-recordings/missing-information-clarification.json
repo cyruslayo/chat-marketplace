@@ -169,6 +169,7 @@
     {
       "guestText": "I want somewhere in Ikoyi",
       "ok": true,
+      "controlOutcome": "successful_model_handling",
       "messages": [
         "How many nights will you be staying, and for how many guests?"
       ],
@@ -185,6 +186,7 @@
     {
       "guestText": "Four nights for two people, from 14 December 2026",
       "ok": true,
+      "controlOutcome": "successful_model_handling",
       "messages": [
         "I found 1 matching stay in Old Ikoyi."
       ],

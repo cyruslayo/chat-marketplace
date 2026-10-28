@@ -170,6 +170,7 @@ import {
   parseGuestProjection,
   type PersistedActiveContact,
   type PersistedAssistantContext,
+  type PersistedPendingAction,
   type GuestPersistentProjection,
 } from "./guest-projection.js";
 import {
@@ -663,6 +664,9 @@ interface GuestThreadState {
   /** Issue 03a: the criteria of each executed search, oldest first (for "Undo last change"). */
   searchHistory: DiscoverySearchContext[];
   assistantContext: PersistedAssistantContext | null;
+  /** Issue 03 follow-up (ADR 0106): the open assistant confirmation and the surface id the guest holds for it. Persisted. */
+  pendingAction: PersistedPendingAction | null;
+  pendingActionSurfaceId: string | null;
   /** Issue 13b: the result picked for comparison. Presentation only, never persisted. */
   compareSelection: string | null;
   /** Issue 14: a change to the draft's stay that awaits a date confirmation. In memory only. */
@@ -1314,6 +1318,15 @@ export class LocalGuestApp {
         event.name === TASK_SWITCH_EVENT ||
         event.name === COMMERCE_CHECKOUT_CONFIRM_ACTION
       ) {
+        // Issue 03 follow-up (ADR 0074, ADR 0070): the runtime authorises a confirm or cancel by the surface id in the event
+        // context. The surface the guest acted on is the event's own surface id, so the two must agree, or the event is
+        // refused as stale before any action is looked up.
+        if (
+          (event.name === ASSISTANT_CONFIRM_ACTION_EVENT || event.name === ASSISTANT_CANCEL_ACTION_EVENT) &&
+          (typeof event.surfaceId !== "string" || (event.context as { readonly surfaceId?: unknown } | undefined)?.surfaceId !== event.surfaceId)
+        ) {
+          return { ok: false, code: "STALE_SURFACE", message: "That action is no longer active." };
+        }
         const output = this.#assistantRuntime.handleAssistantEvent(
           threadId,
           event.name,
@@ -2405,6 +2418,8 @@ export class LocalGuestApp {
       activeSurfaceId: current?.surfaceId ?? null,
       searchHistory: thread.searchHistory.map((context) => ({ ...context })),
       assistantContext: thread.assistantContext,
+      pendingAction: thread.pendingAction,
+      pendingActionSurfaceId: thread.pendingActionSurfaceId,
     };
   }
 
@@ -2566,6 +2581,8 @@ export class LocalGuestApp {
         ...context,
       })),
       assistantContext: projection.assistantContext,
+      pendingAction: projection.pendingAction,
+      pendingActionSurfaceId: projection.pendingActionSurfaceId,
       compareSelection: null,
       draftChangeContext: null,
       pendingDraftReplacement: null,
@@ -2949,6 +2966,8 @@ export class LocalGuestApp {
       lastSurfaces: [],
       searchHistory: [],
       assistantContext: null,
+      pendingAction: null,
+      pendingActionSurfaceId: null,
       compareSelection: null,
       draftChangeContext: null,
       pendingDraftReplacement: null,
@@ -3129,7 +3148,7 @@ export class LocalGuestApp {
       ...(thread.offerId ? { currentOfferId: thread.offerId } : {}),
       ...(currentReservationId ? { currentReservationId } : {}),
       ...(currentContractId ? { currentContractId } : {}),
-      pendingAction: null,
+      pendingAction: thread.pendingAction,
     };
     const canonicalUserFacts = context.isDemoDate === false
       ? [context.checkIn, context.checkOut].filter((fact): fact is string => typeof fact === "string")
@@ -3140,8 +3159,26 @@ export class LocalGuestApp {
       tenantId: this.#environment.config.tenantId,
       taskState: state,
       canonicalUserFacts,
+      ...(thread.pendingActionSurfaceId ? { pendingActionSurfaceId: thread.pendingActionSurfaceId } : {}),
       ...(thread.discoveryArtifact ? { discoveryArtifact: thread.discoveryArtifact } : {}),
     });
+  }
+
+  /**
+   * Issue 03 follow-up (ADR 0106): mirrors the runtime's open confirmation and its surface id into the durable thread, so a
+   * cold restore re-keys the same action. Clears both when the runtime holds no open action.
+   */
+  #syncPendingAction(threadId: string, thread: GuestThreadState): void {
+    const runtime = this.#assistantRuntime;
+    const assistant = runtime?.hasThread(threadId) ? runtime.getThread(threadId) : undefined;
+    const action = assistant?.taskState.pendingAction ?? null;
+    if (!assistant || !action || action.executed) {
+      thread.pendingAction = null;
+      thread.pendingActionSurfaceId = null;
+      return;
+    }
+    thread.pendingAction = { ...action, authoritativeReferences: { ...action.authoritativeReferences } };
+    thread.pendingActionSurfaceId = assistant.activeSurfaces.get("pending_action") ?? null;
   }
 
   #syncAssistantPersistence(threadId: string, thread: GuestThreadState): void {
@@ -3233,7 +3270,8 @@ export class LocalGuestApp {
       thread.timeline.push({ role: "user", text: redactSensitiveData(userText) as string });
     if (result.surfaces.length > 0) thread.lastSurfaces = [...result.surfaces];
     if (result.assistantManaged) this.#syncAssistantPersistence(threadId, thread);
-    else if (this.#assistantRuntime?.hasThread(threadId)) {
+    this.#syncPendingAction(threadId, thread);
+    if (!result.assistantManaged && this.#assistantRuntime?.hasThread(threadId)) {
       const unitId = thread.unitDetail?.unitId;
       if (unitId) {
         this.#assistantRuntime.selectShortletUnit(threadId, unitId);

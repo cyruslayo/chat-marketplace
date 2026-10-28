@@ -482,6 +482,7 @@
     {
       "guestText": "I need a place in Ikoyi for 4 nights for 2 guests from 14 December 2026",
       "ok": true,
+      "controlOutcome": "successful_model_handling",
       "messages": [
         "I found 1 matching stay in Old Ikoyi."
       ],
@@ -509,6 +510,7 @@
     {
       "guestText": "Actually Lekki, same dates",
       "ok": true,
+      "controlOutcome": "successful_model_handling",
       "messages": [
         "I found 1 matching stay in Lekki Phase 1."
       ],
@@ -536,6 +538,7 @@
     {
       "guestText": "Open the first one.",
       "ok": true,
+      "controlOutcome": "successful_model_handling",
       "messages": [
         "Serene 1-Bedroom Suite in Lekki Phase 1 offers wifi, 24_7_power_generator, air_conditioning, security_guard, entire place possession."
       ],
@@ -562,6 +565,7 @@
     {
       "guestText": "I want to book the first one.",
       "ok": true,
+      "controlOutcome": "successful_model_handling",
       "messages": [
         "Your Request Draft is ready to review. It has not been submitted."
       ],

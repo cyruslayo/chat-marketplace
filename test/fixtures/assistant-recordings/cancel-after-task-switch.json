@@ -1,7 +1,7 @@
 {
   "format": "assistant-recording/v1",
-  "journey": "stale-confirmation-after-task-switch",
-  "description": "A Booking Request awaits confirmation, the guest switches to another domain, and the old confirmation is then given.",
+  "journey": "cancel-after-task-switch",
+  "description": "A Booking Request awaits confirmation, the guest switches to another domain, and the guest then types a cancellation: the open Booking Request is cancelled, not sent.",
   "clock": "2026-10-27T10:00:00.000Z",
   "source": "scripted",
   "exchanges": [
@@ -236,57 +236,13 @@
       "response": {
         "text": "{\"kind\":\"propose_action\",\"references\":[\"propose_request_to_book\"]}"
       }
-    },
-    {
-      "request": {
-        "toolNames": [],
-        "structuredOutputName": "concierge_scope",
-        "history": [
-          {
-            "role": "user",
-            "text": "{\"message\":\"Yes\",\"context\":{\"domain\":\"shortlet\",\"description\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\",\"hasShortlist\":true,\"hasSelectedStay\":true,\"hasOffer\":false}}"
-          }
-        ]
-      },
-      "response": {
-        "text": "{\"scope\":\"in_scope\",\"risk\":\"ordinary\",\"intents\":[\"search\",\"details\",\"compare\",\"price\",\"status\",\"offer\",\"draft\",\"request\",\"accept\",\"payment\",\"support\",\"clarify\",\"greet\",\"task_switch\"],\"slots\":{\"city\":null,\"neighbourhood\":null,\"bedrooms\":null,\"nights\":null,\"guests\":null,\"checkIn\":null,\"checkOut\":null},\"reasonCode\":\"supported\"}"
-      }
-    },
-    {
-      "request": {
-        "toolNames": [
-          "start_task",
-          "switch_task",
-          "search_stays",
-          "get_unit_details",
-          "compare_stays",
-          "explain_stay_price",
-          "get_booking_status",
-          "get_offer_status",
-          "propose_request_to_book",
-          "prepare_request_draft"
-        ],
-        "structuredOutputName": "assistant_reply_plan",
-        "history": [
-          {
-            "role": "assistant",
-            "text": "Canonical task facts: {\"city\":\"Lagos\",\"hasShortlist\":true,\"shortlistRefs\":[\"stay-1\"],\"selectedStayRef\":\"stay-1\",\"checkIn\":\"2026-12-14\",\"checkOut\":\"2026-12-18\",\"nights\":4,\"partySize\":2,\"hasSelectedStay\":true,\"hasPendingAction\":false}"
-          },
-          {
-            "role": "user",
-            "text": "Yes"
-          }
-        ]
-      },
-      "response": {
-        "text": "I can help you find accommodation in Lagos or Abuja. Where would you like to stay, for how many nights, and for how many guests?"
-      }
     }
   ],
   "turns": [
     {
       "guestText": "I need a place in Ikoyi for 4 nights for 2 guests from 14 December 2026",
       "ok": true,
+      "controlOutcome": "successful_model_handling",
       "messages": [
         "I found 1 matching stay in Old Ikoyi."
       ],
@@ -314,6 +270,7 @@
     {
       "guestText": "Request the first one.",
       "ok": true,
+      "controlOutcome": "successful_model_handling",
       "messages": [
         "I've prepared a Booking Request for Luxury 2-Bedroom Apartment in Old Ikoyi. Submitting does not charge you. Would you like me to send it?"
       ],
@@ -349,10 +306,10 @@
       "tasks": []
     },
     {
-      "guestText": "Yes",
+      "guestText": "No, cancel that.",
       "ok": true,
       "messages": [
-        "I can help you find and compare stays, explain pricing, or check a booking status. What would you like to do?"
+        "Action cancelled. Let me know how else I can help."
       ],
       "surfaces": [],
       "tasks": [
