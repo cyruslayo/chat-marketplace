@@ -8,6 +8,11 @@ import type { PendingAssistantAction } from "./pending-actions.js";
 export const ASSISTANT_CONFIRM_ACTION_EVENT = "shortlet.assistant.confirm-action";
 export const ASSISTANT_CANCEL_ACTION_EVENT = "shortlet.assistant.cancel-action";
 
+/** The surface id a confirmation card is filed under for one open action (ADR 0074: the id a cold restore re-keys). */
+export function pendingActionSurfaceId(threadId: string, actionId: string): string {
+  return `thread-${threadId}:pending-action:${actionId}`;
+}
+
 export interface PendingActionToA2UIInput {
   readonly action: PendingAssistantAction;
   readonly surfaceId: string;

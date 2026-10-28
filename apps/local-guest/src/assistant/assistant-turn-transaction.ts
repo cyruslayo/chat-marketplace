@@ -5,6 +5,7 @@ import {
   type AssistantThreadState,
   type AssistantTurnSurface,
 } from "./assistant-state.js";
+import { PENDING_ACTION_STAGE } from "./assistant-stage-handler.js";
 
 /** Fallback copy for a projected operation whose handler gave no message of its own (the platform's generic wording). */
 export const GENERIC_PROJECTED_OPERATION_FALLBACK = "The requested information is ready below.";
@@ -31,6 +32,13 @@ export class TurnTransaction {
   discoveryArtifact: unknown;
   /** The fallback copy for a turn whose operation succeeded but whose reply failed: the first surface's, or the generic copy. */
   fallbackMessage: string = GENERIC_PROJECTED_OPERATION_FALLBACK;
+  /**
+   * Issue 06 (ADR 0070): the open proposal and its card as the thread held them when this candidate was taken. A commit compares
+   * against them to tell a change this run made (a clear, an execution, a new proposal) from a copy it only carried over.
+   */
+  readonly #basePendingId: string | undefined;
+  readonly #basePendingSurface: string | undefined;
+  readonly #baseReplacedId: string | undefined;
 
   constructor(thread: AssistantThreadState) {
     this.taskState = cloneTaskState(thread.taskState);
@@ -41,6 +49,9 @@ export class TurnTransaction {
     this.lastSurfaces = thread.lastSurfaces;
     this.discoveryArtifactId = thread.discoveryArtifactId;
     this.discoveryArtifact = thread.discoveryArtifact;
+    this.#basePendingId = thread.taskState.pendingAction?.id;
+    this.#basePendingSurface = thread.activeSurfaces.get(PENDING_ACTION_STAGE);
+    this.#baseReplacedId = thread.taskState.replacedPendingAction?.id;
   }
 
   /** Retires the active surface of a stage (it becomes superseded and cannot authorise actions). Does nothing if the stage has none. */
@@ -78,11 +89,30 @@ export class TurnTransaction {
     readonly discovery: boolean;
     readonly lastSurfaces: readonly AssistantTurnSurface[];
   }): void {
-    if (parts.state) thread.taskState = this.taskState;
+    // Issue 06 (ADR 0070): a delta, not a whole-clone overwrite. The open proposal, its card and its replaced notice are owned by
+    // whichever run changed them last. A candidate that still holds the proposal this run started with only carried it over, so
+    // the thread's current value wins. A stale clone therefore cannot restore a proposal that was executed or cleared meanwhile.
+    if (parts.state) {
+      if (this.#basePendingId !== undefined && this.taskState.pendingAction?.id === this.#basePendingId) {
+        this.taskState.pendingAction = thread.taskState.pendingAction ?? null;
+      }
+      if (this.#baseReplacedId !== undefined && this.taskState.replacedPendingAction?.id === this.#baseReplacedId) {
+        this.taskState.replacedPendingAction = thread.taskState.replacedPendingAction ?? null;
+      }
+      thread.taskState = this.taskState;
+    }
     if (parts.tasks) {
       thread.tasks = this.tasks;
       thread.activeTaskId = this.activeTaskId;
     }
+    const candidateCard = this.activeSurfaces.get(PENDING_ACTION_STAGE);
+    if (this.#basePendingSurface !== undefined && candidateCard === this.#basePendingSurface) {
+      const currentCard = thread.activeSurfaces.get(PENDING_ACTION_STAGE);
+      if (currentCard === undefined) this.activeSurfaces.delete(PENDING_ACTION_STAGE);
+      else this.activeSurfaces.set(PENDING_ACTION_STAGE, currentCard);
+    }
+    // A superseded surface stays superseded: a stale candidate cannot make a retired card authoritative again.
+    for (const surfaceId of thread.supersededSurfaces) this.supersededSurfaces.add(surfaceId);
     thread.activeSurfaces = this.activeSurfaces;
     thread.supersededSurfaces = this.supersededSurfaces;
     thread.lastSurfaces = parts.lastSurfaces;

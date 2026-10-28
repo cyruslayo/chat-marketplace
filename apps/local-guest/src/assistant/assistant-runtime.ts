@@ -47,6 +47,7 @@ import {
   type AssistantStayReference,
 } from "./assistant-state.js";
 import { TurnTransaction, syncActiveTask } from "./assistant-turn-transaction.js";
+import { beginThreadRun, threadRunActive, THREAD_BUSY_CODE, THREAD_BUSY_MESSAGE } from "./assistant-thread-lock.js";
 import type { AssistantControlOutcome, AssistantToolEffectCode } from "./assistant-platform.js";
 import {
   PENDING_ACTION_STAGE,
@@ -65,6 +66,7 @@ import {
 import {
   ASSISTANT_CONFIRM_ACTION_EVENT,
   ASSISTANT_CANCEL_ACTION_EVENT,
+  pendingActionSurfaceId,
 } from "./pending-action-a2ui.js";
 import { redactSensitiveData } from "../../../../packages/platform-core/src/redaction.js";
 
@@ -558,7 +560,7 @@ export class AssistantRuntime {
    * or party no longer match is removed, exactly as a planner search change removes it.
    */
   applyDiscoveryShortlist(threadId: string, shortlist: readonly AssistantStayReference[], artifact?: { readonly id: string }): boolean {
-    if (!this.hasThread(threadId)) return false;
+    if (!this.hasThread(threadId) || this.threadBusy(threadId)) return false;
     const thread = this.getThread(threadId);
     const state = thread.taskState;
     // The artifact the strip's results came from: the page rebuild reads it, so a stale one would show the old area's route.
@@ -609,6 +611,30 @@ export class AssistantRuntime {
     this.#threads.clear();
   }
 
+  /**
+   * Issue 06 (ADR 0070): true while a mutating run on the thread is in progress. Read-only callers never use it to refuse;
+   * the host uses it to leave an in-flight run's state alone (no restore) until that run has committed.
+   */
+  threadBusy(threadId: string): boolean {
+    return threadRunActive(this.#environment, threadId);
+  }
+
+  /**
+   * Issue 06 / ADR 0074: the open proposal's confirmation card, rebuilt from the thread the runtime holds, or undefined when no
+   * open proposal is active. A cold restore re-keys the card's id (issue 03), so the same card is presented again and its
+   * buttons stay authorised under the id the guest holds. Read-only: nothing is committed.
+   */
+  pendingActionSurfaceFor(threadId: string): AssistantTurnSurface | undefined {
+    const thread = this.#threads.get(threadId);
+    const action = thread?.taskState.pendingAction;
+    if (!thread || !action || action.executed) return undefined;
+    const surfaceId = thread.activeSurfaces.get(PENDING_ACTION_STAGE);
+    if (surfaceId !== pendingActionSurfaceId(threadId, action.id)) return undefined;
+    const pack = this.#packForThread(threadId);
+    if (!pack) return undefined;
+    return { surfaceId, a2uiMessages: pack.pendingActionSurface(action, surfaceId) };
+  }
+
   getThread(threadId: string): AssistantThreadState {
     let thread = this.#threads.get(threadId);
     if (!thread) {
@@ -645,6 +671,8 @@ export class AssistantRuntime {
 
   /** Restores only app-validated canonical Shortlet state; no model history or provider metadata is accepted. */
   restoreShortletState(threadId: string, input: AssistantShortletRestoreInput): boolean {
+    // Issue 06: a restore never rewrites a thread that a mutating run is changing; that run commits its own delta.
+    if (this.threadBusy(threadId)) return false;
     const principal = this.#environment.guestPrincipal();
     if (!threadId || input.principalId !== principal.id || input.tenantId !== this.#environment.config.tenantId || principal.tenantId !== input.tenantId) return false;
     const thread = this.getThread(threadId);
@@ -680,6 +708,7 @@ export class AssistantRuntime {
    * - A party size is recorded as a positive integer. A model-proposed fact is never recorded through this path.
    */
   recordGuestStay(threadId: string, facts: { readonly checkIn?: string; readonly nights?: number; readonly partySize?: number }): boolean {
+    if (this.threadBusy(threadId)) return false;
     const thread = this.#threads.get(threadId);
     if (!thread) return false;
     if (facts.checkIn !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(facts.checkIn)) return false;
@@ -710,6 +739,7 @@ export class AssistantRuntime {
    * and the stay is unchanged.
    */
   recordGuestArea(threadId: string, area: { readonly city: string; readonly neighbourhood?: string }): boolean {
+    if (this.threadBusy(threadId)) return false;
     const thread = this.#threads.get(threadId);
     if (!thread) return false;
     if (searchAreaFor(area) === undefined) return false;
@@ -723,6 +753,7 @@ export class AssistantRuntime {
   }
 
   selectShortletUnit(threadId: string, unitId: string): boolean {
+    if (this.threadBusy(threadId)) return false;
     const thread = this.#threads.get(threadId);
     if (!thread) return false;
     const selected = thread.taskState.shortlist.find((stay) => stay.unitId === unitId);
@@ -734,6 +765,7 @@ export class AssistantRuntime {
   }
 
   clearShortletSelection(threadId: string): void {
+    if (this.threadBusy(threadId)) return;
     const thread = this.#threads.get(threadId);
     if (!thread) return;
     thread.taskState.selectedStayRef = undefined;
@@ -758,6 +790,14 @@ export class AssistantRuntime {
       forward: (event) => this.#diagnose(event),
       isRegisteredTool: (name) => this.#isRegisteredToolName(name),
     });
+    // Issue 06 (ADR 0070): one mutating run per thread. The lock is taken synchronously, before the first await below. A second
+    // typed turn while one is in flight is refused with THREAD_BUSY (no queueing); its own record is still written, once.
+    const release = beginThreadRun(this.#environment, threadId);
+    if (release === undefined) {
+      const refusal: AssistantTurnOutput = { ok: false, code: THREAD_BUSY_CODE, message: THREAD_BUSY_MESSAGE };
+      this.#writeTurnRecord(run, { output: refusal, threw: false });
+      return refusal;
+    }
     let output: AssistantTurnOutput | undefined;
     let threw = false;
     try {
@@ -767,6 +807,8 @@ export class AssistantRuntime {
       threw = true;
       throw error;
     } finally {
+      // Released on every exit (answer, refusal, thrown error, deadline stop) before the record is written.
+      release();
       this.#writeTurnRecord(run, { ...(output === undefined ? {} : { output }), threw });
     }
   }
@@ -1337,6 +1379,9 @@ export class AssistantRuntime {
   }
 
   handleAssistantEvent(threadId: string, eventName: string, context: AssistantEventContext | null | undefined): AssistantTurnOutput {
+    // Issue 06 (ADR 0070): every event here changes the thread (confirm, cancel, task start or switch, platform action), so a
+    // second mutating event during a run is refused, not applied on top of the run's older state.
+    if (this.threadBusy(threadId)) return { ok: false, code: THREAD_BUSY_CODE, message: THREAD_BUSY_MESSAGE };
     const thread = this.getThread(threadId);
     // Fail closed (issue 04 follow-up): on a task whose pack is not registered, only leaving it (a task start or switch) is allowed.
     if (eventName !== TASK_START_EVENT && eventName !== TASK_SWITCH_EVENT && this.#unregisteredActiveDomain(thread) !== undefined) {
@@ -1510,6 +1555,7 @@ export class AssistantRuntime {
 
   /** Records an async event against a background task: it gets a badge and the open workspace is untouched. */
   recordTaskEvent(threadId: string, taskId: string): { ok: boolean; code?: string; message?: string } {
+    if (this.threadBusy(threadId)) return { ok: false, code: THREAD_BUSY_CODE, message: THREAD_BUSY_MESSAGE };
     const thread = this.#threads.get(threadId);
     if (!thread) return { ok: false, code: "UNKNOWN_THREAD", message: "Unknown conversation." };
     if (taskId === thread.activeTaskId) {
@@ -1550,7 +1596,17 @@ export class AssistantRuntime {
     if (!handler?.confirm) {
       return { ok: false, code: "UNSUPPORTED_ACTION", message: "Unsupported action." };
     }
-    return handler.confirm(action, { threadId, tx, pack, environment: this.#environment, setStage: () => undefined });
+    try {
+      return handler.confirm(action, { threadId, tx, pack, environment: this.#environment, setStage: () => undefined });
+    } catch {
+      // Issue 06: a domain refusal the confirmation did not expect (for example an overlap with another booking) must not escape
+      // the turn. The proposal is dropped, so the same Yes cannot retry it, and the drop is committed here.
+      tx.clearPendingAction();
+      tx.supersede(PENDING_ACTION_STAGE);
+      const thread = this.#threads.get(threadId);
+      if (thread) tx.commit(thread, { state: true, tasks: false, discovery: false, lastSurfaces: tx.lastSurfaces });
+      return { ok: false, code: "STALE_SURFACE", message: "That action is no longer available. Ask me again if you still want this stay." };
+    }
   }
 }
 

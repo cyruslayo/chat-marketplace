@@ -241,6 +241,7 @@ import {
   type ModelCallBudget,
 } from "./assistant/model-call-budget.js";
 import type { AssistantModelClient } from "./assistant/assistant-model.js";
+import { THREAD_BUSY_CODE, THREAD_BUSY_MESSAGE } from "./assistant/assistant-thread-lock.js";
 import {
   ASSISTANT_CONFIRM_ACTION_EVENT,
   ASSISTANT_CANCEL_ACTION_EVENT,
@@ -411,6 +412,11 @@ export interface GuestRejection {
 }
 
 export type GuestTurnResult = GuestTurnSuccess | GuestRejection;
+
+/** Issue 06 (ADR 0070): the refusal of a second mutating event while a run is in progress. The client retries. */
+function threadBusyRejection(): GuestRejection {
+  return { ok: false, code: THREAD_BUSY_CODE, message: THREAD_BUSY_MESSAGE };
+}
 
 /** Issue 06b: the booking records that have an owner-checked conventional page (ADR-0080). */
 export type ConventionalBookingPageKind =
@@ -769,6 +775,16 @@ export class LocalGuestApp {
   }
 
   /** Assistant surfaces are authoritative projections; the shell renders them, never as fallback. */
+  /**
+   * Issue 06 / ADR 0074: a read after a cold restore presents the open proposal's card, so the guest sees the confirmation the
+   * runtime still authorises. The card is appended after the current surfaces and is not repeated when they already show it.
+   */
+  #withOpenProposalCard(threadId: string, surfaces: readonly GuestSurfacePayload[]): readonly GuestSurfacePayload[] {
+    const card = this.#assistantRuntime?.pendingActionSurfaceFor(threadId);
+    if (card === undefined || surfaces.some((surface) => surface.surfaceId === card.surfaceId)) return surfaces;
+    return [...surfaces, ...this.#assistantSurfaces([card])];
+  }
+
   #assistantSurfaces(surfaces: readonly { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] }[]): GuestSurfacePayload[] {
     return surfaces.map((surface) => ({
       surfaceId: surface.surfaceId,
@@ -1157,6 +1173,8 @@ export class LocalGuestApp {
   }
 
   handleEvent(threadId: string, payload: unknown): GuestTurnResult {
+    // Issue 06 (ADR 0070): an event on a thread with a mutating run in progress is refused, never applied on top of that run.
+    if (this.#threadRunning(threadId)) return threadBusyRejection();
     const stored = this.#threads.get(threadId) ?? (this.#environment.guestDataIsRemote ? null : this.#loadThread(threadId));
     if (stored) this.#restoreAssistantFromGuestThread(threadId, stored);
     const result = this.#handleEvent(threadId, payload);
@@ -1169,8 +1187,14 @@ export class LocalGuestApp {
     threadId: string,
     payload: unknown,
   ): Promise<GuestTurnResult> {
+    // Issue 06 (ADR 0070): an event on a thread with a mutating run in progress is refused at once, with no wait behind the model.
+    if (this.#threadRunning(threadId)) return threadBusyRejection();
     await this.#hydrateRemoteContact();
     if (this.#environment.guestDataIsRemote && !this.#threads.has(threadId)) await this.#loadRemoteThread(threadId);
+    if (this.#threadRunning(threadId)) {
+      await this.#flushRemoteContact();
+      return threadBusyRejection();
+    }
     const stored = this.#threads.get(threadId) ?? (this.#environment.guestDataIsRemote ? null : this.#loadThread(threadId));
     if (stored) this.#restoreAssistantFromGuestThread(threadId, stored);
     const event = readEventPayload(payload);
@@ -1986,7 +2010,7 @@ export class LocalGuestApp {
       ok: true,
       threadId,
       timeline: [...thread.timeline],
-      surfaces: this.#withWaiting(thread, normalized.surfaces),
+      surfaces: this.#withWaiting(thread, this.#withOpenProposalCard(threadId, normalized.surfaces)),
       ...(journey === undefined ? {} : { journey }),
       ...(criteria === undefined ? {} : { criteria }),
       ...(this.#assistantRuntime?.hasThread(threadId) ? { tasks: this.#assistantRuntime.getTaskRail(threadId), verticals: this.#verticals() } : {}),
@@ -3118,10 +3142,16 @@ export class LocalGuestApp {
     }));
   }
 
+  /** Issue 06 (ADR 0070): true while a mutating assistant run on this thread is in progress (the runtime owns the lock). */
+  #threadRunning(threadId: string): boolean {
+    return this.#assistantRuntime?.threadBusy(threadId) === true;
+  }
+
   #restoreAssistantFromGuestThread(threadId: string, thread: GuestThreadState): void {
     const runtime = this.#assistantRuntime;
     const context = thread.assistantContext;
-    if (!runtime || !context || runtime.hasThread(threadId)) return;
+    // Issue 06 (ADR 0070): a restore never rewrites a thread a mutating run is changing; that run commits its own delta.
+    if (!runtime || !context || runtime.hasThread(threadId) || runtime.threadBusy(threadId)) return;
     // ADR 0070/0075/0093: load only the owner-checked, minimal projection; never restore model or provider history.
     if (!thread.discoveryArtifact) this.#rebuildAssistantDiscovery(thread);
     const shortlist = this.#assistantShortlist(thread);
