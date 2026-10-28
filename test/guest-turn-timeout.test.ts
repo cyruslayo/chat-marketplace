@@ -34,7 +34,12 @@ test("Turn timeout AC4: the planner round limit is the one constant the assistan
 
 test("Turn timeout AC5: the planner requests use the shared request timeout, not a second literal", () => {
   const runtime = readFileSync("apps/local-guest/src/assistant/assistant-runtime.ts", "utf8");
-  assert.match(runtime, /timeoutMs: PLANNER_REQUEST_TIMEOUT_MS/);
+  // Issue 02 made each planner and summary call take its timeout from the turn deadline: the call's timeout is the runtime's
+  // model-call timeout (defaulting to the shared constant) capped by the time left in the turn. No call names a literal.
+  assert.match(runtime, /DEFAULT_ASSISTANT_MODEL_CALL_TIMEOUT_MS = PLANNER_REQUEST_TIMEOUT_MS/);
+  assert.match(runtime, /Math\.min\(this\.#modelCallTimeoutMs, remainingMs\)/);
+  assert.match(runtime, /timeoutMs: plannerTimeoutMs/);
+  assert.match(runtime, /timeoutMs: summaryTimeoutMs/);
   assert.doesNotMatch(runtime, /timeoutMs: 20_000/);
 });
 
