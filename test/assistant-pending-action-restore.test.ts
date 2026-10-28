@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
+import { parseGuestProjection } from "../apps/local-guest/src/guest-projection.js";
 import type { AssistantModelClient, AssistantModelRequest, AssistantModelResponse } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { ASSISTANT_CANCEL_ACTION_EVENT, ASSISTANT_CONFIRM_ACTION_EVENT } from "../apps/local-guest/src/assistant/pending-action-a2ui.js";
 import type { GuestSurfacePayload, GuestTurnResult } from "../apps/local-guest/src/shortlet-app.js";
@@ -136,5 +137,92 @@ test("A forged, superseded or unknown pending action id fails closed after a col
     })();
     assert.equal(superseded.ok, false, "a superseded action id is refused");
     assert.ok(!superseded.ok && ["STALE_SURFACE", "ARTIFACT_MISMATCH"].includes(superseded.code), `superseded code: ${!superseded.ok ? superseded.code : ""}`);
+  } finally { environment.close(); }
+});
+
+/** Rewrites the stored guest projection the way a corrupt or superseded store could, and saves it back. */
+function rewriteStoredProjection(environment: LocalGuestEnvironment, threadId: string, change: (projection: Record<string, unknown>) => void): void {
+  const stored = environment.interactionStore.findThread(threadId);
+  assert.ok(stored, "the thread is stored");
+  const projection = JSON.parse(stored.threadJson) as Record<string, unknown>;
+  change(projection);
+  environment.interactionStore.saveThread({ ...stored, threadJson: JSON.stringify(projection) });
+}
+
+test("A persisted pending surface id that names a different action fails closed: confirm after a cold restore returns STALE_SURFACE.", async () => {
+  // A phone-holding guest, so a confirm that wrongly got through would execute the request and fail the assertion (finding 9).
+  const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:", clock: LIVE_LIKE_CLOCK });
+  const counter = { scope: 0 };
+  const model = countingModel(journeyScriptedModel(definitionOf("confirmation-cancelled")), counter);
+  const threadId = "g-d1a0000504";
+  try {
+    const proposal = await proposeBookingRequest(environment, model, threadId);
+    const live = firstButtonAction(pendingSurface(proposal.surfaces));
+    const actionId = String(live.context.actionId);
+    // The persisted surface id names another action, as a superseded or corrupted projection would.
+    const wrongSurface = `thread-${threadId}:pending-action:pa-superseded-0000`;
+    rewriteStoredProjection(environment, threadId, (projection) => { projection.pendingActionSurfaceId = wrongSurface; });
+
+    const fixture = wireDatedApp(environment, model);
+    fixture.app.getState(threadId);
+    // The press names the wrong surface and the live action id: only a restored wrong surface would let it through.
+    const pressed = await fixture.app.handleEventAsync(threadId, {
+      ...live,
+      surfaceId: wrongSurface,
+      context: { ...live.context, surfaceId: wrongSurface },
+    });
+    assert.equal(pressed.ok, false, "a confirm on a surface that names another action is refused");
+    assert.equal(pressed.ok ? "" : pressed.code, "STALE_SURFACE");
+    assert.equal(pendingAfterRestore(environment, model, threadId)?.id, actionId, "the refused press leaves the action pending");
+  } finally { environment.close(); }
+});
+
+test("A malformed persisted pendingAction is read as null: the thread still restores, without the pending action.", async () => {
+  const environment = openJourneyEnvironment();
+  const counter = { scope: 0 };
+  const model = countingModel(journeyScriptedModel(definitionOf("confirmation-cancelled")), counter);
+  const threadId = "g-d1a0000505";
+  try {
+    await proposeBookingRequest(environment, model, threadId);
+    rewriteStoredProjection(environment, threadId, (projection) => {
+      projection.pendingAction = { ...(projection.pendingAction as Record<string, unknown>), type: "not_a_known_action" };
+    });
+
+    // The projection parser keeps the thread and drops only the action.
+    const stored = environment.interactionStore.findThread(threadId);
+    assert.ok(stored);
+    const parsed = parseGuestProjection(JSON.parse(stored.threadJson));
+    assert.ok(parsed, "a malformed pendingAction does not discard the whole projection");
+    assert.equal(parsed.pendingAction, null, "the malformed action is read as null");
+    assert.ok(parsed.timeline.length > 0, "the conversation timeline is kept");
+
+    // A cold restore still reads the thread, and holds no pending action.
+    const fixture = wireDatedApp(environment, model);
+    assert.ok(fixture.app.getState(threadId), "the thread is restored");
+    assert.equal(fixture.runtime.getThread(threadId).taskState.pendingAction ?? null, null, "the action is not restored");
+  } finally { environment.close(); }
+});
+
+test("A persisted pending surface id for the same action on another thread is not restored: confirm returns STALE_SURFACE.", async () => {
+  const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:", clock: LIVE_LIKE_CLOCK });
+  const counter = { scope: 0 };
+  const model = countingModel(journeyScriptedModel(definitionOf("confirmation-cancelled")), counter);
+  const threadId = "g-d1a0000506";
+  try {
+    const proposal = await proposeBookingRequest(environment, model, threadId);
+    const live = firstButtonAction(pendingSurface(proposal.surfaces));
+    // The right action id, but a surface that belongs to another thread: an exact-form match must refuse it.
+    const foreignSurface = `thread-g-d1a0000999:pending-action:${String(live.context.actionId)}`;
+    rewriteStoredProjection(environment, threadId, (projection) => { projection.pendingActionSurfaceId = foreignSurface; });
+
+    const fixture = wireDatedApp(environment, model);
+    fixture.app.getState(threadId);
+    const pressed = await fixture.app.handleEventAsync(threadId, {
+      ...live,
+      surfaceId: foreignSurface,
+      context: { ...live.context, surfaceId: foreignSurface },
+    });
+    assert.equal(pressed.ok, false, "a surface id from another thread is refused");
+    assert.equal(pressed.ok ? "" : pressed.code, "STALE_SURFACE");
   } finally { environment.close(); }
 });

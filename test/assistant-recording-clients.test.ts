@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, rmdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,7 +16,7 @@ import {
 } from "../apps/local-guest/src/assistant/assistant-recording.js";
 import { RECORDINGS_DIRECTORY } from "./helpers/assistant-recordings.js";
 import { DEFAULT_LOCAL_GUEST_CONFIG } from "../apps/local-guest/src/fixture.js";
-import { credentialFindings } from "../scripts/record-assistant-journey.js";
+import { credentialFindings, isInsideOrSame } from "../scripts/record-assistant-journey.js";
 
 // Unit tests for the recording and replay clients (issue 03), with the record script's refusal (AC4).
 
@@ -237,6 +237,35 @@ test("Live recording needs an explicit --out directory outside test/fixtures, an
     assert.notEqual(inside.code, 0);
     assert.match(inside.stderr, /outside test[\/]fixtures/);
   } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("Live recording refuses an --out inside test/fixtures, including a name such as ..x, a subdirectory and a junction into it.", async () => {
+  const fixtures = resolve(RECORDINGS_DIRECTORY, "..");
+  // Name-level checks: `..x` is a name inside the fixtures, not a step out of them.
+  assert.equal(isInsideOrSame(join(fixtures, "..x"), fixtures), true);
+  assert.equal(isInsideOrSame(join(fixtures, "assistant-recordings"), fixtures), true);
+  assert.equal(isInsideOrSame(fixtures, fixtures), true);
+  assert.equal(isInsideOrSame(resolve(fixtures, ".."), fixtures), false);
+  assert.equal(isInsideOrSame(join(fixtures, "..", "elsewhere"), fixtures), false);
+
+  const directory = mkdtempSync(join(tmpdir(), "live-out-junction-"));
+  const junction = join(directory, "into-fixtures");
+  symlinkSync(fixtures, junction, "junction");
+  const run = (out: string) => new Promise<{ code: number | null; stderr: string }>((done) => {
+    execFile(process.execPath, ["--import", "tsx", join(REPOSITORY_ROOT, "scripts", "record-assistant-journey.ts"), "missing-information-clarification", "--out", out], { cwd: REPOSITORY_ROOT, timeout: 120_000, env: { ...process.env, ASSISTANT_RECORD_LIVE: "1" } }, (error, _stdout, stderr) => {
+      done({ code: error ? (typeof error.code === "number" ? error.code : 1) : 0, stderr: String(stderr) });
+    });
+  });
+  try {
+    for (const out of [join(fixtures, "..x"), join(fixtures, "assistant-recordings"), fixtures, junction, join(junction, "nested")]) {
+      const outcome = await run(out);
+      assert.notEqual(outcome.code, 0, `refused: ${out}`);
+      assert.match(outcome.stderr, /outside test[\/]fixtures/, `named refusal for ${out}`);
+    }
+  } finally {
+    rmdirSync(junction);
     rmSync(directory, { recursive: true, force: true });
   }
 });

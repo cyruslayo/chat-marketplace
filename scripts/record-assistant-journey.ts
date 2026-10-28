@@ -25,7 +25,8 @@
  * is the local guest fixture file (ADR 0075: recordings hold local test data only).
  */
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join, relative, resolve, isAbsolute } from "node:path";
+import { existsSync, realpathSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { DEFAULT_LOCAL_GUEST_CONFIG } from "../apps/local-guest/src/fixture.js";
 import type { AssistantModelClient, AssistantModelRequest, AssistantModelResponse } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { createConciergeModelClient, loadConciergeConfiguration } from "../apps/local-guest/src/assistant/concierge-configuration.js";
@@ -50,6 +51,25 @@ import { LIVE_LIKE_CLOCK } from "../test/helpers/guest-date-fixtures.js";
 export const LIVE_RECORDING_CALL_BUDGET = 60;
 
 const FIXTURES_DIRECTORY = resolve(RECORDINGS_DIRECTORY, "..");
+
+/** True when `child` is `parent` or lies inside it. `..x` is a name inside the parent, not a step out of it. */
+export function isInsideOrSame(child: string, parent: string): boolean {
+  const rest = relative(parent, child);
+  return rest === "" || (rest !== ".." && !rest.startsWith(`..${sep}`) && !isAbsolute(rest));
+}
+
+/** The real path of a directory that may not exist yet: the nearest existing ancestor is resolved, the rest is appended. */
+export function realPathOfNearestExisting(path: string): string {
+  let current = resolve(path);
+  const missing: string[] = [];
+  while (!existsSync(current)) {
+    missing.unshift(basename(current));
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return join(realpathSync(current), ...missing);
+}
 
 /** Credential-like shapes. A match names the pattern only, never the text that matched. */
 const CREDENTIAL_PATTERNS: readonly { readonly name: string; readonly pattern: RegExp }[] = [
@@ -83,9 +103,8 @@ function parseArguments(argv: readonly string[]): Options {
   const live = process.env.ASSISTANT_RECORD_LIVE === "1";
   if (live) {
     if (!outDirectory) throw new Error("Live recording needs an explicit --out directory outside test/fixtures.");
-    const target = resolve(outDirectory);
-    const relativeToFixtures = relative(FIXTURES_DIRECTORY, target);
-    if (relativeToFixtures === "" || (!relativeToFixtures.startsWith("..") && !isAbsolute(relativeToFixtures))) {
+    // Compare real paths, so a symlink or junction into test/fixtures is refused as the fixtures themselves.
+    if (isInsideOrSame(realPathOfNearestExisting(outDirectory), realPathOfNearestExisting(FIXTURES_DIRECTORY))) {
       throw new Error("Live recording refused: --out must sit outside test/fixtures so committed recordings are never overwritten.");
     }
   }

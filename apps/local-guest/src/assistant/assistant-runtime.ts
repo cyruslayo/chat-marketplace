@@ -589,7 +589,7 @@ export class AssistantRuntime {
     // Issue 03 follow-up (ADR 0106): re-key the open confirmation under the surface id the guest holds. A surface id that does
     // not name this action is not restored, so its button events fail closed as STALE_SURFACE.
     const action = state.pendingAction;
-    if (action && input.pendingActionSurfaceId && input.pendingActionSurfaceId.endsWith(`:pending-action:${action.id}`)) {
+    if (action && input.pendingActionSurfaceId === `thread-${threadId}:pending-action:${action.id}`) {
       thread.activeSurfaces.set(PENDING_ACTION_STAGE, input.pendingActionSurfaceId);
     }
     this.#syncActiveTask(thread);

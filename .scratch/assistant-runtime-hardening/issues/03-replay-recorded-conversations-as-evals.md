@@ -142,3 +142,16 @@ Tests: `test/assistant-pending-action-restore.test.ts` (new, 3 tests, one per re
 **Definition of Done (follow-up).** 1. Named test per requirement: met (3 restore tests, 1 comparison test per review item, 2 guard tests). 2. Failure paths: forged, superseded and unknown ids; a refused button press; a guard that catches a pending surface, a fallback outcome or a wrong code. 3. ADRs: table above and the table in the original Comments. 4. Injected dependencies used: `BudgetedLiveClient` calls its inner client and budget; `withProviderAttemptHook` calls the hook. 5. No invented policy except the call budget, documented as an engineering setting. 6. No credential in recordings: scanned by the recorder and checked by the clients test. 7. `npm run check` clean; full `npm test` open for the batch gate.
 
 **Status.** Still `ready-for-agent`: the batch gate (full `npm test`, `npm run test:workers`) is open, the owner must decide findings 10 and the card re-render, and the live recording is not run.
+
+### Reviewer follow-up (28 Oct 2026, HEAD acd461c)
+
+1. **Restore guard.** `restoreShortletState` now re-keys the pending surface only when its id is exactly `thread-<threadId>:pending-action:<action id>` (was `endsWith`). Tests: `A persisted pending surface id that names a different action fails closed` and `... for the same action on another thread is not restored` (both confirm after a cold restore, `STALE_SURFACE`). Mutation checks: removing the check (surface always restored) fails both tests; the `endsWith` form fails the other-thread test; the restored file passes all six restore tests.
+2. **Live `--out` guard.** `isInsideOrSame` (`..x` is inside; `..` and `..\` prefixes are outside) and `realPathOfNearestExisting` compare real paths, so a junction into `test/fixtures` is refused. Test: `Live recording refuses an --out inside test/fixtures, including a name such as ..x, a subdirectory and a junction into it.` Live mode was not run.
+3. **Malformed pendingAction.** `parseGuestProjection` reads an invalid `pendingAction` as null and an invalid `pendingActionSurfaceId` as null; the thread still restores. Test: `A malformed persisted pendingAction is read as null: the thread still restores, without the pending action.`
+
+Pending owner decision (not changed here): a new search or task switch after a Booking Request proposal does not supersede the open confirmation.
+
+Commands and counts (env -u LLM_API_KEY):
+- `npm run check`: exit 0.
+- `node --import tsx --test test/assistant-pending-action-restore.test.ts test/assistant-cold-journey.test.ts test/assistant-turn-stop-cold-restore.test.ts test/assistant-recorded-journeys.test.ts test/assistant-recording-clients.test.ts test/assistant-discovery-view.test.ts test/assistant-persistent-continuity.test.ts test/assistant-scope-persistence.test.ts test/guest-account-linking.test.ts test/guest-account-sign-in.test.ts test/guest-offer-access.test.ts test/guest-real-dates.test.ts`: 154 tests, 154 pass, 0 fail.
+- `npm run test:assistant`: 67 tests, 67 pass, 0 fail.

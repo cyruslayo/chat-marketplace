@@ -250,11 +250,10 @@ export function parseGuestProjection(value: unknown): GuestPersistentProjection 
   // Missing in projections written before this field existed; a present but malformed value fails closed.
   if (value.activeContact !== undefined && value.activeContact !== null && parseActiveContact(value.activeContact) === null) return null;
   const activeContact = value.activeContact === undefined || value.activeContact === null ? null : parseActiveContact(value.activeContact);
-  // Missing in projections written before this field existed; a present but malformed value fails closed.
-  if (value.pendingAction !== undefined && value.pendingAction !== null && parsePersistedPendingAction(value.pendingAction) === null) return null;
-  const pendingAction = value.pendingAction === undefined || value.pendingAction === null ? null : parsePersistedPendingAction(value.pendingAction);
-  if (value.pendingActionSurfaceId !== undefined && value.pendingActionSurfaceId !== null && (typeof value.pendingActionSurfaceId !== "string" || value.pendingActionSurfaceId.length > 300)) return null;
-  const pendingActionSurfaceId = typeof value.pendingActionSurfaceId === "string" ? value.pendingActionSurfaceId : null;
+  // An invalid pending action is read as null: it is not restored, and the rest of the thread still is (issue 03 follow-up).
+  // A missing field reads as null too, as in projections written before these fields existed.
+  const pendingAction = parsePersistedPendingAction(value.pendingAction ?? null);
+  const pendingActionSurfaceId = typeof value.pendingActionSurfaceId === "string" && value.pendingActionSurfaceId.length <= 300 ? value.pendingActionSurfaceId : null;
   return Object.freeze({
     activeContact,
     pendingAction,
