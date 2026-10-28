@@ -1,0 +1,213 @@
+{
+  "format": "assistant-recording/v1",
+  "journey": "missing-information-clarification",
+  "description": "A vague search is clarified by the planner, then completed by the guest's answer with its dates.",
+  "clock": "2026-10-27T10:00:00.000Z",
+  "source": "scripted",
+  "exchanges": [
+    {
+      "request": {
+        "toolNames": [],
+        "structuredOutputName": "concierge_scope",
+        "history": [
+          {
+            "role": "user",
+            "text": "{\"message\":\"I want somewhere in Ikoyi\",\"context\":{\"domain\":\"shortlet\",\"description\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\",\"hasShortlist\":false,\"hasSelectedStay\":false,\"hasOffer\":false}}"
+          }
+        ]
+      },
+      "response": {
+        "text": "{\"scope\":\"in_scope\",\"risk\":\"ordinary\",\"intents\":[\"search\",\"details\",\"compare\",\"price\",\"status\",\"offer\",\"draft\",\"request\",\"accept\",\"payment\",\"support\",\"clarify\",\"greet\",\"task_switch\"],\"slots\":{\"city\":null,\"neighbourhood\":null,\"bedrooms\":null,\"nights\":null,\"guests\":null,\"checkIn\":null,\"checkOut\":null},\"reasonCode\":\"supported\"}"
+      }
+    },
+    {
+      "request": {
+        "toolNames": [
+          "search_stays",
+          "get_booking_status",
+          "get_offer_status"
+        ],
+        "structuredOutputName": "assistant_reply_plan",
+        "history": [
+          {
+            "role": "assistant",
+            "text": "Canonical task facts: {\"city\":null,\"hasShortlist\":false,\"shortlistRefs\":[],\"selectedStayRef\":null,\"checkIn\":null,\"checkOut\":null,\"nights\":null,\"partySize\":null,\"hasSelectedStay\":false,\"hasPendingAction\":false}"
+          },
+          {
+            "role": "user",
+            "text": "I want somewhere in Ikoyi"
+          }
+        ]
+      },
+      "response": {
+        "text": "{\"kind\":\"clarify_stay\",\"references\":[]}"
+      }
+    },
+    {
+      "request": {
+        "toolNames": [],
+        "structuredOutputName": "concierge_scope",
+        "history": [
+          {
+            "role": "user",
+            "text": "{\"message\":\"Four nights for two people, from 14 December 2026\",\"context\":{\"domain\":\"shortlet\",\"description\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\",\"hasShortlist\":false,\"hasSelectedStay\":false,\"hasOffer\":false}}"
+          }
+        ]
+      },
+      "response": {
+        "text": "{\"scope\":\"in_scope\",\"risk\":\"ordinary\",\"intents\":[\"search\",\"details\",\"compare\",\"price\",\"status\",\"offer\",\"draft\",\"request\",\"accept\",\"payment\",\"support\",\"clarify\",\"greet\",\"task_switch\"],\"slots\":{\"city\":\"Lagos\",\"neighbourhood\":\"Old Ikoyi\",\"bedrooms\":null,\"nights\":4,\"guests\":2,\"checkIn\":\"2026-12-14\",\"checkOut\":null},\"reasonCode\":\"supported\"}"
+      }
+    },
+    {
+      "request": {
+        "toolNames": [
+          "search_stays",
+          "get_booking_status",
+          "get_offer_status"
+        ],
+        "structuredOutputName": "assistant_reply_plan",
+        "history": [
+          {
+            "role": "assistant",
+            "text": "Canonical task facts: {\"city\":null,\"hasShortlist\":false,\"shortlistRefs\":[],\"selectedStayRef\":null,\"checkIn\":null,\"checkOut\":null,\"nights\":null,\"partySize\":null,\"hasSelectedStay\":false,\"hasPendingAction\":false}"
+          },
+          {
+            "role": "user",
+            "text": "Four nights for two people, from 14 December 2026"
+          }
+        ]
+      },
+      "response": {
+        "toolCalls": [
+          {
+            "id": "call-2",
+            "name": "search_stays",
+            "args": {
+              "city": "Lagos",
+              "neighbourhood": "Old Ikoyi",
+              "checkIn": "2026-12-14",
+              "nights": 4,
+              "guests": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "toolNames": [
+          "search_stays",
+          "get_unit_details",
+          "compare_stays",
+          "explain_stay_price",
+          "get_booking_status",
+          "get_offer_status",
+          "propose_request_to_book"
+        ],
+        "structuredOutputName": "assistant_reply_plan",
+        "history": [
+          {
+            "role": "assistant",
+            "text": "Canonical task facts: {\"city\":\"Lagos\",\"hasShortlist\":true,\"shortlistRefs\":[\"stay-1\"],\"selectedStayRef\":null,\"checkIn\":\"2026-12-14\",\"checkOut\":\"2026-12-18\",\"nights\":4,\"partySize\":2,\"hasSelectedStay\":false,\"hasPendingAction\":false}"
+          },
+          {
+            "role": "user",
+            "text": "Four nights for two people, from 14 December 2026"
+          },
+          {
+            "role": "tool_calls",
+            "calls": [
+              {
+                "id": "call-2",
+                "name": "search_stays",
+                "args": {
+                  "city": "Lagos",
+                  "neighbourhood": "Old Ikoyi",
+                  "checkIn": "2026-12-14",
+                  "nights": 4,
+                  "guests": 2
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool_results",
+            "results": [
+              {
+                "callId": "call-2",
+                "name": "search_stays",
+                "isError": false,
+                "result": {
+                  "resultCount": 1,
+                  "checkIn": "2026-12-14",
+                  "checkOut": "2026-12-18",
+                  "nights": 4,
+                  "partySize": 2,
+                  "isDemoDate": false,
+                  "stays": [
+                    {
+                      "stayRef": "stay-1",
+                      "capacity": 4,
+                      "bedrooms": 2,
+                      "nightlyKobo": 12000000,
+                      "allInStayTotalKobo": 49000000,
+                      "refundableSecurityDepositKobo": 2000000
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "response": {
+        "text": "{\"kind\":\"show_results\",\"references\":[\"search_stays\"]}"
+      }
+    }
+  ],
+  "turns": [
+    {
+      "guestText": "I want somewhere in Ikoyi",
+      "ok": true,
+      "messages": [
+        "How many nights will you be staying, and for how many guests?"
+      ],
+      "surfaces": [],
+      "tasks": [
+        {
+          "taskId": "task-1",
+          "domain": "shortlet",
+          "status": "Search",
+          "active": true
+        }
+      ]
+    },
+    {
+      "guestText": "Four nights for two people, from 14 December 2026",
+      "ok": true,
+      "messages": [
+        "I found 1 matching stay in Old Ikoyi."
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "thread-g-d1a0000402:discovery:search-guest-demo-001",
+          "componentTypes": [
+            "Column",
+            "Text",
+            "Card",
+            "Divider",
+            "Button"
+          ]
+        }
+      ],
+      "tasks": [
+        {
+          "taskId": "task-1",
+          "domain": "shortlet",
+          "status": "Stay",
+          "active": true
+        }
+      ]
+    }
+  ]
+}
