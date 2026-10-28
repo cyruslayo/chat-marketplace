@@ -10,6 +10,7 @@ import {
   SEARCH_LEKKI,
   intendedOutcomeViolations,
   journeyScriptedModel,
+  openJourneyEnvironment,
   runJourney,
   type JourneyTurnOutput,
   type RecordedJourneyDefinition,
@@ -72,7 +73,9 @@ function model(definition: RecordedJourneyDefinition): AssistantModelClient {
 
 /** Runs a scenario warm or cold, and returns its turn outputs and the pending proposal left at the end. */
 async function play(definition: RecordedJourneyDefinition, warm: boolean) {
-  const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:", clock: LIVE_LIKE_CLOCK });
+  // The staging-like guest (no phone): these scenarios end in the replaced reply or a stale refusal, so the phone-only confirm
+  // path is never reached.
+  const environment = openJourneyEnvironment();
   try {
     let pendingAfter: string | null | undefined;
     const outputs = await runJourney(definition, environment, model(definition), {

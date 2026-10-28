@@ -192,3 +192,38 @@ Commands and counts (env -u LLM_API_KEY):
 - Not run: full `npm test` and `npm run test:workers` (batch gate).
 
 **Status.** Owner finding 10 is resolved. Issue 03 stays `ready-for-agent` until the batch gate runs.
+
+### Review follow-up on supersession (28 Oct 2026, HEAD 0ea551f)
+
+**1. Chip edit (HIGH, fixed).** Root cause: `#handleCriteriaEdit` changed the stay intent (`recordGuestStay`) and ran the discovery search, but nothing told the runtime. The proposal kept its old references, so a typed yes sent the old proposal (reproduced: propose, guests 2→1, typed yes → `:request:`). The runtime shortlist also stayed on the old results after a chip search, so a *new* proposal would have referred to stays the guest no longer saw. Fix: after each chip edit the shell calls `applyDiscoveryShortlist` with the shortlist of the new discovery results. The runtime replaces its shortlist and removes the proposal when `proposalStillAuthorised` fails (same rule as a planner search). The shell state is persisted by `#syncPendingAction`, so a cold restore agrees.
+- Chip undo: same reconcile call. The undo's own facts are recorded through the new `#recordAssistantStayFacts`. Undo is not reachable in an assistant thread, see the pre-existing defect below, so no undo test exists.
+- A chip edit that changes nothing keeps a valid proposal (test: `chip no-op`, warm and cold).
+
+**2. Wrong clears (MEDIUM, fixed on the server; client.ts unchanged).** The removal now runs only after a switch succeeds and only when the active task changes.
+- Task events (`platform.task.start`/`switch`): removal only when `applied.activeTaskId` differs from the committed active task. A same-task switch, a starter click while Stays is open, and an unknown task or domain (refused) keep the proposal.
+- Model-invoked `start_task`/`switch_task`: the same check, and `result.error` (UNKNOWN_TASK, UNKNOWN_DOMAIN) never removes. The removal is applied to the previous task's state object, which is the state the workspace saves for that task.
+- The server decides from the event's own task or domain, so client.ts is not changed.
+
+**3. Notice lifetime (LOW, code matches the comment).** The notice is now consumed only by a typed confirmation or cancellation attempt. An unrelated turn leaves it, so the next yes still gets the replaced reply. A cancellation attempt returns the same replaced reply (the proposal is gone either way). Test: `notice lifetime` (warm and cold).
+
+**4. Staging-like guest (LOW, fixed).** The replacement and restore tests use the staging-like guest (`openJourneyEnvironment`) wherever no phone-only confirm path is reached. A phone is kept only where a confirm needs one, with a comment there.
+
+**Decisions and exceptions for the owner.**
+- The router prompt ("Start a Shop search?") removes the proposal even though no switch has happened yet. Fail closed: the guest asked to switch after a proposal, and a yes must not confirm it. This is the one place the rule does not wait for an actual change of task. Confirm this is wanted.
+- A chip edit or undo removes a proposal when the stay (unit, dates or party) no longer matches. It keeps the proposal when the stay is still in the results with the same dates and party, and that is the only case that keeps it.
+
+**Pre-existing defects found, not fixed (owner decision).**
+- Undo history in assistant threads is reset by every typed turn (`#syncAssistantPersistence` → `#assistantContextSearch` sets `searchHistory = [current]`) and by every page load (`getState` → `#rebuildAssistantDiscovery`). So a chip undo cannot step back in an assistant thread, cold or warm, and a proposal can never sit on an undoable history. The chip undo path shares the reconcile code, but no test exercises it. The owner should decide whether undo history must survive assistant turns.
+- Finding 2 (in-flight resurrection) is not fixed here: see issue 06 Comments.
+
+**Commands and counts (env -u LLM_API_KEY, 28 Oct 2026).**
+- Red first: `node --import tsx --test test/assistant-proposal-supersession.test.ts` before the fix: 2 pass, 12 fail (the two passing cases are the no-op chip edit, which must hold, and the real-switch guard).
+- Green: the same file: 12 pass, 0 fail (warm and cold for chip edit, button, no-op, same-task and starter, failed switch, real switch, notice lifetime).
+- `npm run check`: exit 0.
+- `node --import tsx --test test/assistant-proposal-replacement.test.ts test/assistant-pending-action-restore.test.ts test/assistant-recorded-journeys.test.ts test/assistant-recording-clients.test.ts test/assistant-cold-journey.test.ts test/assistant-turn-stop-cold-restore.test.ts test/assistant-artifact-authority.test.ts test/assistant-booking-journey.test.ts test/shortlet-assistant-evals.test.ts test/assistant-discovery-view.test.ts test/assistant-persistent-continuity.test.ts test/assistant-scope-persistence.test.ts test/guest-account-linking.test.ts test/guest-account-sign-in.test.ts test/guest-offer-access.test.ts test/guest-real-dates.test.ts test/guest-chip-continuity.test.ts test/assistant-proposal-supersession.test.ts`: 253 tests, 253 pass, 0 fail.
+- `npm run test:assistant`: 67 of 67 pass.
+- Recordings re-recorded offline into a scratch folder: all five byte-identical to the committed files, so none changed.
+- Not run: full `npm test`, `npm run test:workers`. client.ts not changed; no client.js regenerated.
+
+**Status.** Issue 03 stays `ready-for-agent`; the batch gate is still open.
+- Finding 2 (reviewer, not fixed here): a confirm that lands during an in-flight typed turn can resurrect an executed proposal, because `handleTurn` commits a whole cloned task state. Belongs to issue 06 (one mutating run per thread, ADR 0070); noted there.

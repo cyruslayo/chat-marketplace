@@ -204,6 +204,7 @@ test("A malformed persisted pendingAction is read as null: the thread still rest
 });
 
 test("A persisted pending surface id for the same action on another thread is not restored: confirm returns STALE_SURFACE.", async () => {
+  // Phone-holding guest: the confirm path needs a phone number (finding 9), so the staging-like guest cannot reach it.
   const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:", clock: LIVE_LIKE_CLOCK });
   const counter = { scope: 0 };
   const model = countingModel(journeyScriptedModel(definitionOf("confirmation-cancelled")), counter);

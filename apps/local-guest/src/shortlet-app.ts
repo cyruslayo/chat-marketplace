@@ -3096,14 +3096,10 @@ export class LocalGuestApp {
     return GUEST_ASSISTANT_COPY.safeClarification;
   }
 
-  #restoreAssistantFromGuestThread(threadId: string, thread: GuestThreadState): void {
-    const runtime = this.#assistantRuntime;
-    const context = thread.assistantContext;
-    if (!runtime || !context || runtime.hasThread(threadId)) return;
-    // ADR 0070/0075/0093: load only the owner-checked, minimal projection; never restore model or provider history.
-    if (!thread.discoveryArtifact) this.#rebuildAssistantDiscovery(thread);
+  /** The runtime's shortlist for the thread's current discovery results: one stay per result, in result order. */
+  #assistantShortlist(thread: GuestThreadState): AssistantStayReference[] {
     const results = thread.discoveryArtifact?.facts.results ?? [];
-    const shortlist: AssistantStayReference[] = results.map((unit, index) => ({
+    return results.map((unit, index): AssistantStayReference => ({
       stayRef: `stay-${index + 1}`,
       unitId: unit.id,
       title: unit.title,
@@ -3120,6 +3116,15 @@ export class LocalGuestApp {
       inspectionStatus: unit.trust.inspection.status,
       managementAuthorityStatus: unit.trust.managementAuthority.status,
     }));
+  }
+
+  #restoreAssistantFromGuestThread(threadId: string, thread: GuestThreadState): void {
+    const runtime = this.#assistantRuntime;
+    const context = thread.assistantContext;
+    if (!runtime || !context || runtime.hasThread(threadId)) return;
+    // ADR 0070/0075/0093: load only the owner-checked, minimal projection; never restore model or provider history.
+    if (!thread.discoveryArtifact) this.#rebuildAssistantDiscovery(thread);
+    const shortlist = this.#assistantShortlist(thread);
     const selected = context.selectedUnitId ? shortlist.find((stay) => stay.unitId === context.selectedUnitId) : undefined;
     let currentContractId: string | undefined;
     let currentReservationId: string | undefined;
@@ -3882,6 +3887,7 @@ export class LocalGuestApp {
       };
     thread.discoveryContext = next;
     this.#recordAssistantStayChip(thread, edit, next);
+    if (resolution.kind !== "search") this.#reconcileAssistantStay(thread);
     if (resolution.kind !== "search")
       return {
         ok: true,
@@ -3891,7 +3897,9 @@ export class LocalGuestApp {
           ? { quickReplies: quickRepliesFor(resolution.next) }
           : {}),
       };
-    return this.#executeDiscovery(thread, resolution.filters);
+    const result = this.#executeDiscovery(thread, resolution.filters);
+    this.#reconcileAssistantStay(thread);
+    return result;
   }
 
   /**
@@ -3917,11 +3925,30 @@ export class LocalGuestApp {
         : edit.field === "guests"
           ? { partySize: edit.partySize }
           : null;
-    if (facts === null || !runtime.recordGuestStay(thread.threadId, facts)) return;
+    if (facts === null) return;
+    this.#recordAssistantStayFacts(thread, facts);
+  }
+
+  /** ADR 0106: records the chip's stay facts in the assistant task state and keeps the persisted context in step. */
+  #recordAssistantStayFacts(
+    thread: GuestThreadState,
+    facts: { readonly checkIn?: string; readonly nights?: number; readonly partySize?: number },
+  ): void {
+    const runtime = this.#assistantRuntime;
+    if (!runtime || !runtime.hasThread(thread.threadId)) return;
+    if (!runtime.recordGuestStay(thread.threadId, facts)) return;
     const context = this.#assistantContextFromState(
       runtime.getThread(thread.threadId).taskState,
     );
     if (context) thread.assistantContext = context;
+  }
+
+  /**
+   * ADR 0074: after a criteria change, the runtime follows the discovery results, and an open proposal whose stay, unit, dates
+   * or party no longer match is removed. A change that leaves the stay as it was keeps the proposal.
+   */
+  #reconcileAssistantStay(thread: GuestThreadState): void {
+    this.#assistantRuntime?.applyDiscoveryShortlist(thread.threadId, this.#assistantShortlist(thread));
   }
 
   /** Issue 03a AC4: restores the previous search's criteria and re-runs it. */
@@ -3955,9 +3982,16 @@ export class LocalGuestApp {
       };
     thread.searchHistory.pop();
     thread.discoveryContext = { ...previous };
+    // ADR 0106/0074: the undone stay's facts reach the assistant's task state, as a chip edit's do.
+    this.#recordAssistantStayFacts(thread, {
+      ...(previous.checkIn !== undefined && previous.datesConfirmed !== false ? { checkIn: previous.checkIn } : {}),
+      ...(previous.nights !== undefined ? { nights: previous.nights } : {}),
+      ...(previous.partySize !== undefined ? { partySize: previous.partySize } : {}),
+    });
     const result = this.#executeDiscovery(thread, resolution.filters, {
       recordHistory: false,
     });
+    this.#reconcileAssistantStay(thread);
     return result.ok
       ? {
           ...result,

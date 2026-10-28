@@ -41,6 +41,7 @@ import {
   type AssistantThreadState,
   type AssistantTurnSurface,
   replacePendingProposal,
+  type AssistantStayReference,
 } from "./assistant-state.js";
 import {
   isExplicitConfirmation,
@@ -526,6 +527,24 @@ export class AssistantRuntime {
     };
   }
 
+  /**
+   * ADR 0074 and the criteria strip: a discovery search that ran outside the planner (a chip edit or undo) replaces the
+   * runtime's shortlist, so a later proposal refers to the stays the guest now sees. An open proposal whose stay, unit, dates
+   * or party no longer match is removed, exactly as a planner search change removes it.
+   */
+  applyDiscoveryShortlist(threadId: string, shortlist: readonly AssistantStayReference[]): boolean {
+    if (!this.hasThread(threadId)) return false;
+    const thread = this.getThread(threadId);
+    const state = thread.taskState;
+    state.shortlist = shortlist.map((stay) => ({ ...stay, amenities: [...stay.amenities] }));
+    if (state.selectedStayRef && !shortlist.some((stay) => stay.stayRef === state.selectedStayRef)) state.selectedStayRef = undefined;
+    if (!proposalStillAuthorised(state.pendingAction, state) && replacePendingProposal(state, "search_changed")) {
+      thread.activeSurfaces.delete(PENDING_ACTION_STAGE);
+    }
+    this.#syncActiveTask(thread);
+    return true;
+  }
+
   /** ADR 0074: removes an open proposal from the committed thread and its surface. Used where no candidate state is committed. */
   #dropPendingProposal(threadId: string, reason: "task_switched"): void {
     const thread = this.getThread(threadId);
@@ -728,9 +747,11 @@ export class AssistantRuntime {
     // 2. Check for Pending Action Confirmation in Natural Language (Item 13, 15)
     // ADR 0074: a confirmation after a replaced proposal sends nothing. Its notice clears on this typed turn.
     if (!candidateTaskState.pendingAction && candidateTaskState.replacedPendingAction) {
-      const confirmsReplaced = isExplicitConfirmation(text);
-      candidateTaskState.replacedPendingAction = null;
-      if (confirmsReplaced) {
+      // The notice is consumed only by an explicit confirmation or cancellation attempt (assistant-state.ts). An unrelated turn
+      // leaves it in place, so the next yes still gets the replaced reply.
+      const attemptsConfirmation = isExplicitConfirmation(text) || isExplicitCancellation(text);
+      if (attemptsConfirmation) {
+        candidateTaskState.replacedPendingAction = null;
         thread.taskState = candidateTaskState;
         thread.conversationHistory.push({ role: "user", text: redactSensitiveData(text) as string });
         thread.conversationHistory.push({ role: "assistant", text: "Server reply delivered." });
@@ -975,8 +996,8 @@ export class AssistantRuntime {
           }
           acceptedCalls.push(call);
           if (this.#isPlatformTaskTool(call.name)) {
-            // ADR 0074: a task switch after a proposal removes the proposal's authority.
-            replacePendingProposal(candidateTaskState, "task_switched");
+            const previousActiveTaskId = candidateActiveTaskId;
+            const previousTaskState = candidateTaskState;
             const applied = this.#applyTaskTool(
               call.name,
               call.args,
@@ -985,6 +1006,9 @@ export class AssistantRuntime {
               candidateTaskState,
               { activeSurfaces: candidateActiveSurfaces, supersededSurfaces: candidateSuperseded, lastSurfaces: candidateLastSurfaces },
             );
+            // ADR 0074: a switch that actually changes the active task removes the proposal of the task the guest left. A refused
+            // switch (unknown task or domain) changes nothing, so the proposal survives.
+            if (applied.result.error === undefined && applied.activeTaskId !== previousActiveTaskId) replacePendingProposal(previousTaskState, "task_switched");
             candidateTaskState = applied.state;
             candidateActiveTaskId = applied.activeTaskId;
             candidateActiveSurfaces = applied.workspace.activeSurfaces;
@@ -1318,8 +1342,7 @@ export class AssistantRuntime {
     };
 
     if (eventName === TASK_START_EVENT || eventName === TASK_SWITCH_EVENT) {
-      // ADR 0074: a task switch after a proposal removes the proposal's authority.
-      replacePendingProposal(candidateTaskState, "task_switched");
+      const previousTaskState = candidateTaskState;
       const applied = this.#applyTaskTool(
         eventName === TASK_SWITCH_EVENT ? "switch_task" : "start_task",
         { domain: context?.domain, taskId: context?.taskId },
@@ -1332,6 +1355,8 @@ export class AssistantRuntime {
       if (typeof error === "string") {
         return { ok: false, code: error, message: String(applied.result.message ?? "That task could not be opened.") };
       }
+      // ADR 0074: only a switch that changes the active task removes the proposal of the task the guest left.
+      if (applied.activeTaskId !== thread.activeTaskId) replacePendingProposal(previousTaskState, "task_switched");
       candidateTaskState = applied.state;
       candidateActiveSurfaces = applied.workspace.activeSurfaces;
       candidateSuperseded = applied.workspace.supersededSurfaces;
