@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { parseGuestProjection } from "../apps/local-guest/src/guest-projection.js";
 import type { AssistantModelClient, AssistantModelRequest, AssistantModelResponse } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { ASSISTANT_CANCEL_ACTION_EVENT, ASSISTANT_CONFIRM_ACTION_EVENT } from "../apps/local-guest/src/assistant/pending-action-a2ui.js";
 import type { GuestSurfacePayload, GuestTurnResult } from "../apps/local-guest/src/shortlet-app.js";
 import { definitionOf, journeyScriptedModel, openJourneyEnvironment } from "./helpers/assistant-recordings.js";
 import { LIVE_LIKE_CLOCK, firstButtonAction, wireDatedApp } from "./helpers/guest-date-fixtures.js";
+import { phoneGuest } from "./helpers/assistant-chip-session.js";
+import type { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 
 // Cold-restore pending actions (issue 03 follow-up). A Booking Request proposal is a pending action held by the
 // assistant runtime. Every guest event below runs on a new application and runtime over the same store (a cold
@@ -79,7 +80,7 @@ test("A typed cancel after a cold restore reports Action cancelled, makes no cla
 
 test("A typed yes after a cold restore runs the deterministic confirmation with no classifier call.", async () => {
   // A Booking Request is sent to the guest's phone-holding account, so this guest has a phone (ADR 0011).
-  const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:", clock: LIVE_LIKE_CLOCK });
+  const environment = phoneGuest();
   const counter = { scope: 0 };
   const model = countingModel(journeyScriptedModel(definitionOf("confirmation-cancelled")), counter);
   const threadId = "g-d1a0000502";
@@ -97,7 +98,7 @@ test("A typed yes after a cold restore runs the deterministic confirmation with 
 
 test("A forged, superseded or unknown pending action id fails closed after a cold restore.", async () => {
   // A phone-holding guest: a forged Confirm must be refused by the id guard, not by the missing-phone defect (issue 03 review item 9).
-  const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:", clock: LIVE_LIKE_CLOCK });
+  const environment = phoneGuest();
   const counter = { scope: 0 };
   const model = countingModel(journeyScriptedModel(definitionOf("confirmation-cancelled")), counter);
   const threadId = "g-d1a0000503";
@@ -151,7 +152,7 @@ function rewriteStoredProjection(environment: LocalGuestEnvironment, threadId: s
 
 test("A persisted pending surface id that names a different action fails closed: confirm after a cold restore returns STALE_SURFACE.", async () => {
   // A phone-holding guest, so a confirm that wrongly got through would execute the request and fail the assertion (finding 9).
-  const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:", clock: LIVE_LIKE_CLOCK });
+  const environment = phoneGuest();
   const counter = { scope: 0 };
   const model = countingModel(journeyScriptedModel(definitionOf("confirmation-cancelled")), counter);
   const threadId = "g-d1a0000504";
@@ -205,7 +206,7 @@ test("A malformed persisted pendingAction is read as null: the thread still rest
 
 test("A persisted pending surface id for the same action on another thread is not restored: confirm returns STALE_SURFACE.", async () => {
   // Phone-holding guest: the confirm path needs a phone number (finding 9), so the staging-like guest cannot reach it.
-  const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:", clock: LIVE_LIKE_CLOCK });
+  const environment = phoneGuest();
   const counter = { scope: 0 };
   const model = countingModel(journeyScriptedModel(definitionOf("confirmation-cancelled")), counter);
   const threadId = "g-d1a0000506";

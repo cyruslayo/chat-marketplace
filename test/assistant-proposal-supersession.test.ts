@@ -6,6 +6,15 @@ import { PROPOSAL_REPLACED_COPY, PROPOSE_REQUEST, SEARCH_IKOYI, journeyScriptedM
 import { firstButtonAction } from "./helpers/guest-date-fixtures.js";
 import { assertOk, openChipDriver, phoneGuest, proposalCard, requestSent, stagingGuest } from "./helpers/assistant-chip-session.js";
 
+// ADR 0074 (owner decision, 28 Oct 2026; review follow-up): a stay change removes an open Booking Request proposal however it
+// happens: a planner search, a criteria chip edit or undo, or a task switch. A switch or chip edit that changes nothing keeps
+// the proposal, and a switch that fails changes nothing.
+//
+// Scenarios run warm (one application) and cold (a new application before every event, on the 27 Oct 2026 clock). The guest is
+// staging-like (no phone, openJourneyEnvironment) unless the scenario confirms a still-valid proposal: that confirm reaches the
+// deterministic path, which needs a phone (finding 9), so only those scenarios use a phone-holding guest (phoneGuest), and each
+// says so where it starts.
+
 const THREAD = "g-d1a0000720";
 const SEARCH_TEXT = "I need a place in Ikoyi for 4 nights for 2 guests from 14 December 2026";
 const UNKNOWN_TASK_TEXT = "Move me over to another kind of task";
@@ -26,7 +35,6 @@ const SCENARIO: RecordedJourneyDefinition = {
     { text: UNKNOWN_DOMAIN_TEXT, planner: { tool: "start_task", args: { domain: "mars" } } },
   ],
 };
-
 
 for (const cold of [false, true]) {
   const mode = cold ? "cold" : "warm";

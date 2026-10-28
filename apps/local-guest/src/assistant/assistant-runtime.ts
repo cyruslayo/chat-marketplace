@@ -33,6 +33,7 @@ import { ModelScopeClassifier, ScopeClassificationError, assessScopeSafely, scop
 import { RetryingScopeClassifier, ScopeClassifierRetryError, SCOPE_TOTAL_BUDGET_MS, type ScopeClassifierRetryEvent, type ScopeClassifierRetryResult } from "./scope-classifier-retry.js";
 import { ASSISTANT_CONTROL_COPY } from "./control-copy.js";
 import { isProviderUnavailable } from "./fallback-model-client.js";
+import { searchAreaFor } from "../concierge.js";
 import {
   cloneTaskState,
   createInitialTaskState,
@@ -532,10 +533,15 @@ export class AssistantRuntime {
    * runtime's shortlist, so a later proposal refers to the stays the guest now sees. An open proposal whose stay, unit, dates
    * or party no longer match is removed, exactly as a planner search change removes it.
    */
-  applyDiscoveryShortlist(threadId: string, shortlist: readonly AssistantStayReference[]): boolean {
+  applyDiscoveryShortlist(threadId: string, shortlist: readonly AssistantStayReference[], artifact?: { readonly id: string }): boolean {
     if (!this.hasThread(threadId)) return false;
     const thread = this.getThread(threadId);
     const state = thread.taskState;
+    // The artifact the strip's results came from: the page rebuild reads it, so a stale one would show the old area's route.
+    if (artifact) {
+      thread.discoveryArtifactId = artifact.id;
+      thread.discoveryArtifact = artifact;
+    }
     state.shortlist = shortlist.map((stay) => ({ ...stay, amenities: [...stay.amenities] }));
     if (state.selectedStayRef && !shortlist.some((stay) => stay.stayRef === state.selectedStayRef)) state.selectedStayRef = undefined;
     if (!proposalStillAuthorised(state.pendingAction, state) && replacePendingProposal(state, "search_changed")) {
@@ -673,13 +679,14 @@ export class AssistantRuntime {
   }
 
   /**
-   * ADR 0106 (review follow-up): the criteria strip's area. A general area (no neighbourhood) clears the neighbourhood. The area
-   * values come from the strip's own catalogue (SEARCH_AREAS), so the shell passes only validated names.
+   * ADR 0106 (review follow-up): the criteria strip's area. A general area (no neighbourhood) clears the neighbourhood. Only an
+   * area in the strip's own catalogue (SEARCH_AREAS, through searchAreaFor) is recorded; any other city or neighbourhood is refused
+   * and the stay is unchanged.
    */
   recordGuestArea(threadId: string, area: { readonly city: string; readonly neighbourhood?: string }): boolean {
     const thread = this.#threads.get(threadId);
     if (!thread) return false;
-    if (area.city.trim() === "") return false;
+    if (searchAreaFor(area) === undefined) return false;
     const stay = thread.taskState.stayIntent;
     stay.location = area.city;
     if (area.neighbourhood === undefined) delete stay.neighbourhood;
@@ -1024,9 +1031,10 @@ export class AssistantRuntime {
               candidateTaskState,
               { activeSurfaces: candidateActiveSurfaces, supersededSurfaces: candidateSuperseded, lastSurfaces: candidateLastSurfaces },
             );
-            // ADR 0074: a switch that actually changes the active task removes the proposal of the task the guest left. A refused
-            // switch (unknown task or domain) changes nothing, so the proposal survives.
-            if (applied.result.error === undefined && applied.activeTaskId !== previousActiveTaskId) replacePendingProposal(previousTaskState, "task_switched");
+            // ADR 0074: a switch that changes the active task removes the proposal of the task the guest left. A refused switch (unknown
+            // task or domain) returns the same active task, so this guard alone keeps the proposal. The `error` field needs no separate
+            // check: applyTaskTool never changes the active task on an error.
+            if (applied.activeTaskId !== previousActiveTaskId) replacePendingProposal(previousTaskState, "task_switched");
             candidateTaskState = applied.state;
             candidateActiveTaskId = applied.activeTaskId;
             candidateActiveSurfaces = applied.workspace.activeSurfaces;
@@ -1373,8 +1381,10 @@ export class AssistantRuntime {
       if (typeof error === "string") {
         return { ok: false, code: error, message: String(applied.result.message ?? "That task could not be opened.") };
       }
-      // ADR 0074: only a switch that changes the active task removes the proposal of the task the guest left.
-      if (applied.activeTaskId !== thread.activeTaskId) replacePendingProposal(previousTaskState, "task_switched");
+      // ADR 0074: the proposal of the task the guest left is removed. No guard is needed: a refused switch returns before this line,
+      // and a same-task switch rewrites that task's stored state from the committed state (#syncActiveTask below), so the removal
+      // is then overwritten. Removing a guard here changes no behaviour (issue 03 Comments).
+      replacePendingProposal(previousTaskState, "task_switched");
       candidateTaskState = applied.state;
       candidateActiveSurfaces = applied.workspace.activeSurfaces;
       candidateSuperseded = applied.workspace.supersededSurfaces;

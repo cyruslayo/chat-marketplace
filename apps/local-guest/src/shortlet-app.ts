@@ -3974,7 +3974,7 @@ export class LocalGuestApp {
    * or party no longer match is removed. A change that leaves the stay as it was keeps the proposal.
    */
   #reconcileAssistantStay(thread: GuestThreadState): void {
-    this.#assistantRuntime?.applyDiscoveryShortlist(thread.threadId, this.#assistantShortlist(thread));
+    this.#assistantRuntime?.applyDiscoveryShortlist(thread.threadId, this.#assistantShortlist(thread), thread.discoveryArtifact ?? undefined);
   }
 
   /** Issue 03a AC4: restores the previous search's criteria and re-runs it. */

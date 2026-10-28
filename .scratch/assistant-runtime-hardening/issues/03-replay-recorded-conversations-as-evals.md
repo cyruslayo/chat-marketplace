@@ -222,7 +222,7 @@ Commands and counts (env -u LLM_API_KEY):
 - `npm run check`: exit 0.
 - `node --import tsx --test test/assistant-proposal-replacement.test.ts test/assistant-pending-action-restore.test.ts test/assistant-recorded-journeys.test.ts test/assistant-recording-clients.test.ts test/assistant-cold-journey.test.ts test/assistant-turn-stop-cold-restore.test.ts test/assistant-artifact-authority.test.ts test/assistant-booking-journey.test.ts test/shortlet-assistant-evals.test.ts test/assistant-discovery-view.test.ts test/assistant-persistent-continuity.test.ts test/assistant-scope-persistence.test.ts test/guest-account-linking.test.ts test/guest-account-sign-in.test.ts test/guest-offer-access.test.ts test/guest-real-dates.test.ts test/guest-chip-continuity.test.ts test/assistant-proposal-supersession.test.ts`: 253 tests, 253 pass, 0 fail.
 - `npm run test:assistant`: 67 of 67 pass.
-- Recordings re-recorded offline into a scratch folder: all five byte-identical to the committed files, so none changed.
+- Recordings re-recorded offline into a scratch folder: all five content-identical to the committed files (line endings aside), so none changed.
 - Not run: full `npm test`, `npm run test:workers`. client.ts not changed; no client.js regenerated.
 
 **Status.** Issue 03 stays `ready-for-agent`; the batch gate is still open.
@@ -239,7 +239,7 @@ Commands and counts (env -u LLM_API_KEY):
 - Chip undo, cold: `NOTHING_TO_UNDO` is pinned as a test. It documents the pre-existing history reset and must change only when the owner decides the history must survive page loads and typed turns.
 - Staging-like variants: chip edit (typed yes and button), chip no-op, real switch, and notice lifetime use the staging-like guest. A phone is kept only for the scenarios that confirm a still-valid proposal (the event-path test and the model-invoked test), each with a comment.
 
-**Wording corrected.** The comment at `assistant-runtime.ts` (about line 748) now says only a typed confirmation or cancellation attempt consumes the notice. The header of `test/assistant-proposal-replacement.test.ts` says the guest is staging-like, and no scenario there reaches the phone-only confirm path.
+**Wording corrected.** The comment on the notice in `assistant-runtime.ts` now says only a typed confirmation or cancellation attempt consumes the notice. The header of `test/assistant-proposal-replacement.test.ts` says the guest is staging-like, and no scenario there reaches the phone-only confirm path.
 
 **Commands and counts (env -u LLM_API_KEY).**
 - `npm run check`: exit 0.
@@ -279,7 +279,7 @@ No ADR change and no schema change: the fix persists existing state through an e
 - Mutant E, the edit path does not record the area (`#recordAssistantStayChip` returns before `#recordAssistantArea`): 6 of 12 where-chip tests fail (warm (a), (c); cold (a), (b), (c), (d)).
 - Mutant U, the undo path does not record the previous area: 1 test fails (warm (d)).
 
-**Recordings.** Re-recorded offline into a scratch folder: all five committed recordings are byte-identical. None of the journeys uses a where chip, so none changed.
+**Recordings.** Re-recorded offline into a scratch folder: all five committed recordings are content-identical (line endings aside). None of the journeys uses a where chip, so none changed.
 
 **Commands and counts (env -u LLM_API_KEY).**
 - Red first: `node --import tsx --test test/assistant-where-chip.test.ts` before the fix: 6 pass, 6 fail.
@@ -288,5 +288,29 @@ No ADR change and no schema change: the fix persists existing state through an e
 - Affected set (`assistant-where-chip`, `assistant-proposal-supersession`, `assistant-proposal-replacement`, `assistant-pending-action-restore`, `assistant-cold-journey`, `assistant-turn-stop-cold-restore`, `assistant-artifact-authority`, `assistant-booking-journey`, `assistant-recorded-journeys`, `assistant-recording-clients`, `shortlet-assistant-evals`, `guest-chip-continuity`, `assistant-discovery-view`, `assistant-persistent-continuity`, `assistant-scope-persistence`, `guest-account-linking`, `guest-account-sign-in`, `guest-offer-access`, `guest-real-dates`): 269 tests, 269 pass, 0 fail.
 - `npm run test:assistant`: 67 of 67 pass.
 - Not run: full `npm test`, `npm run test:workers`. No client.ts change, no client.js regenerated.
+
+**Status.** Issue 03 stays `ready-for-agent`; the batch gate is still open.
+
+### Final polish (28 Oct 2026, HEAD c4e134f)
+
+**1. General-area where chip (fixed, warm and cold).** Warm, the results route kept the old neighbourhood (`neighbourhood=Old+Ikoyi`) while the strip said "Lagos (all areas)". Cold was correct. Root cause: the warm results surface is rebuilt from the runtime's stored discovery artifact, and a chip search never handed the new artifact to the runtime, so the rebuild used the typed search's artifact. Fix (about eight lines): `applyDiscoveryShortlist` takes the new artifact, and the reconcile after a chip search passes it. No shared contract changed. Test: `(g, warm)` and `(g, cold)` assert no `neighbourhood=` in any results route and no neighbourhood in the stay. Mutation check: removing the artifact pass-through fails `(g, warm)`.
+
+**2. Equivalent guards (both removed, documented as equivalent).**
+- Planner path (`applied.result.error === undefined &&` dropped): `applyTaskTool` never changes the active task on an error, so `applied.activeTaskId !== previousActiveTaskId` alone already rejects a refused switch. The actual-change guard is not dead: without it a refused `switch_task` returns the same state object and the removal clears the live proposal (mutant A, killed by the model-invoked tests).
+- Event path (`if (applied.activeTaskId !== thread.activeTaskId)` dropped): a refused event returns before the removal. A same-task switch removes from the previous task's state object, and `#syncActiveTask` then overwrites that task's stored state from the committed state, so the removal has no effect. For a real switch the removal runs either way. Mutant B (this guard removed) left all 16 supersession tests green before this change, which is the empirical check; the reasoning above is why no test can observe it.
+Comments in `assistant-runtime.ts` now state these roles, and neither claims a guard that is dead.
+
+**3. Refreshed references.** Issue 06 Comments: the clone and commit lines are re-measured at this commit (clone at 735 and 1356; `handleTurn` commits at 780, 806, 829, 1209, 1257; `handleAssistantEvent` commits at 1393, 1460, 1491). The issue 03 note "about line 748" now refers to the notice comment by name. The recordings are described as content-identical (line endings aside).
+
+**4. Test hygiene.** The supersession file's ADR 0074 header is restored (scope, staging-like versus phone-only rationale) and the double blank line removed. The four `LocalGuestEnvironment.openNode` literals in `test/assistant-pending-action-restore.test.ts` now use the shared `phoneGuest()` from `test/helpers/assistant-chip-session.ts`. The criteria-strip and budget chip events are not extracted, as asked.
+
+**5. Catalogue membership (fixed, with tests).** `recordGuestArea` now records only areas in the strip's catalogue, through the existing `searchAreaFor` (SEARCH_AREAS in `concierge.ts`). Nothing new is invented. Test `(h, warm)`: an unknown city and an unknown neighbourhood are refused and change nothing; a catalogue area is recorded. Mutation check: removing the catalogue check fails `(h, warm)`.
+
+**Commands and counts (env -u LLM_API_KEY).**
+- `npm run check`: exit 0.
+- Affected set (`assistant-where-chip`, `assistant-proposal-supersession`, `assistant-proposal-replacement`, `assistant-pending-action-restore`, `assistant-cold-journey`, `assistant-turn-stop-cold-restore`, `assistant-artifact-authority`, `assistant-booking-journey`, `assistant-recorded-journeys`, `assistant-recording-clients`, `shortlet-assistant-evals`, `guest-chip-continuity`, `assistant-discovery-view`, `assistant-persistent-continuity`, `assistant-scope-persistence`, `guest-account-linking`, `guest-account-sign-in`, `guest-offer-access`, `guest-real-dates`): 272 tests, 272 pass, 0 fail, 0 skipped.
+- `npm run test:assistant`: 67 of 67 pass.
+- Mutation checks (each restored with `cmp`): removing the artifact pass-through (`(g, warm)` fails); removing the catalogue check (`(h, warm)` fails).
+- Not run: full `npm test`, `npm run test:workers`.
 
 **Status.** Issue 03 stays `ready-for-agent`; the batch gate is still open.

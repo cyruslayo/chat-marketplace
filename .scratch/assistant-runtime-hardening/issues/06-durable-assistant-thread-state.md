@@ -46,8 +46,8 @@ The Cloudflare Agents SDK's useful idea is one Durable Object per conversation w
 Not fixed in issue 03 (commit c4d172c). It needs one mutating run per thread (ADR 0070), which is this issue's scope.
 
 Probe (reviewer): a typed turn is in flight, and a confirm for the same proposal lands while it runs. Both paths clone the task state when they start and commit the whole clone when they finish:
-- `handleTurn` clones at `assistant-runtime.ts:711` (`let candidateTaskState = cloneTaskState(thread.taskState)`) and commits it at lines 755, 781, 804 (the typed confirm and cancel paths), 1183, 1231 and 1249.
-- `handleAssistantEvent` clones at `assistant-runtime.ts:1330` and commits at lines 1365, 1432 and 1463.
+- `handleTurn` clones at `assistant-runtime.ts:735` (`let candidateTaskState = cloneTaskState(thread.taskState)`) and commits it at lines 780, 806 and 829 (the typed confirm and cancel paths) and 1209 and 1257 (the turn's main commit points). Line numbers measured at the commit that adds this note, after the review follow-ups.
+- `handleAssistantEvent` clones at `assistant-runtime.ts:1356` and commits at lines 1393, 1460 and 1491.
 
 The confirm executes the proposal and commits. The in-flight turn then commits its older clone, which still holds the proposal as pending, so the executed proposal is restored. A later typed yes then tries to confirm it again.
 

@@ -167,3 +167,40 @@ for (const cold of [false, true]) {
     } finally { environment.close(); }
   });
 }
+
+// A general area ("Lagos (all areas)") has no neighbourhood. Review follow-up: the results route and the assistant's stay must not
+// keep the old neighbourhood. Warm, the runtime's stored discovery artifact is the one the page rebuild reads, so the chip search
+// passes its artifact to the runtime (applyDiscoveryShortlist). The warm route was stale before that.
+for (const cold of [false, true]) {
+  const mode = cold ? "cold" : "warm";
+  test(`(g, ${mode}) A general-area where chip ("Lagos (all areas)") leaves no neighbourhood in the results route or in the assistant's stay.`, async () => {
+    const environment = stagingGuest();
+    try {
+      const driver = openChipDriver(environment, journeyScriptedModel(SCENARIO), { cold, threadId: THREAD });
+      await driver.typed(SEARCH_TEXT);
+      assertOk(await driver.chip(CRITERIA_EDIT_EVENT, { field: "where", area: "lagos" }), "general area");
+
+      const shown = shownArea(driver);
+      assert.equal(shown.where, "Lagos (all areas)", "the strip shows the general area after a reload");
+      assert.ok(shown.routes.length > 0, "the results are shown");
+      assert.ok(shown.routes.every((route) => !/neighbourhood=/.test(route)), `no results route keeps a neighbourhood: ${shown.routes.join(" | ")}`);
+      assert.equal(driver.stay().neighbourhood, undefined, "the assistant's stay has no neighbourhood");
+      assert.equal(driver.stay().location, "Lagos");
+    } finally { environment.close(); }
+  });
+}
+
+test("(h, warm) recordGuestArea records only areas of the strip's catalogue; any other city or neighbourhood is refused and the stay is unchanged.", async () => {
+  const environment = stagingGuest();
+  try {
+    const driver = openChipDriver(environment, journeyScriptedModel(SCENARIO), { cold: false, threadId: THREAD });
+    await driver.typed(SEARCH_TEXT);
+    const runtime = driver.step().runtime;
+    const before = driver.stay();
+    assert.equal(runtime.recordGuestArea(THREAD, { city: "Mars" }), false, "an unknown city is refused");
+    assert.equal(runtime.recordGuestArea(THREAD, { city: "Lagos", neighbourhood: "Atlantis" }), false, "an unknown neighbourhood is refused");
+    assert.deepEqual(driver.stay(), before, "a refused area changes nothing");
+    assert.equal(runtime.recordGuestArea(THREAD, { city: "Lagos", neighbourhood: "Old Ikoyi" }), true, "a catalogue area is recorded");
+    assert.equal(driver.stay().neighbourhood, "Old Ikoyi");
+  } finally { environment.close(); }
+});
