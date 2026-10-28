@@ -79,11 +79,12 @@ export const LIVE_LIKE_CLOCK = (): Date => new Date("2026-10-27T10:00:00Z");
  * `stagingGuest` starts the guest with no phone or email, as the staging Durable Object does (shortlet-pilot-do.ts), so a
  * journey meets the same contact-details step a live guest does.
  */
-export function datedFixture(model: AssistantModelClient, diagnostics?: AssistantDiagnosticEvent[], options: { readonly clock?: () => Date; readonly stagingGuest?: boolean } = {}): DatedFixture {
+export function datedFixture(model: AssistantModelClient, diagnostics?: AssistantDiagnosticEvent[], options: { readonly clock?: () => Date; readonly stagingGuest?: boolean; readonly paystackClient?: NonNullable<Parameters<typeof LocalGuestEnvironment.openNode>[0]>["paystackClient"] } = {}): DatedFixture {
   const directory = mkdtempSync(join(tmpdir(), "date-literal-"));
   const environment = LocalGuestEnvironment.openNode({
     databasePath: join(directory, "guest.sqlite"),
     ...(options.clock ? { clock: options.clock } : {}),
+    ...(options.paystackClient ? { paystackClient: options.paystackClient } : {}),
     ...(options.stagingGuest ? { initialGuestPhoneNumber: null, initialGuestContactEmail: null } : {}),
   });
   return { ...wireDatedApp(environment, model, diagnostics), close() { environment.close(); rmSync(directory, { recursive: true, force: true }); } };

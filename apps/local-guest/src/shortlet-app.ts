@@ -1219,6 +1219,9 @@ export class LocalGuestApp {
         message:
           "That action is no longer available; please use the current options.",
       };
+    // The contact pre-check chooses the input surface only; the gate below stays the authority (ADR 0106).
+    const contactPrompt = this.#paymentContactPrompt(thread, event);
+    if (contactPrompt) return contactPrompt;
     const resolved = resolveCardPaymentServerEvent({
       event: this.#handoff(event),
       application: this.#environment.cardPaymentApp,
@@ -1275,18 +1278,49 @@ export class LocalGuestApp {
         ],
       };
     } catch (error) {
-      if (
-        /email address is required/i.test(
-          error instanceof Error ? error.message : "",
-        )
-      )
+      const message = error instanceof Error ? error.message : "";
+      if (/email address is required/i.test(message))
         return this.#contactSurface(thread, "email", event.context ?? {});
+      if (/phone number is required/i.test(message))
+        return this.#contactSurface(thread, "phone", { ...(event.context ?? {}), resumeAction: "payment" });
       return {
         ok: false,
         code: "ACTION_NOT_AUTHORIZED",
         message: "The secure card checkout could not be started.",
       };
     }
+  }
+
+  /**
+   * The contact prompt a payment start needs before its command runs: phone first, then email, as the domain checks them
+   * (card-payment.ts). A prompt is offered only for an offer the payer can still pay: accepted, inside its payment window,
+   * with the payer's initialize action on the artifact. Any other offer gets no prompt and falls through to the gate, which
+   * rejects it closed (ADR 0106). The result carries no contact value (ADR 0093).
+   */
+  #paymentContactPrompt(
+    thread: GuestThreadState,
+    event: GuestEventPayload,
+  ): GuestTurnResult | undefined {
+    const environment = this.#environment;
+    const principal = environment.guestPrincipal();
+    let payable: boolean;
+    try {
+      const offer = environment.conditionalOfferApp.getOffer(thread.offerId!);
+      const artifact = environment.cardPaymentApp.getArtifact(thread.offerId!, principal);
+      payable =
+        offer.status === "accepted" &&
+        environment.clock().getTime() < new Date(offer.paymentWindow.expiresAt).getTime() &&
+        artifact.actions.some((action) => action.type === "initialize_checkout");
+    } catch {
+      return undefined;
+    }
+    if (!payable) return undefined;
+    const contact = environment.guestContactApp.get(principal);
+    if (!contact?.phoneNumber)
+      return this.#contactSurface(thread, "phone", { ...(event.context ?? {}), resumeAction: "payment" });
+    if (!contact.contactEmail)
+      return this.#contactSurface(thread, "email", event.context ?? {});
+    return undefined;
   }
 
   #handleEvent(threadId: string, payload: unknown): GuestTurnResult {
@@ -4861,6 +4895,13 @@ export class LocalGuestApp {
       resumeAction,
       ...resumeContext
     } = event.context ?? {};
+    // A phone prompt raised by the payment start resumes the payment, not the booking draft.
+    if (resumeAction === "payment")
+      return this.#handleCardCheckout(thread, {
+        ...event,
+        name: CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT,
+        context: resumeContext,
+      });
     return resumeAction === "review"
       ? this.#handleDraftReview(thread, {
           ...event,
