@@ -101,7 +101,7 @@ export function restartedDatedApp(previous: DatedFixture, model: AssistantModelC
   return wireDatedApp(previous.environment, model, diagnostics);
 }
 
-export function wireDatedApp(environment: LocalGuestEnvironment, model: AssistantModelClient, diagnostics?: AssistantDiagnosticEvent[], additionalPacks?: readonly AssistantDomainPack[]): Omit<DatedFixture, "close"> {
+export function wireDatedApp(environment: LocalGuestEnvironment, model: AssistantModelClient, diagnostics?: AssistantDiagnosticEvent[], additionalPacks?: readonly AssistantDomainPack[], appOptions: { readonly paystackCheckoutTimeoutMs?: number } = {}): Omit<DatedFixture, "close"> {
   const budget = new ModelCallBudget(10, () => environment.clock());
   const quota = new SqliteModelRequestQuota(environment.database, { clock: environment.clock, dailyTenantLimit: 3_000, hourlyGuestLimit: 60 });
   const identity = { tenantId: environment.config.tenantId, guestId: environment.config.guestId };
@@ -110,7 +110,7 @@ export function wireDatedApp(environment: LocalGuestEnvironment, model: Assistan
     onDiagnostic: (event) => diagnostics?.push(event),
     additionalPacks,
   });
-  const app = new LocalGuestApp(environment, { assistantRuntime: runtime, modelCallBudget: budget });
+  const app = new LocalGuestApp(environment, { assistantRuntime: runtime, modelCallBudget: budget, ...appOptions });
   return { environment, budget, runtime, app };
 }
 

@@ -162,6 +162,13 @@ export interface ProviderGate {
   release(): void;
   /** When set, the held call rejects on release instead of answering. */
   failOnRelease?: Error;
+  /** When set, the held call never resolves and ignores its abort (a stuck provider). */
+  neverResolve?: boolean;
+}
+
+/** The application options a checkout test can inject: a short provider bound, so the timeout is observed without real waiting. */
+export interface CheckoutAppOptions {
+  readonly paystackCheckoutTimeoutMs?: number;
 }
 
 export interface CheckoutWorld {
@@ -182,6 +189,7 @@ export function checkoutWorld(clock: () => Date = LIVE_LIKE_CLOCK): CheckoutWorl
     if (gate.armed) {
       gate.armed = false;
       reach();
+      if (gate.neverResolve) await new Promise<never>(() => undefined);
       await released;
       if (gate.failOnRelease) throw gate.failOnRelease;
     }
@@ -193,8 +201,8 @@ export function checkoutWorld(clock: () => Date = LIVE_LIKE_CLOCK): CheckoutWorl
 }
 
 /** A new application over the same store, loaded as a page load does, before the next event is sent (a cold restore). */
-export function coldCheckoutApp(world: CheckoutWorld, threadId: string) {
-  const restored = wireDatedApp(world.environment, scriptedPlanner(CHECKOUT_SCRIPT).client);
+export function coldCheckoutApp(world: CheckoutWorld, threadId: string, appOptions: CheckoutAppOptions = {}) {
+  const restored = wireDatedApp(world.environment, scriptedPlanner(CHECKOUT_SCRIPT).client, undefined, undefined, appOptions);
   restored.app.getState(threadId);
   return restored;
 }

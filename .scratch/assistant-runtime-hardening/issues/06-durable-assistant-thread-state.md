@@ -224,3 +224,28 @@ Required by this issue: serialise mutating turns per thread (one active run; a s
 **Finding 2 (not fixed; to verify).** After a provider failure the checkout command leaves a checkout session. A cold restore then shows "Payment handoff ready" with a continue route, and the original ready surface is superseded, so the same checkout event returns `STALE_SURFACE`. Whether that continue route can recover a checkout whose provider call failed is not verified here.
 
 **Status.** Unchanged, `ready-for-agent`. The Paystack release gap (item 4) now has tests. The batch gate is still open (full `npm test` and `npm run test:workers` before any merge to main).
+
+### Review finding (28 Oct 2026): the Paystack provider await had no bound (M13 closed)
+
+Blocking review finding: `#handlePaystackCardCheckout` awaited the Paystack `initializePaystackCheckout` call while holding the thread's run (`beginShellRun`, released in `finally`). `DirectPaystackClient` sets no timeout, so a call that never resolves held the run for ever, and every typed turn or event returned `THREAD_BUSY`.
+
+**Tests first.** One test appended to `test/assistant-thread-lock.test.ts`: "a Paystack checkout whose provider call never resolves is refused with the closed copy after the bound, and releases the run". The provider fetcher never resolves and ignores its abort (`ProviderGate.neverResolve`, in `test/helpers/assistant-thread-lock-fixtures.ts`). The bound is injected through a short option (`paystackCheckoutTimeoutMs`, 20 ms), so no real waiting happens. The test carries a 15 s node timeout as a regression guard. Before the fix it did not pass: node reported it cancelled, with the event loop empty, because the event never returned.
+
+**Fix (`apps/local-guest/src/shortlet-app.ts`, CRLF kept).**
+- `PAYSTACK_CHECKOUT_PROVIDER_TIMEOUT_MS = 20_000`, a named engineering setting (owner to confirm). It matches the other provider request defaults (`DEFAULT_OPENAI_COMPATIBLE_TIMEOUT_MS`, `PLANNER_REQUEST_TIMEOUT_MS`). No existing constant covers Paystack.
+- `LocalGuestApp` takes `paystackCheckoutTimeoutMs` (positive integer, validated).
+- `#boundProviderCall` races the provider call against the bound; its timer is cleared in `finally`, the same pattern as `#generatePlan`.
+- On expiry the existing `catch` returns the existing closed refusal: `ACTION_NOT_AUTHORIZED` with the existing copy "The secure card checkout could not be started." No new outcome code (ADR 0106). The run is released in the caller's `finally`.
+- `packages/platform-core` (the Paystack client) is not touched.
+- Fixture change: `wireDatedApp` (`test/helpers/guest-date-fixtures.ts`) takes an optional `appOptions` argument, and `coldCheckoutApp` passes it through.
+
+**Mutation M13.** `return await Promise.race([call, bound]);` replaced by `return await call;` (the bound removed). The new test fails (1 of 1, bounded by the 15 s guard). The file was restored from a saved copy, and `cmp` reports it identical. SHA-256 of the fixed file `5fb482d3fd07773d52a7b0a14a305e2aa28edcda7c45917e3765892750e49cb5` (before the mutation and after the restore). The file before the fix was `3df2bf446d0e2665d9c40b147f9eeec7b1984a13bd2c6960f9d796b68291807b`.
+
+**Commands and counts (final code).**
+- `env -u LLM_API_KEY npm run check`: exit 0 (root `tsc`, `apps/cloudflare` `tsc`, its test and tooling configs, the Worker bundle guard).
+- `env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow node --import tsx --test test/assistant-thread-lock.test.ts test/assistant-session-thread-lock.test.ts`: 31 tests, 31 pass, 0 fail, 0 cancelled (lock file 29, session file 2).
+- Single test before the fix: 0 pass, 1 cancelled. After the fix: 1 pass. Mutation run: 1 fail.
+
+**Follow-up.** The two pre-existing checkout defects found while writing these tests are recorded in `.scratch/assistant-runtime-hardening/issues/09-paystack-checkout-email-and-provider-failure.md` (needs-triage): the missing-email `ACTION_NOT_AUTHORIZED` instead of the email prompt, and the checkout session left without a `checkoutUrl` after a provider failure (recovery unverified).
+
+**Status.** Unchanged, `ready-for-agent`. The batch gate is still open (`npm run test:workers` and the full `npm test` once before any merge to main).

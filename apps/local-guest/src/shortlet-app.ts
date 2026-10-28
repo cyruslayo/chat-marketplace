@@ -729,12 +729,20 @@ interface PendingDraftReplacement {
   readonly surfaceId: string;
 }
 
+/**
+ * Issue 06 (M13, engineering setting): the longest the Paystack checkout waits for the provider's initialize call while it holds the
+ * thread's run. The Paystack client sets no timeout of its own, so a call that never resolves would hold the run for ever. On expiry
+ * the event returns the existing ACTION_NOT_AUTHORIZED refusal and the run is released (ADR 0106: no new outcome code).
+ */
+export const PAYSTACK_CHECKOUT_PROVIDER_TIMEOUT_MS = 20_000;
+
 export class LocalGuestApp {
   #environment: LocalGuestEnvironment;
   readonly #threads = new Map<string, GuestThreadState>();
   readonly #geminiClient: GeminiConciergeClient | null;
   readonly #assistantRuntime: AssistantRuntime | null;
   readonly #modelCallBudget: ModelCallBudget | null;
+  readonly #paystackCheckoutTimeoutMs: number;
 
   constructor(
     environment: LocalGuestEnvironment,
@@ -743,12 +751,17 @@ export class LocalGuestApp {
       readonly assistantRuntime?: AssistantRuntime;
       /** Issue 19: once the daily cap is spent, new turns use the deterministic concierge (ADR 0080). */
       readonly modelCallBudget?: ModelCallBudget;
+      /** Issue 06 (M13): bound on the Paystack initialize call that holds the thread's run. Injected by tests. */
+      readonly paystackCheckoutTimeoutMs?: number;
     } = {},
   ) {
     this.#environment = environment;
     this.#geminiClient = options.geminiClient ?? null;
     this.#assistantRuntime = options.assistantRuntime ?? null;
     this.#modelCallBudget = options.modelCallBudget ?? null;
+    const timeoutMs = options.paystackCheckoutTimeoutMs ?? PAYSTACK_CHECKOUT_PROVIDER_TIMEOUT_MS;
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) throw new Error("paystackCheckoutTimeoutMs must be a positive integer");
+    this.#paystackCheckoutTimeoutMs = timeoutMs;
   }
 
   get environment(): LocalGuestEnvironment {
@@ -1275,12 +1288,14 @@ export class LocalGuestApp {
     });
     if (!resolved.ok) return resolved;
     try {
-      const session =
-        await this.#environment.cardPaymentApp.initializePaystackCheckout(
+      // Issue 06 (M13): the provider await is bounded, so a call that never resolves releases the thread's run (see the constant).
+      const session = await this.#boundProviderCall(
+        this.#environment.cardPaymentApp.initializePaystackCheckout(
           thread.offerId!,
           this.#environment.guestPrincipal(),
           this.#environment.payments,
-        );
+        ),
+      );
       const artifact = this.#environment.cardPaymentApp.getArtifact(
         thread.offerId!,
         this.#environment.guestPrincipal(),
@@ -1335,6 +1350,19 @@ export class LocalGuestApp {
         code: "ACTION_NOT_AUTHORIZED",
         message: "The secure card checkout could not be started.",
       };
+    }
+  }
+
+  /** Issue 06 (M13): races a provider call against the checkout bound. A late result of a call that outlives the bound is ignored. */
+  async #boundProviderCall<T>(call: Promise<T>): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const bound = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error("Paystack checkout provider call exceeded its bound")), this.#paystackCheckoutTimeoutMs);
+    });
+    try {
+      return await Promise.race([call, bound]);
+    } finally {
+      clearTimeout(timer);
     }
   }
 

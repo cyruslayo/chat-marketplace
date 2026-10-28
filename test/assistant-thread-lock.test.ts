@@ -628,3 +628,31 @@ test("the Paystack checkout releases the thread's run when the provider call fai
   assert.equal(codeOf(following), "STALE_SURFACE", "a following event reaches the handler after the failed checkout, not the lock");
   assert.equal(coldCheckoutApp(world, THREAD).runtime.threadBusy(THREAD), false, "no run is left holding the thread");
 });
+
+// Issue 06 (M13): the provider await is bounded. A Paystack call that never resolves and ignores its abort ends the event with the
+// closed refusal after the bound, releases the run, and lets the next typed turn and event through. The bound is injected
+// (paystackCheckoutTimeoutMs), so the timeout is observed without real waiting. The node timeout only bounds a regression.
+
+const SHORT_CHECKOUT_BOUND_MS = 20;
+const REGRESSION_GUARD_MS = 15_000;
+
+test("a Paystack checkout whose provider call never resolves is refused with the closed copy after the bound, and releases the run", { timeout: REGRESSION_GUARD_MS }, async () => {
+  const world = checkoutWorld();
+  const payment = await reachCheckout(world, THREAD);
+  const checkout = checkoutActionOn(payment.surfaces[0]!);
+  assert.ok(checkout, "the payment surface starts Paystack checkout");
+
+  world.gate.armed = true;
+  world.gate.neverResolve = true;
+  const holder = coldCheckoutApp(world, THREAD, { paystackCheckoutTimeoutMs: SHORT_CHECKOUT_BOUND_MS });
+  const refused = await holder.app.handleEventAsync(THREAD, checkout);
+  assert.equal(refused.ok, false, "a provider call that never resolves ends the event at the bound, not with a success");
+  assert.equal(codeOf(refused), "ACTION_NOT_AUTHORIZED", "the timed-out checkout returns the existing closed refusal");
+  assert.equal(refused.ok ? undefined : refused.message, "The secure card checkout could not be started.", "the refusal reuses the existing copy");
+  assert.equal(holder.runtime.threadBusy(THREAD), false, "the timed-out checkout releases the thread's run");
+
+  // The lock is free: a typed turn and the same event reach their handlers, not THREAD_BUSY.
+  const bounded = { paystackCheckoutTimeoutMs: SHORT_CHECKOUT_BOUND_MS };
+  assert.notEqual(codeOf(await coldCheckoutApp(world, THREAD, bounded).app.handleTurn(THREAD, "Show me another one")), THREAD_BUSY_CODE, "a typed turn after the timed-out checkout is not refused as busy");
+  assert.equal(codeOf(await coldCheckoutApp(world, THREAD, bounded).app.handleEventAsync(THREAD, checkout)), "STALE_SURFACE", "a following event reaches its handler after the timed-out checkout, not the lock");
+});
