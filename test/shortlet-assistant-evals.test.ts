@@ -802,7 +802,9 @@ test("Server-only diagnostics safely expose provider status and code while the g
 
   assert.equal(response.code, "CONCIERGE_UNAVAILABLE");
   assert.equal(response.message, "The concierge is temporarily unavailable. Please try again.");
-  const failure = events.at(-1);
+  // Issue 02: the turn ends with a closed `turn_stop` event; the provider failure is the last failure event before it.
+  assert.deepEqual(events.at(-1), { stage: "turn_stop", round: 1, succeeded: false, stopReason: "error" });
+  const failure = events.filter((event) => event.stage !== "turn_stop").at(-1);
   assert.deepEqual(failure, {
     stage: "provider_request",
     round: 1,

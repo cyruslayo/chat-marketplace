@@ -58,6 +58,16 @@ export const ASSISTANT_CONTROL_OUTCOMES = [
 ] as const;
 export type AssistantControlOutcome = typeof ASSISTANT_CONTROL_OUTCOMES[number];
 
+/**
+ * Why a planner turn stopped (issue 02). Present on a turn that reached the planner loop; scope redirects and
+ * deterministic confirmations never reach it and carry no stop reason.
+ * - `reply`: the model answered without tool calls.
+ * - `round_limit`: the round cap was reached and the summary call made the reply.
+ * - `turn_deadline`: the whole-turn deadline was reached before the turn's next model call.
+ * - `error`: a failure path (the failure class stays on the diagnostics).
+ */
+export type AssistantStopReason = "reply" | "round_limit" | "turn_deadline" | "error";
+
 export interface AssistantTurnOutput {
   readonly ok: boolean;
   readonly code?: string;
@@ -69,6 +79,7 @@ export interface AssistantTurnOutput {
   readonly providerUnavailable?: boolean;
   readonly discardUserInput?: boolean;
   readonly controlOutcome?: AssistantControlOutcome;
+  readonly stopReason?: AssistantStopReason;
 }
 
 /** A task's entry in the shell rail, derived from the active pack's `taskSummary`. */
@@ -97,7 +108,9 @@ export type AssistantDiagnosticStage =
   | "a2ui"
   | "weaver"
   | "tool_execution"
-  | "function_result_round_trip";
+  | "function_result_round_trip"
+  /** Issue 02: one closed event per planner turn that reached the planner loop, carrying its stop reason. */
+  | "turn_stop";
 
 export type AssistantFailureClass =
   | "PROVIDER_TRANSPORT_FAILURE"
@@ -137,6 +150,8 @@ export interface AssistantDiagnosticEvent {
   readonly firstAttemptFinishReason?: import("./assistant-model.js").AssistantFinishReason;
   /** ADR 0075 / 0106: a fixed rejection code for a reply plan; the rejected text is never recorded. */
   readonly replyPlanRejectionReason?: ReplyPlanRejectionReason;
+  /** Issue 02: the closed stop reason, on the `turn_stop` event. */
+  readonly stopReason?: AssistantStopReason;
 }
 
 export type ReplyPlanRejectionReason = "empty_text" | "unexpected_tool_calls" | "not_json" | "not_object" | "invalid_shape"
@@ -158,6 +173,10 @@ export interface AssistantRuntimeOptions {
   readonly maxHistoryCharacters?: number;
   /** Maximum projected result/reference items retained in model context. */
   readonly maxContextItems?: number;
+  /** Timeout for one planner request and for the post-cap summary call (issue 02, engineering setting). */
+  readonly modelCallTimeoutMs?: number;
+  /** Whole-turn limit, measured from the start of the turn on the environment clock (issue 02, ADR 0079). */
+  readonly turnDeadlineMs?: number;
 }
 
 export interface AssistantShortletRestoreInput {
@@ -197,6 +216,18 @@ const MAX_ASSISTANT_HISTORY_STEPS = 512;
 const MAX_ASSISTANT_HISTORY_CHARACTERS = 262_144;
 const MAX_ASSISTANT_CONTEXT_ITEMS = 128;
 const MAX_ASSISTANT_REPLY_OUTPUT_TOKENS = 4096;
+/** Issue 02: the planner request timeout the runtime has always used (turn-budget.ts). */
+export const DEFAULT_ASSISTANT_MODEL_CALL_TIMEOUT_MS = PLANNER_REQUEST_TIMEOUT_MS;
+/** ADR 0079: the 120-second standard-run limit (provisional engineering target), applied to one whole turn. */
+export const DEFAULT_ASSISTANT_TURN_DEADLINE_MS = 120_000;
+
+/** Thrown before a model call that would start after the turn deadline. Caught by `handleTurn` only. */
+class AssistantTurnDeadlineError extends Error {
+  constructor() {
+    super("turn_deadline");
+    this.name = "AssistantTurnDeadlineError";
+  }
+}
 /** ADR 0106: references name tools whose results this turn produced. The parser stays the authority; the enum only narrows the provider output. */
 function replyPlanSchema(referenceNames: readonly string[]): Record<string, unknown> {
   const names = [...new Set(referenceNames)];
@@ -246,6 +277,8 @@ export class AssistantRuntime {
   readonly #maxHistorySteps: number;
   readonly #maxHistoryCharacters: number;
   readonly #maxContextItems: number;
+  readonly #modelCallTimeoutMs: number;
+  readonly #turnDeadlineMs: number;
   readonly #threads = new Map<string, AssistantThreadState>();
   readonly #packs = new AssistantPackRegistry();
 
@@ -270,6 +303,11 @@ export class AssistantRuntime {
       || !Number.isSafeInteger(this.#maxHistorySteps) || this.#maxHistorySteps < 2 || this.#maxHistorySteps > MAX_ASSISTANT_HISTORY_STEPS
       || !Number.isSafeInteger(this.#maxHistoryCharacters) || this.#maxHistoryCharacters < 256 || this.#maxHistoryCharacters > MAX_ASSISTANT_HISTORY_CHARACTERS) throw new Error("Scope and history engineering limits are outside configured bounds");
     if (!Number.isSafeInteger(this.#maxContextItems) || this.#maxContextItems < 1 || this.#maxContextItems > MAX_ASSISTANT_CONTEXT_ITEMS) throw new Error("maxContextItems is outside configured bounds");
+    this.#modelCallTimeoutMs = options.modelCallTimeoutMs ?? DEFAULT_ASSISTANT_MODEL_CALL_TIMEOUT_MS;
+    this.#turnDeadlineMs = options.turnDeadlineMs ?? DEFAULT_ASSISTANT_TURN_DEADLINE_MS;
+    if (![this.#modelCallTimeoutMs, this.#turnDeadlineMs].every((value) => Number.isSafeInteger(value) && value > 0)) {
+      throw new Error("modelCallTimeoutMs and turnDeadlineMs must be positive integers");
+    }
     if (options.scopeReasoningEffort !== undefined && options.scopeReasoningEffort !== "none" && options.scopeReasoningEffort !== "provider_default") throw new Error("Invalid scope reasoning effort");
     // ADR 0106 amendment: the default path retries an eligible JSON-shape failure once with an identical request.
     // Injected classifiers keep their single attempt and the scope timeout as before.
@@ -575,6 +613,11 @@ export class AssistantRuntime {
   async handleTurn(threadId: string, text: string): Promise<AssistantTurnOutput> {
     const controlStartedAt = performance.now();
     const recordOutcome = (outcome: AssistantControlOutcome) => this.#recordControlOutcome(outcome, performance.now() - controlStartedAt);
+    // Issue 02 / ADR 0079: the turn deadline runs from the start of the turn, scope stage included.
+    const turnStartedAt = this.#environment.clock().getTime();
+    const assertWithinTurnDeadline = () => {
+      if (this.#environment.clock().getTime() - turnStartedAt >= this.#turnDeadlineMs) throw new AssistantTurnDeadlineError();
+    };
     const thread = this.getThread(threadId);
 
     // 1. Transactional Candidates (Item 24)
@@ -732,6 +775,7 @@ export class AssistantRuntime {
     let latestRawResults: AssistantToolResult[] = [];
     let turnRawResults: AssistantToolResult[] = [];
     let controlOutcome: AssistantControlOutcome = "successful_model_handling";
+    let stopReason: AssistantStopReason | undefined;
 
     try {
       while (round < MAX_ASSISTANT_TOOL_ROUNDS) {
@@ -739,11 +783,12 @@ export class AssistantRuntime {
 
         const isFunctionResultContinuation = round > 1 && candidateHistory.at(-1)?.role === "tool_results";
         activeStage = isFunctionResultContinuation ? "function_result_round_trip" : "provider_request";
+        assertWithinTurnDeadline();
         const modelResponse = await this.#modelClient.generate({
           systemInstruction: composeSystemInstruction(candidatePack()),
           tools: taskTools(),
           history: this.#boundedHistory(candidateHistory, candidatePack(), candidateTaskState),
-          timeoutMs: PLANNER_REQUEST_TIMEOUT_MS,
+          timeoutMs: this.#modelCallTimeoutMs,
           structuredOutput: { name: "assistant_reply_plan", schema: replyPlanSchema(successfulToolNames(turnRawResults)), strict: true },
           maxOutputTokens: this.#maxPlanningOutputTokens,
         });
@@ -774,6 +819,7 @@ export class AssistantRuntime {
           finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "")
             ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
           candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
+          stopReason = "reply";
           break;
         }
 
@@ -970,13 +1016,17 @@ export class AssistantRuntime {
       }
 
       if (!finalAssistantReply) {
-        // Run one final step to get summary reply if bounded rounds reached
+        // Run one final step to get summary reply if bounded rounds reached.
+        // ADR 0106 amendment / issue 02: the one tool-free summary call takes the same timeout and deadline as a planner round.
+        stopReason = "round_limit";
         round++;
         activeStage = "function_result_round_trip";
+        assertWithinTurnDeadline();
         const finalModelResponse = await this.#modelClient.generate({
           systemInstruction: composeSystemInstruction(candidatePack()),
           tools: [],
           history: this.#boundedHistory(candidateHistory, candidatePack(), candidateTaskState),
+          timeoutMs: this.#modelCallTimeoutMs,
           structuredOutput: { name: "assistant_reply_plan", schema: replyPlanSchema(successfulToolNames(turnRawResults)), strict: true },
           maxOutputTokens: this.#maxReplyOutputTokens,
         });
@@ -1008,6 +1058,8 @@ export class AssistantRuntime {
       thread.discoveryArtifact = candidateDiscoveryArtifact;
       this.#syncActiveTask(thread);
       recordOutcome(controlOutcome);
+      // Set by the reply branch (`reply`) or the summary call after the round cap (`round_limit`), never both.
+      this.#diagnose({ stage: "turn_stop", round, succeeded: true, stopReason });
 
       return {
         ok: true,
@@ -1017,16 +1069,24 @@ export class AssistantRuntime {
         modelHandled: true,
         discardUserInput,
         controlOutcome,
+        stopReason,
       };
     } catch (error) {
+      // Issue 02: the turn deadline is a stop of its own; every other failure is `error` and keeps its failure class.
+      const turnDeadline = error instanceof AssistantTurnDeadlineError;
+      stopReason = turnDeadline ? "turn_deadline" : "error";
       if (error instanceof ModelRequestGuardError && (error.code === "quota_denied" || error.code === "quota_unavailable")) {
         controlOutcome = error.code === "quota_denied" ? "quota_refusal" : "guard_failure";
       } else if (error instanceof ModelRequestGuardError && error.code === "deadline_exceeded") {
         controlOutcome = "guard_failure";
+      } else if (turnDeadline) {
+        // The turn deadline is a server-owned limit, counted like the guard's deadline.
+        controlOutcome = "guard_failure";
       } else {
         controlOutcome = "model_handling_failure";
       }
-      this.#diagnose(createFailureDiagnostic(activeStage, round, activeToolName, error));
+      if (!turnDeadline) this.#diagnose(createFailureDiagnostic(activeStage, round, activeToolName, error));
+      this.#diagnose({ stage: "turn_stop", round, succeeded: false, stopReason });
       if (hasSuccessfulApplicationOperation && candidateSurfaces.length > 0) {
         // The fallback replaces the failure outcome, so this turn is counted once as the fallback.
         controlOutcome = "rejected_plan_fallback";
@@ -1043,7 +1103,7 @@ export class AssistantRuntime {
         thread.discoveryArtifactId = candidateDiscoveryArtifactId;
         thread.discoveryArtifact = candidateDiscoveryArtifact;
         this.#syncActiveTask(thread);
-        return { ok: true, messages: [message], surfaces: candidateSurfaces, tasks: this.getTaskRail(threadId), modelHandled: true, discardUserInput, controlOutcome: "rejected_plan_fallback" };
+        return { ok: true, messages: [message], surfaces: candidateSurfaces, tasks: this.getTaskRail(threadId), modelHandled: true, discardUserInput, controlOutcome: "rejected_plan_fallback", stopReason };
       }
       if (error instanceof AssistantDateProvenanceError || error instanceof AssistantDateValidationError || error instanceof AssistantStayDetailsError) {
         // ADR 0106: a planner date the guest did not author, one that fails the stay rules, or a search missing its stay
@@ -1056,13 +1116,13 @@ export class AssistantRuntime {
           ? candidatePack().stayDetailsClarification
           : candidatePack().dateClarification;
         return { ok: true, messages: [clarification ?? ASSISTANT_CONTROL_COPY.unavailable], surfaces: [], modelHandled: false,
-          discardUserInput: false, controlOutcome, tasks: this.getTaskRail(threadId) };
+          discardUserInput: false, controlOutcome, tasks: this.getTaskRail(threadId), stopReason };
       }
       recordOutcome(controlOutcome);
       // Rollback: thread is not mutated on error
       if (discardUserInput) {
         return { ok: true, messages: [ASSISTANT_CONTROL_COPY.unavailable], surfaces: [],
-          modelHandled: false, discardUserInput: true, controlOutcome, tasks: this.getTaskRail(threadId) };
+          modelHandled: false, discardUserInput: true, controlOutcome, tasks: this.getTaskRail(threadId), stopReason };
       }
       if (error instanceof ModelRequestGuardError) {
         return {
@@ -1073,12 +1133,14 @@ export class AssistantRuntime {
           discardUserInput: true,
           controlOutcome,
           tasks: this.getTaskRail(threadId),
+          stopReason,
         };
       }
       return {
         ok: false,
         code: "CONCIERGE_UNAVAILABLE",
         message: "The concierge is temporarily unavailable. Please try again.",
+        stopReason,
         ...((activeStage === "provider_request" || activeStage === "function_result_round_trip") && isProviderUnavailable(error)
           ? { providerUnavailable: true } : {}),
       };
