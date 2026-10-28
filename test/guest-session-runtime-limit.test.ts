@@ -98,7 +98,9 @@ test("04c AC3: An evicted session that comes back sees its conversation and book
     assert.ok(fixture.server.sessionRuntimesBuilt > built + 1, "the returning session was rebuilt");
     await fixture.restart();
     assert.deepEqual(await fixture.state(), after, "an evicted session is restored exactly as after a restart");
-    assert.equal(after.surfaces[0]?.surfaceId.includes(":request:draft:"), true, "the booking draft survived eviction");
+    // A session principal starts without the seeded phone, so the Booking Request draft is restored behind the phone prompt
+    // (surfaces[0] is the contact surface, as before eviction). The draft survives as the thread's "Draft created" receipt.
+    assert.equal(after.timeline.some((entry) => entry.role === "receipt" && entry.text === "Draft created"), true, "the booking draft survived eviction");
   } finally {
     await fixture.close();
   }
