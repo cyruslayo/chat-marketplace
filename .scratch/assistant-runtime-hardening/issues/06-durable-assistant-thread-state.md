@@ -250,3 +250,25 @@ Blocking review finding: `#handlePaystackCardCheckout` awaited the Paystack `ini
 
 **Status.** Unchanged, `ready-for-agent`. The batch gate is still open (`npm run test:workers` and the full `npm test` once before any merge to main).
 - Shared fixture check (M13 change to `wireDatedApp`, an optional trailing argument): `env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow node --import tsx --test test/assistant-cold-journey.test.ts`: 3 tests, 3 pass, 0 fail.
+
+### Pre-merge gate: six failures triaged (28 Oct 2026)
+
+Base for the comparison is `26bafd5` (the parent of the hardening PRD commit `326b49b`), copied with `git archive` into the scratchpad with `node_modules` junctions. Every command ran with `env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow`.
+
+| # | File and criterion | Base 26bafd5 | Cause | Result |
+|---|---|---|---|---|
+| 1 | `test/domain-boundary.test.ts` AC4 (`date-literals.ts` imports `domains/shortlet/src/browse`) | fails AC4 only (3 of 4 pass), same error | `b41a351`, before the base. Not in the hardening diff | Left open, pre-existing. The allow-list note in issue 04 does not cover it, so no entry added. Fix to propose: re-export `BOOKING_HORIZON_DAYS` and `dateKeyInLagos` from `domains/shortlet/src/index.ts` and import from there |
+| 2 | `test/export-node-sqlite.test.ts` 16 AC1 (fixture) | fails 19/20 | `b68eecd` (27 Oct) moved `DEMO_TRUST_EXPIRES_ON` from 2027-03-01 to 2027-10-27. Exporter and fixture source unchanged | Fixed: regenerated with `UPDATE_NODE_EXPORT_FIXTURE=1`; the diff is two lines (the `units` table and its sha256). Commit `5abb6e7` |
+| 3 | `test/guest-session-runtime-limit.test.ts` 04c AC3 | fails 5/6 | The assertion expected `surfaces[0]` to be the `:request:draft:` surface. A session principal has no seeded phone, so the flow stops at the phone prompt, before and after eviction. `guest-server.ts` changes since base do not affect it (base fails identically) | Fixed in the test: the draft is checked by its "Draft created" receipt in the restored timeline; the equality checks before eviction, after eviction and across a restart are unchanged. Commit `b58f31c` |
+| 4 | `test/guest-turn-timeout.test.ts` AC5 | passes at base | Caused by issue 02: the planner call takes `plannerTimeoutMs` from `nextCallTimeoutMs()`, which is capped by `#modelCallTimeoutMs` (default `PLANNER_REQUEST_TIMEOUT_MS`) and the turn deadline | Fixed in the test: the regex checks the chain (`DEFAULT_ASSISTANT_MODEL_CALL_TIMEOUT_MS`, the `Math.min` cap, `plannerTimeoutMs`, `summaryTimeoutMs`); the no-literal check is kept. Commit `a86cb8b` |
+| 5 | `test/mobile-guest-journey-chromium.test.ts` AC2 (Retry after a timeout) | fails 1/1 at base, same "Timeout waiting for text: Retry" | Not the hardening. `7c24e83` set the browser turn wait to `CLIENT_TURN_TIMEOUT_MS` (188 s). The test stubs an 11 s late response and expects Retry within 12 s, so it relies on the old 10 s client wait | Left open, pre-existing. Fixing it needs a test hook that shortens the browser turn wait (not a test-only edit). The owner should choose |
+| 6 | `apps/cloudflare/test/daily-export.spec.ts` 12a AC2 (5000 ms timeout) | passes at base | Load sensitivity. The test takes 1391 ms solo on HEAD (`--reporter=verbose`). The six-spec set passes 50/50 on both base and HEAD in this run | Left alone, as instructed. Pre-existing timing sensitivity under load |
+
+Commands and counts:
+- `npm run check` (HEAD): exit 0 (tsc root, apps/cloudflare, tsconfig.test, tsconfig.tooling, worker bundle guard).
+- Base, failures 1, 2, 3, 4, 5 and 6: `node --import tsx --test test/domain-boundary.test.ts` (AC4 fails, 3 pass); `test/export-node-sqlite.test.ts` (19 pass, 1 fail, #11); `test/guest-session-runtime-limit.test.ts` (5 pass, 1 fail); `test/guest-turn-timeout.test.ts` (6 pass); `test/mobile-guest-journey-chromium.test.ts --test-name-pattern="AC2: A turn that times out"` (0 pass, 1 fail); `npm run test:workers -- apps/cloudflare/test/daily-export.spec.ts` (9 pass); the six-spec set `npm run test:workers -- <data-migration, daily-export, production-composition, platform-model-request-quota, ops-inventory, platform-account-runtime specs>` (50 pass).
+- HEAD after the fixes: `node --import tsx --test test/export-node-sqlite.test.ts test/guest-session-runtime-limit.test.ts test/guest-turn-timeout.test.ts` (32 tests, 32 pass); `npm run test:workers -- apps/cloudflare/test/daily-export.spec.ts` (9 pass, 12a AC2 1391 ms); six-spec set (50 pass).
+- `test:assistant` equivalent, `node --import tsx --test test/assistant-interactions-protocol.test.ts test/shortlet-assistant-evals.test.ts`: 67 tests, 67 pass.
+- Lock tests, `node --import tsx --test test/assistant-thread-lock.test.ts test/assistant-session-thread-lock.test.ts`: 31 tests, 31 pass.
+
+Still red after this pass: failure 1 (domain-boundary AC4) and failure 5 (mobile journey AC2). Both fail at the base, so neither was introduced by the hardening work, and neither was fixed here. Failure 6 is a timing sensitivity that did not reproduce against the six-spec set. The pre-merge gate stays open until the owner decides on 1 and 5.
