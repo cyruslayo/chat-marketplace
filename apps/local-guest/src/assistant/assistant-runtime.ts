@@ -69,10 +69,18 @@ export type AssistantControlOutcome = typeof ASSISTANT_CONTROL_OUTCOMES[number];
  * - `error`: a failure path (the failure class stays on the diagnostics).
  *
  * `turn_stop` diagnostics follow the same list. `succeeded` is true for `reply`, `round_limit` and `tool_denial`, and
- * false for `turn_deadline` and `error`. A `rejected_plan_fallback` turn takes its stop reason from how the loop ended:
- * a reply with a rejected plan (legacy prose or invalid references) is `reply`, succeeded; a projected-operation fallback
- * after a failure is `error` or `turn_deadline`, not succeeded. `turn_stop` covers planner turns only. Scope redirects,
- * unavailable scope, cross-domain routing and deterministic confirmations exit before the planner loop and emit none.
+ * false for `turn_deadline` and `error`.
+ *
+ * `rejected_plan_fallback` (controlOutcome) is not a stop reason. It marks a turn that returned the projected-operation
+ * fallback, and the stop reason records how the loop ended:
+ * - a reply with a rejected plan (legacy prose or invalid references) is `reply`, succeeded;
+ * - a rejected planner date or stay detail after a successful operation with a surface is `tool_denial`, succeeded, with
+ *   controlOutcome `rejected_plan_fallback` and the operation's surfaces returned (the fallback runs before the
+ *   clarification branch; see the test "a rejected date after a successful operation...");
+ * - a failure or the turn deadline after a successful operation with a surface is `error` or `turn_deadline`, not succeeded.
+ *
+ * `turn_stop` covers planner turns only. Scope redirects, unavailable scope, cross-domain routing and deterministic
+ * confirmations exit before the planner loop and emit none.
  */
 export type AssistantStopReason = "reply" | "round_limit" | "turn_deadline" | "tool_denial" | "error";
 
@@ -632,9 +640,14 @@ export class AssistantRuntime {
     const controlStartedAt = performance.now();
     const recordOutcome = (outcome: AssistantControlOutcome) => this.#recordControlOutcome(outcome, performance.now() - controlStartedAt);
     // Issue 02 / ADR 0079: the turn deadline runs from the start of the turn, scope stage included.
+    // Each planner and summary call is clamped to the time left in the turn budget, so the budget is a real cap on the
+    // turn. Below the minimum viable timeout (the lower runtime bound, MIN_ASSISTANT_RUNTIME_LIMIT_MS) no call starts and
+    // the turn stops with `turn_deadline`.
     const turnStartedAt = this.#environment.clock().getTime();
-    const assertWithinTurnDeadline = () => {
-      if (this.#environment.clock().getTime() - turnStartedAt >= this.#turnDeadlineMs) throw new AssistantTurnDeadlineError();
+    const nextCallTimeoutMs = (): number => {
+      const remainingMs = turnStartedAt + this.#turnDeadlineMs - this.#environment.clock().getTime();
+      if (remainingMs < MIN_ASSISTANT_RUNTIME_LIMIT_MS) throw new AssistantTurnDeadlineError();
+      return Math.min(this.#modelCallTimeoutMs, remainingMs);
     };
     const thread = this.getThread(threadId);
 
@@ -810,7 +823,7 @@ export class AssistantRuntime {
     try {
       while (round < MAX_ASSISTANT_TOOL_ROUNDS) {
         // Checked before the round counter moves, so a deadline before the first planner call reports round 0.
-        assertWithinTurnDeadline();
+        const plannerTimeoutMs = nextCallTimeoutMs();
         round++;
 
         const isFunctionResultContinuation = round > 1 && candidateHistory.at(-1)?.role === "tool_results";
@@ -819,7 +832,7 @@ export class AssistantRuntime {
           systemInstruction: composeSystemInstruction(candidatePack()),
           tools: taskTools(),
           history: this.#boundedHistory(candidateHistory, candidatePack(), candidateTaskState),
-          timeoutMs: this.#modelCallTimeoutMs,
+          timeoutMs: plannerTimeoutMs,
           structuredOutput: { name: "assistant_reply_plan", schema: replyPlanSchema(successfulToolNames(turnRawResults)), strict: true },
           maxOutputTokens: this.#maxPlanningOutputTokens,
         });
@@ -1050,14 +1063,14 @@ export class AssistantRuntime {
         // Run one final step to get summary reply if bounded rounds reached.
         // ADR 0106 amendment / issue 02: the one tool-free summary call takes the same timeout and deadline as a planner round.
         stopReason = "round_limit";
-        assertWithinTurnDeadline();
+        const summaryTimeoutMs = nextCallTimeoutMs();
         round++;
         activeStage = "function_result_round_trip";
         const finalModelResponse = await this.#modelClient.generate({
           systemInstruction: composeSystemInstruction(candidatePack()),
           tools: [],
           history: this.#boundedHistory(candidateHistory, candidatePack(), candidateTaskState),
-          timeoutMs: this.#modelCallTimeoutMs,
+          timeoutMs: summaryTimeoutMs,
           structuredOutput: { name: "assistant_reply_plan", schema: replyPlanSchema(successfulToolNames(turnRawResults)), strict: true },
           maxOutputTokens: this.#maxReplyOutputTokens,
         });

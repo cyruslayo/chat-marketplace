@@ -123,3 +123,20 @@ Status left `ready-for-agent`: DoD item 7 is open until the batch gate runs.
 - Not run: full `npm test` and `npm run test:workers` (batch gate). Still open for the batch gate, so the status stays `ready-for-agent`.
 
 **Observations (no change made).** The shell does not forward `stopReason` to the browser (decision 5 above). A turn with several search rounds returns every round's discovery card; only the last is active, as the cold-restore test shows.
+
+### Follow-up A: budget clamp, tool_denial fallback, staging cold start (28 Oct 2026)
+
+1. **Timeout clamp.** Each planner call and the post-cap summary call takes `min(modelCallTimeoutMs, time left in the turn budget)`. This makes `turnDeadlineMs` a real cap, so the turn-budget.ts comment ("the longest a server turn can run") holds for the runtime. When less than the minimum viable timeout is left (`MIN_ASSISTANT_RUNTIME_LIMIT_MS`, the lower runtime bound, 1 000 ms, a constant already in the file rather than a new value), no call starts and the stop is `turn_deadline`. The scope call keeps its own 5 s / 8 s budget, as before. Options stay validated (1 000 to 300 000 ms). Test: "A planner call that starts near the turn deadline receives a timeout clamped to the time left, and no call ends after the budget." It asserts the timeouts the model client sees (10 000, 8 000, 6 000, 4 000, 2 000 ms) and that every call's start plus timeout is within the budget. Test: "A planner call with less than the minimum viable timeout left is not started and reports `turn_deadline`."
+2. **tool_denial after a successful operation.** When a rejected date follows a successful operation that left a surface, the catch's fallback branch runs first. The turn returns the operation's surfaces with `controlOutcome: rejected_plan_fallback`, `stopReason: tool_denial`, and `turn_stop` `succeeded: true`. The doc comment on `AssistantStopReason` now says so; the code already did this. Test: "A rejected date after a successful operation returns the operation's surfaces with stop reason `tool_denial` and controlOutcome `rejected_plan_fallback`." The second proposal uses 27 Dec 2026, since the fixture's demo check-in (20 Dec 2026) is an authorised date once a search has run.
+3. **Staging cold start.** `openTurnRuntime` in `test/assistant-turn-stop-reasons.test.ts` now opens a staging-like guest (no seeded phone or email) on the 27 Oct 2026 clock. It builds the runtime and a `LocalGuestApp` over the same environment (the store), so every turn runs on a restored application. No stop-reason test needs the seeded default guest: the turn-stop contract does not depend on contact details. The cold-restore file keeps its `datedFixture`/`restartedDatedApp` helpers, unchanged.
+
+**Commands and counts (Commit A, final code, env -u LLM_API_KEY).**
+- `npm run check`: exit 0.
+- `test/assistant-turn-stop-reasons.test.ts`: 13 pass, 0 fail.
+- `test/assistant-turn-stop-cold-restore.test.ts`: 2 pass, 0 fail.
+- `npm run test:assistant`: 67 tests, 66 pass, 1 fail. The one failure is the known `Unit detail surface projects inspection facts...` (fixed in Commit B).
+- `test/assistant-cold-journey.test.ts`: 3 pass, 0 fail.
+- `test/assistant-control-metrics.test.ts`: 6 pass, 0 fail.
+- `test/assistant-recorded-journeys.test.ts`: 3 pass, 0 fail.
+- `test/assistant-recording-clients.test.ts`: 4 pass, 0 fail.
+- Affected (the above plus control-outcome-count, tool-argument-validation, reply-plan-references, reply-coverage, tool-authorization, task-rail, artifact-authority): 78 pass, 0 fail.

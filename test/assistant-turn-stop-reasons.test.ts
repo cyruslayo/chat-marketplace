@@ -11,6 +11,7 @@ import {
 } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 import type { AssistantModelRequest, AssistantModelResponse } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { MAX_ASSISTANT_TOOL_ROUNDS } from "../apps/local-guest/src/assistant/assistant-platform.js";
+import { LocalGuestApp } from "../apps/local-guest/src/shortlet-app.js";
 import { RecordingTurnModel, STAGING_LIKE_START, SteppedClock, threadSnapshot } from "./helpers/assistant-turn-model.js";
 
 // On the staging-like clock the fixture's demo check-in is set inside the booking horizon; a null check-in resolves to it.
@@ -29,11 +30,24 @@ function stopEvents(diagnostics: readonly AssistantDiagnosticEvent[]) {
   return diagnostics.filter((event) => event.stage === "turn_stop");
 }
 
+/**
+ * A staging-like guest (no seeded phone or email, as shortlet-pilot-do.ts starts it) on the staging-like clock. The runtime
+ * and the application are built over the store the way a Worker request builds them (a cold restore), so every turn here
+ * runs on a restored application. No stop-reason test needs the seeded default guest: the turn-stop contract does not
+ * depend on contact details, and the staging guest is the one the browser actually meets.
+ */
 function openTurnRuntime(model: RecordingTurnModel, clock: SteppedClock, options: AssistantRuntimeOptions = {}) {
-  const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:", clock: clock.now, demoCheckIn: STAGING_DEMO_CHECK_IN });
+  const environment = LocalGuestEnvironment.openNode({
+    databasePath: ":memory:",
+    clock: clock.now,
+    demoCheckIn: STAGING_DEMO_CHECK_IN,
+    initialGuestPhoneNumber: null,
+    initialGuestContactEmail: null,
+  });
   const diagnostics: AssistantDiagnosticEvent[] = [];
   const runtime = new AssistantRuntime(environment, model, { ...options, onDiagnostic: (event) => diagnostics.push(event) });
-  return { environment, runtime, diagnostics };
+  const app = new LocalGuestApp(environment, { assistantRuntime: runtime });
+  return { environment, runtime, app, diagnostics };
 }
 
 test("A turn the model answers without tool calls reports stop reason `reply`.", async () => {
@@ -212,6 +226,57 @@ test("A planner date the guest did not give reports stop reason `tool_denial` wi
     assert.equal(model.plannerRequests.length, 1, "the turn ends at the rejected call");
     assert.equal(JSON.stringify(runtime.getThread("stop-tool-denial").taskState), taskStateBefore, "no task state is committed");
     assert.deepEqual(stopEvents(diagnostics), [stop(1, "tool_denial", true)]);
+  } finally { environment.close(); }
+});
+
+test("A planner call that starts near the turn deadline receives a timeout clamped to the time left, and no call ends after the budget.", async () => {
+  const clock = new SteppedClock(STAGING_LIKE_START);
+  const turnStart = clock.now().getTime();
+  const calls: { readonly startedAt: number; readonly timeoutMs: number | undefined }[] = [];
+  // Each request spends 2 s against a 10 s turn budget and the default 20 s call timeout, so each call's timeout is the time left.
+  const model = new RecordingTurnModel((request) => {
+    calls.push({ startedAt: clock.now().getTime(), timeoutMs: request.timeoutMs });
+    clock.advance(2_000);
+    return request.tools.length === 0 ? REPLY : SEARCH;
+  });
+  const { environment, runtime, diagnostics } = openTurnRuntime(model, clock, { turnDeadlineMs: 10_000 });
+  try {
+    const response = await runtime.handleTurn("stop-clamped-timeout", USER_TEXT);
+    assert.equal(response.stopReason, "round_limit");
+    assert.deepEqual(calls.map((call) => call.timeoutMs), [10_000, 8_000, 6_000, 4_000, 2_000], "each call takes the time left in the budget");
+    assert.ok(calls.every((call) => call.startedAt + (call.timeoutMs ?? Infinity) <= turnStart + 10_000), "no call can end after the turn budget");
+    assert.deepEqual(stopEvents(diagnostics), [stop(MAX_ASSISTANT_TOOL_ROUNDS + 1, "round_limit", true)]);
+  } finally { environment.close(); }
+});
+
+test("A planner call with less than the minimum viable timeout left is not started and reports `turn_deadline`.", async () => {
+  const clock = new SteppedClock(STAGING_LIKE_START);
+  // 500 ms left is under the 1 000 ms minimum viable timeout (the lower runtime bound), so no planner request starts.
+  const model = new RecordingTurnModel(() => REPLY, () => clock.advance(9_500));
+  const { environment, runtime, diagnostics } = openTurnRuntime(model, clock, { turnDeadlineMs: 10_000 });
+  try {
+    const response = await runtime.handleTurn("stop-minimum-timeout", USER_TEXT);
+    assert.equal(response.stopReason, "turn_deadline");
+    assert.equal(model.plannerRequests.length, 0);
+    assert.deepEqual(stopEvents(diagnostics), [stop(0, "turn_deadline", false)]);
+  } finally { environment.close(); }
+});
+
+test("A rejected date after a successful operation returns the operation's surfaces with stop reason `tool_denial` and controlOutcome `rejected_plan_fallback`.", async () => {
+  const clock = new SteppedClock(STAGING_LIKE_START);
+  // The second planner request proposes a check-in the guest never wrote, after the first search has run and left a card.
+  const proposed: AssistantModelResponse = { toolCalls: [{ id: "call-denial-after-search", name: "search_stays", args: { ...VALID_SEARCH, checkIn: "2026-12-27" } }] };
+  const model = new RecordingTurnModel((_request, index) => index === 0 ? SEARCH : proposed);
+  const { environment, runtime, diagnostics } = openTurnRuntime(model, clock);
+  try {
+    const response = await runtime.handleTurn("stop-denial-after-search", USER_TEXT);
+    assert.equal(response.ok, true);
+    assert.equal(response.controlOutcome, "rejected_plan_fallback");
+    assert.equal(response.stopReason, "tool_denial");
+    assert.ok(response.surfaces?.[0]?.surfaceId.includes(":discovery:"), "the first search's card is returned");
+    assert.equal(runtime.getThread("stop-denial-after-search").activeSurfaces.get("discovery"), response.surfaces?.[0]?.surfaceId, "the card is committed");
+    assert.equal(diagnostics.filter((event) => event.stage === "application_operation" && event.succeeded).length, 1, "only the first search ran");
+    assert.deepEqual(stopEvents(diagnostics), [stop(2, "tool_denial", true)]);
   } finally { environment.close(); }
 });
 
