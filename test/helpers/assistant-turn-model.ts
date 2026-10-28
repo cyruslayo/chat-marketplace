@@ -57,7 +57,10 @@ export class RecordingTurnModel implements AssistantModelClient {
   }
 }
 
-/** Serialises the thread state a rejected or rolled-back turn must leave untouched. */
+/**
+ * Serialises every field a rejected or rolled-back turn must leave untouched, including the conversation history,
+ * the discovery artifact and the canonical user facts that a cold restore rebuilds from.
+ */
 export function threadSnapshot(thread: AssistantThreadState): string {
   return JSON.stringify({
     taskState: thread.taskState,
@@ -67,5 +70,8 @@ export function threadSnapshot(thread: AssistantThreadState): string {
     supersededSurfaces: thread.supersededSurfaces,
     lastSurfaces: thread.lastSurfaces,
     discoveryArtifactId: thread.discoveryArtifactId,
+    discoveryArtifact: thread.discoveryArtifact ?? null,
+    conversationHistory: thread.conversationHistory,
+    canonicalUserFactHistory: thread.canonicalUserFactHistory ?? null,
   }, (_key, value: unknown) => value instanceof Map || value instanceof Set ? [...value] : value);
 }

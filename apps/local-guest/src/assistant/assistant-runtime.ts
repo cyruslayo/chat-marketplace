@@ -28,7 +28,7 @@ import {
 } from "./assistant-platform.js";
 import { createShortletAssistantPack, validatedCheckOutForNights } from "./shortlet-assistant-pack.js";
 import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantStayDetailsError, containsGuestDate, currentTurnDateRoles } from "./date-tokens.js";
-import { PLANNER_REQUEST_TIMEOUT_MS } from "../turn-budget.js";
+import { PLANNER_REQUEST_TIMEOUT_MS, SERVER_TURN_MAX_MS } from "../turn-budget.js";
 import { ModelScopeClassifier, ScopeClassificationError, assessScopeSafely, scopedMixedInput, type ScopeClassifier, type ScopeAssessment, type ConciergeIntent } from "./scope-classifier.js";
 import { RetryingScopeClassifier, ScopeClassifierRetryError, SCOPE_TOTAL_BUDGET_MS, type ScopeClassifierRetryEvent, type ScopeClassifierRetryResult } from "./scope-classifier-retry.js";
 import { ASSISTANT_CONTROL_COPY } from "./control-copy.js";
@@ -64,9 +64,17 @@ export type AssistantControlOutcome = typeof ASSISTANT_CONTROL_OUTCOMES[number];
  * - `reply`: the model answered without tool calls.
  * - `round_limit`: the round cap was reached and the summary call made the reply.
  * - `turn_deadline`: the whole-turn deadline was reached before the turn's next model call.
+ * - `tool_denial`: a planner date or stay detail the guest did not give was rejected; the turn returns a dated
+ *   clarification (ok: true) and commits no task state. Not a failure: the guest is asked for the detail.
  * - `error`: a failure path (the failure class stays on the diagnostics).
+ *
+ * `turn_stop` diagnostics follow the same list. `succeeded` is true for `reply`, `round_limit` and `tool_denial`, and
+ * false for `turn_deadline` and `error`. A `rejected_plan_fallback` turn takes its stop reason from how the loop ended:
+ * a reply with a rejected plan (legacy prose or invalid references) is `reply`, succeeded; a projected-operation fallback
+ * after a failure is `error` or `turn_deadline`, not succeeded. `turn_stop` covers planner turns only. Scope redirects,
+ * unavailable scope, cross-domain routing and deterministic confirmations exit before the planner loop and emit none.
  */
-export type AssistantStopReason = "reply" | "round_limit" | "turn_deadline" | "error";
+export type AssistantStopReason = "reply" | "round_limit" | "turn_deadline" | "tool_denial" | "error";
 
 export interface AssistantTurnOutput {
   readonly ok: boolean;
@@ -216,10 +224,18 @@ const MAX_ASSISTANT_HISTORY_STEPS = 512;
 const MAX_ASSISTANT_HISTORY_CHARACTERS = 262_144;
 const MAX_ASSISTANT_CONTEXT_ITEMS = 128;
 const MAX_ASSISTANT_REPLY_OUTPUT_TOKENS = 4096;
-/** Issue 02: the planner request timeout the runtime has always used (turn-budget.ts). */
+/** Issue 02: the planner request timeout the runtime has always used (turn-budget.ts). Bounds one provider request. */
 export const DEFAULT_ASSISTANT_MODEL_CALL_TIMEOUT_MS = PLANNER_REQUEST_TIMEOUT_MS;
-/** ADR 0079: the 120-second standard-run limit (provisional engineering target), applied to one whole turn. */
-export const DEFAULT_ASSISTANT_TURN_DEADLINE_MS = 120_000;
+/**
+ * Whole-turn limit, applied to one planner turn: the scope stage, every planner request and the summary call, measured
+ * from the start of the turn. Owner decision (issue 02 Comments): it equals the server turn budget `SERVER_TURN_MAX_MS`
+ * (turn-budget.ts, 168 s), the longest a server turn can run under ADR 0106, rather than a separate literal. It is not
+ * `DEFAULT_MODEL_REQUEST_DEADLINE_MS` in model-quota-guard.ts, which bounds one provider request.
+ */
+export const DEFAULT_ASSISTANT_TURN_DEADLINE_MS = SERVER_TURN_MAX_MS;
+/** Accepted range for both runtime limits, the same engineering bounds as the model quota guard's request deadline. */
+const MIN_ASSISTANT_RUNTIME_LIMIT_MS = 1_000;
+const MAX_ASSISTANT_RUNTIME_LIMIT_MS = 300_000;
 
 /** Thrown before a model call that would start after the turn deadline. Caught by `handleTurn` only. */
 class AssistantTurnDeadlineError extends Error {
@@ -305,8 +321,10 @@ export class AssistantRuntime {
     if (!Number.isSafeInteger(this.#maxContextItems) || this.#maxContextItems < 1 || this.#maxContextItems > MAX_ASSISTANT_CONTEXT_ITEMS) throw new Error("maxContextItems is outside configured bounds");
     this.#modelCallTimeoutMs = options.modelCallTimeoutMs ?? DEFAULT_ASSISTANT_MODEL_CALL_TIMEOUT_MS;
     this.#turnDeadlineMs = options.turnDeadlineMs ?? DEFAULT_ASSISTANT_TURN_DEADLINE_MS;
-    if (![this.#modelCallTimeoutMs, this.#turnDeadlineMs].every((value) => Number.isSafeInteger(value) && value > 0)) {
-      throw new Error("modelCallTimeoutMs and turnDeadlineMs must be positive integers");
+    const inRuntimeLimitRange = (value: number) => Number.isSafeInteger(value)
+      && value >= MIN_ASSISTANT_RUNTIME_LIMIT_MS && value <= MAX_ASSISTANT_RUNTIME_LIMIT_MS;
+    if (!inRuntimeLimitRange(this.#modelCallTimeoutMs) || !inRuntimeLimitRange(this.#turnDeadlineMs)) {
+      throw new Error(`modelCallTimeoutMs and turnDeadlineMs must be integers between ${MIN_ASSISTANT_RUNTIME_LIMIT_MS} and ${MAX_ASSISTANT_RUNTIME_LIMIT_MS}`);
     }
     if (options.scopeReasoningEffort !== undefined && options.scopeReasoningEffort !== "none" && options.scopeReasoningEffort !== "provider_default") throw new Error("Invalid scope reasoning effort");
     // ADR 0106 amendment: the default path retries an eligible JSON-shape failure once with an identical request.
@@ -776,14 +794,27 @@ export class AssistantRuntime {
     let turnRawResults: AssistantToolResult[] = [];
     let controlOutcome: AssistantControlOutcome = "successful_model_handling";
     let stopReason: AssistantStopReason | undefined;
+    // Exactly one `turn_stop` per planner turn: emitted from one place, after the stop reason is final, never twice.
+    let stopEmitted = false;
+    const emitStop = (): void => {
+      if (stopEmitted || stopReason === undefined) return;
+      stopEmitted = true;
+      this.#diagnose({
+        stage: "turn_stop",
+        round,
+        succeeded: stopReason === "reply" || stopReason === "round_limit" || stopReason === "tool_denial",
+        stopReason,
+      });
+    };
 
     try {
       while (round < MAX_ASSISTANT_TOOL_ROUNDS) {
+        // Checked before the round counter moves, so a deadline before the first planner call reports round 0.
+        assertWithinTurnDeadline();
         round++;
 
         const isFunctionResultContinuation = round > 1 && candidateHistory.at(-1)?.role === "tool_results";
         activeStage = isFunctionResultContinuation ? "function_result_round_trip" : "provider_request";
-        assertWithinTurnDeadline();
         const modelResponse = await this.#modelClient.generate({
           systemInstruction: composeSystemInstruction(candidatePack()),
           tools: taskTools(),
@@ -1019,9 +1050,9 @@ export class AssistantRuntime {
         // Run one final step to get summary reply if bounded rounds reached.
         // ADR 0106 amendment / issue 02: the one tool-free summary call takes the same timeout and deadline as a planner round.
         stopReason = "round_limit";
+        assertWithinTurnDeadline();
         round++;
         activeStage = "function_result_round_trip";
-        assertWithinTurnDeadline();
         const finalModelResponse = await this.#modelClient.generate({
           systemInstruction: composeSystemInstruction(candidatePack()),
           tools: [],
@@ -1059,9 +1090,7 @@ export class AssistantRuntime {
       this.#syncActiveTask(thread);
       recordOutcome(controlOutcome);
       // Set by the reply branch (`reply`) or the summary call after the round cap (`round_limit`), never both.
-      this.#diagnose({ stage: "turn_stop", round, succeeded: true, stopReason });
-
-      return {
+      const output: AssistantTurnOutput = {
         ok: true,
         messages: [finalAssistantReply],
         surfaces: candidateSurfaces,
@@ -1071,10 +1100,14 @@ export class AssistantRuntime {
         controlOutcome,
         stopReason,
       };
+      // Emitted after the output is built, so nothing that could throw sits between the stop event and the return.
+      emitStop();
+      return output;
     } catch (error) {
-      // Issue 02: the turn deadline is a stop of its own; every other failure is `error` and keeps its failure class.
+      // Issue 02: the turn deadline and a rejected planner date/stay detail are stops of their own; every other failure is `error`.
       const turnDeadline = error instanceof AssistantTurnDeadlineError;
-      stopReason = turnDeadline ? "turn_deadline" : "error";
+      const toolDenial = error instanceof AssistantDateProvenanceError || error instanceof AssistantDateValidationError || error instanceof AssistantStayDetailsError;
+      stopReason = turnDeadline ? "turn_deadline" : toolDenial ? "tool_denial" : "error";
       if (error instanceof ModelRequestGuardError && (error.code === "quota_denied" || error.code === "quota_unavailable")) {
         controlOutcome = error.code === "quota_denied" ? "quota_refusal" : "guard_failure";
       } else if (error instanceof ModelRequestGuardError && error.code === "deadline_exceeded") {
@@ -1086,7 +1119,7 @@ export class AssistantRuntime {
         controlOutcome = "model_handling_failure";
       }
       if (!turnDeadline) this.#diagnose(createFailureDiagnostic(activeStage, round, activeToolName, error));
-      this.#diagnose({ stage: "turn_stop", round, succeeded: false, stopReason });
+      emitStop();
       if (hasSuccessfulApplicationOperation && candidateSurfaces.length > 0) {
         // The fallback replaces the failure outcome, so this turn is counted once as the fallback.
         controlOutcome = "rejected_plan_fallback";
@@ -1105,7 +1138,7 @@ export class AssistantRuntime {
         this.#syncActiveTask(thread);
         return { ok: true, messages: [message], surfaces: candidateSurfaces, tasks: this.getTaskRail(threadId), modelHandled: true, discardUserInput, controlOutcome: "rejected_plan_fallback", stopReason };
       }
-      if (error instanceof AssistantDateProvenanceError || error instanceof AssistantDateValidationError || error instanceof AssistantStayDetailsError) {
+      if (toolDenial) {
         // ADR 0106: a planner date the guest did not author, one that fails the stay rules, or a search missing its stay
         // details is a rejected tool call. The turn keeps the guest's message, commits no new task state, and asks the guest.
         controlOutcome = "tool_denial";

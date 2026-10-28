@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
+import { SERVER_TURN_MAX_MS } from "../apps/local-guest/src/turn-budget.js";
 import {
   AssistantRuntime,
   DEFAULT_ASSISTANT_MODEL_CALL_TIMEOUT_MS,
@@ -19,15 +20,20 @@ const REPLY: AssistantModelResponse = { text: JSON.stringify({ kind: "clarify_st
 const SEARCH: AssistantModelResponse = { toolCalls: [{ id: "call-stop-search", name: "search_stays", args: VALID_SEARCH }] };
 const USER_TEXT = "Find stays in Old Ikoyi";
 
+/** The exact `turn_stop` event a planner turn must emit once: nothing else, in this shape. */
+function stop(round: number, stopReason: string, succeeded: boolean) {
+  return { stage: "turn_stop", round, succeeded, stopReason };
+}
+
+function stopEvents(diagnostics: readonly AssistantDiagnosticEvent[]) {
+  return diagnostics.filter((event) => event.stage === "turn_stop");
+}
+
 function openTurnRuntime(model: RecordingTurnModel, clock: SteppedClock, options: AssistantRuntimeOptions = {}) {
   const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:", clock: clock.now, demoCheckIn: STAGING_DEMO_CHECK_IN });
   const diagnostics: AssistantDiagnosticEvent[] = [];
   const runtime = new AssistantRuntime(environment, model, { ...options, onDiagnostic: (event) => diagnostics.push(event) });
   return { environment, runtime, diagnostics };
-}
-
-function stopEvents(diagnostics: readonly AssistantDiagnosticEvent[]) {
-  return diagnostics.filter((event) => event.stage === "turn_stop");
 }
 
 test("A turn the model answers without tool calls reports stop reason `reply`.", async () => {
@@ -39,7 +45,7 @@ test("A turn the model answers without tool calls reports stop reason `reply`.",
     assert.equal(response.ok, true);
     assert.equal(response.stopReason, "reply");
     assert.equal(model.plannerRequests.length, 1);
-    assert.deepEqual(stopEvents(diagnostics).map((event) => [event.stopReason, event.succeeded]), [["reply", true]]);
+    assert.deepEqual(stopEvents(diagnostics), [stop(1, "reply", true)]);
   } finally { environment.close(); }
 
   // A reply after a tool round is still a reply: the tool calls do not make the turn a round limit.
@@ -49,6 +55,7 @@ test("A turn the model answers without tool calls reports stop reason `reply`.",
     const response = await second.runtime.handleTurn("stop-reply-after-tool", USER_TEXT);
     assert.equal(response.stopReason, "reply");
     assert.equal(withToolRound.plannerRequests.length, 2);
+    assert.deepEqual(stopEvents(second.diagnostics), [stop(2, "reply", true)]);
   } finally { second.environment.close(); }
 });
 
@@ -65,7 +72,7 @@ test("A turn that reaches the round cap reports stop reason `round_limit` and ma
     assert.equal(planner.length, MAX_ASSISTANT_TOOL_ROUNDS + 1);
     assert.equal(planner.filter((request) => request.tools.length === 0).length, 1, "exactly one summary call carries no tools");
     assert.equal(planner.at(-1)?.tools.length, 0, "the tool-free call is the summary, made last");
-    assert.deepEqual(stopEvents(diagnostics).map((event) => event.stopReason), ["round_limit"]);
+    assert.deepEqual(stopEvents(diagnostics), [stop(MAX_ASSISTANT_TOOL_ROUNDS + 1, "round_limit", true)]);
   } finally { environment.close(); }
 });
 
@@ -73,7 +80,7 @@ test("The summary call after the round cap is made with the configured model-cal
   const configured = 7_000;
   const clock = new SteppedClock(STAGING_LIKE_START);
   const model = new RecordingTurnModel((request) => request.tools.length === 0 ? REPLY : SEARCH);
-  const { environment, runtime } = openTurnRuntime(model, clock, { modelCallTimeoutMs: configured });
+  const { environment, runtime, diagnostics } = openTurnRuntime(model, clock, { modelCallTimeoutMs: configured });
   try {
     const response = await runtime.handleTurn("stop-summary-timeout", USER_TEXT);
     assert.equal(response.stopReason, "round_limit");
@@ -81,6 +88,7 @@ test("The summary call after the round cap is made with the configured model-cal
     assert.equal(summary.tools.length, 0);
     assert.equal(summary.timeoutMs, configured, "the summary call takes the configured timeout, not the adapter default");
     assert.ok(model.plannerRequests.every((request) => request.timeoutMs === configured), "planner calls take the same configured timeout");
+    assert.deepEqual(stopEvents(diagnostics), [stop(MAX_ASSISTANT_TOOL_ROUNDS + 1, "round_limit", true)]);
   } finally { environment.close(); }
 });
 
@@ -98,7 +106,8 @@ test("A turn that passes the turn deadline before any application operation repo
     assert.equal(model.plannerRequests.length, 0, "no planner request starts after the deadline");
     assert.equal(diagnostics.filter((event) => event.stage === "application_operation").length, 0);
     assert.equal(threadSnapshot(runtime.getThread("stop-deadline-before")), before);
-    assert.deepEqual(stopEvents(diagnostics).map((event) => [event.stopReason, event.succeeded]), [["turn_deadline", false]]);
+    // Round 0: the deadline fired before the first planner call.
+    assert.deepEqual(stopEvents(diagnostics), [stop(0, "turn_deadline", false)]);
   } finally { environment.close(); }
 });
 
@@ -122,6 +131,51 @@ test("A turn that passes the turn deadline after an application operation keeps 
     assert.ok(response.surfaces?.length, "the operation's surface is returned through the projected-operation fallback");
     const thread = runtime.getThread("stop-deadline-after");
     assert.equal(thread.activeSurfaces.get("discovery"), response.surfaces?.[0]?.surfaceId, "the operation's surface is committed to the thread");
+    assert.deepEqual(stopEvents(diagnostics), [stop(1, "turn_deadline", false)]);
+  } finally { environment.close(); }
+});
+
+test("A turn that passes the turn deadline after an operation with no surface takes the rollback path and leaves the thread unchanged.", async () => {
+  // Decision (issue 02 Comments): the projected-operation fallback needs a surface, so a read-only operation with none
+  // rolls back exactly as a provider failure does.
+  const clock = new SteppedClock(STAGING_LIKE_START);
+  const model = new RecordingTurnModel((_request, index) => {
+    if (index === 0) {
+      clock.advance(2_000);
+      return { toolCalls: [{ id: "call-stop-status", name: "get_booking_status", args: {} }] };
+    }
+    return REPLY;
+  });
+  const { environment, runtime, diagnostics } = openTurnRuntime(model, clock, { turnDeadlineMs: 1_000 });
+  try {
+    const before = threadSnapshot(runtime.getThread("stop-deadline-no-surface"));
+    const response = await runtime.handleTurn("stop-deadline-no-surface", "Am I booked?");
+    assert.equal(response.ok, false);
+    assert.equal(response.code, "CONCIERGE_UNAVAILABLE");
+    assert.equal(response.stopReason, "turn_deadline");
+    assert.equal(model.plannerRequests.length, 1, "no planner request starts after the deadline");
+    assert.equal(diagnostics.filter((event) => event.stage === "application_operation" && event.succeeded).length, 1, "the read ran before the deadline");
+    assert.equal(threadSnapshot(runtime.getThread("stop-deadline-no-surface")), before);
+    assert.deepEqual(stopEvents(diagnostics), [stop(1, "turn_deadline", false)]);
+  } finally { environment.close(); }
+});
+
+test("A turn that passes the turn deadline before the summary call starts no summary call and reports `turn_deadline`.", async () => {
+  const clock = new SteppedClock(STAGING_LIKE_START);
+  // The last planner round takes 2 s against a 1 s deadline, so the post-cap summary call must not start.
+  const model = new RecordingTurnModel((request, index) => {
+    if (index === MAX_ASSISTANT_TOOL_ROUNDS - 1) clock.advance(2_000);
+    return request.tools.length === 0 ? REPLY : SEARCH;
+  });
+  const { environment, runtime, diagnostics } = openTurnRuntime(model, clock, { turnDeadlineMs: 1_000 });
+  try {
+    const response = await runtime.handleTurn("stop-deadline-summary", USER_TEXT);
+    assert.equal(response.ok, true);
+    assert.equal(response.stopReason, "turn_deadline");
+    assert.equal(model.plannerRequests.length, MAX_ASSISTANT_TOOL_ROUNDS, "no summary request starts after the deadline");
+    assert.ok(model.plannerRequests.every((request) => request.tools.length > 0), "every request made was a planner round");
+    assert.ok(response.surfaces?.length, "the last round's operation keeps its surface");
+    assert.deepEqual(stopEvents(diagnostics), [stop(MAX_ASSISTANT_TOOL_ROUNDS, "turn_deadline", false)]);
   } finally { environment.close(); }
 });
 
@@ -137,37 +191,63 @@ test("A provider failure reports stop reason `error` with its existing failure c
     assert.equal(response.code, "CONCIERGE_UNAVAILABLE");
     assert.equal(response.stopReason, "error");
     assert.ok(diagnostics.some((event) => event.stage === "provider_request" && !event.succeeded && event.failureClass === "PROVIDER_TRANSPORT_FAILURE"));
-    assert.deepEqual(stopEvents(diagnostics).map((event) => [event.stopReason, event.succeeded]), [["error", false]]);
+    assert.deepEqual(stopEvents(diagnostics), [stop(1, "error", false)]);
   } finally { environment.close(); }
 });
 
-test("The model-call timeout and turn deadline default to 20 000 ms and 120 000 ms and can be overridden through runtime options.", async () => {
-  assert.equal(DEFAULT_ASSISTANT_MODEL_CALL_TIMEOUT_MS, 20_000);
-  assert.equal(DEFAULT_ASSISTANT_TURN_DEADLINE_MS, 120_000);
+test("A planner date the guest did not give reports stop reason `tool_denial` with a dated clarification and no task state change.", async () => {
+  const clock = new SteppedClock(STAGING_LIKE_START);
+  // The planner proposes a check-in the guest never wrote (the text has no date), so the date is rejected.
+  const proposed: AssistantModelResponse = { toolCalls: [{ id: "call-stop-denial", name: "search_stays", args: { ...VALID_SEARCH, checkIn: "2026-12-20" } }] };
+  const model = new RecordingTurnModel((_request, index) => index === 0 ? proposed : REPLY);
+  const { environment, runtime, diagnostics } = openTurnRuntime(model, clock);
+  try {
+    const thread = runtime.getThread("stop-tool-denial");
+    const taskStateBefore = JSON.stringify(thread.taskState);
+    const response = await runtime.handleTurn("stop-tool-denial", USER_TEXT);
+    assert.equal(response.ok, true, "a rejected planner date is a clarification, not a failure");
+    assert.equal(response.controlOutcome, "tool_denial");
+    assert.equal(response.stopReason, "tool_denial");
+    assert.equal(response.messages?.length, 1);
+    assert.equal(model.plannerRequests.length, 1, "the turn ends at the rejected call");
+    assert.equal(JSON.stringify(runtime.getThread("stop-tool-denial").taskState), taskStateBefore, "no task state is committed");
+    assert.deepEqual(stopEvents(diagnostics), [stop(1, "tool_denial", true)]);
+  } finally { environment.close(); }
+});
 
-  // Defaults: a planner request takes 20 s, and a turn 119 s long still completes.
+test("The model-call timeout and turn deadline default to 20 000 ms and SERVER_TURN_MAX_MS (168 000 ms) and can be overridden through runtime options.", async () => {
+  assert.equal(DEFAULT_ASSISTANT_MODEL_CALL_TIMEOUT_MS, 20_000);
+  assert.equal(SERVER_TURN_MAX_MS, 168_000);
+  assert.equal(DEFAULT_ASSISTANT_TURN_DEADLINE_MS, SERVER_TURN_MAX_MS);
+
+  // Defaults: a planner request takes 20 s, and a turn one second short of the deadline still completes.
   const defaultModel = new RecordingTurnModel(() => REPLY);
   const defaults = openTurnRuntime(defaultModel, new SteppedClock(STAGING_LIKE_START));
   try {
     const response = await defaults.runtime.handleTurn("stop-defaults", USER_TEXT);
     assert.equal(defaultModel.plannerRequests[0]?.timeoutMs, 20_000);
     assert.equal(response.stopReason, "reply");
+    assert.deepEqual(stopEvents(defaults.diagnostics), [stop(1, "reply", true)]);
   } finally { defaults.environment.close(); }
 
   const slowScope = new SteppedClock(STAGING_LIKE_START);
-  const slowModel = new RecordingTurnModel(() => REPLY, () => slowScope.advance(119_000));
+  const slowModel = new RecordingTurnModel(() => REPLY, () => slowScope.advance(SERVER_TURN_MAX_MS - 1_000));
   const within = openTurnRuntime(slowModel, slowScope);
   try {
-    assert.equal((await within.runtime.handleTurn("stop-default-119", USER_TEXT)).stopReason, "reply");
+    const response = await within.runtime.handleTurn("stop-default-119", USER_TEXT);
+    assert.equal(response.stopReason, "reply");
+    assert.deepEqual(stopEvents(within.diagnostics), [stop(1, "reply", true)]);
   } finally { within.environment.close(); }
 
-  // A turn that reaches 121 s stops at the default deadline.
+  // A turn one second past the deadline stops before the first planner call.
   const pastScope = new SteppedClock(STAGING_LIKE_START);
-  const pastModel = new RecordingTurnModel(() => REPLY, () => pastScope.advance(121_000));
+  const pastModel = new RecordingTurnModel(() => REPLY, () => pastScope.advance(SERVER_TURN_MAX_MS + 1_000));
   const past = openTurnRuntime(pastModel, pastScope);
   try {
-    assert.equal((await past.runtime.handleTurn("stop-default-121", USER_TEXT)).stopReason, "turn_deadline");
+    const response = await past.runtime.handleTurn("stop-default-121", USER_TEXT);
+    assert.equal(response.stopReason, "turn_deadline");
     assert.equal(pastModel.plannerRequests.length, 0);
+    assert.deepEqual(stopEvents(past.diagnostics), [stop(0, "turn_deadline", false)]);
   } finally { past.environment.close(); }
 
   // Overrides: both values are taken from the options.
@@ -179,16 +259,18 @@ test("The model-call timeout and turn deadline default to 20 000 ms and 120 000 
   } finally { overridden.environment.close(); }
 
   const shortDeadlineClock = new SteppedClock(STAGING_LIKE_START);
-  const shortDeadline = openTurnRuntime(new RecordingTurnModel(() => REPLY, () => shortDeadlineClock.advance(600)), shortDeadlineClock, { turnDeadlineMs: 500 });
+  const shortDeadline = openTurnRuntime(new RecordingTurnModel(() => REPLY, () => shortDeadlineClock.advance(1_500)), shortDeadlineClock, { turnDeadlineMs: 1_000 });
   try {
-    assert.equal((await shortDeadline.runtime.handleTurn("stop-override-deadline", USER_TEXT)).stopReason, "turn_deadline");
+    const response = await shortDeadline.runtime.handleTurn("stop-override-deadline", USER_TEXT);
+    assert.equal(response.stopReason, "turn_deadline");
+    assert.deepEqual(stopEvents(shortDeadline.diagnostics), [stop(0, "turn_deadline", false)]);
   } finally { shortDeadline.environment.close(); }
 
-  // Failure paths: non-positive or fractional limits are rejected at construction.
-  for (const invalid of [{ modelCallTimeoutMs: 0 }, { modelCallTimeoutMs: 1.5 }, { turnDeadlineMs: -1 }]) {
+  // Failure paths: limits outside 1 000 to 300 000 ms, and non-integers, are rejected at construction.
+  for (const invalid of [{ modelCallTimeoutMs: 0 }, { modelCallTimeoutMs: 999 }, { modelCallTimeoutMs: 300_001 }, { modelCallTimeoutMs: 1.5 }, { turnDeadlineMs: -1 }, { turnDeadlineMs: 999 }, { turnDeadlineMs: 300_001 }]) {
     const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:", clock: new SteppedClock(STAGING_LIKE_START).now });
     try {
-      assert.throws(() => new AssistantRuntime(environment, new RecordingTurnModel(() => REPLY), invalid));
+      assert.throws(() => new AssistantRuntime(environment, new RecordingTurnModel(() => REPLY), invalid), /between 1000 and 300000/);
     } finally { environment.close(); }
   }
 });

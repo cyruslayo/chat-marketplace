@@ -61,13 +61,13 @@ Use an injected clock or a scripted model that advances time; no real waits.
 | 0106 | Round cap, prompts, `ModelCallBudget` unchanged; closed outcome list unchanged | Round cap value untouched; summary call still counted by `BudgetedModelClient`; no new control outcome |
 
 **Changes.**
-- `apps/local-guest/src/assistant/assistant-runtime.ts`: `AssistantStopReason` (`reply`, `round_limit`, `turn_deadline`, `error`); `stopReason` on `AssistantTurnOutput` and on a new `turn_stop` diagnostic stage; options `modelCallTimeoutMs` (default `DEFAULT_ASSISTANT_MODEL_CALL_TIMEOUT_MS` = `PLANNER_REQUEST_TIMEOUT_MS`, 20 000) and `turnDeadlineMs` (default `DEFAULT_ASSISTANT_TURN_DEADLINE_MS` = 120 000, ADR 0079), validated as positive integers. Planner requests and the post-cap summary call take `modelCallTimeoutMs`; the summary call was previously untimed. `assertWithinTurnDeadline()` runs before every planner request and before the summary call, so no call starts after the deadline. The deadline runs on the environment clock from the start of the turn, scope stage included.
+- `apps/local-guest/src/assistant/assistant-runtime.ts`: `AssistantStopReason` (`reply`, `round_limit`, `turn_deadline`, `tool_denial`, `error`; see the review fixes below); `stopReason` on `AssistantTurnOutput` and on a new `turn_stop` diagnostic stage; options `modelCallTimeoutMs` (default `DEFAULT_ASSISTANT_MODEL_CALL_TIMEOUT_MS` = `PLANNER_REQUEST_TIMEOUT_MS`, 20 000) and `turnDeadlineMs` (default `DEFAULT_ASSISTANT_TURN_DEADLINE_MS` = `SERVER_TURN_MAX_MS`, 168 000, see the owner decision below), both validated as integers in 1 000 to 300 000 ms. Planner requests and the post-cap summary call take `modelCallTimeoutMs`; the summary call was previously untimed. `assertWithinTurnDeadline()` runs before every planner request and before the summary call, so no call starts after the deadline. The deadline runs on the environment clock from the start of the turn, scope stage included.
 - `test/helpers/assistant-turn-model.ts` (new): `SteppedClock`, `RecordingTurnModel`, `threadSnapshot` (shared, not copied).
 - `test/assistant-turn-stop-reasons.test.ts` (new): one `test()` per acceptance criterion, named as the criterion text.
 - `test/shortlet-assistant-evals.test.ts`: one existing test, `Server-only diagnostics safely expose provider status and code while the guest response stays generic`, asserted `events.at(-1)` is the provider failure. Because `turn_stop` is now the final event (as the issue asks), it now asserts the final event is `turn_stop` with `stopReason: "error"`, and checks the provider failure as the last non-`turn_stop` event. Its other assertions are unchanged.
 
 **Decisions taken (please confirm).**
-1. `tool_denial` turns (a rejected date or stay-details call that ends the turn by exception) report `stopReason: "error"`. The four reasons do not otherwise cover them and the closed outcome stays `tool_denial`. Alternative: a fifth reason. Owner decision.
+1. Superseded by the review fixes: `tool_denial` is now a fifth stop reason (see below).
 2. A turn that hits the turn deadline reports controlOutcome `guard_failure`, mirroring the guard's `deadline_exceeded`. Alternative: `model_handling_failure`.
 3. A deadline after an application operation that produced no surfaces follows the existing rollback path (candidate thread state discarded, as for provider errors today). The fallback branch needs a surface, as it already did.
 4. Early returns before the planner loop (scope redirect or unavailable, deterministic confirmation or cancellation, cross-domain route, mixed-scope rejection) carry no `stopReason`: no planner loop runs there.
@@ -88,8 +88,38 @@ Use an injected clock or a scripted model that advances time; no real waits.
 2. Failure paths: criterion 4 asserts `ok: false`, `CONCIERGE_UNAVAILABLE`, zero planner requests and an unchanged thread; criterion 5 asserts no second planner request and committed surfaces; criterion 6 asserts `error` and `PROVIDER_TRANSPORT_FAILURE`; criterion 7 asserts that invalid limits throw; criterion 2 asserts the tool-free call is the only one.
 3. ADRs listed and read: met (table above).
 4. No unused injected dependency: met. Both new options are read in the constructor's validation and in the loop.
-5. No invented policy: met for the values (20 000 from `turn-budget.ts`, 120 000 from ADR 0079). Decisions 1 and 2 are mapping choices, flagged above for the owner.
+5. No invented policy: met for the values (20 000 from `turn-budget.ts`; the turn deadline is `SERVER_TURN_MAX_MS` from `turn-budget.ts`, owner decision below). Decision 2 is a mapping choice, flagged above.
 6. No credentials in logs: met (`turn_stop` carries enum fields only).
 7. `npm run check` passes: met. `npm test` passes with zero failures: NOT yet. It is the batch gate. The known `shortlet-assistant-evals` failure above is expected to remain.
 
 Status left `ready-for-agent`: DoD item 7 is open until the batch gate runs.
+
+### Review fixes and owner decision (28 Oct 2026)
+
+**Owner decision: the turn deadline default.** `DEFAULT_ASSISTANT_TURN_DEADLINE_MS` is `SERVER_TURN_MAX_MS` (168 000 ms, `apps/local-guest/src/turn-budget.ts`), reused rather than a new literal. It replaces the 120 000 ms this issue's "What to build" names, and that value appears in the earlier notes above. Criterion 7 is kept as written, but its 120 000 ms is superseded by this decision: its test is now named for `SERVER_TURN_MAX_MS (168 000 ms)`. `turn-budget.ts` and ADR 0106 are unchanged. The default stays inside the new 1 000 to 300 000 ms bound. The 120 000 ms ADR 0079 provisional value is retained only in the ADR itself.
+
+**Turn deadline versus request deadline.** `DEFAULT_ASSISTANT_TURN_DEADLINE_MS` bounds one whole planner turn (scope, every planner request, the summary call). `DEFAULT_MODEL_REQUEST_DEADLINE_MS` in `model-quota-guard.ts` (120 000 ms) bounds one provider request. The two are different limits and are not interchangeable.
+
+**Review fixes.**
+1. Cold-restore tests: `test/assistant-turn-stop-cold-restore.test.ts` (new, 2 tests). It runs the assistant runtime on the staging-like clock with a staging-like guest, through the OpenRouter-compatible scripted planner.
+   - (a) A planner search that passes the deadline keeps its card through the projected-operation fallback. After a cold restore the card keeps its surface id and artifact id (re-keyed, not re-minted), and View opens the unit. After a newer search, the superseded surface returns `STALE_SURFACE` and the older artifact on the newer card returns `ARTIFACT_MISMATCH`, both after a cold restore.
+   - (b) A round-limit turn is kept after a cold restore, and its card opens. Each round's search returns its own card; the turn returns all four and the last one is active.
+2. `tool_denial` is a fifth stop reason. The date-provenance, date-validation and stay-details branch reports `tool_denial`, with `ok: true` and a dated clarification, and `succeeded: true` on `turn_stop`. Test: "A planner date the guest did not give reports stop reason `tool_denial`...". It asserts the exact turn_stop list and that the task state is unchanged.
+3. Added tests:
+   - Deadline after an operation with no surface takes the rollback path (`get_booking_status` runs before the deadline; the thread is unchanged; `CONCIERGE_UNAVAILABLE`). Decision recorded here: the projected-operation fallback needs a surface, so a read-only operation with none rolls back, as a provider failure does.
+   - Deadline before the summary call: the last planner round runs past the deadline, no summary request starts, and the stop is `turn_deadline` at round 4.
+   - `threadSnapshot` now includes `conversationHistory`, `discoveryArtifact` and `canonicalUserFactHistory`.
+   - Every stop-reason test asserts the exact `turn_stop` list (stage, round, succeeded, stopReason).
+4. Bounds: `modelCallTimeoutMs` and `turnDeadlineMs` must be integers in [1 000, 300 000]; the constructor throws otherwise. The tests cover 999, 300 001, 0, 1.5 and negatives.
+5. Exactly one `turn_stop` per turn: `emitStop()` is the only emitter, guarded by a flag. The success path builds its output before emitting and returns after. A test asserts the exact list in every stop-reason test.
+6. `turn_stop` round: the deadline check now runs before the round counter moves. A deadline before the first planner call reports round 0. A deadline before the summary call reports the last planner round (4). Documented on `AssistantStopReason`: `succeeded` is true for `reply`, `round_limit` and `tool_denial`, and false for `turn_deadline` and `error`; a `rejected_plan_fallback` takes its stop reason from how the loop ended; `turn_stop` covers planner turns only (pre-loop exits emit none).
+
+**Counts and commands (final code).**
+- `env -u LLM_API_KEY npm run check`: exit 0.
+- `env -u LLM_API_KEY npx tsx --test test/assistant-turn-stop-reasons.test.ts`: 10 tests, 10 pass, 0 fail.
+- `env -u LLM_API_KEY npx tsx --test test/assistant-turn-stop-cold-restore.test.ts`: 2 tests, 2 pass, 0 fail.
+- `env -u LLM_API_KEY npm run test:assistant`: 67 tests, 66 pass, 1 fail. The one failure is the known pre-existing `Unit detail surface projects inspection facts from the authoritative Unit` (not edited).
+- Affected: `env -u LLM_API_KEY npx tsx --test test/assistant-turn-stop-reasons.test.ts test/assistant-turn-stop-cold-restore.test.ts test/assistant-cold-journey.test.ts test/assistant-control-metrics.test.ts test/assistant-control-outcome-count.test.ts test/assistant-tool-argument-validation.test.ts test/assistant-reply-plan-references.test.ts test/assistant-reply-coverage.test.ts test/assistant-tool-authorization.test.ts test/assistant-task-rail.test.ts test/assistant-artifact-authority.test.ts`: 68 tests, 68 pass, 0 fail.
+- Not run: full `npm test` and `npm run test:workers` (batch gate). Still open for the batch gate, so the status stays `ready-for-agent`.
+
+**Observations (no change made).** The shell does not forward `stopReason` to the browser (decision 5 above). A turn with several search rounds returns every round's discovery card; only the last is active, as the cold-restore test shows.
