@@ -15,7 +15,8 @@ import {
 } from "../apps/local-guest/src/assistant/pending-action-a2ui.js";
 import { ASSISTANT_SYSTEM_INSTRUCTION } from "../apps/local-guest/src/assistant/assistant-tools.js";
 import { resolveCheckInDate } from "../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
-import { GUEST_ASSISTANT_COPY } from "../apps/web-agent/src/guest-content.js";
+import { formatGuestDate, GUEST_ASSISTANT_COPY } from "../apps/web-agent/src/guest-content.js";
+import { DEMO_TRUST_EXPIRES_ON } from "../domains/shortlet/src/browse.js";
 
 function setupHarness() {
   const window = new Window();
@@ -399,7 +400,8 @@ test("Unit detail surface projects inspection facts from the authoritative Unit"
   assert.equal(response.ok, true);
   const payload = JSON.stringify(response.surfaces?.[0]?.a2uiMessages);
   assert.match(payload, /Physical inspection completed on 1 Feb 2026/);
-  assert.match(payload, /Inspection expiry: 1 Feb 2027/);
+  // The expiry is the fixture's trust date, formatted as the guest surface formats any date (not a literal here).
+  assert.ok(payload.includes(`Inspection expiry: ${formatGuestDate(DEMO_TRUST_EXPIRES_ON)}`), "the inspection expiry is the fixture's trust date");
   assert.match(payload, /entire place possession/);
   assert.doesNotMatch(payload, /2026-01-15T00:00:00Z/);
 });
