@@ -204,3 +204,23 @@ Required by this issue: serialise mutating turns per thread (one active run; a s
 7. Batch gate: open. The full `npm test` and `npm run test:workers` run once per batch before any merge to main (not run here, per the instruction).
 
 **Status.** `ready-for-agent`. Not `resolved`: the batch gate is open and the Paystack release test (item 4) is a follow-up.
+
+### Gap M12 closed (28 Oct 2026): the Paystack checkout holds the thread's run across the provider call
+
+**Tests first.** Two tests appended to `test/assistant-thread-lock.test.ts` drive the `shortlet.card-payment.initialize-checkout` path with the provider call held open. The checkout world and steps are in `test/helpers/assistant-thread-lock-fixtures.ts` (a `DirectPaystackClient` whose fetcher the test holds, `reachCheckout`, `coldCheckoutApp`). Assistant enabled, a cold restore before every event, staging-like clock (`LIVE_LIKE_CLOCK`, 27 Oct 2026), staging guest with no seeded phone or email.
+- (a) "the Paystack checkout holds the thread's run across the provider call: ...": while the call is open, a typed turn and a second checkout event are refused `THREAD_BUSY`. After success the lock is free, and the same event reaches the handler (`STALE_SURFACE`, not `THREAD_BUSY`).
+- (b) "the Paystack checkout releases the thread's run when the provider call fails, ...": a typed turn is refused while the failing call is open. The failure returns a closed refusal (`ACTION_NOT_AUTHORIZED`), not a throw. The lock is released, and the following event reaches the handler.
+
+**Mutation M12.** `release()` removed from the `finally` in `handleEventAsync` (`apps/local-guest/src/shortlet-app.ts`): both new tests fail (`true !== false` on the released-lock assertion). The file was restored from a saved copy; SHA-256 `3df2bf446d0e2665d9c40b147f9eeec7b1984a13bd2c6960f9d796b68291807b` matches the pre-mutation value, and `git diff` for that file is empty. No production code changed.
+
+**Commands and counts (final code).**
+- `env -u LLM_API_KEY npm run check`: exit 0 (root `tsc`, `apps/cloudflare` `tsc`, its test and tooling configs, worker bundle guard).
+- `env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow node --import tsx --test test/assistant-thread-lock.test.ts`: 28 tests, 28 pass, 0 fail.
+- `env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow node --import tsx --test test/assistant-session-thread-lock.test.ts`: 2 tests, 2 pass, 0 fail.
+- Mutation run, `--test-name-pattern="Paystack checkout"` on the lock file, with M12 applied: 2 of 2 fail.
+
+**Finding 1 (not fixed; for the owner to decide).** With a Paystack client configured, the `initialize-checkout` event for a guest with no email on file returns `ACTION_NOT_AUTHORIZED` ("The payment action was rejected.") and does not show the email prompt. The synchronous `#handleCardCheckout` asks for the email first; the async Paystack branch in `handleEventAsync` does not. The tests save the email through `guestContactApp.submitEmail` before the event, as the pilot composition test saves it over HTTP before the continuation.
+
+**Finding 2 (not fixed; to verify).** After a provider failure the checkout command leaves a checkout session. A cold restore then shows "Payment handoff ready" with a continue route, and the original ready surface is superseded, so the same checkout event returns `STALE_SURFACE`. Whether that continue route can recover a checkout whose provider call failed is not verified here.
+
+**Status.** Unchanged, `ready-for-agent`. The Paystack release gap (item 4) now has tests. The batch gate is still open (full `npm test` and `npm run test:workers` before any merge to main).

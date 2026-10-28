@@ -20,6 +20,10 @@ import {
   phoneEnvironment,
   proposeOn,
   sampleProposal,
+  checkoutActionOn,
+  checkoutWorld,
+  coldCheckoutApp,
+  reachCheckout,
   successOf,
   worldOver,
 } from "./helpers/assistant-thread-lock-fixtures.js";
@@ -570,4 +574,57 @@ test("a cold restore keeps the shortlist, the open card, the pending confirmatio
   assert.equal(restored.runtime.getThread(THREAD).taskState.pendingAction?.id, before.taskState.pendingAction?.id, "the pending confirmation is restored");
   assert.ok((state.tasks ?? []).length > 0, "the task rail is restored");
   assert.equal(restored.runtime.getThread(THREAD).conversationHistory.length, 0, "the model's conversation history is not restored");
+});
+
+// Issue 06 (gap M12): the Paystack initialize-checkout path awaits the provider while it holds the thread's run. These drive that
+// await with the provider call held open (the checkout world's gate), on the staging-like clock, with a cold restore before each event.
+
+test("the Paystack checkout holds the thread's run across the provider call: a concurrent typed turn and event are refused THREAD_BUSY, then the lock releases after success", async () => {
+  const world = checkoutWorld();
+  const payment = await reachCheckout(world, THREAD);
+  const checkout = checkoutActionOn(payment.surfaces[0]!);
+  assert.ok(checkout, "the payment surface starts Paystack checkout");
+
+  world.gate.armed = true;
+  const holder = coldCheckoutApp(world, THREAD);
+  const inFlight = holder.app.handleEventAsync(THREAD, checkout);
+  await world.gate.reached;
+
+  assert.equal(holder.runtime.threadBusy(THREAD), true, "the checkout holds the thread's run while the provider call is open");
+  assert.equal(codeOf(await coldCheckoutApp(world, THREAD).app.handleTurn(THREAD, "Show me another one")), THREAD_BUSY_CODE, "a typed turn on another request is refused while checkout is held");
+  assert.equal(codeOf(await coldCheckoutApp(world, THREAD).app.handleEventAsync(THREAD, checkout)), THREAD_BUSY_CODE, "a second checkout event is refused while checkout is held");
+
+  world.gate.release();
+  const done = successOf(await inFlight, "the held checkout completes");
+  assert.match(done.surfaces[0]!.summary ?? "", /payment handoff/i, "the checkout opens the payment handoff");
+  assert.equal(holder.runtime.threadBusy(THREAD), false, "the checkout releases the thread's run after success");
+
+  // The lock is free: the same checkout event now reaches the handler, which reports the surface superseded, not THREAD_BUSY.
+  const following = await coldCheckoutApp(world, THREAD).app.handleEventAsync(THREAD, checkout);
+  assert.equal(codeOf(following), "STALE_SURFACE", "an event after the checkout reaches the handler, not the lock");
+});
+
+test("the Paystack checkout releases the thread's run when the provider call fails, so a following checkout event runs", async () => {
+  const world = checkoutWorld();
+  const payment = await reachCheckout(world, THREAD);
+  const checkout = checkoutActionOn(payment.surfaces[0]!);
+  assert.ok(checkout, "the payment surface starts Paystack checkout");
+
+  world.gate.armed = true;
+  world.gate.failOnRelease = new Error("the Paystack connection dropped");
+  const holder = coldCheckoutApp(world, THREAD);
+  const inFlight = holder.app.handleEventAsync(THREAD, checkout);
+  await world.gate.reached;
+  assert.equal(codeOf(await coldCheckoutApp(world, THREAD).app.handleTurn(THREAD, "Show me another one")), THREAD_BUSY_CODE, "a typed turn is refused while the failing provider call is open");
+
+  world.gate.release();
+  const failed = await inFlight;
+  assert.equal(failed.ok, false, "a failed provider call is returned as a closed refusal, not thrown");
+  assert.equal(holder.runtime.threadBusy(THREAD), false, "the failed checkout releases the thread's run");
+
+  // The failed attempt superseded the ready surface, so the same event now reaches the handler and is answered STALE_SURFACE. That
+  // proves it ran past the lock; a THREAD_BUSY here would mean the failed checkout kept the run.
+  const following = await coldCheckoutApp(world, THREAD).app.handleEventAsync(THREAD, checkout);
+  assert.equal(codeOf(following), "STALE_SURFACE", "a following event reaches the handler after the failed checkout, not the lock");
+  assert.equal(coldCheckoutApp(world, THREAD).runtime.threadBusy(THREAD), false, "no run is left holding the thread");
 });
