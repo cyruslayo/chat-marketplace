@@ -17,7 +17,7 @@ ADR 0079 requires end-to-end correlation and redacted metrics. The OpenTelemetry
 1. **Granularity: one record per turn, not per event.** Each `handleTurn` call writes exactly one JSON line (a turn summary), including turns that exit before the planner loop and turns that throw. Per-event diagnostics stay on `onDiagnostic` and are not logged.
 2. **Correlation id: a fresh run id per turn** (`crypto.randomUUID()`, ADR 0070). It is never a thread, domain, booking, payment, guest, session or tenant id. It does **not** yet join ADR 0079's interaction-stream trace id; that join waits for the transport work and is recorded there.
 3. **Shape choices (documented, not OTel-exact where OTel is a per-span scalar):**
-   - `gen_ai.tool.name` is an array of the distinct tool names the planner proposed this turn, in first-proposed order, restricted to names registered on the runtime's packs. A proposed name that is not registered is counted in `assistant.unknown_tool_calls` and never written.
+   - `assistant.tool_names` (renamed from `gen_ai.tool.name` in the review, 28 Oct 2026) is an array of the distinct tool names the planner proposed this turn, in first-proposed order, restricted to names registered on the runtime's packs or the platform. OpenTelemetry's `gen_ai.tool.name` means one name per tool execution; this record is per turn, so the list has its own field name. A proposed name that is not registered is counted in `assistant.unknown_tool_calls` and never written.
    - `gen_ai.request.model` is the configured primary model id, supplied by the host (`assistantModelName`). A fallback-served call is not distinguished (documented gap).
    - `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens` are sums over the planner and post-cap summary calls whose provider reported usage. They are absent when no call reported usage. The Gemini adapter reports none today and is not changed. The scope classifier's own model calls are not counted (documented gap; plumbing it per turn is out of scope).
    - `error.type` is the closed `code` of a refused turn, or `runtime_exception` when a turn throws. It never carries an error message.
@@ -107,3 +107,27 @@ Definition of Done:
 7. Full `npm test` with zero failures: NOT run; it is the once-per-batch pre-merge gate (AGENTS Test scope), so it stays open.
 
 Status stays `ready-for-agent` because DoD item 7 is open for the batch gate and the Durable Object AC1 gap needs an owner decision.
+
+### Review follow-up (independent review of 4f6acce, 28 Oct 2026)
+
+Tests written first (red), then the fix. Status stays `ready-for-agent` (DoD item 7 is the batch gate; the Durable Object turn-level test is a follow-up, below).
+
+1. Async sink rejection (HIGH): `#writeTurnRecord` now handles a thenable result; a rejection counts a drop and is never unhandled. Test: "A sink that returns a rejected promise is counted as a drop..."
+2. Token usage validated (MEDIUM, privacy): a count is written only when it is a non-negative safe integer; otherwise it is treated as not reported (never zero). Test: "A usage count a provider reports as a non-count value is treated as absent..." (canary string and -3).
+3. Thrown turn: a clock that fails inside the turn body writes exactly one record with `error.type` `runtime_exception`, no stop reason, and no message. The turn still throws, as before (the app layer maps it, unchanged). Test: "A turn whose clock fails after the run starts still writes exactly one record...".
+4. Wrapper guard (LOW): the clock is read through `#clockMs()`, so a failing clock never changes the answer; a missing reading leaves `assistant.duration_ms` out. `#generatePlan` runs `startPlannerCall`/`recordResponse` through `#observeTurn` (swallow and count). Test: "A clock that fails on the first read never changes the answer...". Not done: routing `#recordClassifierRetry` through `run.diagnose`. That is not a one-line change: the retrying classifier is built in the constructor, so the retry event has no turn in scope; it would need per-turn plumbing into the classifier. Left unchanged, no behaviour change.
+5. `error.type` closed set: `ASSISTANT_TURN_ERROR_TYPES` (the refusal codes `handleTurn` can return, `THREAD_BUSY`, `CONCIERGE_UNAVAILABLE`, `runtime_exception`, `other_refusal`); any other code writes `other_refusal`. Test: "error.type is a closed set...".
+6. Field renamed `gen_ai.tool.name` to `assistant.tool_names`, documented on `AssistantTurnRecord` (OTel's per-execution meaning); `AssistantTurnRecord` documents the scope-classifier exclusion and that a record means a turn that reached `handleTurn` (app-layer refusals write none; owner accepted).
+7. Durable Object wiring: source-contract test "AC1 host contract: the Durable Object host passes onAssistantTurn and assistantModelName..." (reads `shortlet-pilot-do.ts`, slices the `createGuestRequestHandler({...})` call). Follow-up suggestion, not done now: a Workers-pool test once the Worker test binding can run the assistant (see the first Comment).
+8. Local demo: `apps/local-guest/src/cli-start.ts` passes `onAssistantTurn`. Test: "AC1 host contract: the local demo CLI passes onAssistantTurn...".
+
+Tests and counts (env -u LLM_API_KEY; NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow for tsx):
+- `npm run check`: exit 0.
+- `test/assistant-turn-record.test.ts` (12) and `test/assistant-turn-record-hosts.test.ts` (7): 19 pass, 0 fail.
+- Batch `npx tsx --test` of the 24 listed files (assistant-thread-lock, assistant-turn-stop-reasons, assistant-turn-stop-cold-restore, assistant-unregistered-domain, assistant-runtime-boundary, assistant-stage-handlers, assistant-recorded-journeys, assistant-recording-clients, assistant-cold-journey, assistant-pending-action-restore, assistant-proposal-replacement, assistant-proposal-supersession, assistant-where-chip, assistant-tool-argument-validation, assistant-artifact-authority, assistant-booking-journey, shortlet-assistant-evals, assistant-control-metrics, assistant-control-outcome-count, guest-request-host-packs, assistant-host-composition, guest-request-handler, pilot-production-composition, plus the two new files): 260 pass, 0 fail.
+- `npm run test:assistant`: 67 pass, 0 fail.
+- `npm run test:workers -- apps/cloudflare/test/pilot-worker.spec.ts`: 1 file, 4 pass.
+
+Mutation checks (each breaks one behaviour, runs the two new test files, then the file is restored byte-for-byte): no thenable handling, usage validation off, no record on a thrown turn, DO sink removed, CLI sink removed, `error.type` identity. Each run: 18 pass, 1 fail (the test for that behaviour).
+
+Recorded follow-up (not done now): a Workers-pool variant of the Durable Object turn test, once the Worker test binding runs the assistant (owner decision on the test binding).

@@ -316,6 +316,11 @@ function projectWithHandlers(handlers: readonly AssistantStageHandler[], input: 
   return undefined;
 }
 
+/** True for a promise or other thenable a sink returned, so its rejection can be handled (issue 05 review). */
+function isThenable(value: unknown): value is { then(onFulfilled: undefined, onRejected: (reason: unknown) => void): unknown } {
+  return typeof value === "object" && value !== null && typeof (value as { then?: unknown }).then === "function";
+}
+
 export class AssistantRuntime {
   readonly #environment: LocalGuestEnvironment;
   readonly #modelClient: AssistantModelClient;
@@ -784,9 +789,11 @@ export class AssistantRuntime {
    * changes the answer; it is counted on `turnRecordDropCount`.
    */
   async handleTurn(threadId: string, text: string): Promise<AssistantTurnOutput> {
+    // Issue 05 review: the run's only throwing input, the clock, is read through a guard, so a failing clock can never stop
+    // the turn from answering. A missing start reading leaves the record's duration out.
     const run = new AssistantTurnRun({
       runId: crypto.randomUUID(),
-      startedAtMs: this.#environment.clock().getTime(),
+      startedAtMs: this.#clockMs(),
       forward: (event) => this.#diagnose(event),
       isRegisteredTool: (name) => this.#isRegisteredToolName(name),
     });
@@ -816,9 +823,29 @@ export class AssistantRuntime {
   #writeTurnRecord(run: AssistantTurnRun, outcome: { readonly output?: AssistantTurnOutput; readonly threw: boolean }): void {
     if (!this.#onTurnRecord) return;
     try {
-      this.#onTurnRecord(run.toRecord({ ...(this.#modelName === undefined ? {} : { modelName: this.#modelName }), ...outcome, endedAtMs: this.#environment.clock().getTime() }));
+      const written: unknown = this.#onTurnRecord(run.toRecord({ ...(this.#modelName === undefined ? {} : { modelName: this.#modelName }), ...outcome, endedAtMs: this.#clockMs() }));
+      // Issue 05 review: an async sink that rejects is a dropped record too, and its rejection is handled here, never unhandled.
+      if (isThenable(written)) written.then(undefined, () => { this.#turnRecordDrops += 1; });
     } catch {
       // Observational: a failing sink or mapper never changes the turn (issue 05). The drop is counted, never the content.
+      this.#turnRecordDrops += 1;
+    }
+  }
+
+  /** The environment clock, or undefined when it cannot be read. Observational readings never decide an answer (issue 05). */
+  #clockMs(): number | undefined {
+    try {
+      return this.#environment.clock().getTime();
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Runs an observational step of the turn record; a failing step is counted and never changes the turn (issue 05). */
+  #observeTurn(step: () => void): void {
+    try {
+      step();
+    } catch {
       this.#turnRecordDrops += 1;
     }
   }
@@ -831,9 +858,9 @@ export class AssistantRuntime {
 
   /** Every planner and summary call goes through here so the turn record counts it and reads its usage (issue 05). */
   async #generatePlan(run: AssistantTurnRun, request: AssistantModelRequest): Promise<AssistantModelResponse> {
-    run.startPlannerCall();
+    this.#observeTurn(() => run.startPlannerCall());
     const response = await this.#modelClient.generate(request);
-    run.recordResponse(response);
+    this.#observeTurn(() => run.recordResponse(response));
     return response;
   }
 

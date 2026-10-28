@@ -35,7 +35,7 @@ const ALLOWED_KEYS = [
   "event",
   "gen_ai.operation.name",
   "gen_ai.request.model",
-  "gen_ai.tool.name",
+  "assistant.tool_names",
   "gen_ai.usage.input_tokens",
   "gen_ai.usage.output_tokens",
 ];
@@ -102,7 +102,7 @@ test("Each turn record uses the OTel GenAI names for operation, model, token usa
     assert.equal(record["gen_ai.request.model"], MODEL_NAME);
     assert.equal(record["gen_ai.usage.input_tokens"], 160, "the two planner calls' input tokens are summed");
     assert.equal(record["gen_ai.usage.output_tokens"], 40, "the two planner calls' output tokens are summed");
-    assert.deepEqual(record["gen_ai.tool.name"], ["search_stays"]);
+    assert.deepEqual(record["assistant.tool_names"], ["search_stays"]);
     assert.equal(record["assistant.stop_reason"], "reply");
     assert.equal(record["assistant.planner_calls"], 2);
     assert.equal(record["assistant.tool_calls"], 1);
@@ -231,6 +231,128 @@ test("A tool name the planner proposes that no pack registers is counted and nev
     const [record] = harness.records as [AssistantTurnRecord];
     assert.equal(record["assistant.unknown_tool_calls"], 1);
     assert.equal(JSON.stringify(record).includes(unknown), false, "an unregistered tool name is not written");
-    assert.equal("gen_ai.tool.name" in record, false, "no registered tool was proposed");
+    assert.equal("assistant.tool_names" in record, false, "no registered tool was proposed");
   } finally { harness.close(); }
+});
+
+/** An environment whose clock is `clock`, so a test can make the clock fail on a chosen call. */
+function openWithClock(clock: () => Date, model: RecordingTurnModel): { environment: LocalGuestEnvironment; records: AssistantTurnRecord[]; app: LocalGuestApp; runtime: ShortletAssistantRuntime; close(): void } {
+  const environment = LocalGuestEnvironment.openNode({
+    databasePath: ":memory:",
+    clock,
+    demoCheckIn: STAGING_DEMO_CHECK_IN,
+    initialGuestPhoneNumber: null,
+    initialGuestContactEmail: null,
+  });
+  const records: AssistantTurnRecord[] = [];
+  const wired = wire(environment, model, records);
+  return { environment, records, ...wired, close: () => environment.close() };
+}
+
+test("A sink that returns a rejected promise is counted as a drop: the answer is unchanged and no unhandled rejection is raised.", async () => {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => { unhandled.push(reason); };
+  process.on("unhandledRejection", onUnhandled);
+  const plan = (_request: unknown, index: number): AssistantModelResponse => (index === 0 ? searchResponse() : replyResponse());
+  const plain = openHarness(new RecordingTurnModel(plan));
+  const rejecting = openWithClock(new SteppedClock(STAGING_LIKE_START).now, new RecordingTurnModel(plan));
+  try {
+    const expected = await plain.app.handleTurn(THREAD, USER_TEXT);
+    const rejectingRuntime = new ShortletAssistantRuntime(rejecting.environment, new RecordingTurnModel(plan), {
+      modelName: MODEL_NAME,
+      onTurnRecord: async () => { throw new Error("canary-sink-rejection"); },
+    });
+    const actual = await new LocalGuestApp(rejecting.environment, { assistantRuntime: rejectingRuntime }).handleTurn(THREAD, USER_TEXT);
+    assert.deepEqual(actual, expected, "the answer is unchanged by a sink that rejects");
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(rejectingRuntime.turnRecordDropCount, 1, "the rejected record is counted once");
+    assert.deepEqual(unhandled, [], "a rejected sink promise is handled, never an unhandled rejection");
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+    plain.close();
+    rejecting.close();
+  }
+});
+
+test("A usage count a provider reports as a non-count value is treated as absent, and its text never reaches the record.", async () => {
+  const canary = "canary-usage-5b1e";
+  const model = new RecordingTurnModel((_request, index) => index === 0
+    ? { toolCalls: [{ id: "call-usage", name: "search_stays", args: VALID_SEARCH }], usage: { promptTokens: 100, completionTokens: 7 } }
+    : { text: REPLY_TEXT, finishReason: "stop", usage: { promptTokens: -3, completionTokens: canary } } as unknown as AssistantModelResponse);
+  const harness = openHarness(model);
+  try {
+    await harness.app.handleTurn(THREAD, USER_TEXT);
+    const [record] = harness.records as [AssistantTurnRecord];
+    assert.equal(record["gen_ai.usage.input_tokens"], 100, "a negative count is dropped; the valid count stays");
+    assert.equal(record["gen_ai.usage.output_tokens"], 7, "a string count is dropped; the valid count stays");
+    assert.equal(JSON.stringify(record).includes(canary), false, "the canary usage never reaches the record");
+  } finally { harness.close(); }
+
+  const onlyInvalid = openHarness(new RecordingTurnModel(() => ({ text: REPLY_TEXT, finishReason: "stop", usage: { promptTokens: -3, completionTokens: canary } } as unknown as AssistantModelResponse)));
+  try {
+    await onlyInvalid.app.handleTurn(THREAD, USER_TEXT);
+    const [record] = onlyInvalid.records as [AssistantTurnRecord];
+    assert.equal("gen_ai.usage.input_tokens" in record, false, "no valid count means no count is written, never zero");
+    assert.equal("gen_ai.usage.output_tokens" in record, false);
+  } finally { onlyInvalid.close(); }
+});
+
+
+/**
+ * A clock that can be armed after the environment opens (opening reads the clock too). Once armed, every read is counted, and a
+ * read fails when `fails(call)` is true, with `message` as the error text.
+ */
+function armableClock(fails: (call: number) => boolean, message: string): { now: () => Date; arm: () => void } {
+  const base = new SteppedClock(STAGING_LIKE_START);
+  let armed = false;
+  let calls = 0;
+  return {
+    now: (): Date => {
+      if (!armed) return base.now();
+      calls += 1;
+      if (fails(calls)) throw new Error(message);
+      return base.now();
+    },
+    arm: () => { armed = true; },
+  };
+}
+
+test("A turn whose clock fails after the run starts still writes exactly one record: runtime_exception, no stop reason and no message.", async () => {
+  const canary = "canary-clock-2c9a";
+  // The first read after arming starts the run; from the second read on, every read throws, so the turn fails in its own body.
+  const clock = armableClock((call) => call >= 2, canary);
+  const harness = openWithClock(clock.now, new RecordingTurnModel(() => replyResponse()));
+  try {
+    clock.arm();
+    await assert.rejects(harness.app.handleTurn(THREAD, USER_TEXT));
+    assert.equal(harness.records.length, 1, "a thrown turn writes exactly one record");
+    const [record] = harness.records as [AssistantTurnRecord];
+    assert.equal(record["error.type"], "runtime_exception");
+    assert.equal("assistant.stop_reason" in record, false, "a thrown turn has no stop reason");
+    assert.equal(JSON.stringify(record).includes(canary), false, "the thrown message never reaches the record");
+  } finally { harness.close(); }
+});
+
+test("A clock that fails on the first read never changes the answer: the turn answers as it does with a working clock.", async () => {
+  const working = openHarness(new RecordingTurnModel(() => replyResponse()));
+  const clock = armableClock((call) => call === 1, "canary-first-clock");
+  const failingFirst = openWithClock(clock.now, new RecordingTurnModel(() => replyResponse()));
+  try {
+    const expected = await working.app.handleTurn(THREAD, USER_TEXT);
+    clock.arm();
+    const actual = await failingFirst.app.handleTurn(THREAD, USER_TEXT);
+    assert.deepEqual(actual, expected, "a failing run-start clock never changes the answer");
+    assert.equal(failingFirst.records.length, 1, "the turn still writes its record");
+  } finally { working.close(); failingFirst.close(); }
+});
+
+test("error.type is a closed set: a refusal code outside it is written as other_refusal, and THREAD_BUSY and CONCIERGE_UNAVAILABLE are kept.", async () => {
+  const { AssistantTurnRun } = await import("../apps/local-guest/src/assistant/assistant-turn-record.js");
+  const run = new AssistantTurnRun({ runId: "00000000-0000-4000-8000-000000000001", startedAtMs: 0, forward: () => undefined, isRegisteredTool: () => false });
+  const typed = (code: string) => run.toRecord({ output: { ok: false, code }, threw: false, endedAtMs: 0 })["error.type"];
+  assert.equal(typed("canary-refusal-code-7e"), "other_refusal", "an unknown code is never written as is");
+  assert.equal(typed("THREAD_BUSY"), "THREAD_BUSY");
+  assert.equal(typed("CONCIERGE_UNAVAILABLE"), "CONCIERGE_UNAVAILABLE");
+  assert.equal(typed("STALE_SURFACE"), "STALE_SURFACE");
 });

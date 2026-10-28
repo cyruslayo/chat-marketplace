@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -202,4 +202,31 @@ test("AC1 host: the local pilot passes the turn-record sink to its assistant run
     if (previousMode === undefined) delete process.env.CONCIERGE_MODE; else process.env.CONCIERGE_MODE = previousMode;
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+/** The text of the first `createGuestRequestHandler({ ... })` call in a host source file (its options object, to the matching close). */
+function handlerCallSource(path: string): string {
+  const source = readFileSync(join(process.cwd(), path), "utf8");
+  const start = source.indexOf("createGuestRequestHandler({");
+  assert.ok(start >= 0, `${path} calls createGuestRequestHandler`);
+  let depth = 0;
+  for (let index = start + "createGuestRequestHandler".length; index < source.length; index += 1) {
+    if (source[index] === "(" || source[index] === "{") depth += 1;
+    if (source[index] === ")" || source[index] === "}") {
+      depth -= 1;
+      if (depth === 0 && source[index] === ")") return source.slice(start, index + 1);
+    }
+  }
+  assert.fail(`${path}: the createGuestRequestHandler call is not closed`);
+}
+
+test("AC1 host contract: the Durable Object host passes onAssistantTurn and assistantModelName to createGuestRequestHandler.", () => {
+  const call = handlerCallSource("apps/cloudflare/src/shortlet-pilot-do.ts");
+  assert.match(call, /\bonAssistantTurn:\s*writeAssistantTurnRecord\b/, "the Durable Object writes each turn record");
+  assert.match(call, /\bassistantModelName:\s*configuration\.concierge\.primary\?\.model\b/, "the record names the configured primary model");
+});
+
+test("AC1 host contract: the local demo CLI passes onAssistantTurn to its guest server.", () => {
+  const source = readFileSync(join(process.cwd(), "apps/local-guest/src/cli-start.ts"), "utf8");
+  assert.match(source, /startLocalGuestServer\(\{[^}]*\bonAssistantTurn:\s*writeAssistantTurnRecord\b/s, "the local demo writes turn records too");
 });
