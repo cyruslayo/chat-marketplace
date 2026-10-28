@@ -10,6 +10,7 @@ import { SqliteUnitRepository } from "../../../domains/shortlet/src/index.js";
 import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit-log.js";
 import type { TelemetryEvent } from "../../../packages/platform-core/src/telemetry.js";
 import { createConciergeModelClient } from "../../local-guest/src/assistant/concierge-configuration.js";
+import { writeAssistantTurnRecord } from "../../local-guest/src/assistant/assistant-turn-record.js";
 import { ModelCallBudget } from "../../local-guest/src/assistant/model-call-budget.js";
 import { LocalGuestEnvironment } from "../../local-guest/src/fixture.js";
 import { GUEST_CODE_HASHING_KEY_ENV, loadGuestAccountComposition } from "../../local-guest/src/guest-account-composition.js";
@@ -304,6 +305,9 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
     const guest = createGuestRequestHandler({
       environment: guestEnvironment,
       assets: cloudflareAssetLoader,
+      // Issue 05: one allow-listed record per assistant turn, written as a Workers Logs JSON line; the model id names the configured primary.
+      onAssistantTurn: writeAssistantTurnRecord,
+      assistantModelName: configuration.concierge.primary?.model,
       // Explicit, so production never falls back to reading CONCIERGE_MODE from the process environment.
       conciergeMode: configuration.concierge.mode,
       ...(modelClient ? { modelClient } : {}),

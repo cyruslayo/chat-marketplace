@@ -3,11 +3,13 @@ import type { LocalGuestEnvironment } from "../fixture.js";
 import type {
   AssistantConversationStep,
   AssistantModelClient,
+  AssistantModelRequest,
   AssistantToolCall,
   AssistantToolResult,
   AssistantModelResponse,
 } from "./assistant-model.js";
 import { ModelRequestGuardError } from "./assistant-model.js";
+import { AssistantTurnRun, type AssistantTurnRecord } from "./assistant-turn-record.js";
 import { findToolArgumentViolation, toolArgumentFailureMessage } from "./assistant-tool-arguments.js";
 import {
   AssistantPackRegistry,
@@ -207,6 +209,10 @@ export interface AssistantRuntimeOptions {
   readonly turnDeadlineMs?: number;
   /** The packs the host composes (ADR 0099 section 6). The first is the default active pack. The runtime constructs none. */
   readonly packs?: readonly AssistantDomainPack[];
+  /** Issue 05: one allow-listed record per chat turn, written by the host. A failing sink never changes the turn. */
+  readonly onTurnRecord?: (record: AssistantTurnRecord) => void;
+  /** Issue 05: the configured primary model id, written as `gen_ai.request.model`. The host supplies it. */
+  readonly modelName?: string;
 }
 
 export interface AssistantShortletRestoreInput {
@@ -312,6 +318,9 @@ export class AssistantRuntime {
   readonly #environment: LocalGuestEnvironment;
   readonly #modelClient: AssistantModelClient;
   readonly #onDiagnostic?: (event: AssistantDiagnosticEvent) => void;
+  readonly #onTurnRecord?: (record: AssistantTurnRecord) => void;
+  readonly #modelName?: string;
+  #turnRecordDrops = 0;
   readonly #maxReplyOutputTokens: number;
   readonly #maxPlanningOutputTokens: number;
   readonly #scopeClassifier: ScopeClassifier;
@@ -331,6 +340,8 @@ export class AssistantRuntime {
     this.#environment = environment;
     this.#modelClient = modelClient;
     this.#onDiagnostic = options.onDiagnostic;
+    this.#onTurnRecord = options.onTurnRecord;
+    if (options.modelName !== undefined && options.modelName.trim() !== "") this.#modelName = options.modelName.trim();
     const maxReplyOutputTokens = options.maxReplyOutputTokens ?? DEFAULT_ASSISTANT_REPLY_MAX_OUTPUT_TOKENS;
     if (!Number.isSafeInteger(maxReplyOutputTokens) || maxReplyOutputTokens < 1 || maxReplyOutputTokens > MAX_ASSISTANT_REPLY_OUTPUT_TOKENS) {
       throw new Error(`maxReplyOutputTokens must be an integer between 1 and ${MAX_ASSISTANT_REPLY_OUTPUT_TOKENS}`);
@@ -730,7 +741,61 @@ export class AssistantRuntime {
     if (task) task.state = thread.taskState;
   }
 
+  /** Issue 05: turn records that a failing sink or mapper could not write. Counts only; no content. */
+  get turnRecordDropCount(): number {
+    return this.#turnRecordDrops;
+  }
+
+  /**
+   * One chat turn (issue 05): the turn's body runs with a per-turn run, and exactly one turn record is written when it
+   * ends, whether it answers, refuses before the planner loop, fails inside it or throws. A failing sink or mapper never
+   * changes the answer; it is counted on `turnRecordDropCount`.
+   */
   async handleTurn(threadId: string, text: string): Promise<AssistantTurnOutput> {
+    const run = new AssistantTurnRun({
+      runId: crypto.randomUUID(),
+      startedAtMs: this.#environment.clock().getTime(),
+      forward: (event) => this.#diagnose(event),
+      isRegisteredTool: (name) => this.#isRegisteredToolName(name),
+    });
+    let output: AssistantTurnOutput | undefined;
+    let threw = false;
+    try {
+      output = await this.#runTurnBody(threadId, text, run);
+      return output;
+    } catch (error) {
+      threw = true;
+      throw error;
+    } finally {
+      this.#writeTurnRecord(run, { ...(output === undefined ? {} : { output }), threw });
+    }
+  }
+
+  #writeTurnRecord(run: AssistantTurnRun, outcome: { readonly output?: AssistantTurnOutput; readonly threw: boolean }): void {
+    if (!this.#onTurnRecord) return;
+    try {
+      this.#onTurnRecord(run.toRecord({ ...(this.#modelName === undefined ? {} : { modelName: this.#modelName }), ...outcome, endedAtMs: this.#environment.clock().getTime() }));
+    } catch {
+      // Observational: a failing sink or mapper never changes the turn (issue 05). The drop is counted, never the content.
+      this.#turnRecordDrops += 1;
+    }
+  }
+
+  /** A tool name is registered when a pack or the platform owns it. Any other proposed name is never written (issue 05). */
+  #isRegisteredToolName(name: string): boolean {
+    if (this.#isPlatformTaskTool(name)) return true;
+    return this.#packs.ids().some((id) => this.#packs.packFor(id)?.toolNames.includes(name) === true);
+  }
+
+  /** Every planner and summary call goes through here so the turn record counts it and reads its usage (issue 05). */
+  async #generatePlan(run: AssistantTurnRun, request: AssistantModelRequest): Promise<AssistantModelResponse> {
+    run.startPlannerCall();
+    const response = await this.#modelClient.generate(request);
+    run.recordResponse(response);
+    return response;
+  }
+
+  async #runTurnBody(threadId: string, text: string, run: AssistantTurnRun): Promise<AssistantTurnOutput> {
     const controlStartedAt = performance.now();
     const recordOutcome = (outcome: AssistantControlOutcome) => this.#recordControlOutcome(outcome, performance.now() - controlStartedAt);
     // Issue 02 / ADR 0079: the turn deadline runs from the start of the turn, scope stage included.
@@ -858,7 +923,7 @@ export class AssistantRuntime {
     }, this.#scopeOuterTimeoutMs, (error) => {
       // A retry failure carries the stage's decisive error; the first failure's outcome stands for refused or skipped retries (ADR 0106 amendment).
       const cause = error instanceof ScopeClassifierRetryError ? error.failure : error;
-      this.#diagnose({ ...createFailureDiagnostic("provider_request", 0, undefined, cause),
+      run.diagnose({ ...createFailureDiagnostic("provider_request", 0, undefined, cause),
         ...(cause instanceof ScopeClassificationError ? { scopeFailureReason: cause.reason, ...(cause.finishReason ? { finishReason: cause.finishReason } : {}) } : {}),
         ...(error instanceof ScopeClassifierRetryError ? { classifierAttempts: error.classifierAttempts, firstAttemptScopeFailureReason: error.firstAttemptScopeFailureReason, classifierRetryResult: error.classifierRetryResult,
           ...(error.firstAttemptFinishReason ? { firstAttemptFinishReason: error.firstAttemptFinishReason } : {}) } : {}) });
@@ -907,7 +972,7 @@ export class AssistantRuntime {
     const emitStop = (): void => {
       if (stopEmitted || stopReason === undefined) return;
       stopEmitted = true;
-      this.#diagnose({
+      run.diagnose({
         stage: "turn_stop",
         round,
         succeeded: stopReason === "reply" || stopReason === "round_limit" || stopReason === "tool_denial",
@@ -923,7 +988,7 @@ export class AssistantRuntime {
 
         const isFunctionResultContinuation = round > 1 && candidateHistory.at(-1)?.role === "tool_results";
         activeStage = isFunctionResultContinuation ? "function_result_round_trip" : "provider_request";
-        const modelResponse = await this.#modelClient.generate({
+        const modelResponse = await this.#generatePlan(run, {
           systemInstruction: composeSystemInstruction(candidatePack()),
           tools: taskTools(),
           history: this.#boundedHistory(candidateHistory, candidatePack(), tx.taskState),
@@ -931,12 +996,12 @@ export class AssistantRuntime {
           structuredOutput: { name: "assistant_reply_plan", schema: replyPlanSchema(successfulToolNames(turnRawResults)), strict: true },
           maxOutputTokens: this.#maxPlanningOutputTokens,
         });
-        this.#diagnose({ stage: "provider_request", round, succeeded: true });
+        run.diagnose({ stage: "provider_request", round, succeeded: true });
         if (isFunctionResultContinuation) {
-          this.#diagnose({ stage: "function_result_round_trip", round, succeeded: true });
+          run.diagnose({ stage: "function_result_round_trip", round, succeeded: true });
         }
         activeStage = "provider_response";
-        this.#diagnose({ stage: activeStage, round, succeeded: true });
+        run.diagnose({ stage: activeStage, round, succeeded: true });
 
         // If model produced no tool calls, it is returning a natural language reply
         if (!modelResponse.toolCalls || modelResponse.toolCalls.length === 0) {
@@ -945,7 +1010,7 @@ export class AssistantRuntime {
           const parsedPlan = parseReplyPlan(modelResponse, turnRawResults);
           const plan = typeof parsedPlan === "string" ? undefined : parsedPlan;
           if (typeof parsedPlan === "string") {
-            this.#diagnose({ stage: "provider_response", round, succeeded: false, failureClass: "MODEL_SELECTION_FAILURE", replyPlanRejectionReason: parsedPlan });
+            run.diagnose({ stage: "provider_response", round, succeeded: false, failureClass: "MODEL_SELECTION_FAILURE", replyPlanRejectionReason: parsedPlan });
           }
           if (!plan) {
             controlOutcome = "rejected_plan_fallback";
@@ -994,7 +1059,7 @@ export class AssistantRuntime {
             : malformedArguments ?? precondition ?? stateUnavailable;
           if (invalidCall) {
             controlOutcome = "tool_denial";
-            this.#diagnose({
+            run.diagnose({
               stage: "tool_execution",
               round,
               toolName: safeAssistantToolName(call.name, this.#packs),
@@ -1054,7 +1119,7 @@ export class AssistantRuntime {
           const execution = candidatePack().executeTool(call.name, call.args, toolContext);
           hasSuccessfulApplicationOperation = true;
           const resultCount = getSafeResultCount(execution.result);
-          this.#diagnose({
+          run.diagnose({
             stage: activeStage,
             round,
             toolName: safeAssistantToolName(call.name, this.#packs),
@@ -1128,7 +1193,7 @@ export class AssistantRuntime {
         const summaryTimeoutMs = nextCallTimeoutMs();
         round++;
         activeStage = "function_result_round_trip";
-        const finalModelResponse = await this.#modelClient.generate({
+        const finalModelResponse = await this.#generatePlan(run, {
           systemInstruction: composeSystemInstruction(candidatePack()),
           tools: [],
           history: this.#boundedHistory(candidateHistory, candidatePack(), tx.taskState),
@@ -1136,15 +1201,15 @@ export class AssistantRuntime {
           structuredOutput: { name: "assistant_reply_plan", schema: replyPlanSchema(successfulToolNames(turnRawResults)), strict: true },
           maxOutputTokens: this.#maxReplyOutputTokens,
         });
-        this.#diagnose({ stage: "provider_request", round, succeeded: true });
-        this.#diagnose({ stage: "function_result_round_trip", round, succeeded: true });
+        run.diagnose({ stage: "provider_request", round, succeeded: true });
+        run.diagnose({ stage: "function_result_round_trip", round, succeeded: true });
         activeStage = "provider_response";
-        this.#diagnose({ stage: activeStage, round, succeeded: true });
+        run.diagnose({ stage: activeStage, round, succeeded: true });
         const lastStep = candidateHistory.at(-1);
         const latestResults = latestRawResults;
         const parsedFinalPlan = parseReplyPlan(finalModelResponse, turnRawResults);
         if (typeof parsedFinalPlan === "string") {
-          this.#diagnose({ stage: "provider_response", round, succeeded: false, failureClass: "MODEL_SELECTION_FAILURE", replyPlanRejectionReason: parsedFinalPlan });
+          run.diagnose({ stage: "provider_response", round, succeeded: false, failureClass: "MODEL_SELECTION_FAILURE", replyPlanRejectionReason: parsedFinalPlan });
         }
         const plan = typeof parsedFinalPlan === "string" ? undefined : parsedFinalPlan;
         finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "")
@@ -1185,7 +1250,7 @@ export class AssistantRuntime {
       } else {
         controlOutcome = "model_handling_failure";
       }
-      if (!turnDeadline) this.#diagnose(createFailureDiagnostic(activeStage, round, activeToolName, error));
+      if (!turnDeadline) run.diagnose(createFailureDiagnostic(activeStage, round, activeToolName, error));
       emitStop();
       if (hasSuccessfulApplicationOperation && tx.surfaces.length > 0) {
         // The fallback replaces the failure outcome, so this turn is counted once as the fallback.

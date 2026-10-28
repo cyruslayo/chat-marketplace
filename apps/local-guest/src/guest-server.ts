@@ -253,6 +253,7 @@ import {
 } from "./assistant/model-call-budget.js";
 import type { AssistantModelClient } from "./assistant/assistant-model.js";
 import type { AssistantDiagnosticEvent } from "./assistant/assistant-runtime.js";
+import type { AssistantTurnRecord } from "./assistant/assistant-turn-record.js";
 import { SqliteModelRequestQuota, type ModelRequestQuotaPort } from "../../../packages/platform-core/src/model-request-quota.js";
 import { modelRequestQuotaLimitsFromEnvironment } from "../../../packages/platform-core/src/model-request-quota-config.js";
 import { ModelQuotaGuardClient } from "./assistant/model-quota-guard.js";
@@ -2240,6 +2241,10 @@ export interface GuestRequestHandlerOptions {
   modelClient?: AssistantModelClient;
   /** Metadata-only observation for local evaluation and host telemetry. */
   onAssistantDiagnostic?: (event: AssistantDiagnosticEvent) => void;
+  /** Issue 05: one allow-listed record per assistant turn, passed to every AssistantRuntime this handler builds. */
+  onAssistantTurn?: (record: AssistantTurnRecord) => void;
+  /** Issue 05: the configured primary model id for `gen_ai.request.model`. Hosts that pass `modelClient` supply it. */
+  assistantModelName?: string;
   conciergeMode?:
     | "deterministic"
     | "gemini"
@@ -2397,6 +2402,8 @@ export function createGuestRequestHandler(
   let assistantRuntime: AssistantRuntime | undefined;
   let assistantModelClient: AssistantModelClient | undefined;
   let geminiClient: GeminiConciergeClient | undefined;
+  // Issue 05: the model id the turn record names. A host that injects `modelClient` supplies it; otherwise it is the environment's.
+  let assistantModelName: string | undefined = options.assistantModelName;
 
   if (mode === "assistant-offline") {
     assistantModelClient = options.modelClient ?? new ScriptedAssistantModel();
@@ -2405,14 +2412,16 @@ export function createGuestRequestHandler(
       packs: [createShortletAssistantPack(env)],
       additionalPacks: options.additionalPacks,
       onDiagnostic: options.onAssistantDiagnostic,
+      onTurnRecord: options.onAssistantTurn,
+      modelName: assistantModelName,
     });
   } else if (mode === "gemini" || mode === "openai-compatible") {
     // The production pilot passes a validated client; development commands read the same settings from the environment.
+    const configuredConcierge = options.modelClient ? undefined : loadConciergeConfiguration({ ...process.env, CONCIERGE_MODE: mode });
     assistantModelClient =
       options.modelClient ??
-      createConciergeModelClient(
-        loadConciergeConfiguration({ ...process.env, CONCIERGE_MODE: mode }),
-      );
+      (configuredConcierge && createConciergeModelClient(configuredConcierge));
+    assistantModelName ??= configuredConcierge?.primary?.model;
     if (!assistantModelClient)
       throw new Error(`CONCIERGE_MODE=${mode} requires a model client`);
     if (production && (!modelRequestQuota || assistantModelClient.supportsProviderAttemptReservation !== true))
@@ -2427,6 +2436,8 @@ export function createGuestRequestHandler(
       packs: [createShortletAssistantPack(env)],
       additionalPacks: options.additionalPacks,
       onDiagnostic: options.onAssistantDiagnostic,
+      onTurnRecord: options.onAssistantTurn,
+      modelName: assistantModelName,
     });
   }
   const modelCallBudget = options.modelCallBudget
@@ -2550,7 +2561,7 @@ export function createGuestRequestHandler(
               assistantRuntime: new AssistantRuntime(
                 runtimeEnvironment,
                 quotaGuard(assistantModelClient, runtimeEnvironment),
-                { packs: [createShortletAssistantPack(runtimeEnvironment)], additionalPacks: options.additionalPacks, onDiagnostic: options.onAssistantDiagnostic },
+                { packs: [createShortletAssistantPack(runtimeEnvironment)], additionalPacks: options.additionalPacks, onDiagnostic: options.onAssistantDiagnostic, onTurnRecord: options.onAssistantTurn, modelName: assistantModelName },
               ),
             }
           : {}),
