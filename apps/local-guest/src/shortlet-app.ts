@@ -755,6 +755,11 @@ export class LocalGuestApp {
     return this.#environment;
   }
 
+  /** Issue 06: true while this application's assistant has a run in progress. The session cache never evicts such an application. */
+  hasRunInFlight(): boolean {
+    return this.#assistantRuntime?.hasRunInFlight() === true;
+  }
+
   get assistantRuntime(): AssistantRuntime | null {
     return this.#assistantRuntime;
   }
@@ -774,7 +779,6 @@ export class LocalGuestApp {
     return this.#assistantRuntime?.registeredVerticals() ?? [];
   }
 
-  /** Assistant surfaces are authoritative projections; the shell renders them, never as fallback. */
   /**
    * Issue 06 / ADR 0074: a read after a cold restore presents the open proposal's card, so the guest sees the confirmation the
    * runtime still authorises. The card is appended after the current surfaces and is not repeated when they already show it.
@@ -785,6 +789,7 @@ export class LocalGuestApp {
     return [...surfaces, ...this.#assistantSurfaces([card])];
   }
 
+  /** Assistant surfaces are authoritative projections; the shell renders them, never as fallback. */
   #assistantSurfaces(surfaces: readonly { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] }[]): GuestSurfacePayload[] {
     return surfaces.map((surface) => ({
       surfaceId: surface.surfaceId,
@@ -1202,7 +1207,20 @@ export class LocalGuestApp {
       this.#environment.payments &&
       event?.name === "shortlet.card-payment.initialize-checkout"
     ) {
-      const result = await this.#handlePaystackCardCheckout(threadId, event);
+      // Issue 06: the checkout awaits the payment provider and writes the shell thread, so it holds the thread's run. A typed turn
+      // or another event that starts during the await is refused with THREAD_BUSY, and the run is released in finally.
+      const runtime = this.#assistantRuntime;
+      const release = runtime ? runtime.beginShellRun(threadId) : (() => undefined);
+      if (release === undefined) {
+        await this.#flushRemoteContact();
+        return threadBusyRejection();
+      }
+      let result: GuestTurnResult;
+      try {
+        result = await this.#handlePaystackCardCheckout(threadId, event);
+      } finally {
+        release();
+      }
       const decorated = this.#decorateResult(result);
       if (decorated.ok) {
         this.#rememberResult(threadId, undefined, decorated);
@@ -3222,7 +3240,7 @@ export class LocalGuestApp {
       return;
     }
     thread.pendingAction = { ...action, authoritativeReferences: { ...action.authoritativeReferences } };
-    thread.pendingActionSurfaceId = assistant.activeSurfaces.get("pending_action") ?? null;
+    thread.pendingActionSurfaceId = assistant.activeSurfaces.get(PENDING_ACTION_STAGE) ?? null;
   }
 
   #syncAssistantPersistence(threadId: string, thread: GuestThreadState): void {

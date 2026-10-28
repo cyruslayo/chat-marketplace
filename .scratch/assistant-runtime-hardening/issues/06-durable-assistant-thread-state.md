@@ -43,17 +43,17 @@ The Cloudflare Agents SDK's useful idea is one Durable Object per conversation w
 - Refuted for what matters. Test: "a cold restore keeps the shortlist, the open card, the pending confirmation and the task rail, but not conversation history". A new application and runtime over the same store restore the shortlist, the pending confirmation (same action id and surface id), the active surface ids, the task rail and the replaced-proposal notice.
 - Gap found and fixed. The open confirmation card was not shown on a cold read: `getState` returned only the discovery surface while the runtime still authorised the card, so a reloaded page had no card to press. `getState` now presents the open card, rebuilt from the restored state (`#withOpenProposalCard` in `shortlet-app.ts`, `AssistantRuntime.pendingActionSurfaceFor`). Nothing new is persisted.
 - Not restored, by design or not separately verified: model conversation history (`conversationHistory`; ADR 0070 and 0075, not persisted); `lastSurfaces`; the `supersededSurfaces` memory (not persisted; the existing forged, superseded and unknown id tests pass, but that is not proof a superseded id stays dead across a restore); `canonicalUserFactHistory` keeps ISO-date facts only.
-- The premise "every Worker request is a cold restore" (AGENTS.md) is not what the code does for a warm object. `shortlet-pilot-do.ts` caches the runtime (`this.#runtime ??=`), and a restore runs only when the runtime does not already hold the thread. The restore path runs after eviction or redeploy, not on each request. The owner should correct AGENTS.md.
+- The premise "every Worker request is a cold restore" (AGENTS.md) is not what the code does. A request reuses its session runtime while that runtime is resident (`guest-server.ts`, `runtimeForSession`; the Durable Object caches its handler in `shortlet-pilot-do.ts`, `??=`). A restore runs only when the runtime does not already hold the thread. Eviction, restart or redeploy rebuilds the runtime from the store, and only then does the restore path run. The owner should correct AGENTS.md (not edited by this issue).
 
 **Q2. Option A or B?** A. Both races (two typed turns, and a confirm during a typed turn) are between requests to one tenant object (ADR 0095). A per-thread lock in that object covers them with no new binding, no call per tool and no ADR 0101 layout change. B would solve isolation or per-thread scale that nothing measured here needs.
 
 **Lock design.**
-- `apps/local-guest/src/assistant/assistant-thread-lock.ts`. `beginThreadRun(owner, threadId)` checks and sets a per-thread flag in a `WeakMap` keyed by the tenant's environment (one per store). It runs synchronously, before the first await of `handleTurn`. The release is idempotent and runs in `finally`, so it covers an answer, a refusal, a thrown error and a deadline stop.
+- `apps/local-guest/src/assistant/assistant-thread-lock.ts`. `beginThreadRun(store, threadId)` checks and sets a per-thread flag in a `WeakMap` keyed by the store handle (`environment.database`). Every session runtime over the tenant receives that same handle, so one registry covers them all. It runs synchronously, before the first await of a run. The release is idempotent and runs in `finally`, so it covers an answer, a refusal, a thrown error, a deadline stop and a stuck provider call (bounded by an outer timeout, `MODEL_CALL_OUTER_GRACE_MS`).
 - Refused with the closed code `THREAD_BUSY` (no queueing): every typed turn while a run is in flight (`handleTurn` writes its one refusal record); every assistant event (`handleAssistantEvent`); every shell event on the thread (`handleEvent`, `handleEventAsync`, which also refuse before the restore). The client retries.
 - Not refused: reads (`getState`, `getTaskRail`, the projections). On a busy thread a restore and the in-place stay, area and selection edits do nothing, so the in-flight run commits its own state.
-- Lifetime: the flag lives as long as the tenant's runtime, which is the Durable Object instance that also holds the in-flight request, so it cannot outlive the run that set it. Two runtime instances over one store (the tests' cold restore) share the `WeakMap`, so the lock still applies.
+- Lifetime: the flag is set and cleared in the registry of one store handle. A session runtime with a run in flight is never evicted, idle or least recently used (`hasRunInFlight`), so the run commits into the runtime that started it. Eviction, restart or redeploy rebuilds runtimes from the store, and no flag outlives the run that set it. Two runtime instances over one store (the tests' cold restore and the session runtimes) share the `WeakMap`, so the lock still applies.
 - Delta commit: `TurnTransaction` records the open proposal, its card and its replaced notice as they were when the candidate was taken. `commit` keeps the thread's current value for a proposal the candidate only carried over, and never re-arms a superseded card. A stale clone cannot restore an executed proposal (seeded interleavings, 200 orders, in the test file).
-- A domain refusal thrown by a confirm (for example an overlap with another booking) no longer escapes the turn: `#executePendingAction` catches it, drops the proposal, commits the drop, and returns the existing code `STALE_SURFACE`.
+- A confirmation that throws `AssistantStaleProposalError` (the typed domain refusal a pack raises, for example a Unit taken meanwhile) is reported as `STALE_SURFACE`, and the proposal is dropped. Any other throw drops the proposal, commits the drop and is rethrown; the turn and event boundaries then return `CONCIERGE_UNAVAILABLE`. A non-domain failure is never reported as a stale proposal.
 
 **Q3. Retention.** Nothing new about conversation text is persisted. The card re-presentation reads the existing pending-action projection. The periods are an owner decision: the provisional ADR 0075 values (30-day transient, 180-day conversational) are not applied or changed here.
 
@@ -148,3 +148,59 @@ The confirm executes the proposal and commits. The in-flight turn then commits i
 Observed symptom (reviewer, thrown error): a later typed "Yes" after the resurrected proposal threw out of `handleTurn` with "Unit unavailable ... Overlaps with Payment Pending" instead of returning a closed code. The domain overlap guard stopped a duplicate booking, so no second request was made, but the error escaped the turn.
 
 Required by this issue: serialise mutating turns per thread (one active run; a second mutating event waits or is refused with a closed code), and commit a task-state change as a delta rather than a whole clone, so an earlier clone cannot restore an executed action. Cover it with a test that interleaves a confirm inside a planner round, and make a later yes return a closed code rather than throw.
+
+### Review follow-up (28 Oct 2026): fixes to the failed review
+
+**Step 0, leftover guard.** The killed agent had left a disabled guard: `handleTurn`'s `finally` no longer called `release()`, so every turn would have held the thread lock for ever. It was restored before any other change. A search for leftover markers, `.only`, `.skip` and `if (false)` found nothing else in the changed files.
+
+**1. Lock keyed on the store handle; session runtime never evicted while a run is in flight.** The lock is keyed on `environment.database` (`assistant-thread-lock.ts`). `runtimeForSession` in `guest-server.ts` skips any runtime whose `hasRunInFlight()` is true, both for the idle sweep and for the least-recently-used cap (the cap is exceeded for that request rather than closing a run). Tests: `test/assistant-session-thread-lock.test.ts`, "with an idle timeout, an idle sweep that runs mid-turn does not evict the session whose turn is in flight" and "with sessionRuntimeLimit 1, a second session that takes the slot mid-turn leaves the held turn's thread refused, not bypassed". Both are session-scoped.
+
+**2. Symmetric delta commit.** `TurnTransaction` compares each base (pending proposal id, card surface id, replaced notice id) against a null sentinel (`NONE`). An absent field and a null field are the same "none". One rule applies to all three fields: take the thread's value unless this run changed the field and the thread still holds the run's base. Test: "an absent proposal field and a null one are the same empty base, so a run that opened nothing keeps another run's proposal". The existing seeded interleaving tests (200 and 300 orders) still pass.
+
+**3. Outer timeout.** `#generatePlan` races each model call against its own budget plus `MODEL_CALL_OUTER_GRACE_MS` (500 ms). A call that ignores its abort ends the turn as `turn_deadline`, the lock is released in `finally`, and exactly one turn record is written. Test: "a planner call that never resolves and ignores abort ends the turn, releases the lock, and writes one record".
+
+**4. Shell post-await recheck, and the Paystack decision.**
+- The recheck in `handleEventAsync` (after its await for hydrate and remote load) is now tested on its own. The event starts after the typed turn has taken the lock, so its synchronous check passes and only the recheck can refuse it. Test: "a shell event that starts before a run and resumes during it is refused after its await". A second test covers a new event refused at its own check.
+- Paystack decision: the `shortlet.card-payment.initialize-checkout` path keeps the thread lock across the provider await (it writes the shell thread, so a typed turn or another event must not interleave with it). It takes the lock with `beginShellRun` and releases it in `finally`. Coverage: the `beginShellRun` test ("a shell run held across an external await refuses a typed turn, and releases when it finishes").
+- Coverage gap, not closed here: no test drives the Paystack path itself. Mutation M12 (the release removed from its `finally`) passes all 28 tests. A follow-up test should hold the provider call and assert the release on success and on a provider failure.
+
+**5. Narrow catch.** A pack's confirmation now throws `AssistantStaleProposalError` (generic, in `assistant-stage-handler.ts`) for its typed domain refusal. The runtime cannot import the Shortlet domain (the boundary test forbids it, ADR 0099), so the shortlet handler maps `UnitUnavailableError` to that generic error. In `#executePendingAction`, only `AssistantStaleProposalError` becomes `STALE_SURFACE`. Any other throw drops the proposal, commits the drop and is rethrown. The typed Yes path and the event path catch the rethrow and return `CONCIERGE_UNAVAILABLE`. Tests: "a Yes whose confirmation the domain refuses returns a closed code, drops the proposal and never throws", "a non-domain throw after a side effect is not reported as STALE_SURFACE, and the proposal is dropped", and "a non-domain confirm throw on the event path returns the closed unavailable code, drops the proposal and is not reported as stale".
+
+**6. Answer and issue 08.** The Answer's premise, lock-keying, lifetime and refusal bullets, and issue 08's "Today's behaviour" and owner notes, now describe session runtimes over one store handle. A request reuses its runtime while it is resident; eviction, restart or redeploy rebuilds it from the store. AGENTS.md was not edited.
+
+**7. Nits.** `reset()` refuses while a run is in flight (test "reset refuses while a run is in flight"). The doc comment for `#assistantSurfaces` sits directly above that method. `PENDING_ACTION_STAGE` replaces the literal `"pending_action"` in `setPendingAction` and in the test file.
+
+**Commands and counts (final code, after all edits; no code changed after these runs).**
+- `env -u LLM_API_KEY npm run check`: exit 0 (root `tsc`, `apps/cloudflare` tsc, its test and tooling configs, and the Worker bundle guard).
+- `env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow node --import tsx --test test/assistant-thread-lock.test.ts test/assistant-session-thread-lock.test.ts`: 28 tests, 28 pass, 0 fail (the Node test run of the two lock files; the session file has 2 tests and the lock file 26).
+- `npm run test:assistant` (its script body, run directly with the same env): `test/assistant-interactions-protocol.test.ts` and `test/shortlet-assistant-evals.test.ts`: 67 tests, 67 pass, 0 fail, exit 0.
+- Regression, same env: all 39 `test/assistant-*.test.ts` files plus `test/shortlet-assistant-evals.test.ts`, `test/integrate-booking-request-application.test.ts` and `test/local-apartment-owner-surface.test.ts`: 394 tests, 394 pass, 0 fail.
+- `tsc --noEmit` on the root project (the same check run before the regression set): exit 0.
+
+**Mutation checks (each guard disabled once; the file restored byte for byte and checked by SHA-256 against the pre-mutation values).** The lock-file pair (28 tests) was run for each.
+
+| # | Mutation | Result |
+|---|---|---|
+| M1 | `release()` removed from `handleTurn`'s `finally` | 27 of 28 fail |
+| M2 | idle sweep evicts a runtime with a run in flight | 1 fails (the idle session test) |
+| M3 | LRU cap evicts a runtime with a run in flight | 1 fails (the `sessionRuntimeLimit 1` session test) |
+| M4 | no outer bound on the planner call | 1 fails (the stuck planner test) |
+| M5 | no recheck after the shell event's await | 1 fails (the post-await test) |
+| M6 | whole-clone commit (no delta) | 5 fail (the stale-clone, absent-field and clear tests) |
+| M7 | catch-all in `#executePendingAction` reports every throw as stale | 2 fail (the non-domain tests) |
+| M8 | domain refusal rethrown instead of typed | 1 fails (the domain-refusal test) |
+| M9 | `reset()` guard removed | 1 fails |
+| M10 | event path skips the runtime's busy guard | 1 fails (the direct runtime-call test) |
+| M11 | turn path accepts a busy thread | 7 fail |
+| M12 | Paystack path does not release the shell run | 0 fail (coverage gap, see item 4) |
+
+**Definition of Done (`docs/agents/issue-tracker.md`), checked.**
+1. A named test per criterion: met (the criteria above and the new tests).
+2. Failure paths: refusals, thrown errors, deadline stop, stuck provider call, domain refusal, non-domain throw, eviction under a run.
+3. ADRs: unchanged table above. ADR 0070 (one run per thread, the lock and its release), 0074 (surfaces fail closed, restore keeps the id), 0079 (the turn record is written once, after the release), 0099 (the runtime imports no domain: the boundary test passes), 0101 (no object or binding change), 0106 (no new control outcome; `CONCIERGE_UNAVAILABLE` and `STALE_SURFACE` already existed).
+4. Injected dependencies: the lock uses the store handle; `TurnTransaction` uses its base snapshot in `commit`.
+5. No invented policy: the outer grace (500 ms) is a configurable engineering setting in `assistant-runtime.ts`, next to the existing runtime limits. No new closed code; `AssistantStaleProposalError` is a class, not a code.
+6. No credentials in logs: unchanged; the refusal and error records carry closed codes only.
+7. Batch gate: open. The full `npm test` and `npm run test:workers` run once per batch before any merge to main (not run here, per the instruction).
+
+**Status.** `ready-for-agent`. Not `resolved`: the batch gate is open and the Paystack release test (item 4) is a follow-up.

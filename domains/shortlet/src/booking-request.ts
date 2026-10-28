@@ -85,6 +85,14 @@ export interface CreateDraftOptions extends OccupancyDetails {
   extendedStayPolicy?: ExtendedStayPolicy;
 }
 
+/** Issue 06: the Unit or dates are not available when a request is created. A named class so the assistant can classify it. */
+export class UnitUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "UnitUnavailableError";
+  }
+}
+
 export class BookingRequestManager {
   #repository: any;
   #audit: any;
@@ -440,7 +448,7 @@ export class BookingRequestManager {
         clock
       });
       if (!avail.isAvailable) {
-        throw new Error(`Unit unavailable for requested dates: ${avail.conflictReason}`);
+        throw new UnitUnavailableError(`Unit unavailable for requested dates: ${avail.conflictReason}`);
       }
     }
 

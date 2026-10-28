@@ -50,6 +50,7 @@ import { TurnTransaction, syncActiveTask } from "./assistant-turn-transaction.js
 import { beginThreadRun, threadRunActive, THREAD_BUSY_CODE, THREAD_BUSY_MESSAGE } from "./assistant-thread-lock.js";
 import type { AssistantControlOutcome, AssistantToolEffectCode } from "./assistant-platform.js";
 import {
+  AssistantStaleProposalError,
   PENDING_ACTION_STAGE,
   type AssistantStageHandler,
   type PendingActionOutcome,
@@ -263,6 +264,14 @@ export const DEFAULT_ASSISTANT_MODEL_CALL_TIMEOUT_MS = PLANNER_REQUEST_TIMEOUT_M
 export const DEFAULT_ASSISTANT_TURN_DEADLINE_MS = SERVER_TURN_MAX_MS;
 /** Accepted range for both runtime limits, the same engineering bounds as the model quota guard's request deadline. */
 const MIN_ASSISTANT_RUNTIME_LIMIT_MS = 1_000;
+/** Issue 06: the closed copy for a confirmation that threw (not a stale proposal). The proposal is already dropped; the guest may ask again. */
+const PENDING_ACTION_UNAVAILABLE_MESSAGE = "That action could not be completed. Ask me again if you still want this stay.";
+/**
+ * Issue 06 (engineering setting): the time the runtime waits past a model call's own timeout before it stops waiting for the
+ * call. The provider adapter aborts at that timeout; the grace lets an abort that is honoured arrive first. A call that ignores
+ * its abort is abandoned here, so the turn ends (`turn_deadline`) and the thread lock is released.
+ */
+export const MODEL_CALL_OUTER_GRACE_MS = 500;
 const MAX_ASSISTANT_RUNTIME_LIMIT_MS = 300_000;
 
 /** Thrown before a model call that would start after the turn deadline. Caught by `handleTurn` only. */
@@ -328,6 +337,8 @@ export class AssistantRuntime {
   readonly #onTurnRecord?: (record: AssistantTurnRecord) => void;
   readonly #modelName?: string;
   #turnRecordDrops = 0;
+  /** Issue 06: mutating runs in progress on this runtime (turns and shell runs). The host never evicts a runtime with one. */
+  #runsInFlight = 0;
   readonly #maxReplyOutputTokens: number;
   readonly #maxPlanningOutputTokens: number;
   readonly #scopeClassifier: ScopeClassifier;
@@ -612,8 +623,35 @@ export class AssistantRuntime {
     return this.#environment;
   }
 
+  /**
+   * Fixture-only. Refused while a run of this runtime is in flight: clearing threads under a run would drop the state that run
+   * commits (issue 06).
+   */
   reset(): void {
+    if (this.#runsInFlight > 0) throw new Error("reset refused: a run is in flight on this runtime");
     this.#threads.clear();
+  }
+
+  /** Issue 06: true while a mutating run (a typed turn or a shell run) of this runtime is in progress. */
+  hasRunInFlight(): boolean {
+    return this.#runsInFlight > 0;
+  }
+
+  /**
+   * Issue 06: a host's own mutating work on a thread (for example a payment initialisation that awaits a provider). Returns the
+   * release, or undefined when a run is already in progress on the thread. Typed turns and events are refused while it is held.
+   */
+  beginShellRun(threadId: string): (() => void) | undefined {
+    const release = beginThreadRun(this.#environment.database, threadId);
+    if (release === undefined) return undefined;
+    this.#runsInFlight += 1;
+    let done = false;
+    return () => {
+      if (done) return;
+      done = true;
+      this.#runsInFlight -= 1;
+      release();
+    };
   }
 
   /**
@@ -621,7 +659,7 @@ export class AssistantRuntime {
    * the host uses it to leave an in-flight run's state alone (no restore) until that run has committed.
    */
   threadBusy(threadId: string): boolean {
-    return threadRunActive(this.#environment, threadId);
+    return threadRunActive(this.#environment.database, threadId);
   }
 
   /**
@@ -799,7 +837,7 @@ export class AssistantRuntime {
     });
     // Issue 06 (ADR 0070): one mutating run per thread. The lock is taken synchronously, before the first await below. A second
     // typed turn while one is in flight is refused with THREAD_BUSY (no queueing); its own record is still written, once.
-    const release = beginThreadRun(this.#environment, threadId);
+    const release = this.beginShellRun(threadId);
     if (release === undefined) {
       const refusal: AssistantTurnOutput = { ok: false, code: THREAD_BUSY_CODE, message: THREAD_BUSY_MESSAGE };
       this.#writeTurnRecord(run, { output: refusal, threw: false });
@@ -859,7 +897,20 @@ export class AssistantRuntime {
   /** Every planner and summary call goes through here so the turn record counts it and reads its usage (issue 05). */
   async #generatePlan(run: AssistantTurnRun, request: AssistantModelRequest): Promise<AssistantModelResponse> {
     this.#observeTurn(() => run.startPlannerCall());
-    const response = await this.#modelClient.generate(request);
+    // Issue 06: the provider adapter aborts at the call's own timeout. A call that ignores its abort is abandoned after the same
+    // budget plus MODEL_CALL_OUTER_GRACE_MS, as the turn's deadline stop (`turn_deadline`); the late result is ignored.
+    const call = new Promise<AssistantModelResponse>((resolve) => resolve(this.#modelClient.generate(request)));
+    call.catch(() => undefined);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const outerBound = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new AssistantTurnDeadlineError()), (request.timeoutMs ?? this.#modelCallTimeoutMs) + MODEL_CALL_OUTER_GRACE_MS);
+    });
+    let response: AssistantModelResponse;
+    try {
+      response = await Promise.race([call, outerBound]);
+    } finally {
+      clearTimeout(timer);
+    }
     this.#observeTurn(() => run.recordResponse(response));
     return response;
   }
@@ -930,7 +981,14 @@ export class AssistantRuntime {
 
     if (tx.taskState.pendingAction && !tx.taskState.pendingAction.executed) {
       if (isExplicitConfirmation(text)) {
-        const execution = this.#executePendingAction(threadId, tx.taskState.pendingAction, tx);
+        // A confirmation that throws (not a stale proposal) has already dropped and committed the proposal. The turn returns the
+        // closed unavailable code rather than throwing out of the chat turn.
+        let execution: PendingActionOutcome;
+        try {
+          execution = this.#executePendingAction(threadId, tx.taskState.pendingAction, tx);
+        } catch {
+          return { ok: false, code: "CONCIERGE_UNAVAILABLE", message: PENDING_ACTION_UNAVAILABLE_MESSAGE };
+        }
 
         if (!execution.ok) {
           return { ok: false, code: execution.code, message: execution.message };
@@ -1518,7 +1576,14 @@ export class AssistantRuntime {
         return { ok: false, code: "STALE_SURFACE", message: "That action is no longer active." };
       }
 
-      const execution = this.#executePendingAction(threadId, action, tx);
+      // A confirmation that throws (not a stale proposal) has already dropped and committed the proposal; the event returns the closed
+      // unavailable code rather than throwing out of the shell.
+      let execution: PendingActionOutcome;
+      try {
+        execution = this.#executePendingAction(threadId, action, tx);
+      } catch {
+        return { ok: false, code: "CONCIERGE_UNAVAILABLE", message: PENDING_ACTION_UNAVAILABLE_MESSAGE };
+      }
 
       if (!execution.ok) {
         return { ok: false, code: execution.code, message: execution.message };
@@ -1623,17 +1688,31 @@ export class AssistantRuntime {
     if (!handler?.confirm) {
       return { ok: false, code: "UNSUPPORTED_ACTION", message: "Unsupported action." };
     }
+    let outcome: PendingActionOutcome;
     try {
-      return handler.confirm(action, { threadId, tx, pack, environment: this.#environment, setStage: () => undefined });
-    } catch {
-      // Issue 06: a domain refusal the confirmation did not expect (for example an overlap with another booking) must not escape
-      // the turn. The proposal is dropped, so the same Yes cannot retry it, and the drop is committed here.
+      outcome = handler.confirm(action, { threadId, tx, pack, environment: this.#environment, setStage: () => undefined });
+    } catch (error) {
+      // Issue 06: the proposal is dropped on every throw, so the same Yes cannot retry it (a side effect may already have run).
       tx.clearPendingAction();
       tx.supersede(PENDING_ACTION_STAGE);
-      const thread = this.#threads.get(threadId);
-      if (thread) tx.commit(thread, { state: true, tasks: false, discovery: false, lastSurfaces: tx.lastSurfaces });
-      return { ok: false, code: "STALE_SURFACE", message: "That action is no longer available. Ask me again if you still want this stay." };
+      if (!(error instanceof AssistantStaleProposalError)) {
+        // Any other throw is not a stale proposal and is never reported as one. The drop is committed, then the error propagates
+        // to the turn or event boundary, which returns the closed unavailable code.
+        this.#commitDroppedProposal(threadId, tx);
+        throw error;
+      }
+      outcome = { ok: false, code: "STALE_SURFACE", message: error.message };
     }
+    // A failed confirmation that dropped the proposal (for example a unit refusal) commits the drop here. The caller returns the
+    // failure without committing, so without this the thread would keep the proposal the handler had just removed.
+    if (!outcome.ok && tx.taskState.pendingAction === null) this.#commitDroppedProposal(threadId, tx);
+    return outcome;
+  }
+
+  /** Commits a dropped proposal to the thread, so a later Yes cannot retry it. */
+  #commitDroppedProposal(threadId: string, tx: TurnTransaction): void {
+    const thread = this.#threads.get(threadId);
+    if (thread) tx.commit(thread, { state: true, tasks: false, discovery: false, lastSurfaces: tx.lastSurfaces });
   }
 }
 

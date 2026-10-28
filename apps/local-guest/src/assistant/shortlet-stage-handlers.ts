@@ -2,7 +2,8 @@ import type { CommandPrincipal } from "../../../../packages/platform-core/src/in
 import { replacePendingProposal, type AssistantTaskState } from "./assistant-state.js";
 import { pendingProposalAuthorised } from "./assistant-platform.js";
 import type { PendingAssistantAction } from "./pending-actions.js";
-import { PENDING_ACTION_STAGE, retireOwnStages, type AssistantStageHandler, type StageTurnContext } from "./assistant-stage-handler.js";
+import { AssistantStaleProposalError, PENDING_ACTION_STAGE, retireOwnStages, type AssistantStageHandler, type StageTurnContext } from "./assistant-stage-handler.js";
+import { UnitUnavailableError } from "../../../../domains/shortlet/src/index.js";
 
 /**
  * Issue 04: the shortlet pack's stage handlers. Each handler owns one stage name, the stages it retires, the copy a failed
@@ -127,19 +128,29 @@ const requestToBookHandler: AssistantStageHandler = {
       return { ok: false, code: verdict.code, message: verdict.message };
     }
 
-    const draft = environment.bookingRequestApp.createDraft(
-      {
-        unitId: refs.unitId,
-        primaryGuest: { id: environment.config.guestId, name: environment.config.guestName },
-        occupants: environment.demoOccupants(refs.partySize ?? 1),
-        selfBookingAttestation: environment.selfBookingAttestation(),
-        checkIn: refs.checkIn,
-        checkOut: refs.checkOut,
-      },
-      guest,
-    );
+    let disclosed: ReturnType<typeof environment.bookingRequestApp.disclose>;
+    try {
+      const draft = environment.bookingRequestApp.createDraft(
+        {
+          unitId: refs.unitId,
+          primaryGuest: { id: environment.config.guestId, name: environment.config.guestName },
+          occupants: environment.demoOccupants(refs.partySize ?? 1),
+          selfBookingAttestation: environment.selfBookingAttestation(),
+          checkIn: refs.checkIn,
+          checkOut: refs.checkOut,
+        },
+        guest,
+      );
 
-    const disclosed = environment.bookingRequestApp.disclose(draft.draftId, guest);
+      disclosed = environment.bookingRequestApp.disclose(draft.draftId, guest);
+    } catch (error) {
+      // Issue 06: a Unit or date refusal is the stale-proposal case, reported as the typed error the runtime classifies. Any other
+      // failure may follow a side effect and propagates unchanged: the runtime drops the proposal and never reports it as stale.
+      if (error instanceof UnitUnavailableError) {
+        throw new AssistantStaleProposalError("The unit is no longer available for those dates. Review the current options.");
+      }
+      throw error;
+    }
 
     // POST-AUTHORITATIVE-COMMIT RECONCILIATION:
     // Booking request has committed. Record it authoritatively in working state.

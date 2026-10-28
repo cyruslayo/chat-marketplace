@@ -2497,10 +2497,13 @@ export function createGuestRequestHandler(
   let sessionRuntimesBuilt = 0;
   // Durable state lives in SQLite, so an evicted session's runtime is rebuilt on its next request, exactly as after a
   // restart. Only the in-memory assistant conversation is lost.
+  // Issue 06 (ADR 0070): a runtime with a run in flight is never evicted, idle or least recently used. Its run commits into that
+  // runtime, so closing it would let the run finish against state the store no longer matches.
   const evictIdleRuntimes = (nowMs: number): void => {
     if (sessionRuntimeIdleMs === null) return;
     for (const [key, runtime] of sessionRuntimes) {
       if (nowMs - runtime.lastUsedMs < sessionRuntimeIdleMs) continue;
+      if (runtime.app.hasRunInFlight()) continue;
       sessionRuntimes.delete(key);
       runtime.environment.close();
     }
@@ -2524,12 +2527,13 @@ export function createGuestRequestHandler(
       return existing;
     }
     if (sessionRuntimeLimit !== null) {
-      while (sessionRuntimes.size >= sessionRuntimeLimit) {
-        const [leastRecentlyUsedKey, leastRecentlyUsed] = sessionRuntimes
-          .entries()
-          .next().value!;
-        sessionRuntimes.delete(leastRecentlyUsedKey);
-        leastRecentlyUsed.environment.close();
+      // Least recently used first. A runtime with a run in flight is skipped; when every resident runtime is busy the cap is
+      // exceeded for this request rather than closing a run (issue 06).
+      for (const [key, candidate] of [...sessionRuntimes]) {
+        if (sessionRuntimes.size < sessionRuntimeLimit) break;
+        if (candidate.app.hasRunInFlight()) continue;
+        sessionRuntimes.delete(key);
+        candidate.environment.close();
       }
     }
     // ADR 0004: every session runtime shares the live environment's one handle and inventory. Closing a runtime

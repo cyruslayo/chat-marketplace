@@ -10,6 +10,14 @@ import { PENDING_ACTION_STAGE } from "./assistant-stage-handler.js";
 /** Fallback copy for a projected operation whose handler gave no message of its own (the platform's generic wording). */
 export const GENERIC_PROJECTED_OPERATION_FALLBACK = "The requested information is ready below.";
 
+/** The sentinel key for "none": no open proposal, no card, no replaced notice. */
+const NONE = null;
+
+/** The key of an optional item (its id), or `NONE`. An absent (undefined) and a null item share the same key. */
+function keyOf(item: { readonly id: string } | null | undefined): string | null {
+  return item ? item.id : NONE;
+}
+
 /**
  * Issue 04: the candidate thread state of one turn or one confirmed action (ADR 0070). Every mutation made while the turn runs
  * goes to this object, and the thread is unchanged until `commit` is called. Rollback is simply not committing.
@@ -36,9 +44,9 @@ export class TurnTransaction {
    * Issue 06 (ADR 0070): the open proposal and its card as the thread held them when this candidate was taken. A commit compares
    * against them to tell a change this run made (a clear, an execution, a new proposal) from a copy it only carried over.
    */
-  readonly #basePendingId: string | undefined;
-  readonly #basePendingSurface: string | undefined;
-  readonly #baseReplacedId: string | undefined;
+  readonly #basePendingId: string | null;
+  readonly #basePendingSurface: string | null;
+  readonly #baseReplacedId: string | null;
 
   constructor(thread: AssistantThreadState) {
     this.taskState = cloneTaskState(thread.taskState);
@@ -49,9 +57,11 @@ export class TurnTransaction {
     this.lastSurfaces = thread.lastSurfaces;
     this.discoveryArtifactId = thread.discoveryArtifactId;
     this.discoveryArtifact = thread.discoveryArtifact;
-    this.#basePendingId = thread.taskState.pendingAction?.id;
-    this.#basePendingSurface = thread.activeSurfaces.get(PENDING_ACTION_STAGE);
-    this.#baseReplacedId = thread.taskState.replacedPendingAction?.id;
+    // Each base is the value the run started from, as a key, with `NONE` (null) for "no proposal", "no card" or "no notice". An
+    // absent field (undefined) and a null field are the same "none", so every comparison below is symmetric.
+    this.#basePendingId = keyOf(thread.taskState.pendingAction);
+    this.#basePendingSurface = thread.activeSurfaces.get(PENDING_ACTION_STAGE) ?? NONE;
+    this.#baseReplacedId = keyOf(thread.taskState.replacedPendingAction);
   }
 
   /** Retires the active surface of a stage (it becomes superseded and cannot authorise actions). Does nothing if the stage has none. */
@@ -92,12 +102,20 @@ export class TurnTransaction {
     // Issue 06 (ADR 0070): a delta, not a whole-clone overwrite. The open proposal, its card and its replaced notice are owned by
     // whichever run changed them last. A candidate that still holds the proposal this run started with only carried it over, so
     // the thread's current value wins. A stale clone therefore cannot restore a proposal that was executed or cleared meanwhile.
+    // Symmetric (issue 06 follow-up): a field is written only when this run changed it AND the thread still holds the value the
+    // run started from. A field this run did not change keeps the thread's current value, so a candidate that never had a proposal
+    // cannot erase one another run opened. A field this run changed is written only over the base value, so a clear cannot erase a
+    // different proposal another run opened, and an executed clear stays cleared.
+    // Each field follows one rule, with `NONE` on both sides: take the thread's value unless this run changed the field AND the
+    // thread still holds the run's base value. Then the candidate's change is written over the base, and nothing else is.
     if (parts.state) {
-      if (this.#basePendingId !== undefined && this.taskState.pendingAction?.id === this.#basePendingId) {
-        this.taskState.pendingAction = thread.taskState.pendingAction ?? null;
+      const threadPending = thread.taskState.pendingAction ?? null;
+      if (keyOf(this.taskState.pendingAction) === this.#basePendingId || keyOf(threadPending) !== this.#basePendingId) {
+        this.taskState.pendingAction = threadPending;
       }
-      if (this.#baseReplacedId !== undefined && this.taskState.replacedPendingAction?.id === this.#baseReplacedId) {
-        this.taskState.replacedPendingAction = thread.taskState.replacedPendingAction ?? null;
+      const threadReplaced = thread.taskState.replacedPendingAction ?? null;
+      if (keyOf(this.taskState.replacedPendingAction) === this.#baseReplacedId || keyOf(threadReplaced) !== this.#baseReplacedId) {
+        this.taskState.replacedPendingAction = threadReplaced;
       }
       thread.taskState = this.taskState;
     }
@@ -105,10 +123,10 @@ export class TurnTransaction {
       thread.tasks = this.tasks;
       thread.activeTaskId = this.activeTaskId;
     }
-    const candidateCard = this.activeSurfaces.get(PENDING_ACTION_STAGE);
-    if (this.#basePendingSurface !== undefined && candidateCard === this.#basePendingSurface) {
-      const currentCard = thread.activeSurfaces.get(PENDING_ACTION_STAGE);
-      if (currentCard === undefined) this.activeSurfaces.delete(PENDING_ACTION_STAGE);
+    const candidateCard = this.activeSurfaces.get(PENDING_ACTION_STAGE) ?? NONE;
+    const currentCard = thread.activeSurfaces.get(PENDING_ACTION_STAGE) ?? NONE;
+    if (candidateCard === this.#basePendingSurface || currentCard !== this.#basePendingSurface) {
+      if (currentCard === NONE) this.activeSurfaces.delete(PENDING_ACTION_STAGE);
       else this.activeSurfaces.set(PENDING_ACTION_STAGE, currentCard);
     }
     // A superseded surface stays superseded: a stale candidate cannot make a retired card authoritative again.
