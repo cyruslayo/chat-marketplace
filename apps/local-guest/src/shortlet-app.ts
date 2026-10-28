@@ -3914,6 +3914,11 @@ export class LocalGuestApp {
   ): void {
     const runtime = this.#assistantRuntime;
     if (!runtime || !runtime.hasThread(thread.threadId) || edit === null) return;
+    // ADR 0106 (review follow-up): the area reaches the assistant's stay intent and its persisted context, as the other chips do.
+    if (edit.field === "where") {
+      this.#recordAssistantArea(thread, next);
+      return;
+    }
     const facts =
       edit.field === "when"
         ? {
@@ -3937,6 +3942,27 @@ export class LocalGuestApp {
     const runtime = this.#assistantRuntime;
     if (!runtime || !runtime.hasThread(thread.threadId)) return;
     if (!runtime.recordGuestStay(thread.threadId, facts)) return;
+    this.#persistAssistantStayContext(thread);
+  }
+
+  /**
+   * ADR 0106 (review follow-up): the criteria strip's area is the assistant's stay location and neighbourhood. It is recorded through
+   * the same path as the other stay facts, so the persisted context (and so a cold rebuild) names the same area the strip shows.
+   */
+  #recordAssistantArea(thread: GuestThreadState, area: DiscoverySearchContext): void {
+    const runtime = this.#assistantRuntime;
+    if (!runtime || !runtime.hasThread(thread.threadId) || area.city === undefined) return;
+    if (!runtime.recordGuestArea(thread.threadId, {
+      city: area.city,
+      ...(area.neighbourhood !== undefined ? { neighbourhood: area.neighbourhood } : {}),
+    })) return;
+    this.#persistAssistantStayContext(thread);
+  }
+
+  /** Keeps the thread's persisted assistant context in step with the runtime's stay facts. */
+  #persistAssistantStayContext(thread: GuestThreadState): void {
+    const runtime = this.#assistantRuntime;
+    if (!runtime || !runtime.hasThread(thread.threadId)) return;
     const context = this.#assistantContextFromState(
       runtime.getThread(thread.threadId).taskState,
     );
@@ -3988,6 +4014,7 @@ export class LocalGuestApp {
       ...(previous.nights !== undefined ? { nights: previous.nights } : {}),
       ...(previous.partySize !== undefined ? { partySize: previous.partySize } : {}),
     });
+    this.#recordAssistantArea(thread, previous);
     const result = this.#executeDiscovery(thread, resolution.filters, {
       recordHistory: false,
     });

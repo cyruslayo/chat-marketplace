@@ -672,6 +672,23 @@ export class AssistantRuntime {
     return true;
   }
 
+  /**
+   * ADR 0106 (review follow-up): the criteria strip's area. A general area (no neighbourhood) clears the neighbourhood. The area
+   * values come from the strip's own catalogue (SEARCH_AREAS), so the shell passes only validated names.
+   */
+  recordGuestArea(threadId: string, area: { readonly city: string; readonly neighbourhood?: string }): boolean {
+    const thread = this.#threads.get(threadId);
+    if (!thread) return false;
+    if (area.city.trim() === "") return false;
+    const stay = thread.taskState.stayIntent;
+    stay.location = area.city;
+    if (area.neighbourhood === undefined) delete stay.neighbourhood;
+    else stay.neighbourhood = area.neighbourhood;
+    const task = thread.tasks.find((entry) => entry.taskId === thread.activeTaskId);
+    if (task) task.state = thread.taskState;
+    return true;
+  }
+
   selectShortletUnit(threadId: string, unitId: string): boolean {
     const thread = this.#threads.get(threadId);
     if (!thread) return false;

@@ -249,3 +249,44 @@ Commands and counts (env -u LLM_API_KEY):
 - Affected set (`assistant-proposal-supersession`, `assistant-proposal-replacement`, `assistant-pending-action-restore`, `assistant-cold-journey`, `assistant-turn-stop-cold-restore`, `assistant-recorded-journeys`, `guest-chip-continuity`): 50 tests, 50 pass, 0 fail.
 - `npm run test:assistant`: 67 of 67 pass.
 - Not run: full `npm test`, `npm run test:workers`.
+
+### Where-chip cold-restore fix (28 Oct 2026, HEAD cf4199f)
+
+**Root cause.** `#recordAssistantStayChip` recorded only the `when` and `guests` chips. A `where` (area) chip reached the discovery and the strip, but not the assistant's stay intent (`stayIntent.location` and `neighbourhood`) or `thread.assistantContext`. Both kept the previous area. On every cold request `#rebuildAssistantDiscovery` (called from `getState` and from the thread load) rebuilt the discovery from that stale context, so a reload showed the old area's stays, and a proposal made after a cold request named the old stay (`unit-lagos-ikoyi-001` instead of the Lekki stay). A warm application was not affected, because it never rebuilt.
+
+**Approach.** The area is recorded through the same path as the other stay facts, and into the same persisted field. Nothing new is stored. `assistantContext` already has `city` and `neighbourhood`, and `#assistantContextFromState` keeps the neighbourhood only when it is a known one.
+- `assistant-runtime.ts`: `recordGuestArea(threadId, { city, neighbourhood? })` sets `stayIntent.location` and `neighbourhood`; a general area clears the neighbourhood; a blank city is refused.
+- `shortlet-app.ts`: `#recordAssistantStayChip` sends a `where` chip to `#recordAssistantArea`, which needs a city (fail closed otherwise). `#persistAssistantStayContext` keeps `thread.assistantContext` in step, shared by the `when`, `guests` and area paths. Undo records the previous area as well, so undo and the strip agree.
+- The supersession rule is unchanged: the area goes through `applyDiscoveryShortlist` after the search, so an area change removes a proposal whose unit is no longer in the results, and a same-area edit keeps it.
+- A forged or unknown area is refused by `applyCriteriaEdit` (`INVALID_CRITERIA`) before anything is recorded.
+
+**ADR table.**
+
+| ADR | Constraint | Where it applies |
+|---|---|---|
+| 0106 | Chip facts are guest-authored structured input; the assistant's task state and its persisted context keep them | The `where` chip is recorded beside `when` and `guests` |
+| 0093 | Persisted assistant context keeps only the fields it already held (city, neighbourhood, dates, party size) | `assistantContext` already had `neighbourhood`; no new record |
+| 0074 | A changed stay removes an open proposal; an unchanged one keeps it; stale surfaces fail closed | The reconcile after the search, unchanged |
+| 0075 | No restricted data in stored interaction data | Area names are catalogue values |
+
+No ADR change and no schema change: the fix persists existing state through an existing field, so the stop condition did not apply.
+
+**Tests (new): `test/assistant-where-chip.test.ts`, 12 tests, warm and cold, staging-like guest, 27 Oct 2026 clock.** (a) a where chip shows the new area on reload; (b) a typed request to book names the new area's stay; (c) a guests chip after a where chip keeps the area on reload; (d) undo of a where chip restores the previous area (warm), and a cold undo reports `NOTHING_TO_UNDO` (cold, the pre-existing history reset); (e) a same-area chip keeps a valid proposal, a changed area removes it; (f) a forged area is rejected and the state is unchanged. Red first: 6 of 12 failed (warm (a) and (c), cold (a), (b), (c), (d)). Warm (b), (d), (e), (f) and cold (e), (f) already held.
+
+**Shared helper.** `test/helpers/assistant-chip-session.ts` (new) holds the chip driver (cold reload before each step, warm without it, criteria key from the last result), `assertOk`, `proposalCard`, `requestSent`, and the staging-like and phone-holding guests. `test/assistant-proposal-supersession.test.ts` now uses it; its private helpers are removed and its 16 tests are unchanged.
+
+**Mutation checks** (runtime and shell restored byte-identical after each, verified with `cmp`):
+- Mutant E, the edit path does not record the area (`#recordAssistantStayChip` returns before `#recordAssistantArea`): 6 of 12 where-chip tests fail (warm (a), (c); cold (a), (b), (c), (d)).
+- Mutant U, the undo path does not record the previous area: 1 test fails (warm (d)).
+
+**Recordings.** Re-recorded offline into a scratch folder: all five committed recordings are byte-identical. None of the journeys uses a where chip, so none changed.
+
+**Commands and counts (env -u LLM_API_KEY).**
+- Red first: `node --import tsx --test test/assistant-where-chip.test.ts` before the fix: 6 pass, 6 fail.
+- Green: the same file: 12 pass, 0 fail.
+- `npm run check`: exit 0.
+- Affected set (`assistant-where-chip`, `assistant-proposal-supersession`, `assistant-proposal-replacement`, `assistant-pending-action-restore`, `assistant-cold-journey`, `assistant-turn-stop-cold-restore`, `assistant-artifact-authority`, `assistant-booking-journey`, `assistant-recorded-journeys`, `assistant-recording-clients`, `shortlet-assistant-evals`, `guest-chip-continuity`, `assistant-discovery-view`, `assistant-persistent-continuity`, `assistant-scope-persistence`, `guest-account-linking`, `guest-account-sign-in`, `guest-offer-access`, `guest-real-dates`): 269 tests, 269 pass, 0 fail.
+- `npm run test:assistant`: 67 of 67 pass.
+- Not run: full `npm test`, `npm run test:workers`. No client.ts change, no client.js regenerated.
+
+**Status.** Issue 03 stays `ready-for-agent`; the batch gate is still open.
