@@ -4,7 +4,7 @@ import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime, type AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/scripted-assistant-model.js";
 import type { AssistantToolParameterProperty, AssistantToolParametersSchema, AssistantToolResult } from "../apps/local-guest/src/assistant/assistant-model.js";
-import type { AssistantThreadState } from "../apps/local-guest/src/assistant/assistant-state.js";
+import type { AssistantThreadState, AssistantTaskState } from "../apps/local-guest/src/assistant/assistant-state.js";
 import { PLATFORM_TASK_TOOLS, TASK_START_EVENT, type AssistantDomainPack } from "../apps/local-guest/src/assistant/assistant-platform.js";
 import { findToolArgumentViolation, toolArgumentFailureMessage } from "../apps/local-guest/src/assistant/assistant-tool-arguments.js";
 import { ASSISTANT_TOOL_DEFINITIONS, createShortletAssistantPack } from "../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
@@ -54,11 +54,20 @@ function executedToolCount(diagnostics: readonly AssistantDiagnosticEvent[]): nu
   return diagnostics.filter((event) => event.stage === "application_operation" && event.succeeded).length;
 }
 
+/**
+ * ADR 0074 (commit 0ea551f): a task state may omit `replacedPendingAction` (the initial state) or carry it as null (every
+ * committed clone). Both mean "no replaced proposal", so the snapshot writes the key as null and the two compare equal.
+ * Only that representation is normalised; every other field is compared as before.
+ */
+function withNoticeKey(state: AssistantTaskState): AssistantTaskState {
+  return { ...state, replacedPendingAction: state.replacedPendingAction ?? null };
+}
+
 function threadSnapshot(thread: AssistantThreadState): string {
   return JSON.stringify({
-    taskState: thread.taskState,
+    taskState: withNoticeKey(thread.taskState),
     activeTaskId: thread.activeTaskId,
-    tasks: thread.tasks,
+    tasks: thread.tasks.map((task) => ({ ...task, state: withNoticeKey(task.state) })),
     activeSurfaces: thread.activeSurfaces,
     supersededSurfaces: thread.supersededSurfaces,
     lastSurfaces: thread.lastSurfaces,

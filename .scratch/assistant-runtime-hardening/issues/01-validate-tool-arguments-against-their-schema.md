@@ -95,3 +95,7 @@ Commands and counts (env -u LLM_API_KEY, after the review fixes):
 - `npm run test:assistant`: 67 tests, 66 pass, 1 fail (the b68eecd expiry failure above).
 - `npx tsx --test test/assistant-pack-registry.test.ts`: 3 pass, 0 fail.
 - `npx tsx --test test/assistant-search-unknowns.test.ts`: 5 pass, 0 fail.
+
+### Test fix (28 Oct 2026, issue 04 follow-up, commit on integration/concierge-controls)
+
+The two failing tests, "a switch_task call with a numeric taskId ..." and "a start_task call without its required domain ...", were failing on d60f82b before issue 04. Cause: commit 0ea551f added `replacedPendingAction` to the task state. The initial state omits the key, while every committed clone writes it as null, so the file-local `threadSnapshot` saw an extra key after a rejected call. Both mean "no replaced proposal". Fix (test only, runtime unchanged): the file-local snapshot writes the key as null, and the assertions are unchanged (no task created or switched, no application call, surfaces and history unchanged). The shared helper in test/helpers/assistant-turn-model.ts is not changed. Counts: this file 13 of 13 pass; npm run test:assistant 67 of 67; safety list 176 of 176.
