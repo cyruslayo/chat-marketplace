@@ -13,7 +13,8 @@ import {
 } from "../../apps/local-guest/src/assistant/assistant-recording.js";
 import { createFakeShopPack } from "./fake-domain-pack.js";
 import { withProviderAttemptHook } from "./assistant-attempt-model.js";
-import { LIVE_LIKE_CLOCK, STAGING_GUEST_CONFIG, firstButtonAction, wireDatedApp } from "./guest-date-fixtures.js";
+import { LIVE_LIKE_CLOCK, STAGING_GUEST_CONFIG, firstButtonAction, wireDatedApp, type DatedFixture } from "./guest-date-fixtures.js";
+import { ASSISTANT_CONTROL_COPY } from "../../apps/local-guest/src/assistant/control-copy.js";
 
 /**
  * Shared recorded-journey code for issue 03: the four named journeys, the cold-restore runner that drives them, the
@@ -38,6 +39,8 @@ export interface RecordedGuestStep {
   readonly planner?: PlannerAnswer;
   readonly cancel?: true;
   readonly button?: { readonly ofTurn: number; readonly expect?: string };
+  /** ADR 0074: a confirmation after a search change or task switch that removed the proposal. Nothing is sent. */
+  readonly replaced?: true;
 }
 
 export interface RecordedJourneyDefinition {
@@ -50,11 +53,12 @@ export interface RecordedJourneyDefinition {
   readonly guestTurns: readonly RecordedGuestStep[];
 }
 
-const SEARCH_IKOYI = { city: "Lagos", neighbourhood: "Old Ikoyi", checkIn: "2026-12-14", nights: 4, guests: 2 };
-const SEARCH_LEKKI = { city: "Lagos", neighbourhood: "Lekki Phase 1", checkIn: "2026-12-14", nights: 4, guests: 2 };
-const PROPOSE_REQUEST = { tool: "propose_request_to_book", args: { stayRef: "stay-1" } } as const;
+export const SEARCH_IKOYI = { city: "Lagos", neighbourhood: "Old Ikoyi", checkIn: "2026-12-14", nights: 4, guests: 2 };
+export const SEARCH_LEKKI = { city: "Lagos", neighbourhood: "Lekki Phase 1", checkIn: "2026-12-14", nights: 4, guests: 2 };
+export const PROPOSE_REQUEST = { tool: "propose_request_to_book", args: { stayRef: "stay-1" } } as const;
 
 export const CANCEL_COPY = "Action cancelled. Let me know how else I can help.";
+export const PROPOSAL_REPLACED_COPY = ASSISTANT_CONTROL_COPY.proposalReplaced;
 
 export const RECORDED_JOURNEYS: readonly RecordedJourneyDefinition[] = [
   {
@@ -91,15 +95,28 @@ export const RECORDED_JOURNEYS: readonly RecordedJourneyDefinition[] = [
     ],
   },
   {
-    name: "cancel-after-task-switch",
+    name: "confirm-after-task-switch",
     threadId: "g-d1a0000404",
-    description: "A Booking Request awaits confirmation, the guest switches to another domain, and the guest then types a cancellation: the open Booking Request is cancelled, not sent.",
+    description: "A Booking Request awaits confirmation, the guest switches to another domain, then confirms it by typing and by the old card's button: ADR 0074 removed the proposal, so nothing is sent.",
     withSecondDomain: true,
     guestTurns: [
       { text: "I need a place in Ikoyi for 4 nights for 2 guests from 14 December 2026", planner: { tool: "search_stays", args: SEARCH_IKOYI } },
       { text: "Request the first one.", planner: PROPOSE_REQUEST },
       { text: "Start a new task in shop", planner: { tool: "start_task", args: { domain: "shop" } } },
-      { text: "No, cancel that.", cancel: true },
+      { text: "Yes", replaced: true },
+      { text: "Confirm the Booking Request from the earlier card", button: { ofTurn: 1, expect: "STALE_SURFACE" } },
+    ],
+  },
+  {
+    name: "confirm-after-search-change",
+    threadId: "g-d1a0000405",
+    description: "A Booking Request awaits confirmation, the guest changes the search to another stay, then types yes: ADR 0074 removed the proposal, so nothing is sent.",
+    withSecondDomain: false,
+    guestTurns: [
+      { text: "I need a place in Ikoyi for 4 nights for 2 guests from 14 December 2026", planner: { tool: "search_stays", args: SEARCH_IKOYI } },
+      { text: "Request the first one.", planner: PROPOSE_REQUEST },
+      { text: "Actually Lekki, same dates", planner: { tool: "search_stays", args: SEARCH_LEKKI } },
+      { text: "Yes", replaced: true },
     ],
   },
 ];
@@ -229,12 +246,17 @@ export async function runJourney(
   definition: RecordedJourneyDefinition,
   environment: LocalGuestEnvironment,
   model: AssistantModelClient,
+  options: { readonly warm?: boolean; readonly observe?: (fixture: Omit<DatedFixture, "close">) => void } = {},
 ): Promise<JourneyTurnOutput[]> {
   const shopPacks = definition.withSecondDomain ? [createFakeShopPack()] : undefined;
   const outputs: JourneyTurnOutput[] = [];
   const results: GuestTurnResult[] = [];
+  // A cold run builds a new application before every step (a Worker request); a warm run keeps one application.
+  const warmFixture = options.warm ? wireDatedApp(environment, model, undefined, shopPacks) : undefined;
+  let last: Omit<DatedFixture, "close"> | undefined;
   for (const step of definition.guestTurns) {
-    const fixture = wireDatedApp(environment, model, undefined, shopPacks);
+    const fixture = warmFixture ?? wireDatedApp(environment, model, undefined, shopPacks);
+    last = fixture;
     fixture.app.getState(definition.threadId);
     let result: GuestTurnResult;
     if (step.button) {
@@ -248,6 +270,7 @@ export async function runJourney(
     results.push(result);
     outputs.push(outputOf(step.text, result));
   }
+  if (last) options.observe?.(last);
   return normaliseGeneratedIds(outputs);
 }
 
@@ -298,6 +321,10 @@ export function intendedOutcomeViolations(definition: RecordedJourneyDefinition,
       if (turn.surfaces.some((surface) => PENDING_SURFACE.test(surface.surfaceId))) violations.push(`${definition.name}: turn ${index + 1} leaves a pending surface`);
       if (turn.surfaces.some((surface) => REQUEST_SURFACE.test(surface.surfaceId))) violations.push(`${definition.name}: turn ${index + 1} opens a request`);
       if (turn.controlOutcome !== undefined && FALLBACK_OUTCOMES.includes(turn.controlOutcome)) violations.push(`${definition.name}: turn ${index + 1} ends in fallback outcome ${turn.controlOutcome}`);
+    }
+    if (step.replaced) {
+      if (!turn.ok || JSON.stringify(turn.messages) !== JSON.stringify([PROPOSAL_REPLACED_COPY])) violations.push(`${definition.name}: turn ${index + 1} is not the replaced-proposal copy`);
+      if (turn.surfaces.some((surface) => PENDING_SURFACE.test(surface.surfaceId) || REQUEST_SURFACE.test(surface.surfaceId))) violations.push(`${definition.name}: turn ${index + 1} keeps a proposal or opens a request`);
     }
     if (step.button?.expect !== undefined) {
       if (turn.ok || turn.code !== step.button.expect) violations.push(`${definition.name}: turn ${index + 1} was not refused as ${step.button.expect}`);

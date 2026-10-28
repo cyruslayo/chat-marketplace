@@ -127,7 +127,7 @@ Tests: `test/assistant-pending-action-restore.test.ts` (new, 3 tests, one per re
 - 7. Shared helpers: `test/helpers/assistant-attempt-model.ts` (`withProviderAttemptHook`, used by the recorded journeys and by `test/assistant-interactions-protocol.test.ts`, replacing its inline adapter); `STAGING_GUEST_CONFIG` in `test/helpers/guest-date-fixtures.ts` (used by `datedFixture` and the journey environment).
 - 8. The new files run in `npm test` phase 1 (`scripts/test-phases.mjs` puts every `test/*.test.ts` that does not drive a real Chrome in the concurrent phase), not in `npm run test:assistant`. `test:assistant` is not edited.
 - 9. Separate defect, not fixed: `handleTurn` throws "A valid phone number is required before submitting a Booking Request" for a confirmed Booking Request when the guest has no phone (reached through the staging-like guest; `assistant-runtime.ts` ~1475 area). The restore test avoids it with a phone-holding guest. Not fixed here; no test depends on the fix.
-- 10. Separate defect, owner decision needed, not fixed: a task switch does not supersede the open Booking Request confirmation. After "Start a new task in shop", a typed "Yes" (warm or cold) executes the Booking Request: the host accepts it and an offer surface opens (verified with a phone-holding guest). A confirm press on the old card after the switch also reaches execution (the no-phone guest hit finding 9 instead of a refusal). ADR 0074 says stale or superseded material actions fail closed. Options for the owner: a task switch clears the open action; or a confirmation binds to the newest prompt only. The restore fix does not create this; it makes a cold guest reach the same path a warm guest already reaches.
+- 10. RESOLVED (28 Oct 2026, see the owner decision below). Separate defect, owner decision needed, not fixed at the time: a task switch does not supersede the open Booking Request confirmation. After "Start a new task in shop", a typed "Yes" (warm or cold) executes the Booking Request: the host accepts it and an offer surface opens (verified with a phone-holding guest). A confirm press on the old card after the switch also reaches execution (the no-phone guest hit finding 9 instead of a refusal). ADR 0074 says stale or superseded material actions fail closed. Options for the owner: a task switch clears the open action; or a confirmation binds to the newest prompt only. The restore fix does not create this; it makes a cold guest reach the same path a warm guest already reaches.
 
 **Commands and counts (28 Oct 2026, env -u LLM_API_KEY).**
 - `npm run check`: exit 0 after the restore fix (commit 49464b1) and again after the review items (final run).
@@ -149,9 +149,46 @@ Tests: `test/assistant-pending-action-restore.test.ts` (new, 3 tests, one per re
 2. **Live `--out` guard.** `isInsideOrSame` (`..x` is inside; `..` and `..\` prefixes are outside) and `realPathOfNearestExisting` compare real paths, so a junction into `test/fixtures` is refused. Test: `Live recording refuses an --out inside test/fixtures, including a name such as ..x, a subdirectory and a junction into it.` Live mode was not run.
 3. **Malformed pendingAction.** `parseGuestProjection` reads an invalid `pendingAction` as null and an invalid `pendingActionSurfaceId` as null; the thread still restores. Test: `A malformed persisted pendingAction is read as null: the thread still restores, without the pending action.`
 
-Pending owner decision (not changed here): a new search or task switch after a Booking Request proposal does not supersede the open confirmation.
+Owner decision (28 Oct 2026, resolved below): a new search or task switch after a Booking Request proposal removes the proposal.
 
 Commands and counts (env -u LLM_API_KEY):
 - `npm run check`: exit 0.
 - `node --import tsx --test test/assistant-pending-action-restore.test.ts test/assistant-cold-journey.test.ts test/assistant-turn-stop-cold-restore.test.ts test/assistant-recorded-journeys.test.ts test/assistant-recording-clients.test.ts test/assistant-discovery-view.test.ts test/assistant-persistent-continuity.test.ts test/assistant-scope-persistence.test.ts test/guest-account-linking.test.ts test/guest-account-sign-in.test.ts test/guest-offer-access.test.ts test/guest-real-dates.test.ts`: 154 tests, 154 pass, 0 fail.
 - `npm run test:assistant`: 67 tests, 67 pass, 0 fail.
+
+### Owner decision: a search change or task switch removes a proposal (28 Oct 2026, finding 10 resolved)
+
+**Finding 10 is resolved.** The reviewer probe: propose Old Ikoyi, then "Actually Lekki, same dates", then a typed "Yes" confirmed the Ikoyi stay, warm and cold. A task switch did the same. Owner decision: a new search that changes the proposed stay, or a task switch, after a Booking Request proposal removes the proposal's authority (ADR 0074: a changed stay or authority removes action authority).
+
+**Rule (implemented).**
+- A successful `search_stays` removes the open proposal unless the result still names the same stay: the same `stayRef`, unit, check-in, checkout and party size. A repeated, unchanged search keeps it (decision d: kept, because the stay and its authority are unchanged; this is also today's behaviour for an unchanged search).
+- A proposal without a stay reference (an offer or checkout action) has no stay to match, so any successful search removes it (fail closed).
+- A task switch removes the proposal wherever it is requested: the cross-domain router prompt, the `start_task`/`switch_task` tool calls, and the `platform.task.start`/`switch` events.
+- A removal keeps only a notice `{ id, reason }` (`replacedPendingAction`), with no authority. The notice is persisted in the guest projection (optional, a malformed notice reads as null) and restored with the thread, so a cold restore and a warm runtime agree.
+- The next typed confirmation after a removal gets a fixed reply (`ASSISTANT_CONTROL_COPY.proposalReplaced`) and sends nothing; no model call is made. The notice clears on that typed turn, and on a new proposal.
+- The old card's buttons are refused as `STALE_SURFACE`, because the surface is no longer the active one.
+- Guards are unchanged: forged, unknown and superseded ids still fail closed.
+
+**Root cause.** Nothing in the search or task-switch path touched `pendingAction`. Only the executors and cancellation cleared it, so a search changed the stay under an open proposal and a switch left it in the saved task.
+
+**ADR table.**
+
+| ADR | Constraint | Where it applies |
+|---|---|---|
+| 0074 | Only the current authoritative surface keeps action authority; a changed stay or authority removes it; stale surfaces fail closed | `proposalStillAuthorised` and `replacePendingProposal` in `assistant-runtime.ts`/`assistant-state.ts`; the button refusal |
+| 0106 | Deterministic confirmations keep their path with no classifier call; the reply copy is server-owned | The fixed reply is returned before the classifier, from `control-copy.ts` |
+| 0070 | Identities are not re-minted; a switch is a separate run; no opaque state is replayed | The notice keeps the old action id only; no id is minted |
+| 0075 | Interaction data holds identifiers and approved facts only | The notice holds an id and a closed reason |
+
+**Tests (new).** `test/assistant-proposal-replacement.test.ts`, 12 tests, each run warm and cold on the 27 Oct 2026 clock: (a) a changed search, then typed yes, sends nothing and says it was replaced; (b) the old card's button after a search change is `STALE_SURFACE`; (c) a task switch, then typed yes and the old button, sends nothing; (d) a repeated unchanged search keeps the proposal; (e) warm and cold outputs are equal; (f) a forged id is refused as `STALE_SURFACE`. The guest holds a phone number, so a confirmation that wrongly got through would send a request and fail the test.
+
+**Recordings.** `cancel-after-task-switch` is removed (its cancel no longer applies: the proposal is gone). Five journeys are committed, all synthetic: `search-refinement-request-draft`, `missing-information-clarification`, `confirmation-cancelled` (unchanged), `confirm-after-task-switch` (typed yes replaced, old button `STALE_SURFACE`), and `confirm-after-search-change` (typed yes replaced). The recorder guard checks the replaced copy and the absence of any request or pending surface.
+
+**Commands and counts (env -u LLM_API_KEY).**
+- `npm run check`: exit 0.
+- `node --import tsx --test test/assistant-proposal-replacement.test.ts`: 12 pass, 0 fail (red first: 8 failing before the runtime change, then green).
+- `test/assistant-proposal-replacement.test.ts test/assistant-pending-action-restore.test.ts test/assistant-recorded-journeys.test.ts test/assistant-recording-clients.test.ts test/assistant-cold-journey.test.ts test/assistant-turn-stop-cold-restore.test.ts test/assistant-artifact-authority.test.ts test/assistant-booking-journey.test.ts test/shortlet-assistant-evals.test.ts test/assistant-discovery-view.test.ts test/assistant-persistent-continuity.test.ts test/assistant-scope-persistence.test.ts test/guest-account-linking.test.ts test/guest-account-sign-in.test.ts test/guest-offer-access.test.ts test/guest-real-dates.test.ts`: 235 tests, 235 pass, 0 fail.
+- `npm run test:assistant`: 67 of 67 pass.
+- Not run: full `npm test` and `npm run test:workers` (batch gate).
+
+**Status.** Owner finding 10 is resolved. Issue 03 stays `ready-for-agent` until the batch gate runs.

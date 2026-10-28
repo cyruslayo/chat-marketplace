@@ -40,6 +40,7 @@ import {
   type AssistantTaskState,
   type AssistantThreadState,
   type AssistantTurnSurface,
+  replacePendingProposal,
 } from "./assistant-state.js";
 import {
   isExplicitConfirmation,
@@ -292,6 +293,22 @@ function parseReplyPlan(response: AssistantModelResponse, results: readonly Assi
   if (record.references.some((reference) => !allowed.has(reference))) return "reference_not_in_results";
   return { kind: record.kind as AssistantReplyPlanKind, references: record.references as string[] };
 }
+/**
+ * ADR 0074: whether an open proposal still names the stay the search now holds. The stay, its unit, dates and party must all
+ * be unchanged. A proposal without a stay reference (an offer or checkout action) has no stay to match, so a search removes it.
+ */
+function proposalStillAuthorised(action: PendingAssistantAction | null | undefined, state: AssistantTaskState): boolean {
+  if (!action) return true;
+  const refs = action.authoritativeReferences;
+  if (!refs.stayRef) return false;
+  const stay = state.shortlist.find((candidate) => candidate.stayRef === refs.stayRef);
+  return stay !== undefined
+    && stay.unitId === refs.unitId
+    && state.stayIntent.checkIn === refs.checkIn
+    && state.stayIntent.checkOut === refs.checkOut
+    && state.stayIntent.partySize === refs.partySize;
+}
+
 export class AssistantRuntime {
   readonly #environment: LocalGuestEnvironment;
   readonly #modelClient: AssistantModelClient;
@@ -509,6 +526,14 @@ export class AssistantRuntime {
     };
   }
 
+  /** ADR 0074: removes an open proposal from the committed thread and its surface. Used where no candidate state is committed. */
+  #dropPendingProposal(threadId: string, reason: "task_switched"): void {
+    const thread = this.getThread(threadId);
+    if (!replacePendingProposal(thread.taskState, reason)) return;
+    thread.activeSurfaces.delete(PENDING_ACTION_STAGE);
+    this.#syncActiveTask(thread);
+  }
+
   /** With more than one domain registered, a cross-domain intent asks for confirmation rather than switching. */
   #route(text: string, activeDomain: string): AssistantTurnOutput | undefined {
     const lower = text.toLowerCase();
@@ -701,6 +726,23 @@ export class AssistantRuntime {
     };
 
     // 2. Check for Pending Action Confirmation in Natural Language (Item 13, 15)
+    // ADR 0074: a confirmation after a replaced proposal sends nothing. Its notice clears on this typed turn.
+    if (!candidateTaskState.pendingAction && candidateTaskState.replacedPendingAction) {
+      const confirmsReplaced = isExplicitConfirmation(text);
+      candidateTaskState.replacedPendingAction = null;
+      if (confirmsReplaced) {
+        thread.taskState = candidateTaskState;
+        thread.conversationHistory.push({ role: "user", text: redactSensitiveData(text) as string });
+        thread.conversationHistory.push({ role: "assistant", text: "Server reply delivered." });
+        this.#commitHistory(thread, thread.conversationHistory, candidatePack(), candidateTaskState);
+        thread.activeSurfaces = candidateActiveSurfaces;
+        thread.supersededSurfaces = candidateSuperseded;
+        thread.lastSurfaces = candidateLastSurfaces;
+        this.#syncActiveTask(thread);
+        return { ok: true, messages: [ASSISTANT_CONTROL_COPY.proposalReplaced], surfaces: [], tasks: this.getTaskRail(threadId) };
+      }
+    }
+
     if (candidateTaskState.pendingAction && !candidateTaskState.pendingAction.executed) {
       if (isExplicitConfirmation(text)) {
         const execution = this.#executePendingAction(threadId, candidateTaskState.pendingAction, {
@@ -760,7 +802,11 @@ export class AssistantRuntime {
     // before any switch (never a silent task switch).
     if (this.#packs.size > 1) {
       const routed = this.#route(text, candidateDomain());
-      if (routed) return routed;
+      if (routed) {
+        // ADR 0074: a cross-domain switch after a proposal removes the proposal's authority.
+        this.#dropPendingProposal(threadId, "task_switched");
+        return routed;
+      }
     }
 
     // 3. User message turn
@@ -929,6 +975,8 @@ export class AssistantRuntime {
           }
           acceptedCalls.push(call);
           if (this.#isPlatformTaskTool(call.name)) {
+            // ADR 0074: a task switch after a proposal removes the proposal's authority.
+            replacePendingProposal(candidateTaskState, "task_switched");
             const applied = this.#applyTaskTool(
               call.name,
               call.args,
@@ -991,6 +1039,11 @@ export class AssistantRuntime {
           // Application projections are generated server-side from authoritative operation results.
           activeStage = "projection";
           if (call.name === "search_stays") {
+            // ADR 0074: a search that changes the proposed stay, unit, dates or party removes the proposal's authority. An
+            // unchanged result keeps it.
+            if (!proposalStillAuthorised(candidateTaskState.pendingAction, candidateTaskState) && replacePendingProposal(candidateTaskState, "search_changed")) {
+              supersede(PENDING_ACTION_STAGE);
+            }
             // Supersede any previous search or details
             supersede(DISCOVERY_STAGE);
             supersede(UNIT_STAGE);
@@ -1035,6 +1088,7 @@ export class AssistantRuntime {
           } else if (execution.pendingActionCreated) {
             // Consequential action proposed -> create confirmation card surface
             const action = execution.pendingActionCreated;
+            candidateTaskState.replacedPendingAction = null;
             const surfaceId = `thread-${threadId}:pending-action:${action.id}`;
             supersede(PENDING_ACTION_STAGE);
             candidateActiveSurfaces.set(PENDING_ACTION_STAGE, surfaceId);
@@ -1264,6 +1318,8 @@ export class AssistantRuntime {
     };
 
     if (eventName === TASK_START_EVENT || eventName === TASK_SWITCH_EVENT) {
+      // ADR 0074: a task switch after a proposal removes the proposal's authority.
+      replacePendingProposal(candidateTaskState, "task_switched");
       const applied = this.#applyTaskTool(
         eventName === TASK_SWITCH_EVENT ? "switch_task" : "start_task",
         { domain: context?.domain, taskId: context?.taskId },

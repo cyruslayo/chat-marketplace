@@ -50,6 +50,30 @@ export interface AssistantTaskState {
   currentReservationId?: string;
   currentContractId?: string;
   pendingAction?: PendingAssistantAction | null;
+  /**
+   * ADR 0074 (owner decision, 28 Oct 2026): the proposal the last search change or task switch removed. Its id only; no
+   * authority. The next explicit confirmation is answered with a fixed reply instead of a model call, then the marker clears.
+   */
+  replacedPendingAction?: ReplacedPendingAction | null;
+}
+
+export type PendingReplacementReason = "search_changed" | "task_switched";
+
+export interface ReplacedPendingAction {
+  readonly id: string;
+  readonly reason: PendingReplacementReason;
+}
+
+/**
+ * Removes a proposal's authority and keeps only a notice of it (ADR 0074). Returns false when there is no open proposal.
+ * Mutates the state it is given; callers pass the candidate state they commit.
+ */
+export function replacePendingProposal(state: AssistantTaskState, reason: PendingReplacementReason): boolean {
+  const pending = state.pendingAction;
+  if (!pending || pending.executed) return false;
+  state.replacedPendingAction = { id: pending.id, reason };
+  state.pendingAction = null;
+  return true;
 }
 
 /** One rendered surface a task currently owns (presentation only; authoritative state lives in the domain). */
@@ -119,5 +143,6 @@ export function cloneTaskState(state: AssistantTaskState): AssistantTaskState {
     currentReservationId: state.currentReservationId,
     currentContractId: state.currentContractId,
     pendingAction: state.pendingAction ? { ...state.pendingAction } : null,
+    replacedPendingAction: state.replacedPendingAction ? { ...state.replacedPendingAction } : null,
   };
 }

@@ -64,7 +64,7 @@ test("A recording stores only provider-neutral request and response fields, and 
 
   // Every committed recording keeps the same neutral shape and no secret-like field.
   const committed = readdirSync(RECORDINGS_DIRECTORY).filter((file) => file.endsWith(".json"));
-  assert.equal(committed.length, 4, "the four named journeys are committed");
+  assert.equal(committed.length, 5, "the five named journeys are committed");
   for (const file of committed) {
     const text = readFileSync(join(RECORDINGS_DIRECTORY, file), "utf8");
     assert.doesNotMatch(text, /rawStep|systemInstruction|apiKey|api_key|authorization|bearer|LLM_API_KEY/i, `${file} holds no raw step, instruction or credential`);

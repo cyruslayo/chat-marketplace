@@ -1,6 +1,7 @@
 import type { DiscoveryArtifactProjection } from "../../../apps/web-agent/src/index.js";
 import { parseDiscoverySearchContext, type DiscoverySearchContext } from "./concierge.js";
 import type { PendingAssistantAction } from "./assistant/pending-actions.js";
+import type { ReplacedPendingAction } from "./assistant/assistant-state.js";
 
 /**
  * Server-owned durable interaction projection for one Guest thread (ADR-0070,
@@ -53,10 +54,23 @@ export interface GuestPersistentProjection {
    */
   readonly pendingAction: PersistedPendingAction | null;
   readonly pendingActionSurfaceId: string | null;
+  /** ADR 0074: the proposal a search change or task switch removed. Missing or invalid reads as null. */
+  readonly replacedPendingAction: PersistedReplacedProposal | null;
 }
 
 /** The pending action as the runtime holds it, validated field by field on restore. Executed actions are never stored. */
 export type PersistedPendingAction = PendingAssistantAction;
+
+/** The notice a removed proposal leaves: its id and why it was removed. Carries no authority. */
+export type PersistedReplacedProposal = ReplacedPendingAction;
+
+/** Fail closed for the notice only: an invalid notice reads as null and the rest of the thread still restores. */
+export function parsePersistedReplacedProposal(value: unknown): PersistedReplacedProposal | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.id !== "string" || !/^pa-[A-Za-z0-9-]+$/.test(value.id) || value.id.length > 120) return null;
+  if (value.reason !== "search_changed" && value.reason !== "task_switched") return null;
+  return { id: value.id, reason: value.reason };
+}
 
 const PENDING_ACTION_TYPES: readonly string[] = ["request_to_book", "accept_offer", "start_checkout"];
 const PENDING_REFERENCE_STRINGS = ["stayRef", "unitId", "checkIn", "checkOut", "requestId", "offerId", "offerStatus"] as const;
@@ -254,10 +268,12 @@ export function parseGuestProjection(value: unknown): GuestPersistentProjection 
   // A missing field reads as null too, as in projections written before these fields existed.
   const pendingAction = parsePersistedPendingAction(value.pendingAction ?? null);
   const pendingActionSurfaceId = typeof value.pendingActionSurfaceId === "string" && value.pendingActionSurfaceId.length <= 300 ? value.pendingActionSurfaceId : null;
+  const replacedPendingAction = parsePersistedReplacedProposal(value.replacedPendingAction ?? null);
   return Object.freeze({
     activeContact,
     pendingAction,
     pendingActionSurfaceId,
+    replacedPendingAction,
     version: 1,
     timeline: Object.freeze(value.timeline.map((entry) => Object.freeze({ role: entry.role, text: entry.text }))),
     discoveryContext,

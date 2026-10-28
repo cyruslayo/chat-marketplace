@@ -3,6 +3,7 @@ import test from "node:test";
 import { AssistantReplayDivergenceError, ReplayModelClient } from "../apps/local-guest/src/assistant/assistant-recording.js";
 import {
   CANCEL_COPY,
+  PROPOSAL_REPLACED_COPY,
   definitionOf,
   intendedOutcomeViolations,
   loadRecording,
@@ -20,7 +21,8 @@ const NAMED_JOURNEYS = [
   "search-refinement-request-draft",
   "missing-information-clarification",
   "confirmation-cancelled",
-  "cancel-after-task-switch",
+  "confirm-after-task-switch",
+  "confirm-after-search-change",
 ] as const;
 
 test("Replaying a recording through a fresh runtime reproduces the recorded messages, surface ids, component types and task rail for every turn.", async () => {
@@ -85,11 +87,17 @@ test("The four named journeys are committed as recordings and pass.", async () =
   assert.deepEqual(cancelled[2]!.messages, [CANCEL_COPY]);
   assert.equal(cancelled[2]!.surfaces.length, 0, "no pending surface or request survives the cancel");
 
-  // Cancellation after a task switch: the open Booking Request is cancelled, not sent.
-  const afterSwitch = byName("cancel-after-task-switch");
+  // ADR 0074 (owner decision): a task switch removes the open proposal, so the typed yes gets the replaced reply and the old
+  // card's button is refused as stale. Nothing is sent.
+  const afterSwitch = byName("confirm-after-task-switch");
   assert.match(afterSwitch[1]!.surfaces[0]!.surfaceId, /:pending-action:/);
-  assert.deepEqual(afterSwitch[3]!.messages, [CANCEL_COPY]);
-  assert.equal(afterSwitch[3]!.surfaces.length, 0, "no request or pending surface remains after the cancel");
+  assert.deepEqual(afterSwitch[3]!.messages, [PROPOSAL_REPLACED_COPY]);
+  assert.equal(afterSwitch[4]!.code, "STALE_SURFACE");
+  // A search change removes the proposal the same way.
+  const afterSearch = byName("confirm-after-search-change");
+  assert.match(afterSearch[1]!.surfaces[0]!.surfaceId, /:pending-action:/);
+  assert.deepEqual(afterSearch[3]!.messages, [PROPOSAL_REPLACED_COPY]);
+  assert.equal(afterSearch[3]!.surfaces.length, 0, "no request or pending surface remains");
 });
 
 test("The recorder refuses a recording whose cancel turn still leaves a pending surface or a fallback outcome.", () => {
@@ -111,7 +119,7 @@ test("The recorder refuses a recording whose cancel turn still leaves a pending 
 });
 
 test("A stale confirm button must be refused with its expected code, or the recording is refused.", () => {
-  const base = definitionOf("cancel-after-task-switch");
+  const base = definitionOf("confirm-after-task-switch");
   const definition = { ...base, guestTurns: [{ text: "Request the first one." }, { text: "Confirm the Booking Request from the earlier card", button: { ofTurn: 0, expect: "STALE_SURFACE" } }] };
   const row = (guestText: string, extra: Partial<JourneyTurnOutput>): JourneyTurnOutput => ({ guestText, ok: true, messages: [], surfaces: [], tasks: [], ...extra });
   const first = row("Request the first one.", { surfaces: [{ surfaceId: "thread-g-d1a0000404:pending-action:pa-generated-id-1", componentTypes: [] }] });

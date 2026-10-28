@@ -171,6 +171,7 @@ import {
   type PersistedActiveContact,
   type PersistedAssistantContext,
   type PersistedPendingAction,
+  type PersistedReplacedProposal,
   type GuestPersistentProjection,
 } from "./guest-projection.js";
 import {
@@ -667,6 +668,8 @@ interface GuestThreadState {
   /** Issue 03 follow-up (ADR 0106): the open assistant confirmation and the surface id the guest holds for it. Persisted. */
   pendingAction: PersistedPendingAction | null;
   pendingActionSurfaceId: string | null;
+  /** ADR 0074: the proposal a search change or task switch removed (its id and reason), so the next confirm gets the fixed reply. */
+  replacedPendingAction: PersistedReplacedProposal | null;
   /** Issue 13b: the result picked for comparison. Presentation only, never persisted. */
   compareSelection: string | null;
   /** Issue 14: a change to the draft's stay that awaits a date confirmation. In memory only. */
@@ -2420,6 +2423,7 @@ export class LocalGuestApp {
       assistantContext: thread.assistantContext,
       pendingAction: thread.pendingAction,
       pendingActionSurfaceId: thread.pendingActionSurfaceId,
+      replacedPendingAction: thread.replacedPendingAction,
     };
   }
 
@@ -2583,6 +2587,7 @@ export class LocalGuestApp {
       assistantContext: projection.assistantContext,
       pendingAction: projection.pendingAction,
       pendingActionSurfaceId: projection.pendingActionSurfaceId,
+      replacedPendingAction: projection.replacedPendingAction,
       compareSelection: null,
       draftChangeContext: null,
       pendingDraftReplacement: null,
@@ -2968,6 +2973,7 @@ export class LocalGuestApp {
       assistantContext: null,
       pendingAction: null,
       pendingActionSurfaceId: null,
+      replacedPendingAction: null,
       compareSelection: null,
       draftChangeContext: null,
       pendingDraftReplacement: null,
@@ -3149,6 +3155,7 @@ export class LocalGuestApp {
       ...(currentReservationId ? { currentReservationId } : {}),
       ...(currentContractId ? { currentContractId } : {}),
       pendingAction: thread.pendingAction,
+      replacedPendingAction: thread.replacedPendingAction,
     };
     const canonicalUserFacts = context.isDemoDate === false
       ? [context.checkIn, context.checkOut].filter((fact): fact is string => typeof fact === "string")
@@ -3171,6 +3178,8 @@ export class LocalGuestApp {
   #syncPendingAction(threadId: string, thread: GuestThreadState): void {
     const runtime = this.#assistantRuntime;
     const assistant = runtime?.hasThread(threadId) ? runtime.getThread(threadId) : undefined;
+    const replaced = assistant?.taskState.replacedPendingAction ?? null;
+    thread.replacedPendingAction = replaced ? { ...replaced } : null;
     const action = assistant?.taskState.pendingAction ?? null;
     if (!assistant || !action || action.executed) {
       thread.pendingAction = null;
