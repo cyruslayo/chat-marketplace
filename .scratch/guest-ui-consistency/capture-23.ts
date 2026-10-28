@@ -1,6 +1,7 @@
 import { LOCAL_TEST_ONLY_COMMERCE_REFERENCE_KEYS } from "../../apps/local-guest/src/commerce-reference-keys-local.js";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { AssistantRuntime } from "../../apps/local-guest/src/assistant/assistant-runtime.js";
+import { createShortletAssistantPack } from "../../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
 import { TASK_START_EVENT } from "../../apps/local-guest/src/assistant/assistant-platform.js";
 import { createCommerceAssistantPack } from "../../apps/local-guest/src/assistant/commerce-assistant-pack.js";
 import { ScriptedAssistantModel } from "../../apps/local-guest/src/assistant/scripted-assistant-model.js";
@@ -47,7 +48,7 @@ const pack = createCommerceAssistantPack({
   audit: environment.audit,
   authorizeOrderStatus: ({ context }) => context.environment.guestPrincipal().id === environment.guestPrincipal().id,
 });
-const assistant = new AssistantRuntime(environment, model, { additionalPacks: [pack] });
+const assistant = new AssistantRuntime(environment, model, { packs: [createShortletAssistantPack(environment)], additionalPacks: [pack] });
 const threadId = `g-${crypto.randomUUID()}`;
 await assistant.handleTurn(threadId, "I want to shop");
 const started = assistant.handleAssistantEvent(threadId, TASK_START_EVENT, { domain: "commerce" });

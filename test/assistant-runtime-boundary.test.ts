@@ -6,7 +6,7 @@ import test from "node:test";
  * Issue 04 (ADR 0099): the platform names no domain. Shortlet and commerce tool names, pending-action kinds, stage names,
  * domain literals and domain imports live in their packs and stage handlers. The platform files below are scanned for each
  * pattern, and the scan must equal a NAMED allowlist exactly: a new occurrence fails, and so does a stale allowlist entry.
- * Each allowlist entry names the documented exception it covers.
+ * Every allowlist entry names its follow-up (issue 04 decision a or b), and only a real occurrence can satisfy it.
  */
 
 const PLATFORM_FILES = [
@@ -27,7 +27,10 @@ const STAGE_NAMES = ["discovery", "unit", "request", "offer", "payment", "bookin
 const escapeRegex = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const wordAlternation = (names: readonly string[]): string => `(^|[^A-Za-z0-9_])(${names.map(escapeRegex).join("|")})($|[^A-Za-z0-9_])`;
 
-/** Each pattern names what it catches. A pattern with no allowlist entry must have zero matches in every platform file. */
+/**
+ * Each pattern names what it catches. A pattern with no allowlist entry must have zero matches in every platform file.
+ * The import pattern matches ANY import (single or multi-line, either quote) from a ./shortlet* or ./commerce* module.
+ */
 const PATTERNS: readonly { readonly id: string; readonly source: string }[] = [
   { id: "shortlet tool name", source: wordAlternation(SHORTLET_TOOL_NAMES) },
   { id: "commerce tool name", source: wordAlternation(COMMERCE_TOOL_NAMES) },
@@ -35,25 +38,28 @@ const PATTERNS: readonly { readonly id: string; readonly source: string }[] = [
   { id: "stage name literal", source: `["'\`](${STAGE_NAMES.join("|")}|commerce)["'\`]` },
   { id: "domain literal shortlet", source: `["'\`]shortlet["'\`]` },
   { id: "domain literal commerce", source: `["'\`]commerce["'\`]` },
+  { id: "domain import", source: `\\bimport\\s[^;]*?\\bfrom\\s*["']\\.\\/(shortlet|commerce)[^"']*["']` },
   { id: "shortlet import: createShortletAssistantPack", source: `\\bcreateShortletAssistantPack\\b` },
-  { id: "shortlet import: proposalStillAuthorised", source: `import\\s*\\{[^}]*\\bproposalStillAuthorised\\b[^}]*\\}\\s*from\\s*["']\\.\\/shortlet` },
   { id: "shortlet import: validatedCheckOutForNights", source: `\\bvalidatedCheckOutForNights\\b` },
   { id: "template stage key", source: `\\$\\{[^}]+\\}:(\\$\\{|[a-z_])` },
 ];
 
 /**
- * The documented exceptions. `count` is the exact number of matches in that file. An entry marked "pending owner decision" is
- * removed by the commit that resolves it. The Shortlet public API is a follow-up issue (issue 04 decision b).
+ * The documented exceptions. `count` is the exact number of matches in that file. `followUp` is the explicit reference that owns
+ * the exception: "issue 04 decision a" (commerce handler objects deferred) or "issue 04 decision b" (the Shortlet public API and
+ * validatedCheckOutForNights move out of the runtime in a follow-up issue, not created yet).
  */
-const ALLOWLIST: readonly { readonly file: string; readonly pattern: string; readonly count: number; readonly label: string }[] = [
-  { file: "assistant-runtime.ts", pattern: "domain literal shortlet", count: 2,
-    label: "restoreShortletState's Shortlet domain check. Shortlet public API, follow-up issue (issue 04 decision b)." },
-  { file: "assistant-runtime.ts", pattern: "shortlet import: validatedCheckOutForNights", count: 2,
-    label: "Shortlet public API: the import and recordGuestStay's checkout derivation. Follow-up issue (issue 04 decision b, remaining Shortlet API)." },
-  { file: "assistant-runtime.ts", pattern: "template stage key", count: 4,
-    label: "Four surface-id templates: the platform action gate key `<pack id>:checkout` (ADR 0099 section 3); the generic projected-surface key `<pack id>:<kind>` (the commerce path, issue 04 decision a); the pending-card surface id (platform, ADR 0074); and the restored pending-card id in restoreShortletState (Shortlet public API, follow-up issue, decision b)." },
-  { file: "assistant-platform.ts", pattern: "stage name literal", count: 1,
-    label: "projectedSurface kind union `discovery | cart | checkout | order`: the generic projected-surface contract whose kinds commerce supplies (issue 04 decision a)." },
+const ALLOWLIST: readonly { readonly file: string; readonly pattern: string; readonly count: number; readonly followUp: string; readonly label: string }[] = [
+  { file: "assistant-runtime.ts", pattern: "domain literal shortlet", count: 2, followUp: "issue 04 decision b",
+    label: "restoreShortletState's Shortlet domain check (Shortlet public API)." },
+  { file: "assistant-runtime.ts", pattern: "domain import", count: 1, followUp: "issue 04 decision b",
+    label: "The import of ./shortlet-assistant-pack.js for validatedCheckOutForNights (Shortlet public API)." },
+  { file: "assistant-runtime.ts", pattern: "shortlet import: validatedCheckOutForNights", count: 2, followUp: "issue 04 decision b",
+    label: "validatedCheckOutForNights: the import above and recordGuestStay's checkout derivation (Shortlet public API)." },
+  { file: "assistant-runtime.ts", pattern: "template stage key", count: 4, followUp: "issue 04 decisions a and b",
+    label: "Four surface-id templates: the platform action gate key `<pack id>:checkout` (ADR 0099 section 3); the generic projected-surface key `<pack id>:<kind>` (commerce path, decision a); the pending-card surface id (platform, ADR 0074); the restored pending-card id in restoreShortletState (Shortlet public API, decision b)." },
+  { file: "assistant-platform.ts", pattern: "stage name literal", count: 1, followUp: "issue 04 decision a",
+    label: "projectedSurface kind union `discovery | cart | checkout | order`: the generic projected-surface contract whose kinds commerce supplies." },
 ];
 
 const SOURCES = new Map(PLATFORM_FILES.map((file) => [file, readFileSync(new URL(`../${file}`, import.meta.url), "utf8")]));
@@ -85,14 +91,29 @@ test("assistant-runtime.ts contains no shortlet or commerce tool names, pending-
   }
 });
 
+test("the import pattern flags a Shortlet or commerce import in any form (quotes, multi-line, a named stage handler)", () => {
+  const probes = [
+    "import { SHORTLET_STAGE_HANDLERS } from './shortlet-stage-handlers.js';",
+    'import {\n  SHORTLET_STAGE_HANDLERS,\n  proposalStillAuthorised,\n} from "./shortlet-stage-handlers.js";',
+    'import { x } from "./commerce-assistant-pack.js";',
+    'import type { y } from "./shortlet-assistant-pack.js";',
+  ];
+  for (const probe of probes) {
+    assert.equal(countMatches(probe, "domain import"), 1, `flags: ${probe.split("\n")[0]}`);
+  }
+  assert.equal(countMatches('import { z } from "./assistant-platform.js";', "domain import"), 0, "a platform import is not flagged");
+});
+
 test("the platform files match the named boundary allowlist exactly (no new domain name, import or stage key; no stale entry)", () => {
   const expected = ALLOWLIST.map((entry) => `${entry.file}|${entry.pattern}|${entry.count}`).sort();
   assert.deepEqual(scan(), expected, "every platform-file match is a named, counted exception");
 });
 
-test("every allowlist entry names a documented exception", () => {
+test("every allowlist entry names its follow-up (issue 04 decision a or b) and a real occurrence", () => {
   for (const entry of ALLOWLIST) {
-    assert.ok(entry.label.length > 0, `${entry.file} ${entry.pattern} needs a label`);
+    assert.match(entry.followUp, /^issue 04 decisions? [ab]( and [ab])?$/, `${entry.file} ${entry.pattern} names its follow-up`);
+    assert.ok(entry.label.length > 0, `${entry.file} ${entry.pattern} is labelled`);
     assert.ok(PATTERNS.some((pattern) => pattern.id === entry.pattern), `${entry.pattern} is a known pattern`);
+    assert.ok(entry.count >= 1, `${entry.pattern} counts a real occurrence`);
   }
 });

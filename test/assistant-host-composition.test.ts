@@ -97,3 +97,15 @@ test("pendingProposalAuthorised: no proposal is authorised; a proposal needs the
   assert.equal(pendingProposalAuthorised(createFakeShopPack(), withProposal), false);
   assert.equal(pendingProposalAuthorised({ ...createFakeShopPack(), proposalStillAuthorised: () => true }, withProposal), true);
 });
+
+test("a runtime with no domain pack from its host is refused at construction (a host configuration error)", () => {
+  const environment = LocalGuestEnvironment.openNode({
+    databasePath: ":memory:",
+    clock: new SteppedClock(STAGING_LIKE_START).now,
+    initialGuestPhoneNumber: null,
+    initialGuestContactEmail: null,
+  });
+  try {
+    assert.throws(() => new AssistantRuntime(environment, new RecordingTurnModel(() => ({ text: "{}" }))), /needs at least one domain pack from its host/);
+  } finally { environment.close(); }
+});

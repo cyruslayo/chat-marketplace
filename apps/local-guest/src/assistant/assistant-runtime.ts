@@ -435,10 +435,20 @@ export class AssistantRuntime {
     return [summary, ...retained];
   }
 
-  #packForThread(threadId: string): AssistantDomainPack {
+  /**
+   * The pack of the thread's active task, or undefined when that task's domain is not registered here. No other pack answers for it
+   * (issue 04 follow-up, fail closed): callers refuse.
+   */
+  #packForThread(threadId: string): AssistantDomainPack | undefined {
     const thread = this.#threads.get(threadId);
     const domain = thread ? thread.tasks.find((task) => task.taskId === thread.activeTaskId)?.domain : undefined;
-    return (domain ? this.#packs.packFor(domain) : undefined) ?? this.#activePack;
+    return domain ? this.#packs.packFor(domain) : undefined;
+  }
+
+  /** The active task's domain when no pack is registered for it, otherwise undefined. */
+  #unregisteredActiveDomain(thread: AssistantThreadState): string | undefined {
+    const task = thread.tasks.find((entry) => entry.taskId === thread.activeTaskId);
+    return task && !this.#packs.packFor(task.domain) ? task.domain : undefined;
   }
 
   #isPlatformTaskTool(name: string): boolean {
@@ -491,6 +501,8 @@ export class AssistantRuntime {
       const targetId = typeof args.taskId === "string" ? args.taskId : "";
       const target = tasks.find((task) => task.taskId === targetId);
       if (!target) return { state: currentState, activeTaskId, workspace, result: { error: "UNKNOWN_TASK", message: "That task is not in this conversation." } };
+      // Fail closed: a task whose pack is not registered cannot be opened.
+      if (!this.#packs.packFor(target.domain)) return { state: currentState, activeTaskId, workspace, result: { error: "UNKNOWN_DOMAIN", message: "That domain is not registered." } };
       const restored = restore(target);
       return { state: restored.state, activeTaskId: restored.activeTaskId, workspace: restored, result: { switched: target.taskId, domain: target.domain } };
     }
@@ -540,7 +552,9 @@ export class AssistantRuntime {
     }
     state.shortlist = shortlist.map((stay) => ({ ...stay, amenities: [...stay.amenities] }));
     if (state.selectedStayRef && !shortlist.some((stay) => stay.stayRef === state.selectedStayRef)) state.selectedStayRef = undefined;
-    if (!pendingProposalAuthorised(this.#packForThread(threadId), state) && replacePendingProposal(state, "search_changed")) {
+    // A proposal on a task whose pack is not registered is not authorised (fail closed).
+    const pack = this.#packForThread(threadId);
+    if (!(pack !== undefined && pendingProposalAuthorised(pack, state)) && replacePendingProposal(state, "search_changed")) {
       thread.activeSurfaces.delete(PENDING_ACTION_STAGE);
     }
     syncActiveTask(thread);
@@ -726,13 +740,24 @@ export class AssistantRuntime {
     };
     const thread = this.getThread(threadId);
 
+    // Fail closed (issue 04 follow-up): a task whose pack is not registered on this runtime is refused. No other pack answers for it.
+    if (this.#unregisteredActiveDomain(thread) !== undefined) {
+      recordOutcome("tool_denial");
+      return { ok: true, messages: [ASSISTANT_CONTROL_COPY.unavailable], surfaces: [], modelHandled: false, discardUserInput: true, controlOutcome: "tool_denial", tasks: this.getTaskRail(threadId) };
+    }
+
     // 1. Transactional candidates (Item 24, ADR 0070): every change goes to `tx`; the thread changes only at a commit site.
     const tx = new TurnTransaction(thread);
     const candidateHistory = this.#sanitizeHistory(thread.conversationHistory);
 
     // The active task decides the active pack: its tools, prompt and projections.
-    const candidateDomain = () => tx.tasks.find((task) => task.taskId === tx.activeTaskId)?.domain ?? this.#activePack.id;
-    const candidatePack = () => this.#packs.packFor(candidateDomain()) ?? this.#activePack;
+    const candidateDomain = () => tx.tasks.find((task) => task.taskId === tx.activeTaskId)?.domain ?? "";
+    // Fail closed: the guard at the start of the turn refuses an unregistered task, so this is never reached for one.
+    const candidatePack = (): AssistantDomainPack => {
+      const pack = this.#packs.packFor(candidateDomain());
+      if (!pack) throw new Error("The active task's domain is not registered");
+      return pack;
+    };
     let validatedDomainId: string | undefined;
     let validatedTurnIntents: readonly ConciergeIntent[] = [];
     let validatedTurnToolNames: ReadonlySet<string> = new Set();
@@ -1243,6 +1268,10 @@ export class AssistantRuntime {
 
   handleAssistantEvent(threadId: string, eventName: string, context: AssistantEventContext | null | undefined): AssistantTurnOutput {
     const thread = this.getThread(threadId);
+    // Fail closed (issue 04 follow-up): on a task whose pack is not registered, only leaving it (a task start or switch) is allowed.
+    if (eventName !== TASK_START_EVENT && eventName !== TASK_SWITCH_EVENT && this.#unregisteredActiveDomain(thread) !== undefined) {
+      return { ok: false, code: "UNKNOWN_DOMAIN", message: "That domain is not registered." };
+    }
     const tx = new TurnTransaction(thread);
 
     if (eventName === TASK_START_EVENT || eventName === TASK_SWITCH_EVENT) {
@@ -1446,6 +1475,7 @@ export class AssistantRuntime {
 
     // Issue 04: the pack's confirm handler for this kind runs only after the checks above (ADR 0070, 0074, 0075).
     const pack = this.#packForThread(threadId);
+    if (!pack) return { ok: false, code: "UNKNOWN_DOMAIN", message: "That domain is not registered." };
     const handler = pack.stageHandlers?.find((candidate) => candidate.confirms === action.type);
     if (!handler?.confirm) {
       return { ok: false, code: "UNSUPPORTED_ACTION", message: "Unsupported action." };

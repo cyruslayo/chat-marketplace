@@ -207,3 +207,45 @@ Tests were written first where a behaviour changed. Commands run with `env -u LL
 - Named suites: `test/assistant-runtime-boundary.test.ts`, `test/assistant-stage-handlers.test.ts`, `test/assistant-tool-argument-validation.test.ts`, `test/assistant-recorded-journeys.test.ts`, `test/assistant-recording-clients.test.ts`, `test/assistant-cold-journey.test.ts`, `test/assistant-turn-stop-cold-restore.test.ts`, `test/assistant-pending-action-restore.test.ts`, `test/assistant-proposal-replacement.test.ts`, `test/assistant-proposal-supersession.test.ts`, `test/assistant-where-chip.test.ts`, `test/assistant-artifact-authority.test.ts`, `test/assistant-booking-journey.test.ts`: 109 tests, 109 pass, 0 fail.
 - `env -u LLM_API_KEY npm run test:assistant`: 67 tests, 67 pass, 0 fail.
 - Not run: full `npm test` and `npm run test:workers` (batch gate).
+
+### Follow-up after 03a3465 (28 Oct 2026): fail closed, boundary, host coverage, stale callers
+
+Tests were written first (red) for each behaviour change, and each red run was observed before the change.
+
+1. **Unregistered task domain fails closed (behaviour change).** Before: `#packForThread` and `candidatePack` fell back to the active pack, so a task whose pack is not registered ran another pack's rules. After:
+   - A turn on a task whose pack is not registered returns `ok: true`, `controlOutcome: "tool_denial"`, `modelHandled: false`, with the unavailable copy. The planner is not called and no pack's tool runs. This is checked at the start of `handleTurn`, before the scope stage and before any commit.
+   - A confirm, cancel or other platform event on such a task returns `UNKNOWN_DOMAIN` and changes nothing.
+   - A task start from such a task is still allowed, so the guest can leave it. A switch to a task of an unregistered domain is refused with `UNKNOWN_DOMAIN` and the active task does not change.
+   - `#packForThread` returns no pack when none is registered; its callers refuse (`applyDiscoveryShortlist` treats the proposal as not authorised, and the pending confirmation returns `UNKNOWN_DOMAIN`).
+   - The `candidatePack` fallback is removed. It throws only if the guard is bypassed, which the turn guard prevents.
+   - A new thread with no active task yet still works on the first registered pack.
+   - Test file `test/assistant-unregistered-domain.test.ts` (5 tests). The persisted-shortlet case uses the shape a persisted Shortlet thread has: a shortlet task on a runtime whose only pack is the fake shop pack. Before the change, 3 of the 5 were red.
+   - Mutation: removing the turn guard fails the test file. Restoring the candidatePack fallback is an equivalent mutant (the guard refuses first), so no test can observe it; this is why the guard is the control that is mutation-checked.
+
+2. **Boundary test (strengthened).** The import pattern `domain import` flags any import whose source is `./shortlet*` or `./commerce*`, single or multi-line, either quote form. The reviewer's probe (`import { SHORTLET_STAGE_HANDLERS } from './shortlet-stage-handlers.js'`) is flagged: mutation fails the test. Each allowlist entry now carries `followUp` (`issue 04 decision a` or `issue 04 decision b`), checked by a regex, and each count must equal a real occurrence (a stale entry fails the exact-equality test). The import of `./shortlet-assistant-pack.js` for `validatedCheckOutForNights` is the one import allowed, with count 1.
+
+   **Acceptance (owner, recorded).** The remaining accepted exception is: the `validatedCheckOutForNights` import, `restoreShortletState`'s `'shortlet'` check, and the Shortlet public API methods on the runtime. The owner accepted these as a follow-up issue. The narrower requirement is met: no `createShortletAssistantPack` and no `proposalStillAuthorised` in the runtime.
+
+   **Follow-up issue (not created now).** Move the Shortlet public API (`restoreShortletState`, `recordGuestStay`, `recordGuestArea`, `selectShortletUnit`, `clearShortletSelection`, `applyDiscoveryShortlist`) and `validatedCheckOutForNights` out of `assistant-runtime.ts`, into the Shortlet pack or the Shortlet host. Remove the `'shortlet'` check in `restoreShortletState` (find the task by its pack, not the literal), and the restored pending-card id template. Then remove the matching allowlist entries, which the exact-equality test will require. Raise it under the assistant-runtime-hardening effort before its merge.
+
+3. **Host coverage.** `test/guest-request-host-packs.test.ts` (6 tests). Each of the three concierge modes that guest-server builds a runtime for (`assistant-offline`, `openai-compatible`, `gemini`) runs one Shortlet search through `createGuestRequestHandler` twice: on the anonymous path (the default application's runtime) and for a session-scoped guest (the per-session runtime, reached with the cookie from `GET /`). The model is the scripted one, with the attempt hook: no provider, no secrets, and the mode's `modelClient` is injected. The search must return a discovery surface, so a host that drops the pack fails.
+   - Mutation, one site at a time (`packs: []` in place of the Shortlet pack): the offline anonymous branch fails 2 tests, the openai/gemini anonymous branch fails 4, the per-session runtime fails 3. guest-server.ts was restored byte for byte.
+   - `guest-request-handler.test.ts` needs the repo's test environment defaults (`NODE_ENV=test`, `COMMERCE_REFERENCE_TEST_KEY=allow`, from `scripts/test-env-defaults.mjs`) when run without `run-tests.mjs`. Those are the repo's own test values, not secrets; the new host test does not need them.
+
+4. **Stale callers.** `.scratch/guest-ui-consistency/capture-23.ts` and `capture-27.ts` pass `createShortletAssistantPack` (CRLF preserved). The capture sweeps were not run. `.scratch/pilot-acceptance/head-guest-server.ts` is a frozen historical snapshot from commit `6503849` (Migrate guest UI to Weaver 0.2.1), referenced by nothing, with its acceptance artifacts. It is left unchanged. It constructs `AssistantRuntime` with no packs, so it would throw at construction under the current runtime. It is not part of any build or test.
+
+5. **Zero-packs construction error.** `test/assistant-host-composition.test.ts` pins the throw (`/needs at least one domain pack from its host/`). Mutation: removing the throw fails it.
+
+6. **Item-6 note (8e934d8).** The note at line 163 already says the test uses a crafted **surface** id containing `:discovery:` (`test/assistant-stage-handlers.test.ts`, the fallback-copy test). No thread-id wording remains in this Comments section. The change is intentional: the copy comes from the handler that filed the surface, not from an id lookup.
+
+**ADRs for this follow-up.** ADR 0074 (an unauthorised or unregistered proposal is never kept by default; the hook decides); ADR 0099 section 6 (no pack fallback: the host composes, the runtime refuses what it does not register); ADR 0070 (the refusal commits nothing); ADR 0075 (refusal messages carry no values); ADR 0106 (closed outcomes: `tool_denial` and `UNKNOWN_DOMAIN` only, no new code).
+
+**Commands and counts (`env -u LLM_API_KEY`).**
+- `npm run check` (includes the worker bundle guard): exit 0.
+- New and changed files: `test/assistant-unregistered-domain.test.ts` 5/5, `test/assistant-host-composition.test.ts` 7/7, `test/assistant-runtime-boundary.test.ts` 4/4, `test/guest-request-host-packs.test.ts` 6/6, `test/assistant-platform-action-gate.test.ts` 4/4, `test/assistant-reply-control-outcome.test.ts` 2/2, `test/assistant-shortlet-stage-behaviour.test.ts` 3/3, `test/assistant-stage-handlers.test.ts` 8/8. Total 39/39.
+- Batch A: `shortlet-assistant-evals`, `assistant-control-metrics`, `assistant-control-outcome-count`, `assistant-task-rail`, `assistant-tool-authorization`, `commerce-agent-tools`, `conversation-router`, `demo-extended-assistant`: 87 tests, 87 pass, 0 fail.
+- Batch B: `assistant-recorded-journeys`, `assistant-recording-clients`, `assistant-cold-journey`, `assistant-turn-stop-cold-restore`, `assistant-turn-stop-reasons`, `assistant-tool-argument-validation` (13/13), `assistant-pending-action-restore`, `assistant-proposal-replacement`, `assistant-proposal-supersession`, `assistant-where-chip`, `assistant-artifact-authority`, `assistant-booking-journey`: 111 tests, 111 pass, 0 fail.
+- `guest-request-handler.test.ts` (with `NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow`): 9/9.
+- `npm run test:assistant`: 67/67.
+- Mutations (each restored byte for byte): zero-packs throw removed (1 failing test); reviewer's probe import added (1 failing test); turn guard removed (1 failing test); the three guest-server Shortlet-pack sites (2, 4 and 3 failing tests); the candidatePack fallback restored (equivalent, see item 1).
+- Not run: real-Chrome files (not run per instruction), the capture sweeps, full `npm test`, `npm run test:workers` (batch gate).
