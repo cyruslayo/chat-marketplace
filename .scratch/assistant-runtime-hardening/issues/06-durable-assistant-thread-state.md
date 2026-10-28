@@ -43,8 +43,14 @@ The Cloudflare Agents SDK's useful idea is one Durable Object per conversation w
 
 ### Reviewer finding (28 Oct 2026): a confirm can resurrect an executed proposal during an in-flight turn
 
-Not fixed in issue 03. It needs one mutating run per thread (ADR 0070), which is this issue's scope.
+Not fixed in issue 03 (commit c4d172c). It needs one mutating run per thread (ADR 0070), which is this issue's scope.
 
-Probe (reviewer): a typed turn is in flight, a confirm for the same proposal lands while it runs. `handleTurn` clones the task state at `assistant-runtime.ts` (`let candidateTaskState = cloneTaskState(thread.taskState)`, about line 692), and the clone is committed as a whole at the end of the turn (about lines 1159 and 1207). The confirm executes the proposal and commits, then the in-flight turn commits its older clone, so the executed proposal is restored as pending. A later typed yes can then send the request again, and the stale card is live again.
+Probe (reviewer): a typed turn is in flight, and a confirm for the same proposal lands while it runs. Both paths clone the task state when they start and commit the whole clone when they finish:
+- `handleTurn` clones at `assistant-runtime.ts:711` (`let candidateTaskState = cloneTaskState(thread.taskState)`) and commits it at lines 755, 781, 804 (the typed confirm and cancel paths), 1183, 1231 and 1249.
+- `handleAssistantEvent` clones at `assistant-runtime.ts:1330` and commits at lines 1365, 1432 and 1463.
 
-Required by this issue: serialise mutating turns per thread (one active run; a second mutating event waits or is refused), and commit a task-state change as a delta, not as a whole clone, so an earlier clone cannot restore an executed action. Covered by a test that interleaves a confirm inside a planner round.
+The confirm executes the proposal and commits. The in-flight turn then commits its older clone, which still holds the proposal as pending, so the executed proposal is restored. A later typed yes then tries to confirm it again.
+
+Observed symptom (reviewer, thrown error): a later typed "Yes" after the resurrected proposal threw out of `handleTurn` with "Unit unavailable ... Overlaps with Payment Pending" instead of returning a closed code. The domain overlap guard stopped a duplicate booking, so no second request was made, but the error escaped the turn.
+
+Required by this issue: serialise mutating turns per thread (one active run; a second mutating event waits or is refused with a closed code), and commit a task-state change as a delta rather than a whole clone, so an earlier clone cannot restore an executed action. Cover it with a test that interleaves a confirm inside a planner round, and make a later yes return a closed code rather than throw.

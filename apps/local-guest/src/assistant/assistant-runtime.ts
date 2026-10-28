@@ -745,7 +745,8 @@ export class AssistantRuntime {
     };
 
     // 2. Check for Pending Action Confirmation in Natural Language (Item 13, 15)
-    // ADR 0074: a confirmation after a replaced proposal sends nothing. Its notice clears on this typed turn.
+    // ADR 0074: a typed confirmation or cancellation attempt after a replaced proposal sends nothing. Only such an attempt
+    // consumes the notice; an unrelated typed turn leaves it.
     if (!candidateTaskState.pendingAction && candidateTaskState.replacedPendingAction) {
       // The notice is consumed only by an explicit confirmation or cancellation attempt (assistant-state.ts). An unrelated turn
       // leaves it in place, so the next yes still gets the replaced reply.

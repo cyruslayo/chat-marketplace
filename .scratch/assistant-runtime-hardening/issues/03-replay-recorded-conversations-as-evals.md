@@ -217,7 +217,7 @@ Commands and counts (env -u LLM_API_KEY):
 - Finding 2 (in-flight resurrection) is not fixed here: see issue 06 Comments.
 
 **Commands and counts (env -u LLM_API_KEY, 28 Oct 2026).**
-- Red first: `node --import tsx --test test/assistant-proposal-supersession.test.ts` before the fix: 2 pass, 12 fail (the two passing cases are the no-op chip edit, which must hold, and the real-switch guard).
+- Red first: `node --import tsx --test test/assistant-proposal-supersession.test.ts` against the pre-fix runtime (the 0ea551f source): 4 pass, 8 fail of 12. The passing cases are behaviour that already held before the fix and must keep holding.
 - Green: the same file: 12 pass, 0 fail (warm and cold for chip edit, button, no-op, same-task and starter, failed switch, real switch, notice lifetime).
 - `npm run check`: exit 0.
 - `node --import tsx --test test/assistant-proposal-replacement.test.ts test/assistant-pending-action-restore.test.ts test/assistant-recorded-journeys.test.ts test/assistant-recording-clients.test.ts test/assistant-cold-journey.test.ts test/assistant-turn-stop-cold-restore.test.ts test/assistant-artifact-authority.test.ts test/assistant-booking-journey.test.ts test/shortlet-assistant-evals.test.ts test/assistant-discovery-view.test.ts test/assistant-persistent-continuity.test.ts test/assistant-scope-persistence.test.ts test/guest-account-linking.test.ts test/guest-account-sign-in.test.ts test/guest-offer-access.test.ts test/guest-real-dates.test.ts test/guest-chip-continuity.test.ts test/assistant-proposal-supersession.test.ts`: 253 tests, 253 pass, 0 fail.
@@ -227,3 +227,25 @@ Commands and counts (env -u LLM_API_KEY):
 
 **Status.** Issue 03 stays `ready-for-agent`; the batch gate is still open.
 - Finding 2 (reviewer, not fixed here): a confirm that lands during an in-flight typed turn can resurrect an executed proposal, because `handleTurn` commits a whole cloned task state. Belongs to issue 06 (one mutating run per thread, ADR 0070); noted there.
+
+### Re-review follow-up (28 Oct 2026, HEAD 1cfa1bd)
+
+**Commit c4d172c does NOT fix the in-flight resurrection.** A confirm that lands during an in-flight typed turn can restore an executed proposal, because `handleTurn` and `handleAssistantEvent` commit a whole cloned task state (issue 06 Comments, with the line references and the thrown "Overlaps with Payment Pending" symptom). That is deferred to issue 06 (one mutating run per thread, ADR 0070). This commit does not rewrite c4d172c's message.
+
+**Test gaps closed (mutation-checked).**
+- Model-invoked switches (`switch_task` to an unknown task, `start_task` to an unknown domain): a new test keeps a valid proposal through both refusals, and a later typed yes still confirms (phone-holding guest, finding 9). Mutation A removes the actual-change guard on the planner path, so every switch clears the proposal. Tests `model-invoked switches, warm` and `cold` fail (2 of 16 red), and the runtime is restored byte-identical.
+- Event-path actual-change guard (mutation B: removal of `if (applied.activeTaskId !== thread.activeTaskId)`): not observable. The switch restores a clone taken before the removal, and `#syncActiveTask` rewrites the stored copy from the committed state, so the removal leaves the live state unchanged. The test for a same-task switch and the Stays starter stays in the suite and says so in its comment. Mutation B survives all 16 tests. The planner-path test is the one that discriminates the same mutant class.
+- Chip undo, warm: propose, chip edit, undo, then a typed yes. Undo restores the searched party size and does not bring the removed proposal back; the typed yes gets the replaced reply and nothing is sent; the old card is `STALE_SURFACE`.
+- Chip undo, cold: `NOTHING_TO_UNDO` is pinned as a test. It documents the pre-existing history reset and must change only when the owner decides the history must survive page loads and typed turns.
+- Staging-like variants: chip edit (typed yes and button), chip no-op, real switch, and notice lifetime use the staging-like guest. A phone is kept only for the scenarios that confirm a still-valid proposal (the event-path test and the model-invoked test), each with a comment.
+
+**Wording corrected.** The comment at `assistant-runtime.ts` (about line 748) now says only a typed confirmation or cancellation attempt consumes the notice. The header of `test/assistant-proposal-replacement.test.ts` says the guest is staging-like, and no scenario there reaches the phone-only confirm path.
+
+**Commands and counts (env -u LLM_API_KEY).**
+- `npm run check`: exit 0.
+- `node --import tsx --test test/assistant-proposal-supersession.test.ts`: 16 pass, 0 fail (warm and cold).
+- Mutation A (planner-path guard removed): `test/assistant-proposal-supersession.test.ts`: 2 fail (warm and cold `model-invoked switches`), 14 pass. Runtime restored, verified with `cmp`.
+- Mutation B (event-path guard removed): 16 pass, 0 fail. Expected, see above. Runtime restored, verified with `cmp`.
+- Affected set (`assistant-proposal-supersession`, `assistant-proposal-replacement`, `assistant-pending-action-restore`, `assistant-cold-journey`, `assistant-turn-stop-cold-restore`, `assistant-recorded-journeys`, `guest-chip-continuity`): 50 tests, 50 pass, 0 fail.
+- `npm run test:assistant`: 67 of 67 pass.
+- Not run: full `npm test`, `npm run test:workers`.

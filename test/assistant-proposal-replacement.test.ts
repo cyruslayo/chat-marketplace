@@ -20,8 +20,9 @@ import { LIVE_LIKE_CLOCK, wireDatedApp } from "./helpers/guest-date-fixtures.js"
 // ADR 0074 (owner decision, 28 Oct 2026): a new search that changes the proposed stay, or a task switch, after a Booking
 // Request proposal removes the proposal's authority. Typed confirmations and the old card's button then send nothing.
 // Every scenario runs warm (one application) and cold (a new application before every event, on the 27 Oct 2026 clock).
-// The guest holds a phone number, so a confirmation that wrongly got through would send a request and fail the test (the
-// confirm path needs a phone, finding 9). Scenario steps use a planner answer per text, as the recorded journeys do.
+// The guest is staging-like (no phone, see openJourneyEnvironment): none of these scenarios reaches the phone-only confirm
+// path, because the proposal is removed before any confirm. A confirmation that wrongly got through would throw the missing-
+// phone error (finding 9) and fail the test. Scenario steps use a planner answer per text, as the recorded journeys do.
 
 const THREAD = "g-d1a0000601";
 const SEARCH_TEXT = "I need a place in Ikoyi for 4 nights for 2 guests from 14 December 2026";
