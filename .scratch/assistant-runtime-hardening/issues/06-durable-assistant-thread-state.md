@@ -249,3 +249,4 @@ Blocking review finding: `#handlePaystackCardCheckout` awaited the Paystack `ini
 **Follow-up.** The two pre-existing checkout defects found while writing these tests are recorded in `.scratch/assistant-runtime-hardening/issues/09-paystack-checkout-email-and-provider-failure.md` (needs-triage): the missing-email `ACTION_NOT_AUTHORIZED` instead of the email prompt, and the checkout session left without a `checkoutUrl` after a provider failure (recovery unverified).
 
 **Status.** Unchanged, `ready-for-agent`. The batch gate is still open (`npm run test:workers` and the full `npm test` once before any merge to main).
+- Shared fixture check (M13 change to `wireDatedApp`, an optional trailing argument): `env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow node --import tsx --test test/assistant-cold-journey.test.ts`: 3 tests, 3 pass, 0 fail.
