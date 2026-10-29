@@ -1372,18 +1372,17 @@ a.landing-unit__link:focus-visible {
 }
 
 /* A frame narrower than 21rem (about 336 px of content) cannot hold six labels in equal columns. Only the current step's
-   label stays visible; the other steps keep their bars (min 0.5rem) and their label text stays in the DOM, transparent and
+   label stays visible; the other steps keep their joined bar segments and their label text stays in the DOM, transparent and
    clipped, for the aria-hidden rail. Measured by the frame, so it follows the phone wherever it is used. */
 @container (max-width: 21rem) {
+  /* Six equal columns keep the bar one joined line, as in the app. A label with hidden overflow has no minimum width, so only
+     the current label widens its column; the other labels stay in the DOM. */
   .landing-phone .ui-rail {
-    grid-template-columns: repeat(6, auto);
-    justify-content: space-between;
+    grid-template-columns: repeat(6, minmax(auto, 1fr));
   }
 
   .landing-phone .ui-rail > li:not([data-state="current"]) {
     color: transparent;
-    max-inline-size: 0;
-    min-inline-size: 0.5rem;
     overflow: hidden;
     white-space: nowrap;
   }
@@ -1610,14 +1609,11 @@ a.landing-unit__link:focus-visible {
 /* A narrow window cannot hold six labels: only the current step keeps its label, as in the phones. */
 @container (max-width: 21rem) {
   .landing-chat .ui-rail {
-    grid-template-columns: repeat(6, auto);
-    justify-content: space-between;
+    grid-template-columns: repeat(6, minmax(auto, 1fr));
   }
 
   .landing-chat .ui-rail > li:not([data-state="current"]) {
     color: transparent;
-    max-inline-size: 0;
-    min-inline-size: 0.5rem;
     overflow: hidden;
     white-space: nowrap;
   }
