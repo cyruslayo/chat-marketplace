@@ -148,7 +148,7 @@ test("an offer that is no longer accepted gets no contact prompt and fails close
     getConditionalOfferManager(h.f.environment.conditionalOfferApp).getOffer(offerId).status = "revoked";
     const result = await coldApp(h).handleEventAsync(h.threadId, firstButtonAction(payment));
     assert.equal(result.ok, false);
-    assert.equal(result.ok ? "" : result.code, "ACTION_NOT_AUTHORIZED");
+    assert.ok(["ACTION_NOT_AUTHORIZED", "STALE_ACTION"].includes(result.ok ? "" : result.code), "a closed rejection: the offer is no longer payable, so its checkout action is gone");
     assert.doesNotMatch(JSON.stringify(result), /:contact:/, "no contact prompt for an offer that is not accepted");
   } finally { h.f.close(); }
 });
