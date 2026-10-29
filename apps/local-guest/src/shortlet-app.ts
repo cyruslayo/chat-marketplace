@@ -22,6 +22,7 @@ import type {
 import type { AssetLoader } from "../../../packages/platform-core/src/asset-loader.js";
 import { nodeAssetLoader } from "../../../packages/platform-core/src/node-asset-loader.js";
 import { GUEST_HTML_SECURITY_HEADERS } from "../../../packages/platform-core/src/security-headers.js";
+import { PaystackProviderFailure } from "../../../packages/platform-core/src/payments/index.js";
 import { createGuestShell, type StaticAsset } from "./guest-shell.js";
 import { extendedStayDraftFacts } from "../../web-agent/src/extended-stay-presentation.js";
 import {
@@ -716,12 +717,48 @@ interface PendingDraftReplacement {
   readonly surfaceId: string;
 }
 
+/**
+ * Closed reasons for a failed chat card start (ADR 0075). The host observer receives only one of these codes: no offer id,
+ * URL, reference, contact, key or provider text. The guest-visible copy does not depend on the reason.
+ */
+export type CardCheckoutFailureReason =
+  | "provider_not_configured"
+  | "action_rejected"
+  | "payer_not_authorized"
+  | "offer_not_payable"
+  | "provider_rejected"
+  | "provider_unreachable"
+  | "provider_response_invalid"
+  | "checkout_url_rejected"
+  | "reference_conflict"
+  | "unclassified";
+
+export interface CardCheckoutFailedEvent {
+  readonly code: "CARD_CHECKOUT_FAILED";
+  readonly reason: CardCheckoutFailureReason;
+}
+
+/**
+ * Maps a thrown card-start error to its closed reason. A Paystack failure carries its own reason; the domain's fixed
+ * messages are matched otherwise. Anything else is "unclassified". Contact prompts never reach this mapping.
+ */
+export function cardCheckoutFailureReason(error: unknown): CardCheckoutFailureReason {
+  if (error instanceof PaystackProviderFailure) return error.reason;
+  const message = error instanceof Error ? error.message : "";
+  if (/Paystack checkout is not configured|Bank transfer is not configured/i.test(message)) return "provider_not_configured";
+  if (/non-card checkout/i.test(message)) return "provider_response_invalid";
+  if (/authoritative payer|Cross-tenant/i.test(message)) return "payer_not_authorized";
+  if (/accepted offer|Payment window has expired|no longer eligible|Extended Stay|Refundable Security Deposit|No deposit payment|offerId is required|accepts only offerId/i.test(message)) return "offer_not_payable";
+  return "unclassified";
+}
+
 export class LocalGuestApp {
   #environment: LocalGuestEnvironment;
   readonly #threads = new Map<string, GuestThreadState>();
   readonly #geminiClient: GeminiConciergeClient | null;
   readonly #assistantRuntime: AssistantRuntime | null;
   readonly #modelCallBudget: ModelCallBudget | null;
+  readonly #onCardCheckoutFailed: ((event: CardCheckoutFailedEvent) => void) | null;
 
   constructor(
     environment: LocalGuestEnvironment,
@@ -730,12 +767,15 @@ export class LocalGuestApp {
       readonly assistantRuntime?: AssistantRuntime;
       /** Issue 19: once the daily cap is spent, new turns use the deterministic concierge (ADR 0080). */
       readonly modelCallBudget?: ModelCallBudget;
+      /** Metadata-only observation of a failed chat card start (closed reason; ADR 0075). */
+      readonly onCardCheckoutFailed?: (event: CardCheckoutFailedEvent) => void;
     } = {},
   ) {
     this.#environment = environment;
     this.#geminiClient = options.geminiClient ?? null;
     this.#assistantRuntime = options.assistantRuntime ?? null;
     this.#modelCallBudget = options.modelCallBudget ?? null;
+    this.#onCardCheckoutFailed = options.onCardCheckoutFailed ?? null;
   }
 
   get environment(): LocalGuestEnvironment {
@@ -1188,6 +1228,16 @@ export class LocalGuestApp {
     return this.#withJourney(threadId, result);
   }
 
+  #reportCardCheckoutFailure(reason: CardCheckoutFailureReason): void {
+    this.#onCardCheckoutFailed?.({ code: "CARD_CHECKOUT_FAILED", reason });
+  }
+
+  /** Reports a closed reason and returns the unchanged guest-visible result. */
+  #rejectCardCheckout(reason: CardCheckoutFailureReason, result: GuestTurnResult): GuestTurnResult {
+    this.#reportCardCheckoutFailure(reason);
+    return result;
+  }
+
   async #handlePaystackCardCheckout(
     threadId: string,
     event: GuestEventPayload,
@@ -1199,26 +1249,26 @@ export class LocalGuestApp {
         message: "Secure card checkout is unavailable.",
       };
     if (!threadId || !THREAD_ID_PATTERN.test(threadId))
-      return {
+      return this.#rejectCardCheckout("action_rejected", {
         ok: false,
         code: "INVALID_THREAD",
         message: "Unknown conversation.",
-      };
+      });
     const thread = this.#threads.get(threadId) ?? (this.#environment.guestDataIsRemote ? null : this.#loadThread(threadId));
     if (!thread)
-      return {
+      return this.#rejectCardCheckout("action_rejected", {
         ok: false,
         code: "UNKNOWN_THREAD",
         message: "Unknown conversation.",
-      };
+      });
     const activeSurfaceId = thread.activeSurfaces.get(PAYMENT_STAGE);
     if (!activeSurfaceId || activeSurfaceId !== event.surfaceId)
-      return {
+      return this.#rejectCardCheckout("action_rejected", {
         ok: false,
         code: "STALE_SURFACE",
         message:
           "That action is no longer available; please use the current options.",
-      };
+      });
     // The contact pre-check chooses the input surface only; the gate below stays the authority (ADR 0106).
     const contactPrompt = this.#paymentContactPrompt(thread, event);
     if (contactPrompt) return contactPrompt;
@@ -1227,7 +1277,7 @@ export class LocalGuestApp {
       application: this.#environment.cardPaymentApp,
       principal: this.#environment.guestPrincipal(),
     });
-    if (!resolved.ok) return resolved;
+    if (!resolved.ok) return this.#rejectCardCheckout("action_rejected", resolved);
     try {
       const session =
         await this.#environment.cardPaymentApp.initializePaystackCheckout(
@@ -1283,11 +1333,11 @@ export class LocalGuestApp {
         return this.#contactSurface(thread, "email", event.context ?? {});
       if (/phone number is required/i.test(message))
         return this.#contactSurface(thread, "phone", { ...(event.context ?? {}), resumeAction: "payment" });
-      return {
+      return this.#rejectCardCheckout(cardCheckoutFailureReason(error), {
         ok: false,
         code: "ACTION_NOT_AUTHORIZED",
         message: "The secure card checkout could not be started.",
-      };
+      });
     }
   }
 

@@ -309,6 +309,7 @@ import {
 } from "./guest-account-pages.js";
 
 export * from "./shortlet-app.js";
+import type { CardCheckoutFailedEvent } from "./shortlet-app.js";
 import {
   committedWorkScope,
   ConventionalBookingPage,
@@ -2246,6 +2247,8 @@ export function paymentContinuationRejectionReason(error: unknown): PaymentConti
 export interface GuestRequestHandlerOptions {
   /** Metadata-only observation of a rejected payment continuation (closed reason; ADR 0075). */
   onPaymentContinuationRejected?: (event: PaymentContinuationRejectedEvent) => void;
+  /** Metadata-only observation of a failed chat card start (closed reason; ADR 0075). */
+  onCardCheckoutFailed?: (event: CardCheckoutFailedEvent) => void;
   /** Payment reference keys for the commerce pack (user decision 18 Oct 2026). Omitted: the injected module reads them from the environment. */
   paymentReferenceKeys?: PaymentReferenceKeys;
   environment?: LocalGuestEnvironment;
@@ -2461,6 +2464,7 @@ export function createGuestRequestHandler(
     geminiClient,
     assistantRuntime,
     ...modelCallBudget,
+    ...(options.onCardCheckoutFailed === undefined ? {} : { onCardCheckoutFailed: options.onCardCheckoutFailed }),
   });
   // Guest Account sign-in (issue 06). Disabled, not defaulted, when its key, sender or session scoping is missing.
   const accountComposition =
@@ -2569,6 +2573,7 @@ export function createGuestRequestHandler(
     const runtime = {
       environment: runtimeEnvironment,
       app: new LocalGuestApp(runtimeEnvironment, {
+        ...(options.onCardCheckoutFailed === undefined ? {} : { onCardCheckoutFailed: options.onCardCheckoutFailed }),
         ...(assistantModelClient
           ? {
               assistantRuntime: new AssistantRuntime(
