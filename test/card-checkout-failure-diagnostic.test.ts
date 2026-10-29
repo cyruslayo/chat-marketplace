@@ -6,6 +6,7 @@ import { cardCheckoutFailureReason, type CardCheckoutFailedEvent, type CardCheck
 import { logCardCheckoutFailed } from "../apps/cloudflare/src/card-checkout-log.js";
 import { createPaystackHttpFake } from "./helpers/paystack-http.js";
 import { guestAction, restartFixture } from "./helpers/guest-restart.js";
+import { THREAD, checkoutActionOn, checkoutWorld, coldCheckoutApp, reachCheckout } from "./helpers/assistant-thread-lock-fixtures.js";
 
 // The chat card start (#handlePaystackCardCheckout) keeps one generic guest message. The host sees a closed reason only
 // (ADR 0075): no offer id, URL, reference, contact, key or provider text. Each reason below is reached offline with a fake
@@ -186,4 +187,30 @@ test("a provider failure that is not a rejection reports no status class", async
     throw new TypeError("fetch failed");
   };
   assertOneClosedReason(await startChatCheckout(clientWith(unreachable)), "provider_unreachable");
+});
+
+// Issue 06 (M13): the provider await is bounded (PAYSTACK_CHECKOUT_PROVIDER_TIMEOUT_MS). A Paystack call that never resolves is
+// reported to the observer as the closed provider_unreachable reason with no status class. The bound is injected, so the
+// timeout is observed in milliseconds; the node timeout only bounds a regression.
+const SHORT_CHECKOUT_BOUND_MS = 20;
+const REGRESSION_GUARD_MS = 15_000;
+
+test("a Paystack checkout whose provider call never resolves reports provider_unreachable through the observer after the bound", { timeout: REGRESSION_GUARD_MS }, async () => {
+  const world = checkoutWorld();
+  const payment = await reachCheckout(world, THREAD);
+  const checkout = checkoutActionOn(payment.surfaces[0]!);
+  assert.ok(checkout, "the payment surface starts Paystack checkout");
+
+  world.gate.armed = true;
+  world.gate.neverResolve = true;
+  const events: CardCheckoutFailedEvent[] = [];
+  const outcome = await coldCheckoutApp(world, THREAD, {
+    paystackCheckoutTimeoutMs: SHORT_CHECKOUT_BOUND_MS,
+    onCardCheckoutFailed: (event) => events.push(event),
+  }).app.handleEventAsync(THREAD, checkout);
+  assert.equal(outcome.ok, false, "the guest sees a failure at the bound");
+  assert.equal(outcome.ok ? undefined : outcome.code, "ACTION_NOT_AUTHORIZED", "the guest-visible code is unchanged");
+  assert.equal(outcome.ok ? undefined : outcome.message, GUEST_MESSAGE, "the guest-visible message is unchanged");
+  assert.deepEqual(events, [{ code: "CARD_CHECKOUT_FAILED", reason: "provider_unreachable" }], "one closed reason, with no status class, for the timed-out call");
+  assert.doesNotMatch(JSON.stringify(events), FORBIDDEN, "the reason carries no ids, URLs, references, contacts, keys or provider text");
 });

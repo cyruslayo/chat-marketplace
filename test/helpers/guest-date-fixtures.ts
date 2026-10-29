@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { LocalGuestEnvironment } from "../../apps/local-guest/src/fixture.js";
-import { LocalGuestApp } from "../../apps/local-guest/src/shortlet-app.js";
+import { LocalGuestApp, type CardCheckoutFailedEvent } from "../../apps/local-guest/src/shortlet-app.js";
 import { AssistantRuntime, type AssistantDiagnosticEvent } from "../../apps/local-guest/src/assistant/assistant-runtime.js";
 import { ShortletAssistantRuntime } from "./assistant-runtime-host.js";
 import { BudgetedModelClient, ModelCallBudget } from "../../apps/local-guest/src/assistant/model-call-budget.js";
@@ -120,7 +120,7 @@ export function restartedDatedApp(previous: DatedFixture, model: AssistantModelC
   return wireDatedApp(previous.environment, model, diagnostics);
 }
 
-export function wireDatedApp(environment: LocalGuestEnvironment, model: AssistantModelClient, diagnostics?: AssistantDiagnosticEvent[], additionalPacks?: readonly AssistantDomainPack[], appOptions: { readonly paystackCheckoutTimeoutMs?: number } = {}): Omit<DatedFixture, "close"> {
+export function wireDatedApp(environment: LocalGuestEnvironment, model: AssistantModelClient, diagnostics?: AssistantDiagnosticEvent[], additionalPacks?: readonly AssistantDomainPack[], appOptions: { readonly paystackCheckoutTimeoutMs?: number; readonly onCardCheckoutFailed?: (event: CardCheckoutFailedEvent) => void } = {}):Omit<DatedFixture, "close"> {
   const budget = new ModelCallBudget(10, () => environment.clock());
   const quota = new SqliteModelRequestQuota(environment.database, { clock: environment.clock, dailyTenantLimit: 3_000, hourlyGuestLimit: 60 });
   const identity = { tenantId: environment.config.tenantId, guestId: environment.config.guestId };

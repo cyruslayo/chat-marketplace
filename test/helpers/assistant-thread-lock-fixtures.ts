@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { LocalGuestEnvironment } from "../../apps/local-guest/src/fixture.js";
-import { LocalGuestApp, type GuestTurnResult } from "../../apps/local-guest/src/shortlet-app.js";
+import { LocalGuestApp, type CardCheckoutFailedEvent, type GuestTurnResult } from "../../apps/local-guest/src/shortlet-app.js";
 import type { AssistantModelClient, AssistantModelRequest, AssistantModelResponse } from "../../apps/local-guest/src/assistant/assistant-model.js";
 import type { AssistantDiagnosticEvent } from "../../apps/local-guest/src/assistant/assistant-runtime.js";
 import type { AssistantTurnRecord } from "../../apps/local-guest/src/assistant/assistant-turn-record.js";
@@ -169,6 +169,8 @@ export interface ProviderGate {
 /** The application options a checkout test can inject: a short provider bound, so the timeout is observed without real waiting. */
 export interface CheckoutAppOptions {
   readonly paystackCheckoutTimeoutMs?: number;
+  /** The metadata-only observer of a failed chat card start (ADR 0075), forwarded to the application. */
+  readonly onCardCheckoutFailed?: (event: CardCheckoutFailedEvent) => void;
 }
 
 export interface CheckoutWorld {
