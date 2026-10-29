@@ -13,6 +13,23 @@ import { stayAmountDueNowKobo } from "./quote.js";
 /**
  * ADR 0049 & AC 1: Strictly reject payloads containing raw PAN, CVV, PIN, OTP, or reusable card tokens.
  */
+/**
+ * The reference format the platform mints for a Paystack transaction (ADR 0049, ADR 0087). Paystack accepts only letters,
+ * digits, "-", "." and "=" in a transaction reference, so the platform's own references use letters, digits and "-" only.
+ * A legacy reference that contains any other character can never have produced a provider transaction.
+ */
+export const PLATFORM_PSP_REFERENCE_PATTERN = /^[A-Za-z0-9-]+$/;
+
+/**
+ * Mints the reference for one checkout attempt: deterministic for a command id and clock instant (ADR 0046 unique per
+ * attempt). The command id contributes only its letters and digits, so no other character reaches the provider.
+ */
+export function mintCardPspReference(commandId: string, now: Date): string {
+  const safeCommandPart = commandId.replace(/[^A-Za-z0-9]/g, "").slice(0, 8);
+  if (safeCommandPart === "") throw new Error("A checkout reference needs a command id with letters or digits");
+  return `psp-ref-${safeCommandPart}-${now.getTime()}`;
+}
+
 function assertNoRawCardCredentials(payload: Record<string, unknown>): void {
   if (!payload || typeof payload !== "object") return;
   const forbiddenKeys = [
@@ -340,7 +357,7 @@ export class CardPaymentManager {
     const journey = this.#journeys?.createIfAbsent({ offerId, paymentMethod: "fresh_card", originalPaymentDeadline: offer.paymentWindow.expiresAt, stayAmountKobo: stayAmountDueNowKobo(offer.quote) ?? offer.totalAmountDueNowKobo - (offer.refundableSecurityDepositKobo ?? 0), deposit: offer.securityDeposit ?? null });
     const purpose = journey?.stage === "stay_settled" ? "security_deposit" as const : "stay" as const;
     if (purpose === "security_deposit" && (!journey || !journey.requiredDeposit || journey.requiredDeposit.amountKobo <= 0)) throw new Error("No deposit payment is required");
-    const pspReference = `psp_ref_${envelope.commandId.slice(0, 8)}_${now.getTime()}`;
+    const pspReference = mintCardPspReference(envelope.commandId, now);
     const checkoutId = `chk_${envelope.commandId.slice(0, 12)}_${purpose}`;
     const checkoutUrl = `https://checkout.psp.example.com/pay/${pspReference}`;
 
@@ -379,6 +396,30 @@ export class CardPaymentManager {
     }
 
     return { ...session };
+  }
+
+  /**
+   * Replaces the reference of a live attempt that Paystack never accepted (ADR 0046, ADR 0049). The attempt keeps its
+   * checkout id, amount and Payment Window; only the reference changes. Refused unless the attempt is still initiated,
+   * has no recorded provider environment (so no provider transaction was ever bound to it), its stored reference is
+   * outside the platform format, the window is still open, and the new reference is unused. A paid or bound attempt
+   * is never re-minted. Audit records the checkout id only, never the reference (ADR 0075).
+   */
+  remintUnboundCheckoutReference(offerId: string, nextPspReference: string, now: Date): CardCheckoutSession {
+    const session = this.getCheckoutSession(offerId);
+    if (!session || session.status !== "initiated" || session.providerEnvironment !== undefined) {
+      throw new Error("Only an initiated checkout that the provider never accepted can take a new reference");
+    }
+    if (PLATFORM_PSP_REFERENCE_PATTERN.test(session.pspReference)) {
+      throw new Error("The checkout already holds a platform reference");
+    }
+    if (now.getTime() >= new Date(session.expiresAt).getTime()) throw new Error("Payment window has expired; cannot initialize checkout");
+    if (this.getCheckoutSessionByReference(nextPspReference)) throw new Error("The replacement reference is already in use");
+    const next: CardCheckoutSession = { ...session, pspReference: nextPspReference, checkoutUrl: `https://checkout.psp.example.com/pay/${nextPspReference}` };
+    this.#sessions.set(next.checkoutId, next);
+    this.#persistSession(next);
+    this.#audit?.record({ type: "card_payment.reference_reminted", checkoutId: session.checkoutId, offerId: session.offerId, remintedAt: now.toISOString() });
+    return { ...next };
   }
 
   /** Updates only the server-held hosted checkout result for an existing attempt. */

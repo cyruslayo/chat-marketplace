@@ -1,0 +1,132 @@
+TAP version 13
+# (node:63704) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Mixed-request quota, storage, and provider failures retain unavailable wording after refresh and restart
+ok 1 - Mixed-request quota, storage, and provider failures retain unavailable wording after refresh and restart
+  ---
+  duration_ms: 5179.6691
+  type: 'test'
+  ...
+# Subtest: A scope redirect keeps its fixed meaning in the timeline and after refresh
+ok 2 - A scope redirect keeps its fixed meaning in the timeline and after refresh
+  ---
+  duration_ms: 2042.6615
+  type: 'test'
+  ...
+# Subtest: Assistant Shortlet search, detail, and draft continuity survive authenticated HTTP refreshes and application restarts
+ok 3 - Assistant Shortlet search, detail, and draft continuity survive authenticated HTTP refreshes and application restarts
+  ---
+  duration_ms: 2238.9974
+  type: 'test'
+  ...
+# (node:131280) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Scope AC1: unrelated requests never invoke planner tools or retain rejected input
+ok 4 - Scope AC1: unrelated requests never invoke planner tools or retain rejected input
+  ---
+  duration_ms: 826.0202
+  type: 'test'
+  ...
+# Subtest: Scope AC3: mixed requests send only validated scope slots to the planner
+ok 5 - Scope AC3: mixed requests send only validated scope slots to the planner
+  ---
+  duration_ms: 1290.7576
+  type: 'test'
+  ...
+# Subtest: Scope AC4: unavailable and malformed classifier decisions use fixed replies without a planner call
+ok 6 - Scope AC4: unavailable and malformed classifier decisions use fixed replies without a planner call
+  ---
+  duration_ms: 1016.2103
+  type: 'test'
+  ...
+# Subtest: Scope AC2: valid stays, greetings, Pidgin, corrections and contextual follow-ups reach planning
+ok 7 - Scope AC2: valid stays, greetings, Pidgin, corrections and contextual follow-ups reach planning
+  ---
+  duration_ms: 1125.8786
+  type: 'test'
+  ...
+# Subtest: Scope AC5: pending confirmations and cancellations bypass an unavailable classifier
+ok 8 - Scope AC5: pending confirmations and cancellations bypass an unavailable classifier
+  ---
+  duration_ms: 1559.1433
+  type: 'test'
+  ...
+# Subtest: Scope AC6: rejected input stays absent from persisted history and later classifier context
+ok 9 - Scope AC6: rejected input stays absent from persisted history and later classifier context
+  ---
+  duration_ms: 1082.801
+  type: 'test'
+  ...
+# Subtest: Scope AC7: the default classifier is tool-free and excludes prior history and listing prose
+ok 10 - Scope AC7: the default classifier is tool-free and excludes prior history and listing prose
+  ---
+  duration_ms: 906.3101
+  type: 'test'
+  ...
+# (node:90744) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC1: unknown, unavailable, malformed, extra, missing, mistyped, out-of-range, and invalid array arguments fail before execution
+ok 11 - AC1: unknown, unavailable, malformed, extra, missing, mistyped, out-of-range, and invalid array arguments fail before execution
+  ---
+  duration_ms: 1121.941
+  type: 'test'
+  ...
+# Subtest: Booking request intent can prepare a reviewable draft without a confirmation proposal or submission
+ok 12 - Booking request intent can prepare a reviewable draft without a confirmation proposal or submission
+  ---
+  duration_ms: 1173.7111
+  type: 'test'
+  ...
+# Subtest: AC2: approved intents, the active pack, and current state intersect before planner tools and execution
+ok 13 - AC2: approved intents, the active pack, and current state intersect before planner tools and execution
+  ---
+  duration_ms: 2845.9605
+  type: 'test'
+  ...
+# Subtest: AC3: forged principal fields and references outside the current shortlist cannot read another workflow
+ok 14 - AC3: forged principal fields and references outside the current shortlist cannot read another workflow
+  ---
+  duration_ms: 1144.6588
+  type: 'test'
+  ...
+# Subtest: AC4: proposal effects remain pending until exact confirmation and keep server date and price checks
+ok 15 - AC4: proposal effects remain pending until exact confirmation and keep server date and price checks
+  ---
+  duration_ms: 2810.6154
+  type: 'test'
+  ...
+# Subtest: AC5: stale and duplicate confirmation surfaces retain command-gate rejection and idempotency
+ok 16 - AC5: stale and duplicate confirmation surfaces retain command-gate rejection and idempotency
+  ---
+  duration_ms: 761.4417
+  type: 'test'
+  ...
+# Subtest: AC6: valid shortlet discovery remains available with validated tool capabilities
+ok 17 - AC6: valid shortlet discovery remains available with validated tool capabilities
+  ---
+  duration_ms: 419.2551
+  type: 'test'
+  ...
+# (node:145404) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: The four-turn scripted reference uses the full smoke harness without credentials, network calls or live performance claims
+ok 18 - The four-turn scripted reference uses the full smoke harness without credentials, network calls or live performance claims
+  ---
+  duration_ms: 4427.2798
+  type: 'test'
+  ...
+# Subtest: A bounded offline transport probe reserves retries outside transport catches and reports quota refusal once
+ok 19 - A bounded offline transport probe reserves retries outside transport catches and reports quota refusal once
+  ---
+  duration_ms: 2933.8777
+  type: 'test'
+  ...
+1..19
+# tests 19
+# suites 0
+# pass 19
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 11696.6088

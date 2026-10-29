@@ -13,4 +13,5 @@ COMMERCE_REFERENCE_HMAC_KEY_ID="k1"
 # LLM_MODEL=openai/gpt-6-luna
 # LLM_PROVIDER_LABEL=openrouter
 # CONCIERGE_DAILY_MODEL_CALL_CAP=3000
+# SHORTLET_CHAT_TURNS_PER_SESSION_PER_HOUR=60
 # Supply LLM_API_KEY through the runtime secret binding, never the build environment.

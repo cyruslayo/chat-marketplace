@@ -108,6 +108,7 @@ import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit
 import { SqliteTelemetry } from "../../../packages/platform-core/src/sqlite-telemetry.js";
 import type { TelemetryEvent } from "../../../packages/platform-core/src/telemetry.js";
 import { DEMO_EXTENDED_STAY_POLICY, SqliteRevenueAccountingRepository, SqliteRevenueReleaseStateStore } from "../../../domains/shortlet/src/index.js";
+import { DEMO_TRUST_EXPIRES_ON } from "../../../domains/shortlet/src/index.js";
 
 export interface LocalOwnerFixtureConfig {
   readonly databasePath: string;
@@ -810,7 +811,7 @@ export class LocalApartmentOwnerEnvironment {
         inspectorId: "inspector-verified-01",
         status: "passed",
         inspectedAt: "2026-01-15T00:00:00Z",
-        expiresAt: "2027-01-15T00:00:00Z",
+        expiresAt: `${DEMO_TRUST_EXPIRES_ON}T00:00:00Z`,
         materialChangePending: false,
         scope: inspectionScope,
       },
@@ -819,19 +820,19 @@ export class LocalApartmentOwnerEnvironment {
         propertyId: this.config.propertyId,
         status: "verified",
         verifiedAt: "2026-01-15T00:00:00Z",
-        expiresAt: "2027-01-15T00:00:00Z",
+        expiresAt: `${DEMO_TRUST_EXPIRES_ON}T00:00:00Z`,
         permissions: authorityPermissions,
       },
       regulatory: {
         licensing: {
           status: "verified",
           verifiedAt: "2026-01-15T00:00:00Z",
-          expiresAt: "2027-01-15T00:00:00Z",
+          expiresAt: `${DEMO_TRUST_EXPIRES_ON}T00:00:00Z`,
         },
         insurance: {
           status: "verified",
           verifiedAt: "2026-01-15T00:00:00Z",
-          expiresAt: "2027-01-15T00:00:00Z",
+          expiresAt: `${DEMO_TRUST_EXPIRES_ON}T00:00:00Z`,
           publicLiabilityPerOccurrenceKobo: 1000000000,
           annualAggregateKobo: 2000000000,
           propertyCoverVerified: true,

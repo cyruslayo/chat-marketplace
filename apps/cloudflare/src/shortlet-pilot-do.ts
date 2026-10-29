@@ -10,6 +10,7 @@ import { SqliteUnitRepository } from "../../../domains/shortlet/src/index.js";
 import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit-log.js";
 import type { TelemetryEvent } from "../../../packages/platform-core/src/telemetry.js";
 import { createConciergeModelClient } from "../../local-guest/src/assistant/concierge-configuration.js";
+import { writeAssistantTurnRecord } from "../../local-guest/src/assistant/assistant-turn-record.js";
 import { ModelCallBudget } from "../../local-guest/src/assistant/model-call-budget.js";
 import { LocalGuestEnvironment } from "../../local-guest/src/fixture.js";
 import { GUEST_CODE_HASHING_KEY_ENV, loadGuestAccountComposition } from "../../local-guest/src/guest-account-composition.js";
@@ -37,7 +38,10 @@ import { createOpsHandler, type OpsHandler } from "./ops-routes.js";
 import { SHORTLET_SCHEMA_MIGRATIONS } from "./schema.js";
 import { cloudflareAssetLoader } from "./pilot-assets.js";
 import { R2ReceiptBlobStore } from "./r2-receipt-blob-store.js";
-import { commerceMigrationClient, platformGuestAccountDependencies, platformGuestData, platformMigrationClient } from "./do-clients.js";
+import { logPaymentContinuationRejected } from "./payment-continuation-log.js";
+import { logCardCheckoutFailed } from "./card-checkout-log.js";
+import { commerceMigrationClient, platformGuestAccountDependencies, platformGuestData, platformMigrationClient, platformModelRequestQuota } from "./do-clients.js";
+import { commerceSwitchIsOn } from "./commerce-switch.js";
 import { demoMode, pilotDeployment } from "../../pilot/src/pilot-config-core.js";
 
 /**
@@ -203,6 +207,8 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
       conciergeDiagnostics: () => this.#modelCallBudget?.turnCounts ?? { modelHandledTurns: 0, deterministicFallbackTurns: 0 },
       platformMigration: platformMigrationClient(this.env, this.env.SHORTLET_TENANT_ID?.trim() ?? ""),
       commerceMigration: commerceMigrationClient(this.env, this.env.SHORTLET_TENANT_ID?.trim() ?? ""),
+      // ADR 0104 decision 5: an invalid value reads as off here, and the commerce object then refuses the zero-row check, so the cutover fails closed.
+      commerceEnabled: commerceSwitchIsOn(this.env),
     });
   }
 
@@ -301,6 +307,9 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
     const guest = createGuestRequestHandler({
       environment: guestEnvironment,
       assets: cloudflareAssetLoader,
+      // Issue 05: one allow-listed record per assistant turn, written as a Workers Logs JSON line; the model id names the configured primary.
+      onAssistantTurn: writeAssistantTurnRecord,
+      assistantModelName: configuration.concierge.primary?.model,
       // Explicit, so production never falls back to reading CONCIERGE_MODE from the process environment.
       conciergeMode: configuration.concierge.mode,
       ...(modelClient ? { modelClient } : {}),
@@ -320,7 +329,13 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
         ...platformGuestAccountDependencies(this.env, configuration.tenantId),
       },
       payments,
+      // ADR 0075: a rejected continuation reports its closed reason to Workers Logs only.
+      onPaymentContinuationRejected: (event) => logPaymentContinuationRejected(event),
+      // ADR 0075: a failed chat card start reports its closed reason to Workers Logs only.
+      onCardCheckoutFailed: (event) => logCardCheckoutFailed(event),
       modelCallBudget,
+      // ADR 0101: quota reservations live in PLATFORM, shared by every domain object.
+      modelRequestQuota: platformModelRequestQuota(this.env, configuration.tenantId),
       sessionRuntimeIdleMs: configuration.limits.sessionRuntimeIdleMinutes * 60_000,
       // 04c: the user-approved production cap; the Durable Object has 128 MB of memory.
       sessionRuntimeLimit: configuration.sessionRuntimeLimit,

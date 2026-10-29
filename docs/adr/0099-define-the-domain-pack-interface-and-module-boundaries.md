@@ -23,7 +23,7 @@ A second domain (commerce) is now being added. Without a defined seam, every new
 
 The Concierge Platform and its domain packs are separated by one interface, and by one set of module boundaries that a test can check.
 
-1. **One public façade per domain.** A domain exposes exactly one module, `domains/<domain>/src/index.ts`. No file outside the domain imports any path past that index. A boundary test enforces the rule. The modules that violate it today are recorded on a temporary allow-list; the allow-list must reach zero.
+1. **One public façade per domain.** A domain exposes exactly one module, `domains/<domain>/src/index.ts`. No file outside the domain imports any path past that index. A boundary test enforces the rule. The modules that violate it today are recorded on a temporary allow-list; the allow-list must reach zero. *Note (26 Oct 2026):* the apartment hosts' runtime-and-type closure is checked for `domains/commerce` files by `test/apartment-commerce-free-closure.test.ts` (ADR 0104 decision 6). The Worker's `CommerceMarket` re-export is the documented exception (ADR 0101).
 
 2. **The platform owns the shared services.** The platform owns Conversation (threads and tasks, and the router), the Agent (model clients, tool loop, budget, and which pack's tools are exposed), Interactions (the one action gate), Surfaces (registry-fed catalogues and renderers), Payments, Accounts, Handoff, Audit, Telemetry, Redaction, and the storage ports (`SqlDatabase`, `BlobStore`). Domains do not own these concerns.
 

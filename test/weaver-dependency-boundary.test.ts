@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import { access, readFile, readdir } from "node:fs/promises";
+import { access, lstat, mkdir, readFile, readdir, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -12,11 +14,24 @@ const authoritativeRoots = [
 const legacyWeaverImport = /(?:\b(?:import|export)\s+(?:[^"']*?\s+from\s+)?|\b(?:import|require)\s*\()\s*["']@weaver\/(?:core|web)["']/;
 const anyWeaverImport = /(?:\b(?:import|export)\s+(?:[^"']*?\s+from\s+)?|\b(?:import|require)\s*\()\s*["']@(?:cylayo\/weaver-(?:core|web)|weaver\/(?:core|web))["']/;
 
-async function sourceFiles(directory: string): Promise<string[]> {
+async function sourceFiles(directory: string, ancestors: readonly string[] = []): Promise<string[]> {
+  const canonical = await realpath(directory);
+  if (ancestors.includes(canonical)) return [];
+  const nextAncestors = [...ancestors, canonical];
   const entries = await readdir(directory, { withFileTypes: true });
   const files = await Promise.all(entries.map(async (entry) => {
+    if (entry.name === "node_modules") return [];
     const entryPath = path.join(directory, entry.name);
-    return entry.isDirectory() ? sourceFiles(entryPath) : [entryPath];
+    const entryStat = await lstat(entryPath);
+    if (entryStat.isSymbolicLink()) {
+      const targetStat = await stat(entryPath);
+      if (targetStat.isDirectory()) return sourceFiles(entryPath, nextAncestors);
+      if (targetStat.isFile()) return [entryPath];
+      throw new Error(`Unsupported source link target: ${entryPath}`);
+    }
+    if (entry.isDirectory()) return sourceFiles(entryPath, nextAncestors);
+    if (entry.isFile()) return [entryPath];
+    throw new Error(`Unsupported source entry: ${entryPath}`);
   }));
   return files.flat();
 }
@@ -47,6 +62,40 @@ test("AC2 — source, tests and scripts use no legacy Weaver imports or vendor v
   assert.deepEqual(violations, []);
   for (const relativePath of ["vendor/weaver", "scripts/verify-weaver-vendor.mjs"]) {
     await assert.rejects(access(path.join(repositoryRoot, relativePath)), `${relativePath} must not exist`);
+  }
+});
+
+test("AC2 source scan follows linked source files but excludes dependency junctions", async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), "weaver-boundary-links-"));
+  try {
+    const linkedSourceDirectory = path.join(root, "linked-source");
+    const dependencyDirectory = path.join(root, "dependency-cache");
+    await mkdir(linkedSourceDirectory);
+    await mkdir(dependencyDirectory);
+    await writeFile(path.join(linkedSourceDirectory, "forbidden.ts"), 'import "@weaver/' + 'core";\n');
+    await writeFile(path.join(dependencyDirectory, "vendor.ts"), 'import "@weaver/' + 'core";\n');
+    await symlink(linkedSourceDirectory, path.join(root, "source-link"), "junction");
+    await symlink(dependencyDirectory, path.join(root, "node_modules"), "junction");
+
+    const linkedSourceFile = path.join(root, "source-link", "forbidden.ts");
+    const files = await sourceFiles(root);
+    assert.ok(files.includes(linkedSourceFile), "the scanner follows source directories reached through junctions");
+    assert.match(await readFile(linkedSourceFile, "utf8"), legacyWeaverImport);
+    assert.ok(!files.includes(path.join(root, "node_modules", "vendor.ts")), "the scanner excludes dependency junctions");
+
+    const fileAlias = path.join(root, "source-alias.ts");
+    let fileAliasSupported = true;
+    try {
+      await symlink(path.join(linkedSourceDirectory, "forbidden.ts"), fileAlias, "file");
+    } catch (error) {
+      const code = error !== null && typeof error === "object" && "code" in error ? error.code : undefined;
+      if (code === "EPERM" || code === "ENOTSUP" || code === "EACCES") fileAliasSupported = false;
+      else throw error;
+    }
+    if (fileAliasSupported) assert.ok((await sourceFiles(root)).includes(fileAlias), "the scanner reads forbidden imports through file links");
+    else t.diagnostic("This Windows account cannot create file symlinks; the source-directory junction assertion still ran.");
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 

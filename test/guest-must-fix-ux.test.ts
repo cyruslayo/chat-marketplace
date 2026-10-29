@@ -6,6 +6,7 @@ import { CRITERIA_EDIT_EVENT, criteriaSurfaceId, type GuestTurnResult } from "..
 import { viewResultIntent } from "../apps/local-guest/src/concierge.js";
 import { startPilotServer } from "../apps/pilot/src/pilot-server.js";
 import type { AssistantModelClient } from "../apps/local-guest/src/assistant/assistant-model.js";
+import { ASSISTANT_CONTROL_COPY } from "../apps/local-guest/src/assistant/control-copy.js";
 import { restartFixture } from "./helpers/guest-restart.js";
 import { PUBLIC_ORIGIN, cookieFrom, productionFixture } from "./helpers/pilot-fixture.js";
 import { approvingPaystack, guestEvent, postJson, provisionOperatorToken, surfaceAction } from "./helpers/guest-journey.js";
@@ -193,14 +194,19 @@ test("The back office shows apartment and owner names, not raw ids", () => {
 
 test("Conventional search and booking pages work where chat fails", async () => {
   // A rejected credential fails closed; transient 503 errors now recover through the deterministic concierge (demo AC3).
-  const failingModel: AssistantModelClient = { generate: async () => { throw Object.assign(new Error("provider rejected credentials"), { status: 401 }); } };
+  const failingModel: AssistantModelClient = { supportsProviderAttemptReservation: true, generate: async (request) => {
+    await request.beforeProviderAttempt?.();
+    throw Object.assign(new Error("provider rejected credentials"), { status: 401 });
+  } };
   const fixture = await productionFixture({ environment: { CONCIERGE_MODE: "gemini", GEMINI_API_KEY: "gemini-offline" } });
   const server = startPilotServer({ port: 0, configuration: fixture.configuration, paystackClient: fixture.paystack, modelClient: failingModel });
   try {
     const base = `http://127.0.0.1:${await server.listen()}`;
     const guestCookie = cookieFrom(await fetch(`${base}/`));
     const chat = await postJson(base, "/api/turn", guestCookie, { threadId: `g-${crypto.randomUUID()}`, text: "Lagos next week" });
-    assert.equal(chat.body.ok, false, "chat fails");
+    assert.equal(chat.body.ok, true, "chat returns safe fixed scope guidance when classification is unavailable");
+    assert.deepEqual(chat.body.surfaces, [], "the unavailable classifier does not start planner tools");
+    assert.deepEqual(chat.body.messages, [ASSISTANT_CONTROL_COPY.unavailable]);
 
     const day = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
     const search = await fetch(`${base}/stays/search?location=Lagos&checkIn=${day(7)}&checkOut=${day(9)}&partySize=2`, { headers: { cookie: guestCookie, accept: "text/html" } });

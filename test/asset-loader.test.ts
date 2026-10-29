@@ -2,9 +2,10 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { build } from "esbuild";
 import {
   createGuestRequestHandler,
   type GuestRequestHandler,
@@ -145,4 +146,32 @@ test("09a: nodeAssetLoader() resolves and caches today's real assets", async () 
   // Resolutions are module-relative, so they work from an arbitrary process.cwd().
   assert.ok(css.length > 0);
   assert.match(css, /^(\/\*|:\s?root)/);
+});
+
+test("worker fix AC1: the asset loader module evaluates when import.meta.url is undefined, as in the Worker bundle", async () => {
+  // Workers bundles see `import.meta.url` as undefined. Bundle the real source with that substitution and evaluate it.
+  const sourcePath = join(import.meta.dirname, "..", "packages", "platform-core", "src", "node-asset-loader.ts");
+  const bundled = await build({
+    entryPoints: [sourcePath],
+    bundle: true,
+    write: false,
+    format: "esm",
+    platform: "neutral",
+    target: "es2022",
+    external: ["node:*"],
+    logLevel: "silent",
+    plugins: [
+      {
+        name: "workers-import-meta-undefined",
+        setup(buildApi) {
+          buildApi.onLoad({ filter: /node-asset-loader\.ts$/ }, async (args) => ({
+            contents: (await readFile(args.path, "utf8")).replaceAll("import.meta.url", "undefined"),
+            loader: "ts",
+          }));
+        },
+      },
+    ],
+  });
+  const code = bundled.outputFiles[0]!.text;
+  await assert.doesNotReject(import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`));
 });

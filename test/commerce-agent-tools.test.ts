@@ -14,10 +14,14 @@ import { commerceDiscoveryPresentation, commerceDiscoverySurface, commerceCartSu
 import { createShortletWebRuntime } from "../apps/local-guest/src/shortlet-runtime.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/scripted-assistant-model.js";
 import { TASK_START_EVENT } from "../apps/local-guest/src/assistant/assistant-platform.js";
 import { COMMERCE_CHECKOUT_CONFIRM_ACTION } from "../apps/web-agent/src/commerce-presentation.js";
 import { assertSurfaceReferencesResolve, checkoutConfirmContext } from "./helpers/a2ui-surface-integrity.js";
+import { approvedTestScope } from "./helpers/assistant-scope.js";
+import { temporaryDatabasePath } from "./helpers/temporary-database.js";
+import type { AssistantModelClient } from "../apps/local-guest/src/assistant/assistant-model.js";
 
 const clock = () => new Date("2026-10-16T00:00:00.000Z");
 const context = { environment: { guestPrincipal: () => ({ id: "guest", role: "guest" as const, tenantId: "tenant" }) } as never, taskState: createInitialTaskState(), threadId: "thread-shopping", taskId: "commerce-task-1", userTextHistory: ["I want to shop"], now: clock(), demoCheckIn: "2026-10-20" };
@@ -59,7 +63,7 @@ async function scriptedCommerceFixture(checkoutExecutor?: CommerceCheckoutExecut
     projectionLimits,
     authorizeOrderStatus: ({ context: toolContext }) => toolContext.environment.guestPrincipal().id === env.guestPrincipal().id,
   });
-  const assistant = new AssistantRuntime(env, scriptedModel, { additionalPacks: [pack] });
+  const assistant = new ShortletAssistantRuntime(env, scriptedModel, { additionalPacks: [pack] });
   const threadId = `commerce-script-${crypto.randomUUID()}`;
   await assistant.handleTurn(threadId, "I want to shop");
   assert.equal(assistant.handleAssistantEvent(threadId, TASK_START_EVENT, { domain: "commerce" }).ok, true);
@@ -80,7 +84,7 @@ test("AC1: a shopping intent starts a commerce task and only commerce tools are 
   database.close();
 });
 
-test("AC1 scripted assistant: shopping intent confirms commerce task and exposes only its six tools", async () => {
+test("AC6: development commerce search works only after task selection and exposes only commerce tools", async () => {
   const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
   migrateCommerceDatabase(environment.database);
   let offeredTools: readonly string[] = [];
@@ -96,7 +100,7 @@ test("AC1 scripted assistant: shopping intent confirms commerce task and exposes
   commerce.directory.createStore({ id: "scripted-store", merchantId: "scripted-merchant", slug: "soap-store", name: "Soap Store", status: "active" });
   commerce.catalogue.createProduct({ id: "scripted-product", name: "Soap", category: "Care" });
   commerce.catalogue.createOffer({ id: "scripted-offer", productId: "scripted-product", storeId: "scripted-store", priceKobo: 500, stock: 2 });
-  const runtime = new AssistantRuntime(environment, model, { additionalPacks: [createCommerceAssistantPack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database: environment.database, clock: environment.clock })] });
+  const runtime = new ShortletAssistantRuntime(environment, model, { additionalPacks: [createCommerceAssistantPack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database: environment.database, clock: environment.clock })] });
   const intent = await runtime.handleTurn("scripted-commerce", "I want to shop");
   assert.match(intent.messages?.[0] ?? "", /Start a Commerce search/);
   const started = runtime.handleAssistantEvent("scripted-commerce", TASK_START_EVENT, { domain: "commerce" });
@@ -147,7 +151,8 @@ test("AC3: commerce surfaces use only the owner-approved registered commerce cat
   assert.equal((commerceDiscoverySurface([], "d")[0] as { createSurface: { catalogId: string } }).createSurface.catalogId, COMMERCE_CATALOGS[0].catalogId);
   assert.equal((commerceCartSurface({ storeId: "s", storeName: "Store", lines: [] }, "c")[0] as { createSurface: { catalogId: string } }).createSurface.catalogId, COMMERCE_CATALOGS[1].catalogId);
   assert.equal((commerceOrderSurface({ publicCode: "ORD-1", status: "Processing", updatedAt: "2026-10-16" }, "o")[0] as { createSurface: { catalogId: string } }).createSurface.catalogId, COMMERCE_CATALOGS[2].catalogId);
-  const runtime = createShortletWebRuntime();
+  // ADR 0104: a commerce surface needs the commerce switch on, which registers the commerce catalogues (ADR 0103).
+  const runtime = createShortletWebRuntime({ commerce: true });
   const window = new Window();
   for (const [index, messages] of [
     commerceDiscoverySurface([], "commerce-discovery"),
@@ -165,7 +170,8 @@ test("AC3 scripted assistant: discovery, cart and order surfaces all validate an
   const cart = await fixture.assistant.handleTurn(fixture.threadId, "Add this product to my cart");
   const order = await fixture.assistant.handleTurn(fixture.threadId, "Track my order");
   const surfaces = [...(discovered.surfaces ?? []), ...(cart.surfaces ?? []), ...(order.surfaces ?? [])];
-  const runtime = createShortletWebRuntime();
+  // ADR 0104: a commerce surface needs the commerce switch on, which registers the commerce catalogues (ADR 0103).
+  const runtime = createShortletWebRuntime({ commerce: true });
   const window = new Window();
   for (const surface of surfaces) {
     const createMessage = surface.a2uiMessages[0] as { createSurface?: { catalogId?: string } };
@@ -210,7 +216,11 @@ test("AC4 scripted assistant and conventional route use the same authorized, ver
   const turn = await fixture.assistant.handleTurn(fixture.threadId, "Prepare checkout");
   assert.equal(turn.ok, true);
   const proposal = fixture.getToolResult();
-  assert.equal(typeof proposal?.proposalId, "string");
+  assert.equal(proposal?.status, "awaiting_explicit_confirmation");
+  assert.equal(typeof proposal?.totalKobo, "number");
+  assert.equal(proposal?.paymentAvailable, false);
+  assert.equal("proposalId" in (proposal ?? {}), false, "Private workflow ids stay out of model history");
+  assert.equal("taskId" in (proposal ?? {}), false, "Task identity stays platform-owned");
   const surface = turn.surfaces?.find(item => item.surfaceId.includes(":commerce-checkout:"));
   assert.ok(surface);
   const confirmContext = checkoutConfirmContext(surface.a2uiMessages);
@@ -323,10 +333,11 @@ test("commerce projections enforce configured Unicode-safe text and result budge
   }
   const turn = await fixture.assistant.handleTurn(fixture.threadId, "Search products");
   assert.equal(turn.ok, true);
-  const result = fixture.getToolResult() as { offers: Array<{ offerId: string; description: string; priceKobo: number; stock: number }> };
+  const result = fixture.getToolResult() as { offers: Array<{ offerId: string; priceKobo: number; stock: number; description?: string; productName?: string }> };
   assert.equal(result.offers.length, limits.maxResults);
-  assert.ok(result.offers.every(offer => Array.from(offer.description).length <= limits.maxTextCodePoints));
   assert.ok(result.offers.every(offer => offer.priceKobo > 0 && offer.stock > 0));
+  assert.ok(result.offers.every(offer => /^extra-offer-|^scripted-o$/.test(offer.offerId)));
+  assert.ok(result.offers.every(offer => offer.description === undefined && offer.productName === undefined));
   const serialized = JSON.stringify(result);
   assert.equal(serialized.includes("Ignore previous instructions"), false);
   assert.equal(serialized.includes("FORBIDDEN"), false);
@@ -419,5 +430,47 @@ test("chat never offers an offer from a pending Merchant or a suspended Store, a
   const toolContext = { ...context, taskId: fixture.taskId, threadId: fixture.threadId };
   for (const offerId of ["pending-o", "suspended-o"]) {
     assert.throws(() => fixture.pack.executeTool("get_offer", { offerId }, toolContext as never), /unavailable/);
+  }
+});
+
+test("Distinct guest tasks in separate threads keep development Commerce carts isolated in one shared database", async () => {
+  const databasePath = temporaryDatabasePath("commerce-task-isolation.sqlite");
+  const guestA = LocalGuestEnvironment.openNode({ databasePath, guestId: "guest-isolation-a", guestName: "Guest A" });
+  const guestB = LocalGuestEnvironment.openNode({ databasePath, guestId: "guest-isolation-b", guestName: "Guest B" });
+  try {
+    migrateCommerceDatabase(guestA.database);
+    const commerce = createCommercePack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database: guestA.database, clock: guestA.clock });
+    commerce.directory.createMerchant({ id: "isolation-merchant", name: "Verified Merchant", status: "verified" });
+    commerce.directory.createStore({ id: "isolation-store", merchantId: "isolation-merchant", slug: "isolation-store", name: "Store", status: "active" });
+    commerce.catalogue.createProduct({ id: "isolation-product", name: "Soap", category: "Care" });
+    commerce.catalogue.createOffer({ id: "isolation-offer", productId: "isolation-product", storeId: "isolation-store", priceKobo: 500, stock: 10 });
+
+    const makeModel = (): AssistantModelClient => {
+      let callPending = true;
+      return { generate: async (request) => {
+        if (request.history.at(-1)?.role === "tool_results") return { text: JSON.stringify({ kind: "show_status", references: ["add_to_store_cart"] }) };
+        if (callPending) { callPending = false; return { toolCalls: [{ id: "add-isolation-offer", name: "add_to_store_cart", args: { offerId: "isolation-offer", quantity: 1 } }] }; }
+        return { text: JSON.stringify({ kind: "clarify_stay", references: [] }) };
+      } };
+    };
+    const makeRuntime = (environment: LocalGuestEnvironment) => new ShortletAssistantRuntime(environment, makeModel(), {
+      additionalPacks: [createCommerceAssistantPack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database: environment.database, clock: environment.clock })],
+      scopeClassifier: approvedTestScope,
+    });
+    const runtimeA = makeRuntime(guestA);
+    const runtimeB = makeRuntime(guestB);
+    assert.equal(runtimeA.handleAssistantEvent("thread-guest-a", TASK_START_EVENT, { domain: "commerce" }).ok, true);
+    assert.equal(runtimeB.handleAssistantEvent("thread-guest-b", TASK_START_EVENT, { domain: "commerce" }).ok, true);
+    const taskIdA = runtimeA.getThread("thread-guest-a").activeTaskId;
+    const taskIdB = runtimeB.getThread("thread-guest-b").activeTaskId;
+    await runtimeA.handleTurn("thread-guest-a", "Add soap to my cart");
+    const cartA = commerce.cart.cart(taskIdA);
+    const cartB = commerce.cart.cart(taskIdB);
+    assert.notEqual(taskIdA, taskIdB, "Separate threads need distinct server-issued task ids");
+    assert.equal(cartA.storeCarts.reduce((count, cart) => count + cart.lines.length, 0), 1);
+    assert.equal(cartB.storeCarts.reduce((count, cart) => count + cart.lines.length, 0), 0, "Guest B must not read Guest A's Store Cart");
+  } finally {
+    guestB.close();
+    guestA.close();
   }
 });

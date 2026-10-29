@@ -32,6 +32,7 @@ import {
 } from "./pilot-config.js";
 import type { AssistantModelClient } from "../../local-guest/src/assistant/assistant-model.js";
 import { createConciergeModelClient } from "../../local-guest/src/assistant/concierge-configuration.js";
+import { writeAssistantTurnRecord } from "../../local-guest/src/assistant/assistant-turn-record.js";
 import { ModelCallBudget } from "../../local-guest/src/assistant/model-call-budget.js";
 import {
   ResendEmailSender,
@@ -39,6 +40,7 @@ import {
 } from "./notifications/email-sender.js";
 import { PilotNotifier } from "./notifications/pilot-notifier.js";
 import { openNodeSqliteDatabase } from "../../../packages/platform-core/src/node-sqlite-database.js";
+import { SqliteModelRequestQuota } from "../../../packages/platform-core/src/model-request-quota.js";
 import { LOOPBACK_ADDRESS } from "../../../packages/platform-core/src/loopback-address.js";
 import { createPilotRequestHandler } from "./pilot-request-handler.js";
 
@@ -127,6 +129,12 @@ export function startPilotServer(
 
   // ADR 0004: one SQLite handle and one inventory serve the Guest and Operator compositions in this process.
   const database = openNodeSqliteDatabase(configuration.databasePath);
+  // ADR 0101: the Node host shares this persistent authority across all guest runtimes.
+  const modelRequestQuota = new SqliteModelRequestQuota(database, {
+    dailyTenantLimit: configuration.limits.dailyModelCallCap,
+    hourlyGuestLimit: configuration.limits.chatTurnsPerSessionPerHour,
+    clock,
+  });
   const unitRepository = new JsonUnitRepository(configuration.inventoryPath);
   const operatorEnvironment = new LocalApartmentOwnerEnvironment(
     {
@@ -197,6 +205,9 @@ export function startPilotServer(
     // Explicit, so production never falls back to reading CONCIERGE_MODE from the process environment.
     conciergeMode: configuration.concierge.mode,
     ...(modelClient ? { modelClient } : {}),
+    // Issue 05: one allow-listed record per assistant turn, written as a JSON line; the model id names the configured primary.
+    onAssistantTurn: writeAssistantTurnRecord,
+    assistantModelName: configuration.concierge.primary?.model,
     ...(configuration.betaInviteCode === null
       ? {}
       : { betaInviteCode: configuration.betaInviteCode }),
@@ -209,6 +220,7 @@ export function startPilotServer(
       configuration.limits.dailyModelCallCap,
       clock,
     ),
+    modelRequestQuota,
     sessionRuntimeIdleMs:
       configuration.limits.sessionRuntimeIdleMinutes * 60_000,
   });

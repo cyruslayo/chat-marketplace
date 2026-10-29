@@ -1,0 +1,26 @@
+(node:169704) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+TAP version 13
+unavailable/light/320: reflow and targets pass
+unavailable/dark/320: reflow and targets pass
+unavailable/light/390: reflow and targets pass
+unavailable/dark/390: reflow and targets pass
+unavailable/light/768: reflow and targets pass
+unavailable/dark/768: reflow and targets pass
+unavailable/light/1280: reflow and targets pass
+unavailable/dark/1280: reflow and targets pass
+# Subtest: AC7: unavailable guest captures preserve reflow and 44px controls at 320, 390, 768, and 1280 pixels
+ok 1 - AC7: unavailable guest captures preserve reflow and 44px controls at 320, 390, 768, and 1280 pixels
+  ---
+  duration_ms: 13661.3027
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 15945.1039

@@ -1,0 +1,462 @@
+{
+  "format": "assistant-recording/v1",
+  "journey": "confirm-after-search-change",
+  "description": "A Booking Request awaits confirmation, the guest changes the search to another stay, then types yes: ADR 0074 removed the proposal, so nothing is sent.",
+  "clock": "2026-10-27T10:00:00.000Z",
+  "source": "scripted",
+  "exchanges": [
+    {
+      "request": {
+        "toolNames": [],
+        "structuredOutputName": "concierge_scope",
+        "history": [
+          {
+            "role": "user",
+            "text": "{\"message\":\"I need a place in Ikoyi for 4 nights for 2 guests from 14 December 2026\",\"context\":{\"domain\":\"shortlet\",\"description\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\",\"hasShortlist\":false,\"hasSelectedStay\":false,\"hasOffer\":false}}"
+          }
+        ]
+      },
+      "response": {
+        "text": "{\"scope\":\"in_scope\",\"risk\":\"ordinary\",\"intents\":[\"search\",\"details\",\"compare\",\"price\",\"status\",\"offer\",\"draft\",\"request\",\"accept\",\"payment\",\"support\",\"clarify\",\"greet\",\"task_switch\"],\"slots\":{\"city\":\"Lagos\",\"neighbourhood\":\"Old Ikoyi\",\"bedrooms\":null,\"nights\":4,\"guests\":2,\"checkIn\":\"2026-12-14\",\"checkOut\":null},\"reasonCode\":\"supported\"}"
+      }
+    },
+    {
+      "request": {
+        "toolNames": [
+          "search_stays",
+          "get_booking_status",
+          "get_offer_status"
+        ],
+        "structuredOutputName": "assistant_reply_plan",
+        "history": [
+          {
+            "role": "assistant",
+            "text": "Canonical task facts: {\"city\":null,\"hasShortlist\":false,\"shortlistRefs\":[],\"selectedStayRef\":null,\"checkIn\":null,\"checkOut\":null,\"nights\":null,\"partySize\":null,\"hasSelectedStay\":false,\"hasPendingAction\":false}"
+          },
+          {
+            "role": "user",
+            "text": "I need a place in Ikoyi for 4 nights for 2 guests from 14 December 2026"
+          }
+        ]
+      },
+      "response": {
+        "toolCalls": [
+          {
+            "id": "call-2",
+            "name": "search_stays",
+            "args": {
+              "city": "Lagos",
+              "neighbourhood": "Old Ikoyi",
+              "checkIn": "2026-12-14",
+              "nights": 4,
+              "guests": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "toolNames": [
+          "search_stays",
+          "get_unit_details",
+          "compare_stays",
+          "explain_stay_price",
+          "get_booking_status",
+          "get_offer_status",
+          "propose_request_to_book"
+        ],
+        "structuredOutputName": "assistant_reply_plan",
+        "history": [
+          {
+            "role": "assistant",
+            "text": "Canonical task facts: {\"city\":\"Lagos\",\"hasShortlist\":true,\"shortlistRefs\":[\"stay-1\"],\"selectedStayRef\":null,\"checkIn\":\"2026-12-14\",\"checkOut\":\"2026-12-18\",\"nights\":4,\"partySize\":2,\"hasSelectedStay\":false,\"hasPendingAction\":false}"
+          },
+          {
+            "role": "user",
+            "text": "I need a place in Ikoyi for 4 nights for 2 guests from 14 December 2026"
+          },
+          {
+            "role": "tool_calls",
+            "calls": [
+              {
+                "id": "call-2",
+                "name": "search_stays",
+                "args": {
+                  "city": "Lagos",
+                  "neighbourhood": "Old Ikoyi",
+                  "checkIn": "2026-12-14",
+                  "nights": 4,
+                  "guests": 2
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool_results",
+            "results": [
+              {
+                "callId": "call-2",
+                "name": "search_stays",
+                "isError": false,
+                "result": {
+                  "resultCount": 1,
+                  "checkIn": "2026-12-14",
+                  "checkOut": "2026-12-18",
+                  "nights": 4,
+                  "partySize": 2,
+                  "isDemoDate": false,
+                  "stays": [
+                    {
+                      "stayRef": "stay-1",
+                      "capacity": 4,
+                      "bedrooms": 2,
+                      "nightlyKobo": 12000000,
+                      "allInStayTotalKobo": 49000000,
+                      "refundableSecurityDepositKobo": 2000000
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "response": {
+        "text": "{\"kind\":\"show_results\",\"references\":[\"search_stays\"]}"
+      }
+    },
+    {
+      "request": {
+        "toolNames": [],
+        "structuredOutputName": "concierge_scope",
+        "history": [
+          {
+            "role": "user",
+            "text": "{\"message\":\"Request the first one.\",\"context\":{\"domain\":\"shortlet\",\"description\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\",\"hasShortlist\":true,\"hasSelectedStay\":false,\"hasOffer\":false}}"
+          }
+        ]
+      },
+      "response": {
+        "text": "{\"scope\":\"in_scope\",\"risk\":\"ordinary\",\"intents\":[\"search\",\"details\",\"compare\",\"price\",\"status\",\"offer\",\"draft\",\"request\",\"accept\",\"payment\",\"support\",\"clarify\",\"greet\",\"task_switch\"],\"slots\":{\"city\":null,\"neighbourhood\":null,\"bedrooms\":null,\"nights\":null,\"guests\":null,\"checkIn\":null,\"checkOut\":null},\"reasonCode\":\"supported\"}"
+      }
+    },
+    {
+      "request": {
+        "toolNames": [
+          "search_stays",
+          "get_unit_details",
+          "compare_stays",
+          "explain_stay_price",
+          "get_booking_status",
+          "get_offer_status",
+          "propose_request_to_book"
+        ],
+        "structuredOutputName": "assistant_reply_plan",
+        "history": [
+          {
+            "role": "assistant",
+            "text": "Canonical task facts: {\"city\":\"Lagos\",\"hasShortlist\":true,\"shortlistRefs\":[\"stay-1\"],\"selectedStayRef\":null,\"checkIn\":\"2026-12-14\",\"checkOut\":\"2026-12-18\",\"nights\":4,\"partySize\":2,\"hasSelectedStay\":false,\"hasPendingAction\":false}"
+          },
+          {
+            "role": "user",
+            "text": "Request the first one."
+          }
+        ]
+      },
+      "response": {
+        "toolCalls": [
+          {
+            "id": "call-2",
+            "name": "propose_request_to_book",
+            "args": {
+              "stayRef": "stay-1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "toolNames": [
+          "search_stays",
+          "get_unit_details",
+          "compare_stays",
+          "explain_stay_price",
+          "get_booking_status",
+          "get_offer_status",
+          "propose_request_to_book",
+          "prepare_request_draft"
+        ],
+        "structuredOutputName": "assistant_reply_plan",
+        "history": [
+          {
+            "role": "assistant",
+            "text": "Canonical task facts: {\"city\":\"Lagos\",\"hasShortlist\":true,\"shortlistRefs\":[\"stay-1\"],\"selectedStayRef\":\"stay-1\",\"checkIn\":\"2026-12-14\",\"checkOut\":\"2026-12-18\",\"nights\":4,\"partySize\":2,\"hasSelectedStay\":true,\"hasPendingAction\":true}"
+          },
+          {
+            "role": "user",
+            "text": "Request the first one."
+          },
+          {
+            "role": "tool_calls",
+            "calls": [
+              {
+                "id": "call-2",
+                "name": "propose_request_to_book",
+                "args": {
+                  "stayRef": "stay-1"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool_results",
+            "results": [
+              {
+                "callId": "call-2",
+                "name": "propose_request_to_book",
+                "isError": false,
+                "result": {
+                  "stayRef": "stay-1"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "response": {
+        "text": "{\"kind\":\"propose_action\",\"references\":[\"propose_request_to_book\"]}"
+      }
+    },
+    {
+      "request": {
+        "toolNames": [],
+        "structuredOutputName": "concierge_scope",
+        "history": [
+          {
+            "role": "user",
+            "text": "{\"message\":\"Actually Lekki, same dates\",\"context\":{\"domain\":\"shortlet\",\"description\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\",\"hasShortlist\":true,\"hasSelectedStay\":true,\"hasOffer\":false}}"
+          }
+        ]
+      },
+      "response": {
+        "text": "{\"scope\":\"in_scope\",\"risk\":\"ordinary\",\"intents\":[\"search\",\"details\",\"compare\",\"price\",\"status\",\"offer\",\"draft\",\"request\",\"accept\",\"payment\",\"support\",\"clarify\",\"greet\",\"task_switch\"],\"slots\":{\"city\":\"Lagos\",\"neighbourhood\":\"Lekki Phase 1\",\"bedrooms\":null,\"nights\":4,\"guests\":2,\"checkIn\":\"2026-12-14\",\"checkOut\":null},\"reasonCode\":\"supported\"}"
+      }
+    },
+    {
+      "request": {
+        "toolNames": [
+          "search_stays",
+          "get_unit_details",
+          "compare_stays",
+          "explain_stay_price",
+          "get_booking_status",
+          "get_offer_status",
+          "propose_request_to_book",
+          "prepare_request_draft"
+        ],
+        "structuredOutputName": "assistant_reply_plan",
+        "history": [
+          {
+            "role": "assistant",
+            "text": "Canonical task facts: {\"city\":\"Lagos\",\"hasShortlist\":true,\"shortlistRefs\":[\"stay-1\"],\"selectedStayRef\":\"stay-1\",\"checkIn\":\"2026-12-14\",\"checkOut\":\"2026-12-18\",\"nights\":4,\"partySize\":2,\"hasSelectedStay\":true,\"hasPendingAction\":true}"
+          },
+          {
+            "role": "user",
+            "text": "Actually Lekki, same dates"
+          }
+        ]
+      },
+      "response": {
+        "toolCalls": [
+          {
+            "id": "call-2",
+            "name": "search_stays",
+            "args": {
+              "city": "Lagos",
+              "neighbourhood": "Lekki Phase 1",
+              "checkIn": "2026-12-14",
+              "nights": 4,
+              "guests": 2
+            }
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "toolNames": [
+          "search_stays",
+          "get_unit_details",
+          "compare_stays",
+          "explain_stay_price",
+          "get_booking_status",
+          "get_offer_status",
+          "propose_request_to_book"
+        ],
+        "structuredOutputName": "assistant_reply_plan",
+        "history": [
+          {
+            "role": "assistant",
+            "text": "Canonical task facts: {\"city\":\"Lagos\",\"hasShortlist\":true,\"shortlistRefs\":[\"stay-1\"],\"selectedStayRef\":null,\"checkIn\":\"2026-12-14\",\"checkOut\":\"2026-12-18\",\"nights\":4,\"partySize\":2,\"hasSelectedStay\":false,\"hasPendingAction\":false}"
+          },
+          {
+            "role": "user",
+            "text": "Actually Lekki, same dates"
+          },
+          {
+            "role": "tool_calls",
+            "calls": [
+              {
+                "id": "call-2",
+                "name": "search_stays",
+                "args": {
+                  "city": "Lagos",
+                  "neighbourhood": "Lekki Phase 1",
+                  "checkIn": "2026-12-14",
+                  "nights": 4,
+                  "guests": 2
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool_results",
+            "results": [
+              {
+                "callId": "call-2",
+                "name": "search_stays",
+                "isError": false,
+                "result": {
+                  "resultCount": 1,
+                  "checkIn": "2026-12-14",
+                  "checkOut": "2026-12-18",
+                  "nights": 4,
+                  "partySize": 2,
+                  "isDemoDate": false,
+                  "stays": [
+                    {
+                      "stayRef": "stay-1",
+                      "capacity": 2,
+                      "bedrooms": 1,
+                      "nightlyKobo": 6500000,
+                      "allInStayTotalKobo": 26500000,
+                      "refundableSecurityDepositKobo": 1000000
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "response": {
+        "text": "{\"kind\":\"show_results\",\"references\":[\"search_stays\"]}"
+      }
+    }
+  ],
+  "turns": [
+    {
+      "guestText": "I need a place in Ikoyi for 4 nights for 2 guests from 14 December 2026",
+      "ok": true,
+      "controlOutcome": "successful_model_handling",
+      "messages": [
+        "I found 1 matching stay in Old Ikoyi."
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "thread-g-d1a0000405:discovery:search-guest-demo-001",
+          "componentTypes": [
+            "Column",
+            "Text",
+            "Card",
+            "Divider",
+            "Button"
+          ]
+        }
+      ],
+      "tasks": [
+        {
+          "taskId": "task-1",
+          "domain": "shortlet",
+          "status": "Stay",
+          "active": true
+        }
+      ]
+    },
+    {
+      "guestText": "Request the first one.",
+      "ok": true,
+      "controlOutcome": "successful_model_handling",
+      "messages": [
+        "I've prepared a Booking Request for Luxury 2-Bedroom Apartment in Old Ikoyi. Submitting does not charge you. Would you like me to send it?"
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "thread-g-d1a0000405:pending-action:pa-generated-id-1",
+          "componentTypes": [
+            "Column",
+            "Card",
+            "Text",
+            "Divider",
+            "Row",
+            "Button"
+          ]
+        }
+      ],
+      "tasks": [
+        {
+          "taskId": "task-1",
+          "domain": "shortlet",
+          "status": "Stay",
+          "active": true
+        }
+      ]
+    },
+    {
+      "guestText": "Actually Lekki, same dates",
+      "ok": true,
+      "controlOutcome": "successful_model_handling",
+      "messages": [
+        "I found 1 matching stay in Lekki Phase 1."
+      ],
+      "surfaces": [
+        {
+          "surfaceId": "thread-g-d1a0000405:discovery:search-guest-demo-006",
+          "componentTypes": [
+            "Column",
+            "Text",
+            "Card",
+            "Divider",
+            "Button"
+          ]
+        }
+      ],
+      "tasks": [
+        {
+          "taskId": "task-1",
+          "domain": "shortlet",
+          "status": "Stay",
+          "active": true
+        }
+      ]
+    },
+    {
+      "guestText": "Yes",
+      "ok": true,
+      "messages": [
+        "That Booking Request was replaced when you changed your search or switched task, so nothing was sent. Ask me again if you still want this stay."
+      ],
+      "surfaces": [],
+      "tasks": [
+        {
+          "taskId": "task-1",
+          "domain": "shortlet",
+          "status": "Stay",
+          "active": true
+        }
+      ]
+    }
+  ]
+}

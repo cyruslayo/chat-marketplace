@@ -1,6 +1,8 @@
 export const DEFAULT_PILOT_AGENT_SMOKE_RUNS = 1;
 export const MAX_PILOT_AGENT_SMOKE_RUNS = 3;
 export const DEFAULT_PROVIDER_REQUEST_BUDGET_PER_JOURNEY = 10;
+export const DEFAULT_CONTROLLED_EVALUATION_REQUEST_LIMIT = 16;
+export const MAX_CONTROLLED_EVALUATION_REQUEST_LIMIT = 16;
 
 export type ProviderStopReason = "PROVIDER_RATE_LIMITED" | "PROVIDER_REQUEST_BUDGET_EXCEEDED";
 
@@ -14,6 +16,12 @@ export function parsePilotAgentSmokeRuns(args: readonly string[], environmentVal
       index++;
       continue;
     }
+    if (argument === "--request-limit") {
+      if (args[index + 1] === undefined) throw new Error("Use --request-limit <1-16> exactly once.");
+      index++;
+      continue;
+    }
+    if (argument?.startsWith("--request-limit=")) continue;
     if (argument?.startsWith("--runs=")) {
       if (cliValue !== undefined) throw new Error("Use --runs <1-3> exactly once.");
       cliValue = argument.slice("--runs=".length);
@@ -29,6 +37,30 @@ export function parsePilotAgentSmokeRuns(args: readonly string[], environmentVal
   return Number(configuredValue);
 }
 
+/** Defaults to the legacy smoke cap; 16 is available only through an explicit controlled-evaluation setting. */
+export function parseProviderRequestLimit(args: readonly string[], environmentValue?: string): number {
+  let cliValue: string | undefined;
+  for (let index = 0; index < args.length; index++) {
+    const argument = args[index];
+    if (argument === "--request-limit") {
+      if (cliValue !== undefined || args[index + 1] === undefined) throw new Error("Use --request-limit <1-16> exactly once.");
+      cliValue = args[index + 1];
+      index++;
+      continue;
+    }
+    if (argument?.startsWith("--request-limit=")) {
+      if (cliValue !== undefined) throw new Error("Use --request-limit <1-16> exactly once.");
+      cliValue = argument.slice("--request-limit=".length);
+    }
+  }
+
+  const configuredValue = cliValue ?? environmentValue ?? String(DEFAULT_PROVIDER_REQUEST_BUDGET_PER_JOURNEY);
+  if (!/^\d+$/.test(configuredValue) || Number(configuredValue) < 1 || Number(configuredValue) > MAX_CONTROLLED_EVALUATION_REQUEST_LIMIT) {
+    throw new Error(`Pilot agent smoke request limit must be between 1 and ${MAX_CONTROLLED_EVALUATION_REQUEST_LIMIT}.`);
+  }
+  return Number(configuredValue);
+}
+
 export class ProviderRequestBudget {
   readonly #maxRequestsPerJourney: number;
   readonly #maxRequests: number;
@@ -40,8 +72,8 @@ export class ProviderRequestBudget {
     if (!Number.isSafeInteger(journeyCount) || journeyCount < 1 || journeyCount > MAX_PILOT_AGENT_SMOKE_RUNS) {
       throw new RangeError("Journey count is outside the supported smoke range.");
     }
-    if (!Number.isSafeInteger(maxRequestsPerJourney) || maxRequestsPerJourney < 1) {
-      throw new RangeError("Provider request budget must be a positive integer.");
+    if (!Number.isSafeInteger(maxRequestsPerJourney) || maxRequestsPerJourney < 1 || maxRequestsPerJourney > MAX_CONTROLLED_EVALUATION_REQUEST_LIMIT) {
+      throw new RangeError(`Provider request budget must be an integer from 1 to ${MAX_CONTROLLED_EVALUATION_REQUEST_LIMIT}.`);
     }
     this.#maxRequestsPerJourney = maxRequestsPerJourney;
     this.#maxRequests = journeyCount * maxRequestsPerJourney;

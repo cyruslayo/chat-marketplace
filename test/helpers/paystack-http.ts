@@ -25,7 +25,7 @@ export function createPaystackHttpFake(options: {
   /** The expiry Paystack answers a transfer charge with; defaults to the requested `account_expires_at`. */
   readonly chargeExpiry?: (requested: string) => string;
 } = {}): { readonly fetcher: PaystackHttpFetcher; readonly requests: PaystackFakeRequest[]; setTransaction(transaction: PaystackFakeTransaction): void } {
-  let transaction = options.transaction ?? { reference: "psp_ref_test", amount: 15000000, currency: "NGN", status: "success", domain: "test" as const };
+  let transaction = options.transaction ?? { reference: "psp-ref-test", amount: 15000000, currency: "NGN", status: "success", domain: "test" as const };
   const requests: PaystackFakeRequest[] = [];
   const response = (status: number, value: unknown): PaystackHttpResponse => ({ status, async json() { return value; } });
   const fetcher: PaystackHttpFetcher = async (url, init) => {

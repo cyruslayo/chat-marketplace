@@ -1,0 +1,462 @@
+TAP version 13
+# (node:151720) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Mixed-request quota, storage, and provider failures retain unavailable wording after refresh and restart
+ok 1 - Mixed-request quota, storage, and provider failures retain unavailable wording after refresh and restart
+  ---
+  duration_ms: 7746.3292
+  type: 'test'
+  ...
+# Subtest: A scope redirect keeps its fixed meaning in the timeline and after refresh
+ok 2 - A scope redirect keeps its fixed meaning in the timeline and after refresh
+  ---
+  duration_ms: 2055.4787
+  type: 'test'
+  ...
+# Subtest: Assistant Shortlet search, detail, and draft continuity survive authenticated HTTP refreshes and application restarts
+ok 3 - Assistant Shortlet search, detail, and draft continuity survive authenticated HTTP refreshes and application restarts
+  ---
+  duration_ms: 3084.9309
+  type: 'test'
+  ...
+# Subtest: A server demo date keeps its provenance through restart and a same-task location correction
+ok 4 - A server demo date keeps its provenance through restart and a same-task location correction
+  ---
+  duration_ms: 1805.5488
+  type: 'test'
+  ...
+# Subtest: A guest-authored date remains guest-authored through restart and a same-task location correction
+ok 5 - A guest-authored date remains guest-authored through restart and a same-task location correction
+  ---
+  duration_ms: 1798.4854
+  type: 'test'
+  ...
+# Subtest: A legacy restored date with unknown provenance cannot silently fall back to the demo date
+ok 6 - A legacy restored date with unknown provenance cannot silently fall back to the demo date
+  ---
+  duration_ms: 1258.4621
+  type: 'test'
+  ...
+# (node:51792) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Scope AC1: unrelated requests never invoke planner tools or retain rejected input
+ok 7 - Scope AC1: unrelated requests never invoke planner tools or retain rejected input
+  ---
+  duration_ms: 913.2516
+  type: 'test'
+  ...
+# Subtest: Scope AC3: mixed requests send only validated scope slots to the planner
+ok 8 - Scope AC3: mixed requests send only validated scope slots to the planner
+  ---
+  duration_ms: 1445.4021
+  type: 'test'
+  ...
+# Subtest: Scope AC4: unavailable and malformed classifier decisions use fixed replies without a planner call
+ok 9 - Scope AC4: unavailable and malformed classifier decisions use fixed replies without a planner call
+  ---
+  duration_ms: 1221.7684
+  type: 'test'
+  ...
+# Subtest: Scope AC2: valid stays, greetings, Pidgin, corrections and contextual follow-ups reach planning
+ok 10 - Scope AC2: valid stays, greetings, Pidgin, corrections and contextual follow-ups reach planning
+  ---
+  duration_ms: 1768.4897
+  type: 'test'
+  ...
+# Subtest: Scope AC5: pending confirmations and cancellations bypass an unavailable classifier
+ok 11 - Scope AC5: pending confirmations and cancellations bypass an unavailable classifier
+  ---
+  duration_ms: 2173.963
+  type: 'test'
+  ...
+# Subtest: Scope AC6: rejected input stays absent from persisted history and later classifier context
+ok 12 - Scope AC6: rejected input stays absent from persisted history and later classifier context
+  ---
+  duration_ms: 1125.8773
+  type: 'test'
+  ...
+# Subtest: Scope AC7: the default classifier is tool-free and excludes prior history and listing prose
+ok 13 - Scope AC7: the default classifier is tool-free and excludes prior history and listing prose
+  ---
+  duration_ms: 961.8902
+  type: 'test'
+  ...
+# Subtest: Classifier reasoning can retain provider defaults without extending its five-second deadline
+ok 14 - Classifier reasoning can retain provider defaults without extending its five-second deadline
+  ---
+  duration_ms: 25.7277
+  type: 'test'
+  ...
+# Subtest: Invalid classifier tuples report closed failure reasons without exposing response content
+ok 15 - Invalid classifier tuples report closed failure reasons without exposing response content
+  ---
+  duration_ms: 3.169
+  type: 'test'
+  ...
+# (node:158492) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC1: With OpenRouter settings, a discovery turn calls the model and executes search_stays
+ok 16 - AC1: With OpenRouter settings, a discovery turn calls the model and executes search_stays
+  ---
+  duration_ms: 2083.5833
+  type: 'test'
+  ...
+# Subtest: Offline HTTP evaluator: benign location correction reuses only the current server date and separates safety, guard, and task grades
+ok 17 - Offline HTTP evaluator: benign location correction reuses only the current server date and separates safety, guard, and task grades
+  ---
+  duration_ms: 4038.7888
+  type: 'test'
+  ...
+# Subtest: AC2: Explicit confirmation or cancellation of a pending action never calls the model
+ok 18 - AC2: Explicit confirmation or cancellation of a pending action never calls the model
+  ---
+  duration_ms: 2557.4209
+  type: 'test'
+  ...
+# Subtest: AC3: Provider failure returns fixed scope guidance without starting planner tools
+ok 19 - AC3: Provider failure returns fixed scope guidance without starting planner tools
+  ---
+  duration_ms: 4738.3597
+  type: 'test'
+  ...
+# Subtest: AC4: When durable daily provider capacity is exhausted, the concierge returns fixed scope guidance without transport
+ok 20 - AC4: When durable daily provider capacity is exhausted, the concierge returns fixed scope guidance without transport
+  ---
+  duration_ms: 845.8993
+  type: 'test'
+  ...
+# Subtest: AC5: A missing or empty LLM_API_KEY, or a non-HTTPS LLM_BASE_URL, is a startup error
+ok 21 - AC5: A missing or empty LLM_API_KEY, or a non-HTTPS LLM_BASE_URL, is a startup error
+  ---
+  duration_ms: 3.8597
+  type: 'test'
+  ...
+# Subtest: AC7: Token usage is returned from the client, and no prompt or reply text appears in diagnostics or logs
+ok 22 - AC7: Token usage is returned from the client, and no prompt or reply text appears in diagnostics or logs
+  ---
+  duration_ms: 1041.4242
+  type: 'test'
+  ...
+# (node:133456) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Eval 1: Search with full criteria produces discovery surface with all-in pricing
+ok 23 - Eval 1: Search with full criteria produces discovery surface with all-in pricing
+  ---
+  duration_ms: 2827.8353
+  type: 'test'
+  ...
+# Subtest: Eval 2: Clarification when essential search info is missing
+ok 24 - Eval 2: Clarification when essential search info is missing
+  ---
+  duration_ms: 950.5127
+  type: 'test'
+  ...
+# Subtest: No-date local demo instruction makes date optional while relative dates require YYYY-MM-DD
+ok 25 - No-date local demo instruction makes date optional while relative dates require YYYY-MM-DD
+  ---
+  duration_ms: 3.0104
+  type: 'test'
+  ...
+# Subtest: Authoritative Assistant discovery supports exact bedroom refinement and supersedes the prior result surface
+ok 26 - Authoritative Assistant discovery supports exact bedroom refinement and supersedes the prior result surface
+  ---
+  duration_ms: 1058.03
+  type: 'test'
+  ...
+# Subtest: Assistant booking intent creates an authoritative non-submitting Request Draft surface
+ok 27 - Assistant booking intent creates an authoritative non-submitting Request Draft surface
+  ---
+  duration_ms: 1776.2548
+  type: 'test'
+  ...
+# Subtest: Context-invalid get_unit_details returns a recoverable tool error without creating a Unit surface
+ok 28 - Context-invalid get_unit_details returns a recoverable tool error without creating a Unit surface
+  ---
+  duration_ms: 1083.2873
+  type: 'test'
+  ...
+# Subtest: get_unit_details rejects a Unit reference outside the current shortlist
+ok 29 - get_unit_details rejects a Unit reference outside the current shortlist
+  ---
+  duration_ms: 990.2886
+  type: 'test'
+  ...
+# Subtest: A zero-result refinement retains its authoritative DiscoveryArtifact and active surface
+ok 30 - A zero-result refinement retains its authoritative DiscoveryArtifact and active surface
+  ---
+  duration_ms: 1299.5859
+  type: 'test'
+  ...
+# Subtest: A successful application projection remains returned if Gemini continuation fails
+ok 31 - A successful application projection remains returned if Gemini continuation fails
+  ---
+  duration_ms: 965.6847
+  type: 'test'
+  ...
+# Subtest: A provider failure on a later turn preserves prior conversation, shortlist, and active surface
+ok 32 - A provider failure on a later turn preserves prior conversation, shortlist, and active surface
+  ---
+  duration_ms: 798.6412
+  type: 'test'
+  ...
+# Subtest: prepare_request_draft without a selected current Unit is rejected without creating a draft
+ok 33 - prepare_request_draft without a selected current Unit is rejected without creating a draft
+  ---
+  duration_ms: 645.4986
+  type: 'test'
+  ...
+# Subtest: Authoritative search normalizes Lagos and Abuja case-insensitively without accepting other cities
+ok 34 - Authoritative search normalizes Lagos and Abuja case-insensitively without accepting other cities
+  ---
+  duration_ms: 4324.2747
+  type: 'test'
+  ...
+# Subtest: Eval 3: Answering clarification completes the search
+ok 35 - Eval 3: Answering clarification completes the search
+  ---
+  duration_ms: 545.9376
+  type: 'test'
+  ...
+# Subtest: Eval 4: Follow-up resolution for stay details
+ok 36 - Eval 4: Follow-up resolution for stay details
+  ---
+  duration_ms: 499.3311
+  type: 'test'
+  ...
+# Subtest: Eval 5: Search refinement updates destination and results
+ok 37 - Eval 5: Search refinement updates destination and results
+  ---
+  duration_ms: 696.8064
+  type: 'test'
+  ...
+# Subtest: Unit detail surface projects inspection facts from the authoritative Unit
+ok 38 - Unit detail surface projects inspection facts from the authoritative Unit
+  ---
+  duration_ms: 493.4815
+  type: 'test'
+  ...
+# Subtest: Eval 6: Compare stays side-by-side using authoritative facts
+ok 39 - Eval 6: Compare stays side-by-side using authoritative facts
+  ---
+  duration_ms: 580.8009
+  type: 'test'
+  ...
+# Subtest: Eval 7: Price explanation provides transparent breakdown and deposit policy
+ok 40 - Eval 7: Price explanation provides transparent breakdown and deposit policy
+  ---
+  duration_ms: 617.7833
+  type: 'test'
+  ...
+# Subtest: Eval 8: Request to book proposes action with explicit confirmation requirement
+ok 41 - Eval 8: Request to book proposes action with explicit confirmation requirement
+  ---
+  duration_ms: 669.4802
+  type: 'test'
+  ...
+# Subtest: Eval 9: Ambiguous confirmation does not execute pending action
+ok 42 - Eval 9: Ambiguous confirmation does not execute pending action
+  ---
+  duration_ms: 489.5008
+  type: 'test'
+  ...
+# Subtest: Eval 10: Explicit natural language 'yes' executes pending action
+ok 43 - Eval 10: Explicit natural language 'yes' executes pending action
+  ---
+  duration_ms: 712.3147
+  type: 'test'
+  ...
+# Subtest: Eval 11: Weaver Confirm button executes pending action
+ok 44 - Eval 11: Weaver Confirm button executes pending action
+  ---
+  duration_ms: 598.2191
+  type: 'test'
+  ...
+# Subtest: Eval 12: Replayed or duplicate confirmation fails closed
+ok 45 - Eval 12: Replayed or duplicate confirmation fails closed
+  ---
+  duration_ms: 614.7796
+  type: 'test'
+  ...
+# Subtest: Weaver confirmation is rejected unless it comes from the active pending-action surface
+ok 46 - Weaver confirmation is rejected unless it comes from the active pending-action surface
+  ---
+  duration_ms: 517.8687
+  type: 'test'
+  ...
+# Subtest: Expired pending actions fail closed before executing
+ok 47 - Expired pending actions fail closed before executing
+  ---
+  duration_ms: 512.821
+  type: 'test'
+  ...
+# Subtest: Pending actions fail closed when guest actor or tenant scope does not match
+ok 48 - Pending actions fail closed when guest actor or tenant scope does not match
+  ---
+  duration_ms: 1088.8861
+  type: 'test'
+  ...
+# Subtest: Offer acceptance revalidates the confirmed status, version, and amounts
+ok 49 - Offer acceptance revalidates the confirmed status, version, and amounts
+  ---
+  duration_ms: 657.0656
+  type: 'test'
+  ...
+# Subtest: Checkout confirmation derives the live stay total and refundable deposit
+ok 50 - Checkout confirmation derives the live stay total and refundable deposit
+  ---
+  duration_ms: 719.0017
+  type: 'test'
+  ...
+# Subtest: Eval 13: Conversational offer acceptance flow
+ok 51 - Eval 13: Conversational offer acceptance flow
+  ---
+  duration_ms: 748.7903
+  type: 'test'
+  ...
+# Subtest: Eval 14: Conversational payment proposal and completion
+ok 52 - Eval 14: Conversational payment proposal and completion
+  ---
+  duration_ms: 1039.7579
+  type: 'test'
+  ...
+# Subtest: Eval 15: Answering 'Am I booked?' using platform truth
+ok 53 - Eval 15: Answering 'Am I booked?' using platform truth
+  ---
+  duration_ms: 966.8521
+  type: 'test'
+  ...
+# Subtest: Eval 16: Prompt injection in search is treated strictly as data
+ok 54 - Eval 16: Prompt injection in search is treated strictly as data
+  ---
+  duration_ms: 542.9585
+  type: 'test'
+  ...
+# Subtest: Eval 17: Model proposing date not authored by user fails closed
+ok 55 - Eval 17: Model proposing date not authored by user fails closed
+  ---
+  duration_ms: 615.2557
+  type: 'test'
+  ...
+# Subtest: Date provenance reuses only the current task date and preserves its server demo flag
+ok 56 - Date provenance reuses only the current task date and preserves its server demo flag
+  ---
+  duration_ms: 1.1547
+  type: 'test'
+  ...
+# Subtest: Date provenance treats checkout-only and unrelated ISO dates separately from check-in
+ok 57 - Date provenance treats checkout-only and unrelated ISO dates separately from check-in
+  ---
+  duration_ms: 0.4627
+  type: 'test'
+  ...
+# Subtest: Date provenance fails closed when restored current criteria has unknown provenance
+ok 58 - Date provenance fails closed when restored current criteria has unknown provenance
+  ---
+  duration_ms: 0.4143
+  type: 'test'
+  ...
+# Subtest: Eval 18: Relative date 'next Friday' requests explicit date
+ok 59 - Eval 18: Relative date 'next Friday' requests explicit date
+  ---
+  duration_ms: 495.0284
+  type: 'test'
+  ...
+# Subtest: Eval 19: Error in provider does not mutate thread state
+ok 60 - Eval 19: Error in provider does not mutate thread state
+  ---
+  duration_ms: 466.3784
+  type: 'test'
+  ...
+# Subtest: Server-only diagnostics identify provider, tool, and continuation stages without sensitive payloads
+ok 61 - Server-only diagnostics identify provider, tool, and continuation stages without sensitive payloads
+  ---
+  duration_ms: 575.388
+  type: 'test'
+  ...
+# Subtest: Server-only diagnostics safely expose provider status and code while the guest response stays generic
+ok 62 - Server-only diagnostics safely expose provider status and code while the guest response stays generic
+  ---
+  duration_ms: 469.4715
+  type: 'test'
+  ...
+# Subtest: Server-only diagnostics discard malformed provider metadata that could carry private data
+ok 63 - Server-only diagnostics discard malformed provider metadata that could carry private data
+  ---
+  duration_ms: 471.7773
+  type: 'test'
+  ...
+# Subtest: Eval 20: Explicit cancellation cancels pending action
+ok 64 - Eval 20: Explicit cancellation cancels pending action
+  ---
+  duration_ms: 508.0977
+  type: 'test'
+  ...
+# Subtest: Search artifact, assistant shortlist, and Weaver surface contain the same amenity-filtered Units
+ok 65 - Search artifact, assistant shortlist, and Weaver surface contain the same amenity-filtered Units
+  ---
+  duration_ms: 465.422
+  type: 'test'
+  ...
+# Subtest: Post-authoritative-commit reconciliation: request_to_book retains request state if operator simulation fails
+ok 66 - Post-authoritative-commit reconciliation: request_to_book retains request state if operator simulation fails
+  ---
+  duration_ms: 645.0556
+  type: 'test'
+  ...
+# Subtest: Post-authoritative-commit reconciliation: accept_offer retains accepted state if payment presentation fails
+ok 67 - Post-authoritative-commit reconciliation: accept_offer retains accepted state if payment presentation fails
+  ---
+  duration_ms: 806.543
+  type: 'test'
+  ...
+# Subtest: Post-authoritative-commit reconciliation: start_checkout retains reservation and contract if contract presentation fails
+ok 68 - Post-authoritative-commit reconciliation: start_checkout retains reservation and contract if contract presentation fails
+  ---
+  duration_ms: 1040.496
+  type: 'test'
+  ...
+# Subtest: AC1: arbitrary model prose, prices, confirmations, URLs, and HTML cannot become a guest reply
+ok 69 - AC1: arbitrary model prose, prices, confirmations, URLs, and HTML cannot become a guest reply
+  ---
+  duration_ms: 575.7399
+  type: 'test'
+  ...
+# Subtest: AC2: valid typed reply plans render current facts and reject invalid plans
+ok 70 - AC2: valid typed reply plans render current facts and reject invalid plans
+  ---
+  duration_ms: 2864.9984
+  type: 'test'
+  ...
+# Subtest: AC3: discovery, details, comparison, price, status, drafts, and proposals retain useful server replies
+ok 71 - AC3: discovery, details, comparison, price, status, drafts, and proposals retain useful server replies
+  ---
+  duration_ms: 720.1094
+  type: 'test'
+  ...
+# Subtest: AC4: invalid legacy replies after operations keep safe surfaces and never claim unperformed success
+ok 72 - AC4: invalid legacy replies after operations keep safe surfaces and never claim unperformed success
+  ---
+  duration_ms: 508.9321
+  type: 'test'
+  ...
+# Subtest: AC5: reply token limits are configurable engineering bounds and reject invalid values
+ok 73 - AC5: reply token limits are configurable engineering bounds and reject invalid values
+  ---
+  duration_ms: 514.8755
+  type: 'test'
+  ...
+# Subtest: AC6: deterministic pending confirmations and conventional routes remain available
+ok 74 - AC6: deterministic pending confirmations and conventional routes remain available
+  ---
+  duration_ms: 642.3148
+  type: 'test'
+  ...
+1..74
+# tests 74
+# suites 0
+# pass 74
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 54953.6486

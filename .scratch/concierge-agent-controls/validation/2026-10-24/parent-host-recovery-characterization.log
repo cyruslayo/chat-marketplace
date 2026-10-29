@@ -1,0 +1,38 @@
+TAP version 13
+# node:internal/modules/run_main:123
+#     triggerUncaughtException(
+#     ^
+# Error [TransformError]: Transform failed with 1 error:
+# C:\\AI2026\\chat-marketplace-controls\\apps\\local-guest\\src\\shortlet-app.ts:3153:19: ERROR: Private name "\#safeAssistantTimelineMessage" must be declared in an enclosing class
+#     at failureErrorWithLog (C:\\AI2026\\chat-marketplace\\node_modules\\esbuild\\lib\\main.js:1752:15)
+#     at C:\\AI2026\\chat-marketplace\\node_modules\\esbuild\\lib\\main.js:1019:50
+#     at responseCallbacks.<computed> (C:\\AI2026\\chat-marketplace\\node_modules\\esbuild\\lib\\main.js:886:9)
+#     at handleIncomingPacket (C:\\AI2026\\chat-marketplace\\node_modules\\esbuild\\lib\\main.js:941:12)
+#     at Socket.readFromStdout (C:\\AI2026\\chat-marketplace\\node_modules\\esbuild\\lib\\main.js:864:7)
+#     at Socket.emit (node:events:519:28)
+#     at addChunk (node:internal/streams/readable:561:12)
+#     at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+#     at Readable.push (node:internal/streams/readable:392:5)
+#     at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)
+# Node.js v22.19.0
+# Subtest: test\\model-quota-host-recovery.test.ts
+not ok 1 - test\\model-quota-host-recovery.test.ts
+  ---
+  duration_ms: 1050.0369
+  type: 'test'
+  location: 'C:\\AI2026\\chat-marketplace-controls\\test\\model-quota-host-recovery.test.ts:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 1
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1080.7181

@@ -16,6 +16,8 @@ import type { GuestAccountAuthorityErrorCode } from "../../../packages/platform-
 import { usableCodeHashingKey } from "../../../packages/platform-core/src/accounts/remote-port.js";
 import { SqliteGuestContactRepository } from "../../../packages/platform-core/src/accounts/contact.js";
 import { shortletDomainClient } from "./do-clients.js";
+import { SqliteModelRequestQuota } from "../../../packages/platform-core/src/model-request-quota.js";
+import { pilotLimits } from "../../pilot/src/pilot-config-core.js";
 
 const PLATFORM_DAILY_ALARM_MS = 24 * 60 * 60 * 1000;
 const ACCOUNT_ERROR_CODES: ReadonlySet<string> = new Set(["invalid_input", "code_invalid", "code_expired", "code_consumed", "code_attempts_exhausted", "rate_limited", "session_invalid", "account_conflict", "action_proof_invalid"]);
@@ -73,6 +75,21 @@ export class PlatformDO extends DurableObject<CloudflareEnv> {
       return Response.json({ ok: false, code: "INVALID_SCOPE" }, { status: 400 });
     }
     const database = new DurableObjectSqlDatabase(this.ctx.storage);
+    if (path === "/_internal/model-quota/reserve") {
+      if (Object.keys(input).length !== 2 || typeof input.guestId !== "string" || !input.guestId.trim() || input.guestId.length > 200) {
+        return Response.json({ ok: false, code: "INVALID_QUOTA_REQUEST" }, { status: 400 });
+      }
+      try {
+        const limits = pilotLimits(this.env);
+        const result = await new SqliteModelRequestQuota(database, {
+          dailyTenantLimit: limits.dailyModelCallCap,
+          hourlyGuestLimit: limits.chatTurnsPerSessionPerHour,
+        }).reserve({ tenantId, guestId: input.guestId });
+        return Response.json(result.reserved ? { ok: true, reserved: true } : { ok: true, ...result });
+      } catch {
+        return Response.json({ ok: false, code: "QUOTA_UNAVAILABLE" }, { status: 503 });
+      }
+    }
     if (path.startsWith("/_internal/guest-data/")) return this.#handleGuestData(database, path.slice("/_internal/guest-data/".length), input);
     if (path.startsWith("/_internal/accounts/")) return this.#handleAccountRpc(database, path.slice("/_internal/accounts/".length), input);
     if (path.startsWith("/_internal/ops/")) return await this.#handleOpsInternal(database, path.slice("/_internal/ops/".length), input);

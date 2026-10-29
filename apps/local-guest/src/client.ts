@@ -12,6 +12,7 @@ import {
   watchPhotoFailure,
 } from "./listing-gallery.js";
 import {
+  GUEST_ASSISTANT_COPY,
   GUEST_COMPARE_LABELS,
   GUEST_FACT_LABELS,
   GUEST_GLOSSARY,
@@ -23,6 +24,8 @@ import {
   guestNewConversationCopy,
   type GuestCommittedWorkKind,
 } from "../../web-agent/src/guest-content.js";
+import { CLIENT_REQUEST_TIMEOUT_MS, CLIENT_TURN_TIMEOUT_MS, TURN_STILL_WORKING_AFTER_MS } from "./turn-budget.js";
+import { turnEntriesSince } from "./guest-turn-recovery.js";
 import {
   breakdownHtml,
   confirmationScreenHtml,
@@ -2523,14 +2526,15 @@ async function refreshServerState(): Promise<boolean> {
   return false;
 }
 
-async function postJson(path: string, body?: unknown): Promise<GuestResponse> {
+async function postJson(path: string, body?: unknown, timeoutMs: number = CLIENT_REQUEST_TIMEOUT_MS): Promise<GuestResponse> {
   const response = await fetch(path, body === undefined ? {} : {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
     // ADR-0079 bounds establishment; aborting the client wait never rolls back
-    // a command that the server may already have committed.
-    signal: AbortSignal.timeout(10_000),
+    // a command that the server may already have committed. A turn waits for the
+    // server's worst case (turn-budget.ts), so the wait ends only after the server can finish.
+    signal: AbortSignal.timeout(timeoutMs),
   });
   if (!response.ok) throw new Error(`Guest request failed with HTTP ${response.status}`);
   return readGuestResponse(await response.json());
@@ -2546,17 +2550,44 @@ function setLoading(next: boolean): void {
   if (next) announce("Message sent. The concierge is working on your request.");
 }
 
+/**
+ * The browser stopped waiting for a turn. The server may already have committed it, so the thread decides: when the
+ * guest's message is in the thread the turn landed and its reply is shown; otherwise the caller offers Retry (ADR 0106).
+ */
+async function showLandedTurn(text: string): Promise<boolean> {
+  try {
+    const response = await postJson(`/api/state?threadId=${encodeURIComponent(threadId)}`) as GuestStateResponse;
+    if (!response.ok || !response.timeline) return false;
+    const entries = turnEntriesSince(response.timeline, text);
+    if (entries === undefined) return false;
+    for (const entry of entries) addTimelineEntry(entry);
+    await refreshServerState();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function sendTurn(text: string): Promise<void> {
   if (isLoading) return;
   setLoading(true);
+  // A normal turn takes 5 to 8 seconds. A slower one says it is still working instead of looking stuck.
+  const stillWorking = setTimeout(() => { workingStatus.textContent = GUEST_ASSISTANT_COPY.stillWorking; }, TURN_STILL_WORKING_AFTER_MS);
   try {
-    if (renderResponse(await postJson("/api/turn", { threadId, text }))) {
+    if (renderResponse(await postJson("/api/turn", { threadId, text }, CLIENT_TURN_TIMEOUT_MS))) {
       if (composerInput.value.trim() === text) composerInput.value = "";
     }
   } catch {
-    addRetryTurn("The concierge is temporarily unavailable. Your message is still in the composer; please try again.", () => { void sendTurn(text); });
-    announce("The concierge is temporarily unavailable. Your message remains in the composer.", true);
-  } finally { setLoading(false); }
+    if (await showLandedTurn(text)) {
+      if (composerInput.value.trim() === text) composerInput.value = "";
+    } else {
+      addRetryTurn("The concierge is temporarily unavailable. Your message is still in the composer; please try again.", () => { void sendTurn(text); });
+      announce("The concierge is temporarily unavailable. Your message remains in the composer.", true);
+    }
+  } finally {
+    clearTimeout(stillWorking);
+    setLoading(false);
+  }
 }
 
 async function sendEvent(action: { readonly name: string; readonly surfaceId: string; readonly sourceComponentId: string; readonly timestamp: string; readonly context: unknown }): Promise<void> {
@@ -2685,7 +2716,7 @@ function isCommittedWork(value: unknown): value is GuestCommittedWork {
 /** Issue 13a: the Guest's live work, or null when it can't be read. */
 async function fetchCommittedWork(): Promise<readonly GuestCommittedWork[] | null> {
   try {
-    const response = await fetch("/api/committed-work", { signal: AbortSignal.timeout(10_000) });
+    const response = await fetch("/api/committed-work", { signal: AbortSignal.timeout(CLIENT_REQUEST_TIMEOUT_MS) });
     if (!response.ok) return null;
     const body: unknown = await response.json();
     if (!isRecord(body) || body.ok !== true || !Array.isArray(body.committedWork) || !body.committedWork.every(isCommittedWork)) return null;

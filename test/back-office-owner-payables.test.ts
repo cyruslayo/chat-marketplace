@@ -42,7 +42,7 @@ test("AC1 — Each booking shows the amount received, the owner payable, your ma
     // Force a valid ID collision in the rendered HTML without changing payment or booking state.
     const privacyHtml = shown.html.replaceAll(id, "req-aabc4242-abcd-4abc-8abc-deaf00000001");
     assert.ok(privacyHtml.includes("4242"));
-    assertNoPaymentMaterial(privacyHtml, [TEST_CARD_LAST4, TEST_PAYER_EMAIL, "psp_ref_"]);
+    assertNoPaymentMaterial(privacyHtml, [TEST_CARD_LAST4, TEST_PAYER_EMAIL, "psp_ref_", "psp-ref-"]);
     assert.doesNotMatch(row.html, /<form/, "no payout form before it is due");
 
     // Verified Access starts the 24 hours (ADR 0089); the status turns due lazily, with no command.

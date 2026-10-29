@@ -1,0 +1,4 @@
+
+> build
+> node apps/local-guest/scripts/build-client.mjs
+

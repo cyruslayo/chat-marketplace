@@ -50,20 +50,20 @@ test("AC1: domains/shortlet has no Paystack HTTP or webhook-signature code; the 
 });
 
 test("AC2: a payment intent carries a domain id and reference, and the outcome routes back to that domain; an unknown reference routes nowhere", async () => {
-  const fake = createPaystackHttpFake({ transaction: { reference: "psp_ref_route", amount: 13000000, currency: "NGN", status: "success", domain: "test" } });
+  const fake = createPaystackHttpFake({ transaction: { reference: "psp-ref-route", amount: 13000000, currency: "NGN", status: "success", domain: "test" } });
   const registry = new InMemoryPaymentIntentRegistry();
   const payments = new PaystackPayments({ card: new DirectPaystackClient(CONFIG, fake.fetcher), registry });
 
-  await payments.start({ domainId: "shortlet", method: "card", reference: "psp_ref_route", email: "guest@example.test", amountKobo: 13000000, currency: "NGN", payerId: "guest-1" });
-  assert.deepEqual(registry.find("psp_ref_route"), { domainId: "shortlet", method: "card" });
+  await payments.start({ domainId: "shortlet", method: "card", reference: "psp-ref-route", email: "guest@example.test", amountKobo: 13000000, currency: "NGN", payerId: "guest-1" });
+  assert.deepEqual(registry.find("psp-ref-route"), { domainId: "shortlet", method: "card" });
 
-  const routed = await payments.confirm("psp_ref_route");
+  const routed = await payments.confirm("psp-ref-route");
   assert.equal(routed.domainId, "shortlet");
-  assert.equal(routed.reference, "psp_ref_route");
-  assert.equal(routed.providerReference, "psp_ref_route");
+  assert.equal(routed.reference, "psp-ref-route");
+  assert.equal(routed.providerReference, "psp-ref-route");
 
   // A reference no intent recorded fails closed: the outcome carries no domain id.
-  const unrouted = await payments.confirm("psp_ref_unrecorded");
+  const unrouted = await payments.confirm("psp-ref-unrecorded");
   assert.equal(unrouted.domainId, undefined);
 });
 
@@ -88,7 +88,7 @@ test("AC3: the moved adapter keeps the card, bank-transfer and manual-transfer p
   assert.equal(isApprovedPaystackCheckoutUrl("https://evil.example/pay"), false);
   const fake = createPaystackHttpFake();
   const card = new DirectPaystackClient(CONFIG, fake.fetcher);
-  await card.initializeTransaction({ email: "guest@example.test", amountKobo: 1000, currency: "NGN", reference: "psp_ref_contract", callbackUrl: "https://pilot.example/payments/paystack/callback", payerId: "guest-1" });
+  await card.initializeTransaction({ email: "guest@example.test", amountKobo: 1000, currency: "NGN", reference: "psp-ref-contract", callbackUrl: "https://pilot.example/payments/paystack/callback", payerId: "guest-1" });
   const body = JSON.parse(fake.requests[0]!.body!) as { channels: string[]; metadata: string };
   assert.deepEqual(body.channels, ["card"]);
   assert.deepEqual(JSON.parse(body.metadata), { shortlet_guest_id: "guest-1" });
@@ -108,15 +108,15 @@ test("AC3: the moved adapter keeps the card, bank-transfer and manual-transfer p
 });
 
 test("AC4: no secret key or raw card data enters platform payment state, an outcome or a webhook result", async () => {
-  const fake = createPaystackHttpFake({ transaction: { reference: "psp_ref_secret", amount: 1000, currency: "NGN", status: "success", domain: "test", card: { brand: "visa", last4: "4242" } } });
+  const fake = createPaystackHttpFake({ transaction: { reference: "psp-ref-secret", amount: 1000, currency: "NGN", status: "success", domain: "test", card: { brand: "visa", last4: "4242" } } });
   const registry = new InMemoryPaymentIntentRegistry();
   const payments = new PaystackPayments({ card: new DirectPaystackClient(CONFIG, fake.fetcher), registry });
 
-  await payments.start({ domainId: "shortlet", method: "card", reference: "psp_ref_secret", email: "guest@example.test", amountKobo: 1000, currency: "NGN" });
-  const outcome = await payments.confirm("psp_ref_secret");
+  await payments.start({ domainId: "shortlet", method: "card", reference: "psp-ref-secret", email: "guest@example.test", amountKobo: 1000, currency: "NGN" });
+  const outcome = await payments.confirm("psp-ref-secret");
 
   // The registry keeps only routing facts, never amounts, references or credentials.
-  assert.deepEqual(registry.find("psp_ref_secret"), { domainId: "shortlet", method: "card" });
+  assert.deepEqual(registry.find("psp-ref-secret"), { domainId: "shortlet", method: "card" });
 
   // Only the non-sensitive card projection survives.
   assert.deepEqual(outcome.cardMetadata, { brand: "visa", last4: "4242" });
@@ -126,10 +126,10 @@ test("AC4: no secret key or raw card data enters platform payment state, an outc
 
   // The webhook result names only the reference and its routing fact.
   const signature = "0".repeat(128);
-  const webhook = await payments.handleWebhook({ rawBody: JSON.stringify({ event: "charge.success", data: { reference: "psp_ref_secret" } }), signature });
+  const webhook = await payments.handleWebhook({ rawBody: JSON.stringify({ event: "charge.success", data: { reference: "psp-ref-secret" } }), signature });
   assert.equal(webhook.kind, "invalid-signature");
-  const accepted = await payments.handleWebhook({ rawBody: JSON.stringify({ event: "charge.success", data: { reference: "psp_ref_secret" } }), signature: validSignature(JSON.stringify({ event: "charge.success", data: { reference: "psp_ref_secret" } })) });
-  assert.deepEqual(accepted, { kind: "charge", reference: "psp_ref_secret", domainId: "shortlet", method: "card" });
+  const accepted = await payments.handleWebhook({ rawBody: JSON.stringify({ event: "charge.success", data: { reference: "psp-ref-secret" } }), signature: validSignature(JSON.stringify({ event: "charge.success", data: { reference: "psp-ref-secret" } })) });
+  assert.deepEqual(accepted, { kind: "charge", reference: "psp-ref-secret", domainId: "shortlet", method: "card" });
 });
 
 function validSignature(rawBody: string): string {

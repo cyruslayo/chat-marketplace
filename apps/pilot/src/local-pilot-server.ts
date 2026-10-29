@@ -9,6 +9,7 @@ import {
   GUEST_COMMERCE_COMPOSITION,
   type GuestRequestHandler,
 } from "../../local-guest/src/guest-server.js";
+import { writeAssistantTurnRecord } from "../../local-guest/src/assistant/assistant-turn-record.js";
 import {
   LocalApartmentOwnerEnvironment,
   createOwnerRequestHandler,
@@ -111,6 +112,8 @@ export function startLocalPilotServer(
     // ADR 0099: pilot hosts compose stays only; the separate local demo keeps its default.
     commerce: GUEST_COMMERCE_COMPOSITION.disabled,
     environment: guestEnvironment,
+    // Issue 05: one allow-listed record per assistant turn, written as a JSON line (the local model comes from the environment).
+    onAssistantTurn: writeAssistantTurnRecord,
     production: false,
     fixtureRoutes: false,
     publicOrigin,

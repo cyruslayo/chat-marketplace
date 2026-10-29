@@ -33,6 +33,17 @@ This amends ADR 0095 (hosting) and the placement parts of ADR 0093 and ADR 0094 
 - **Export and restore span two objects.** The daily evidence export (`apps/cloudflare/src/do-export.ts`, `EXPORTS`) and the ADR 0096 private export must cover both objects, and the restore runbook must load both. A rebuild signs every guest and operator in again, because the credential tables stay excluded from the export (ADR 0096; `DAILY_EXPORT_EXCLUDED`).
 - **Mechanism.** The migration reuses the existing export/import path (`apps/cloudflare/src/ops-import.ts`) rather than a new mechanism. The step-by-step migration and cutover are the implementation slice's work (Map slice 17), not this decision's.
 
+### Amendment (25 Oct 2026): cutover and export when commerce is off
+
+Commerce is parked and off by default (ADR 0104 decision 5, ADR 0100 amendment). This amendment changes only the cutover and export behaviour for the commerce object while `COMMERCE_ENABLED` is off. The Durable Object class is kept.
+
+- **Skip only after zero rows.** Ops cutover skips the commerce object only after it confirms that the commerce object holds zero commerce rows.
+- **Refuse when rows exist.** If any commerce rows exist, cutover is refused with a named error. The commerce rows stay under the ADR 0096 export obligation, which is unchanged.
+- **Export is unchanged for data that exists.** Where commerce data exists, the daily evidence export and ADR 0096 private export cover the commerce object as this ADR's data-migration consequences already require.
+- **Secret.** The Cloudflare configuration will stop requiring the commerce HMAC secret by default (ADR 0075 amendment). This is the owner's decision; the configuration change is pending implementation.
+
+The original decisions above are not rewritten. The shortlet object, the platform object and their export and restore rules are unchanged.
+
 ## Consequences
 
 - The platform owns accounts, conversations and tasks; each domain owns only its transactional model (ADR 0099). A conversation can span domains without either domain owning the thread.

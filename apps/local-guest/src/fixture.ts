@@ -60,6 +60,7 @@ import {
   GuestContactApplication,
 } from "../../../apps/web/src/index.js";
 import { SELF_BOOKING_ATTESTATION_VERSION } from "../../../domains/shortlet/src/index.js";
+import { DEMO_TRUST_EXPIRES_ON } from "../../../domains/shortlet/src/index.js";
 import { LocalBankTransferProvider } from "./local-bank-transfer-provider.js";
 
 export const LOCAL_GUEST_PORT = 3001;
@@ -842,7 +843,7 @@ export class LocalGuestEnvironment {
         inspectorId: "inspector-verified-01",
         status: "passed",
         inspectedAt: "2026-01-15T00:00:00Z",
-        expiresAt: "2027-01-15T00:00:00Z",
+        expiresAt: `${DEMO_TRUST_EXPIRES_ON}T00:00:00Z`,
         materialChangePending: false,
         scope: [...INSPECTION_SCOPE],
       },
@@ -851,19 +852,19 @@ export class LocalGuestEnvironment {
         propertyId: "property-lagos-ikoyi-001",
         status: "verified",
         verifiedAt: "2026-01-15T00:00:00Z",
-        expiresAt: "2027-01-15T00:00:00Z",
+        expiresAt: `${DEMO_TRUST_EXPIRES_ON}T00:00:00Z`,
         permissions: [...AUTHORITY_PERMISSIONS],
       },
       regulatory: {
         licensing: {
           status: "verified",
           verifiedAt: "2026-01-15T00:00:00Z",
-          expiresAt: "2027-01-15T00:00:00Z",
+          expiresAt: `${DEMO_TRUST_EXPIRES_ON}T00:00:00Z`,
         },
         insurance: {
           status: "verified",
           verifiedAt: "2026-01-15T00:00:00Z",
-          expiresAt: "2027-01-15T00:00:00Z",
+          expiresAt: `${DEMO_TRUST_EXPIRES_ON}T00:00:00Z`,
           publicLiabilityPerOccurrenceKobo: 1000000000,
           annualAggregateKobo: 2000000000,
           propertyCoverVerified: true,
@@ -909,7 +910,7 @@ export class LocalGuestEnvironment {
         inspectorId: "inspector-verified-01",
         status: "passed",
         inspectedAt: "2026-02-01T00:00:00Z",
-        expiresAt: "2027-02-01T00:00:00Z",
+        expiresAt: `${DEMO_TRUST_EXPIRES_ON}T00:00:00Z`,
         materialChangePending: false,
         scope: [...INSPECTION_SCOPE],
       },
@@ -918,19 +919,19 @@ export class LocalGuestEnvironment {
         propertyId: "property-lagos-lekki-002",
         status: "verified",
         verifiedAt: "2026-02-01T00:00:00Z",
-        expiresAt: "2027-02-01T00:00:00Z",
+        expiresAt: `${DEMO_TRUST_EXPIRES_ON}T00:00:00Z`,
         permissions: [...AUTHORITY_PERMISSIONS],
       },
       regulatory: {
         licensing: {
           status: "verified",
           verifiedAt: "2026-02-01T00:00:00Z",
-          expiresAt: "2027-02-01T00:00:00Z",
+          expiresAt: `${DEMO_TRUST_EXPIRES_ON}T00:00:00Z`,
         },
         insurance: {
           status: "verified",
           verifiedAt: "2026-02-01T00:00:00Z",
-          expiresAt: "2027-02-01T00:00:00Z",
+          expiresAt: `${DEMO_TRUST_EXPIRES_ON}T00:00:00Z`,
           publicLiabilityPerOccurrenceKobo: 1000000000,
           annualAggregateKobo: 2000000000,
           propertyCoverVerified: true,

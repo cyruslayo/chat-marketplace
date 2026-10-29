@@ -1,0 +1,19 @@
+
+> check
+> tsc --noEmit && tsc --noEmit -p apps/cloudflare && tsc --noEmit -p apps/cloudflare/tsconfig.test.json && tsc --noEmit -p apps/cloudflare/tsconfig.tooling.json && node scripts/check-worker-bundle.mjs
+
+test/browser-lock.test.ts(275,5): error TS2304: Cannot find name 'inspectionLock'.
+test/browser-phase-timeout.test.ts(133,18): error TS1308: 'await' expressions are only allowed within async functions and at the top levels of modules.
+test/browser-phase-timeout.test.ts(138,5): error TS2322: Type '(pid: number, remaining: number | undefined) => { state: string; identity: { pid: number; parentProcessId: number; executable: string; creationTime: string; }; } | undefined' is not assignable to type '(pid: number, timeoutMs?: number | undefined) => { readonly state: "absent"; } | { readonly state: "present"; readonly identity: WindowsProcessTreeIdentity; } | undefined'.
+  Type '{ state: string; identity: { pid: number; parentProcessId: number; executable: string; creationTime: string; }; } | undefined' is not assignable to type '{ readonly state: "absent"; } | { readonly state: "present"; readonly identity: WindowsProcessTreeIdentity; } | undefined'.
+    Type '{ state: string; identity: { pid: number; parentProcessId: number; executable: string; creationTime: string; }; }' is not assignable to type '{ readonly state: "absent"; } | { readonly state: "present"; readonly identity: WindowsProcessTreeIdentity; } | undefined'.
+      Type '{ state: string; identity: { pid: number; parentProcessId: number; executable: string; creationTime: string; }; }' is not assignable to type '{ readonly state: "absent"; } | { readonly state: "present"; readonly identity: WindowsProcessTreeIdentity; }'.
+        Type '{ state: string; identity: { pid: number; parentProcessId: number; executable: string; creationTime: string; }; }' is not assignable to type '{ readonly state: "present"; readonly identity: WindowsProcessTreeIdentity; }'.
+          Types of property 'state' are incompatible.
+            Type 'string' is not assignable to type '"present"'.
+test/browser-phase-timeout.test.ts(139,14): error TS18048: 'remaining' is possibly 'undefined'.
+test/browser-phase-timeout.test.ts(159,7): error TS18048: 'child' is possibly 'undefined'.
+test/helpers/chrome-devtools.ts(141,72): error TS2345: Argument of type 'ManagedProcessIdentity & { readonly isRoot: boolean; }' is not assignable to parameter of type 'WindowsProcessTreeIdentity'.
+  Types of property 'parentProcessId' are incompatible.
+    Type 'number | undefined' is not assignable to type 'number'.
+      Type 'undefined' is not assignable to type 'number'.

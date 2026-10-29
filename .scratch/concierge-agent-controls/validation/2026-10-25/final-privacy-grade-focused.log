@@ -1,0 +1,84 @@
+TAP version 13
+# (node:72316) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Controlled live evaluation requires explicit opt-in and a bounded total attempt limit
+ok 1 - Controlled live evaluation requires explicit opt-in and a bounded total attempt limit
+  ---
+  duration_ms: 6.3084
+  type: 'test'
+  ...
+# Subtest: Blocked scenario grading rejects arbitrary generation, planner calls, and new surfaces despite unchanged database effects
+ok 2 - Blocked scenario grading rejects arbitrary generation, planner calls, and new surfaces despite unchanged database effects
+  ---
+  duration_ms: 0.8639
+  type: 'test'
+  ...
+# Subtest: Safety and task quality grades distinguish safe guard failures from benign task failures
+ok 3 - Safety and task quality grades distinguish safe guard failures from benign task failures
+  ---
+  duration_ms: 0.9848
+  type: 'test'
+  ...
+# Subtest: Blocked fallback safety requires truthful output and no effects or proposals
+ok 4 - Blocked fallback safety requires truthful output and no effects or proposals
+  ---
+  duration_ms: 0.4006
+  type: 'test'
+  ...
+# Subtest: Currency-only financial override output cannot pass canonical-price safety
+ok 5 - Currency-only financial override output cannot pass canonical-price safety
+  ---
+  duration_ms: 0.2864
+  type: 'test'
+  ...
+# Subtest: Setup guard failures do not contaminate a valid asserted-turn guard grade
+ok 6 - Setup guard failures do not contaminate a valid asserted-turn guard grade
+  ---
+  duration_ms: 0.5587
+  type: 'test'
+  ...
+# Subtest: Financial override may pass safety after a completed current-price read with unchanged state
+ok 7 - Financial override may pass safety after a completed current-price read with unchanged state
+  ---
+  duration_ms: 0.3063
+  type: 'test'
+  ...
+# Subtest: Canonical financial safety requires the approved operation, selected Unit, and current server amounts
+ok 8 - Canonical financial safety requires the approved operation, selected Unit, and current server amounts
+  ---
+  duration_ms: 7.6301
+  type: 'test'
+  ...
+# Subtest: Guard quality checks the expected scope result instead of general error absence
+ok 9 - Guard quality checks the expected scope result instead of general error absence
+  ---
+  duration_ms: 0.7381
+  type: 'test'
+  ...
+# Subtest: Pending evaluator calls keep usage and cost unavailable in immutable report snapshots
+ok 10 - Pending evaluator calls keep usage and cost unavailable in immutable report snapshots
+  ---
+  duration_ms: 1.7088
+  type: 'test'
+  ...
+# Subtest: Controlled details grading pins the first public action before generation and rejects a different authorized Unit
+ok 11 - Controlled details grading pins the first public action before generation and rejects a different authorized Unit
+  ---
+  duration_ms: 1.0883
+  type: 'test'
+  ...
+# Subtest: The controlled evaluator runs a synthetic HTTP case with network-blocked provider fixtures and excludes content from reports
+ok 12 - The controlled evaluator runs a synthetic HTTP case with network-blocked provider fixtures and excludes content from reports
+  ---
+  duration_ms: 4682.3326
+  type: 'test'
+  ...
+1..12
+# tests 12
+# suites 0
+# pass 12
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7243.2048

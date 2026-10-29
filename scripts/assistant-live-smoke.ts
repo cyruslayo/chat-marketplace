@@ -9,6 +9,7 @@
  */
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { createShortletAssistantPack } from "../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
 import {
   GeminiInteractionsClient,
   DEFAULT_GEMINI_MODEL,
@@ -45,6 +46,7 @@ const gemini = new GeminiInteractionsClient({
 });
 const turnDiagnostics: AssistantDiagnosticEvent[] = [];
 const runtime = new AssistantRuntime(env, gemini, {
+  packs: [createShortletAssistantPack(env)],
   onDiagnostic(event) {
     turnDiagnostics.push(event);
     console.log("Assistant diagnostic:", event);

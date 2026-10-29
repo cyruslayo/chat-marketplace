@@ -172,7 +172,7 @@ test("AC2 — Payment deadlines are shown as absolute WAT, and an ended booking 
       assert.match(row(html, late).text, /Ended Payment arrived after the deadline; a full refund is owed to the Guest/);
 
       // No card, account, reference or contact details anywhere on the page.
-      assertNoPaymentMaterial(html, [TEST_CARD_LAST4, TEST_PAYER_EMAIL, "psp_ref_", "chk_", "+234"]);
+      assertNoPaymentMaterial(html, [TEST_CARD_LAST4, TEST_PAYER_EMAIL, "psp_ref_", "psp-ref-", "chk_", "+234"]);
     });
   } finally { await f.close(); }
 
@@ -189,7 +189,7 @@ test("AC2 — Payment deadlines are shown as absolute WAT, and an ended booking 
         const found = row(await bookingsPage(r), id);
         assert.equal(found.stage, "ended");
         assert.match(found.text, refundStatus === "pending" ? /Ended Refund started; not yet received by the Guest/ : /Ended Payment refunded in full/);
-        assertNoPaymentMaterial(found.html, [TEST_CARD_LAST4, TEST_PAYER_EMAIL, "psp_ref_", "refund-"]);
+        assertNoPaymentMaterial(found.html, [TEST_CARD_LAST4, TEST_PAYER_EMAIL, "psp_ref_", "psp-ref-", "refund-"]);
       }, { refundStatus });
     } finally { await r.close(); }
   }

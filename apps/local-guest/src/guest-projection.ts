@@ -1,5 +1,7 @@
 import type { DiscoveryArtifactProjection } from "../../../apps/web-agent/src/index.js";
 import { parseDiscoverySearchContext, type DiscoverySearchContext } from "./concierge.js";
+import type { PendingAssistantAction } from "./assistant/pending-actions.js";
+import type { ReplacedPendingAction } from "./assistant/assistant-state.js";
 
 /**
  * Server-owned durable interaction projection for one Guest thread (ADR-0070,
@@ -18,6 +20,12 @@ export interface GuestPersistentProjection {
   /** Accumulated conversational discovery context (ADR-0004, ADR-0074). */
   readonly discoveryContext: DiscoverySearchContext | null;
   readonly discoveryArtifact: DiscoveryArtifactProjection | null;
+  /**
+   * ADR 0106: the server-issued id of the discovery artifact the guest holds. A cold restore re-queries current facts
+   * but keeps this id, so the card's View action still names the shell's authoritative artifact. Absent in projections
+   * written before this field existed, which read as null.
+   */
+  readonly discoveryArtifactId: string | null;
   readonly discoverySurfaceId: string;
   readonly discoveryRevision: number;
   readonly unitDetail: { readonly unitId: string; readonly artifactId: string } | null;
@@ -32,6 +40,120 @@ export interface GuestPersistentProjection {
    * is the current results' criteria. "Undo last change" steps back one.
    */
   readonly searchHistory: readonly DiscoverySearchContext[];
+  /** Minimal Shortlet assistant state needed to re-authorize a cold-start follow-up. */
+  readonly assistantContext: PersistedAssistantContext | null;
+  /**
+   * The open contact-details surface (phone or email) and the non-secret ids its Save action resumes with. A cold restore
+   * re-renders this same surface, so the guest's Save stays authorized. Missing in older projections, which read as null.
+   */
+  readonly activeContact: PersistedActiveContact | null;
+  /**
+   * Issue 03 follow-up: the assistant's open Booking Request (or other) confirmation, and the surface id the guest holds
+   * for it. A cold restore keeps both, so the typed and button confirm or cancel paths still find the action (ADR 0106:
+   * deterministic confirmations keep their path). Missing in older projections, which read as null.
+   */
+  readonly pendingAction: PersistedPendingAction | null;
+  readonly pendingActionSurfaceId: string | null;
+  /** ADR 0074: the proposal a search change or task switch removed. Missing or invalid reads as null. */
+  readonly replacedPendingAction: PersistedReplacedProposal | null;
+}
+
+/** The pending action as the runtime holds it, validated field by field on restore. Executed actions are never stored. */
+export type PersistedPendingAction = PendingAssistantAction;
+
+/** The notice a removed proposal leaves: its id and why it was removed. Carries no authority. */
+export type PersistedReplacedProposal = ReplacedPendingAction;
+
+/** Fail closed for the notice only: an invalid notice reads as null and the rest of the thread still restores. */
+export function parsePersistedReplacedProposal(value: unknown): PersistedReplacedProposal | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.id !== "string" || !/^pa-[A-Za-z0-9-]+$/.test(value.id) || value.id.length > 120) return null;
+  if (value.reason !== "search_changed" && value.reason !== "task_switched") return null;
+  return { id: value.id, reason: value.reason };
+}
+
+const PENDING_ACTION_TYPES: readonly string[] = ["request_to_book", "accept_offer", "start_checkout"];
+const PENDING_REFERENCE_STRINGS = ["stayRef", "unitId", "checkIn", "checkOut", "requestId", "offerId", "offerStatus"] as const;
+const PENDING_REFERENCE_NUMBERS = ["partySize", "stayTotalKobo", "refundableDepositKobo", "totalDueNowKobo", "offerVersion", "projectionVersion"] as const;
+
+/** Fail closed: any malformed field, an executed action or an unknown type returns null (the action is not restored). */
+export function parsePersistedPendingAction(value: unknown): PersistedPendingAction | null {
+  if (!isRecord(value)) return null;
+  const text = (candidate: unknown, max: number): candidate is string => typeof candidate === "string" && candidate.length > 0 && candidate.length <= max;
+  if (!text(value.id, 120) || !/^pa-[A-Za-z0-9-]+$/.test(value.id)) return null;
+  if (!text(value.threadId, 200) || !text(value.guestActorId, 200) || !text(value.tenantId, 200)) return null;
+  if (typeof value.type !== "string" || !PENDING_ACTION_TYPES.includes(value.type)) return null;
+  if (!text(value.summary, 1000)) return null;
+  if (!text(value.createdAt, 40) || Number.isNaN(Date.parse(value.createdAt))) return null;
+  if (!text(value.expiresAt, 40) || Number.isNaN(Date.parse(value.expiresAt))) return null;
+  if (value.executed !== false) return null;
+  if (!isRecord(value.authoritativeReferences)) return null;
+  const source = value.authoritativeReferences;
+  const references: Record<string, string | number> = {};
+  for (const key of PENDING_REFERENCE_STRINGS) {
+    const entry = source[key];
+    if (entry === undefined) continue;
+    if (!text(entry, 200)) return null;
+    references[key] = entry;
+  }
+  for (const key of PENDING_REFERENCE_NUMBERS) {
+    const entry = source[key];
+    if (entry === undefined) continue;
+    if (typeof entry !== "number" || !Number.isFinite(entry)) return null;
+    references[key] = entry;
+  }
+  return {
+    id: value.id,
+    threadId: value.threadId,
+    guestActorId: value.guestActorId,
+    tenantId: value.tenantId,
+    type: value.type as PendingAssistantAction["type"],
+    authoritativeReferences: references as PendingAssistantAction["authoritativeReferences"],
+    summary: value.summary,
+    createdAt: value.createdAt,
+    expiresAt: value.expiresAt,
+    executed: false,
+  };
+}
+
+export interface PersistedActiveContact {
+  readonly surfaceId: string;
+  readonly kind: "phone" | "email";
+  readonly resumeContext: Readonly<Record<string, string | number | boolean>>;
+}
+
+function parseActiveContact(value: unknown): PersistedActiveContact | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.surfaceId !== "string" || value.surfaceId === "" || value.surfaceId.length > 300) return null;
+  if (value.kind !== "phone" && value.kind !== "email") return null;
+  if (!isRecord(value.resumeContext)) return null;
+  const resumeContext: Record<string, string | number | boolean> = {};
+  for (const [key, entry] of Object.entries(value.resumeContext)) {
+    // Contact values and revisions are never part of the resume context (ADR 0093, 0075).
+    if (key === "contactValue" || key === "expectedRevision" || key.length > 64) return null;
+    if (typeof entry === "string") {
+      if (entry.length > 200) return null;
+      resumeContext[key] = entry;
+    } else if (typeof entry === "number" || typeof entry === "boolean") {
+      resumeContext[key] = entry;
+    } else return null;
+  }
+  return { surfaceId: value.surfaceId, kind: value.kind, resumeContext };
+}
+
+export interface PersistedAssistantContext {
+  readonly city: "Lagos" | "Abuja";
+  readonly neighbourhood?: string;
+  readonly checkIn?: string;
+  /** Provenance for the server-selected fallback date; absent means unknown. */
+  readonly isDemoDate?: boolean;
+  readonly checkOut?: string;
+  readonly nights?: number;
+  readonly partySize?: number;
+  readonly bedrooms?: number;
+  readonly maxBudgetKobo?: number;
+  readonly requiredAmenities?: readonly string[];
+  readonly selectedUnitId?: string;
 }
 
 export function isPersistentTimelineEntry(value: unknown): value is { readonly role: "assistant" | "user" | "receipt"; readonly text: string } {
@@ -53,6 +175,37 @@ function isDraftQuote(value: unknown): value is { readonly allInStayTotalKobo: n
 
 function isUnitDetail(value: unknown): value is { readonly unitId: string; readonly artifactId: string } {
   return isRecord(value) && typeof value.unitId === "string" && typeof value.artifactId === "string";
+}
+
+function parseAssistantContext(value: unknown): PersistedAssistantContext | null {
+  if (!isRecord(value) || (value.city !== "Lagos" && value.city !== "Abuja")) return null;
+  const allowed = new Set(["city", "neighbourhood", "checkIn", "isDemoDate", "checkOut", "nights", "partySize", "bedrooms", "maxBudgetKobo", "requiredAmenities", "selectedUnitId"]);
+  if (Object.keys(value).some((key) => !allowed.has(key))) return null;
+  if (value.neighbourhood !== undefined && (typeof value.neighbourhood !== "string" || value.neighbourhood.length > 100)) return null;
+  if (value.isDemoDate !== undefined && typeof value.isDemoDate !== "boolean") return null;
+  for (const key of ["checkIn", "checkOut"] as const) {
+    const candidate = value[key];
+    if (candidate !== undefined && (typeof candidate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(candidate) || Number.isNaN(Date.parse(`${candidate}T00:00:00Z`)))) return null;
+  }
+  for (const key of ["nights", "partySize", "bedrooms", "maxBudgetKobo"] as const) {
+    const candidate = value[key];
+    if (candidate !== undefined && (typeof candidate !== "number" || !Number.isSafeInteger(candidate) || candidate < (key === "bedrooms" ? 0 : key === "maxBudgetKobo" ? 0 : 1))) return null;
+  }
+  if (value.requiredAmenities !== undefined && (!Array.isArray(value.requiredAmenities) || value.requiredAmenities.length > 16 || !value.requiredAmenities.every((entry) => typeof entry === "string" && /^[A-Za-z0-9_-]{1,48}$/.test(entry)))) return null;
+  if (value.selectedUnitId !== undefined && (typeof value.selectedUnitId !== "string" || value.selectedUnitId.length < 1 || value.selectedUnitId.length > 128)) return null;
+  return {
+    city: value.city,
+    ...(typeof value.neighbourhood === "string" ? { neighbourhood: value.neighbourhood } : {}),
+    ...(typeof value.checkIn === "string" ? { checkIn: value.checkIn } : {}),
+    ...(typeof value.isDemoDate === "boolean" ? { isDemoDate: value.isDemoDate } : {}),
+    ...(typeof value.checkOut === "string" ? { checkOut: value.checkOut } : {}),
+    ...(typeof value.nights === "number" ? { nights: value.nights } : {}),
+    ...(typeof value.partySize === "number" ? { partySize: value.partySize } : {}),
+    ...(typeof value.bedrooms === "number" ? { bedrooms: value.bedrooms } : {}),
+    ...(typeof value.maxBudgetKobo === "number" ? { maxBudgetKobo: value.maxBudgetKobo } : {}),
+    ...(Array.isArray(value.requiredAmenities) ? { requiredAmenities: [...value.requiredAmenities] as string[] } : {}),
+    ...(typeof value.selectedUnitId === "string" ? { selectedUnitId: value.selectedUnitId } : {}),
+  };
 }
 
 function optionalField<T>(value: unknown, parse: (candidate: unknown) => T | null): { readonly valid: boolean; readonly value: T | null } {
@@ -92,6 +245,8 @@ export function parseGuestProjection(value: unknown): GuestPersistentProjection 
   const nullableString = (candidate: unknown): candidate is string | null => candidate === null || typeof candidate === "string";
   if (!nullableString(value.draftId) || !nullableString(value.requestId) || !nullableString(value.offerId)) return null;
   if (!nullableString(value.activeStage) || !nullableString(value.activeSurfaceId)) return null;
+  const discoveryArtifactId = value.discoveryArtifactId === undefined ? null : value.discoveryArtifactId;
+  if (!nullableString(discoveryArtifactId) || discoveryArtifactId?.trim() === "" || (discoveryArtifactId?.length ?? 0) > 200) return null;
   const discoveryContext = parseDiscoverySearchContext(value.discoveryContext);
   if (value.discoveryContext !== undefined && value.discoveryContext !== null && discoveryContext === null) return null;
   const artifact = optionalField(value.discoveryArtifact, isDiscoveryArtifact);
@@ -104,11 +259,26 @@ export function parseGuestProjection(value: unknown): GuestPersistentProjection 
   if (value.searchHistory !== undefined && !Array.isArray(value.searchHistory)) return null;
   const parsedHistory = ((value.searchHistory ?? []) as readonly unknown[]).map(parseDiscoverySearchContext);
   if (parsedHistory.some((entry) => entry === null)) return null;
+  const assistantContextResult = optionalField(value.assistantContext ?? null, parseAssistantContext);
+  if (!assistantContextResult.valid) return null;
+  // Missing in projections written before this field existed; a present but malformed value fails closed.
+  if (value.activeContact !== undefined && value.activeContact !== null && parseActiveContact(value.activeContact) === null) return null;
+  const activeContact = value.activeContact === undefined || value.activeContact === null ? null : parseActiveContact(value.activeContact);
+  // An invalid pending action is read as null: it is not restored, and the rest of the thread still is (issue 03 follow-up).
+  // A missing field reads as null too, as in projections written before these fields existed.
+  const pendingAction = parsePersistedPendingAction(value.pendingAction ?? null);
+  const pendingActionSurfaceId = typeof value.pendingActionSurfaceId === "string" && value.pendingActionSurfaceId.length <= 300 ? value.pendingActionSurfaceId : null;
+  const replacedPendingAction = parsePersistedReplacedProposal(value.replacedPendingAction ?? null);
   return Object.freeze({
+    activeContact,
+    pendingAction,
+    pendingActionSurfaceId,
+    replacedPendingAction,
     version: 1,
     timeline: Object.freeze(value.timeline.map((entry) => Object.freeze({ role: entry.role, text: entry.text }))),
     discoveryContext,
     discoveryArtifact: artifact.value === null ? null : structuredClone(artifact.value),
+    discoveryArtifactId,
     discoverySurfaceId: value.discoverySurfaceId,
     discoveryRevision: value.discoveryRevision,
     unitDetail: unitDetail.value === null ? null : Object.freeze({ ...unitDetail.value }),
@@ -119,5 +289,6 @@ export function parseGuestProjection(value: unknown): GuestPersistentProjection 
     activeStage: value.activeStage,
     activeSurfaceId: value.activeSurfaceId,
     searchHistory: Object.freeze(parsedHistory.filter((entry): entry is DiscoverySearchContext => entry !== null)),
+    assistantContext: assistantContextResult.value,
   });
 }

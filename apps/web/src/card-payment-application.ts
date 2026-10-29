@@ -1,4 +1,4 @@
-import { CardPaymentManager, PeriodPaymentManager, SHORTLET_DOMAIN_ID, type BackOfficePeriodEntry, type BillingPeriodProjection, type CardCheckoutSession, type CardPaymentManagerOptions, type DurablePeriodPaymentRefund, type PeriodReminder, type PeriodVerificationOutcome, type PSPVerifyResult } from "../../../domains/shortlet/src/index.js";
+import { CardPaymentManager, PLATFORM_PSP_REFERENCE_PATTERN, PeriodPaymentManager, SHORTLET_DOMAIN_ID, mintCardPspReference, type BackOfficePeriodEntry, type BillingPeriodProjection, type CardCheckoutSession, type CardPaymentManagerOptions, type DurablePeriodPaymentRefund, type PeriodReminder, type PeriodVerificationOutcome, type PSPVerifyResult } from "../../../domains/shortlet/src/index.js";
 import { isApprovedPaystackCheckoutUrl, type Payments } from "../../../packages/platform-core/src/payments/index.js";
 import { createPlatformCommandEnvelope, type CommandPrincipal, type PlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
 import type { ConditionalOfferApplication } from "./conditional-offer-application.js";
@@ -206,8 +206,12 @@ export class CardPaymentApplication {
     const envelope = createPlatformCommandEnvelope({ commandName: "card_payment.initialize_checkout", principal: trustedPayerPrincipal, payload: { offerId } });
     const existing = this.#manager.getCheckoutSession(offerId);
     if (existing?.status === "initiated" && existing.providerEnvironment !== undefined && isApprovedPaystackCheckoutUrl(existing.checkoutUrl)) return existing;
+    // ADR 0046, 0049: a retry of an attempt that Paystack never accepted (no provider environment) with a legacy reference
+    // takes a platform reference, within the same checkout and Payment Window. A bound or conforming attempt is reused as is.
     const session = existing?.status === "initiated"
-      ? existing
+      ? existing.providerEnvironment === undefined && !PLATFORM_PSP_REFERENCE_PATTERN.test(existing.pspReference)
+        ? this.#manager.remintUnboundCheckoutReference(offerId, mintCardPspReference(envelope.commandId, this.#clock()), this.#clock())
+        : existing
       : this.#manager.initializeCardCheckout(envelope, { clock: this.#clock, reuseExisting: true });
     const started = await payments.start({
       domainId: SHORTLET_DOMAIN_ID,

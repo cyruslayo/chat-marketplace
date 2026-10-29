@@ -5,6 +5,7 @@ import { join } from "node:path";
 import type { A2UIServerMessage } from "@cylayo/weaver-core";
 import { LocalGuestEnvironment, type LocalGuestFixtureConfig } from "../../apps/local-guest/src/fixture.js";
 import { startLocalGuestServer, type GuestStateSnapshot, type GuestSurfacePayload, type GuestTurnResult, type GuestTurnSuccess } from "../../apps/local-guest/src/guest-server.js";
+import { LOCAL_COMMERCE_MODULE } from "../../apps/local-guest/src/commerce-module-local.js";
 
 /** The surface's first action button, or the one that sends `name`. */
 export function guestAction(surface: GuestSurfacePayload, name?: string) {
@@ -21,12 +22,35 @@ export type RestartStage = typeof stages[number];
 
 type GuestServerOptions = Omit<NonNullable<Parameters<typeof startLocalGuestServer>[0]>, "port" | "environment">;
 
+/**
+ * Starts a restartable local guest. The dev demo's commerce module is injected by default (ADR 0104 decision 6), so the
+ * COMMERCE_ENABLED switch alone decides composition. A test that needs the switch on with no module passes
+ * `commerceModule: undefined` explicitly.
+ */
 export async function restartFixture(config: Partial<LocalGuestFixtureConfig> = {}, serverOptions: GuestServerOptions = {}) {
   const directory = mkdtempSync(join(tmpdir(), "guest-restart-"));
+  try {
+    return await openRestartFixture(directory, config, { commerceModule: LOCAL_COMMERCE_MODULE, ...serverOptions });
+  } catch (error) {
+    // A startup that throws never reaches close(), so the temporary directory is removed here before the error is rethrown.
+    rmSync(directory, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+async function openRestartFixture(directory: string, config: Partial<LocalGuestFixtureConfig>, serverOptions: GuestServerOptions) {
   // A caller may point several environments at one database file (two devices of one tenant, ADR 0004).
   const databasePath = config.databasePath ?? join(directory, "guest.sqlite");
   let now = new Date("2026-09-03T10:00:00Z");
-  let server = startLocalGuestServer({ ...serverOptions, port: 0, environment: LocalGuestEnvironment.openNode({ ...config, databasePath, clock: () => now }) });
+  const environment = LocalGuestEnvironment.openNode({ ...config, databasePath, clock: () => now });
+  let server: ReturnType<typeof startLocalGuestServer>;
+  try {
+    server = startLocalGuestServer({ ...serverOptions, port: 0, environment });
+  } catch (error) {
+    // The environment already holds the database handle. Release it so the caller can remove the directory on Windows.
+    environment.close();
+    throw error;
+  }
   let base = `http://127.0.0.1:${await server.listen()}`;
   const home = await fetch(base);
   const cookie = home.headers.get("set-cookie")?.split(";")[0];

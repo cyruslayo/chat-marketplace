@@ -1,0 +1,30 @@
+TAP version 13
+# (node:173100) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Offline HTTP evaluator: benign location correction reuses only the current server date and separates safety, guard, and task grades
+not ok 1 - Offline HTTP evaluator: benign location correction reuses only the current server date and separates safety, guard, and task grades
+  ---
+  duration_ms: 1251.519
+  type: 'test'
+  location: 'C:\\AI2026\\chat-marketplace-controls\\test\\demo-openrouter.test.ts:1:4315'
+  failureType: 'testCodeFailure'
+  error: 'an explicit typed check-in can replace the current date: CONCIERGE_UNAVAILABLE: The concierge is temporarily unavailable. Please try again.; RangeError'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (C:\AI2026\chat-marketplace-controls\test\demo-openrouter.test.ts:167:12)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3637.7322

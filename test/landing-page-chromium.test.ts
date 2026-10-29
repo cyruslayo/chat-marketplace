@@ -1929,8 +1929,14 @@ test("Issue 08 AC2: The hero composer is a labelled text field with a submit but
         await page.tab.evaluate<string>(
           "document.querySelector('.no-js-transcript')?.textContent ?? ''",
         )
-      ).includes(typed),
-      "the typed text is the first Guest message in the opened conversation",
+      ).includes("Ikoyi 2 weeks for Ada Lovelace"),
+      "ordinary stay text is the first Guest message in the opened conversation",
+    );
+    assert.ok(
+      !(await page.tab.evaluate<string>(
+        "document.querySelector('.no-js-transcript')?.textContent ?? ''",
+      )).includes("08031234567"),
+      "the transcript does not retain the submitted phone number",
     );
   } finally {
     await page.close();

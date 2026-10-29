@@ -19,6 +19,7 @@ declare module "*.json?raw" {
 /** Test-runtime bindings (`wrangler.test.jsonc`). The deployable shape is `CloudflareEnv` in cloudflare-config.ts. */
 declare namespace Cloudflare {
   interface Env {
+    SHORTLET_TENANT_ID: string;
     TEST_HARNESS: import("@cloudflare/workers-types").DurableObjectNamespace<
       import("./test-harness-do.js").TestHarnessDO
     >;
@@ -37,7 +38,9 @@ declare namespace Cloudflare {
     RECEIPTS: import("@cloudflare/workers-types").R2Bucket;
     EXPORTS: import("@cloudflare/workers-types").R2Bucket;
     ASSETS: import("@cloudflare/workers-types").Fetcher;
-    COMMERCE_REFERENCE_HMAC_KEY: string;
-    COMMERCE_REFERENCE_HMAC_KEY_ID: string;
+    /** ADR 0104 decision 5: the one switch; the key pair below is required only while it is "true". */
+    COMMERCE_ENABLED?: string;
+    COMMERCE_REFERENCE_HMAC_KEY?: string;
+    COMMERCE_REFERENCE_HMAC_KEY_ID?: string;
   }
 }

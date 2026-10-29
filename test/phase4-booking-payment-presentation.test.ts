@@ -219,3 +219,18 @@ test("Payment artifact cannot present browser checkout completion as confirmed w
   const artifact = cardPaymentArtifactFromState({ offer, viewer: { id: "guest-1", role: "guest", tenantId: "tenant-1" }, session: { checkoutId: "checkout-1", offerId: "offer-1", status: "completed", checkoutUrl: "https://checkout.paystack.com/example", pspReference: "ref-1", totalAmountDueNowKobo: 10000, amountKobo: 10000, currency: "NGN", expiresAt: "2026-09-24T19:30:00.000Z", purpose: "stay", contactEmail: "guest@example.com" }, now: new Date("2026-09-24T19:05:00.000Z") });
   assert.notEqual(artifact.facts.status, "confirmed");
 });
+
+test("A payment artifact for an offer that is not accepted is never shown as ready to pay", () => {
+  const base = { offerId: "offer-1", unitId: "unit-1", unit: { title: "Garden Stay" }, dates: { checkIn: "2026-09-24", checkOut: "2026-09-27" }, totalAmountDueNowKobo: 10000, refundableSecurityDepositKobo: 0, quote: { allInStayTotalKobo: 10000 }, paymentWindow: { expiresAt: "2026-09-24T19:30:00.000Z" }, parties: { primaryGuest: { id: "guest-1", name: "Ada" } } };
+  const viewer = { id: "guest-1", role: "guest" as const, tenantId: "tenant-1" };
+  const now = new Date("2026-09-24T10:00:00.000Z");
+  for (const status of ["issued", "stale", "revoked"]) {
+    const artifact = cardPaymentArtifactFromState({ offer: { ...base, status }, viewer: { ...viewer, tenantId: "tenant-1" }, now });
+    assert.notEqual(artifact.facts.status, "ready", `a ${status} offer is not payable`);
+    assert.deepEqual(artifact.actions, [], `a ${status} offer offers no checkout action`);
+  }
+  const accepted = cardPaymentArtifactFromState({ offer: { ...base, status: "accepted", tenantId: "tenant-1" } as never, viewer, now });
+  assert.equal(accepted.facts.status, "ready", "an accepted offer inside its window stays payable");
+  const expired = cardPaymentArtifactFromState({ offer: { ...base, status: "expired", tenantId: "tenant-1" } as never, viewer, now });
+  assert.equal(expired.facts.status, "expired", "an expired offer reports the expired state");
+});

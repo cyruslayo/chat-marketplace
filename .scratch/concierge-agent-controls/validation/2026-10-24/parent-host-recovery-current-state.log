@@ -1,0 +1,86 @@
+TAP version 13
+# (node:87092) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC4: exhaustion, provider refusal, and guard outage preserve authenticated deterministic pending decisions
+    # Subtest: quota: Yes
+    ok 1 - quota: Yes
+      ---
+      duration_ms: 2907.9494
+      type: 'test'
+      ...
+    # Subtest: quota: Cancel
+    ok 2 - quota: Cancel
+      ---
+      duration_ms: 3011.9114
+      type: 'test'
+      ...
+    # Subtest: storage: Yes
+    ok 3 - storage: Yes
+      ---
+      duration_ms: 1242.0895
+      type: 'test'
+      ...
+    # Subtest: storage: Cancel
+    ok 4 - storage: Cancel
+      ---
+      duration_ms: 930.8572
+      type: 'test'
+      ...
+    # Subtest: provider: Yes
+    ok 5 - provider: Yes
+      ---
+      duration_ms: 1069.0527
+      type: 'test'
+      ...
+    # Subtest: provider: Cancel
+    ok 6 - provider: Cancel
+      ---
+      duration_ms: 946.8153
+      type: 'test'
+      ...
+    1..6
+ok 1 - AC4: exhaustion, provider refusal, and guard outage preserve authenticated deterministic pending decisions
+  ---
+  duration_ms: 10116.7615
+  type: 'test'
+  ...
+# Subtest: AC4: exhaustion, provider refusal, and guard outage preserve authorized conventional discovery and draft routes
+    # Subtest: healthy
+    ok 1 - healthy
+      ---
+      duration_ms: 1027.5963
+      type: 'test'
+      ...
+    # Subtest: quota
+    ok 2 - quota
+      ---
+      duration_ms: 1986.3945
+      type: 'test'
+      ...
+    # Subtest: storage
+    ok 3 - storage
+      ---
+      duration_ms: 970.734
+      type: 'test'
+      ...
+    # Subtest: provider
+    ok 4 - provider
+      ---
+      duration_ms: 1014.7354
+      type: 'test'
+      ...
+    1..4
+ok 2 - AC4: exhaustion, provider refusal, and guard outage preserve authorized conventional discovery and draft routes
+  ---
+  duration_ms: 5002.6819
+  type: 'test'
+  ...
+1..2
+# tests 12
+# suites 0
+# pass 12
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 18690.2179

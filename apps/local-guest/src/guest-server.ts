@@ -28,17 +28,13 @@ import { billingPeriodStatusText, extendedStayUnitFacts } from "../../web-agent/
 import { formatBookingMoney } from "../../web-agent/src/booking-presentation.js";
 import { formatGuestDate } from "../../web-agent/src/guest-content.js";
 import type { BillingPeriodProjection } from "../../../domains/shortlet/src/index.js";
-import { createGuestShell, type StaticAsset } from "./guest-shell.js";
-import { createCommerceRouteModule } from "./commerce-route-module.js";
+import { createGuestShell, type RouteModule, type StaticAsset } from "./guest-shell.js";
+import type { GuestCommerceModule, PaymentReferenceKeys } from "./commerce-port.js";
 import { MAX_TURN_TEXT_LENGTH } from "./turn-limits.js";
 import { createLandingRouteModule } from "./landing-route-module.js";
 import { nodeLandingAssetLoader } from "./node-landing-assets.js";
 import type { LandingBinaryAssetLoader } from "./landing-assets.js";
-import {
-  createCommercePack,
-  type PaymentReferenceKeys,
-} from "../../../domains/commerce/src/index.js";
-import { commerceReferenceKeysFromProcessEnv } from "./commerce-reference-keys-local.js";
+import { commerceEnabledFromEnv } from "../../../packages/commerce-switch/src/commerce-switch.js";
 import { applySchemaMigrations } from "../../../packages/platform-core/src/schema-migrations.js";
 import {
   discoveryArtifactToA2UI,
@@ -213,9 +209,11 @@ import {
 import {
   DirectPaystackClient,
   PaystackPayments,
+  PaystackProviderFailure,
   isApprovedPaystackCheckoutUrl,
   loadPaystackConfiguration,
   type PaystackClient,
+  type PaystackProviderStatusClass,
   type Payments,
 } from "../../../packages/platform-core/src/payments/index.js";
 import {
@@ -244,6 +242,7 @@ import {
 } from "./gemini-concierge.js";
 import type { Content } from "@google/genai";
 import { AssistantRuntime } from "./assistant/assistant-runtime.js";
+import { createShortletAssistantPack } from "./assistant/shortlet-assistant-pack.js";
 import type { AssistantDomainPack } from "./assistant/assistant-platform.js";
 import { ScriptedAssistantModel } from "./assistant/scripted-assistant-model.js";
 import {
@@ -255,6 +254,11 @@ import {
   type ModelCallBudget,
 } from "./assistant/model-call-budget.js";
 import type { AssistantModelClient } from "./assistant/assistant-model.js";
+import type { AssistantDiagnosticEvent } from "./assistant/assistant-runtime.js";
+import type { AssistantTurnRecord } from "./assistant/assistant-turn-record.js";
+import { SqliteModelRequestQuota, type ModelRequestQuotaPort } from "../../../packages/platform-core/src/model-request-quota.js";
+import { modelRequestQuotaLimitsFromEnvironment } from "../../../packages/platform-core/src/model-request-quota-config.js";
+import { ModelQuotaGuardClient } from "./assistant/model-quota-guard.js";
 import {
   ASSISTANT_CONFIRM_ACTION_EVENT,
   ASSISTANT_CANCEL_ACTION_EVENT,
@@ -309,6 +313,7 @@ import {
 } from "./guest-account-pages.js";
 
 export * from "./shortlet-app.js";
+import type { CardCheckoutFailedEvent } from "./shortlet-app.js";
 import {
   committedWorkScope,
   ConventionalBookingPage,
@@ -2176,16 +2181,39 @@ export const GUEST_COMMERCE_COMPOSITION = {
 } as const;
 export type GuestCommerceComposition =
   (typeof GUEST_COMMERCE_COMPOSITION)[keyof typeof GUEST_COMMERCE_COMPOSITION];
-export const DEFAULT_GUEST_COMMERCE_COMPOSITION: GuestCommerceComposition =
-  GUEST_COMMERCE_COMPOSITION.local;
+/**
+ * The default composition follows the single commerce switch (ADR 0104). Off unless COMMERCE_ENABLED is exactly "true".
+ * An unrecognised switch value throws here, at startup, and names the variable. Hosts that pass no environment (Workers)
+ * read no process environment and so take "disabled".
+ */
+function defaultGuestCommerceComposition(): GuestCommerceComposition {
+  const env: Readonly<Record<string, string | undefined>> =
+    typeof process === "undefined" ? {} : process.env;
+  return commerceEnabledFromEnv(env)
+    ? GUEST_COMMERCE_COMPOSITION.local
+    : GUEST_COMMERCE_COMPOSITION.disabled;
+}
 /** The commerce pack's domain id (domains/commerce/src/index.ts), which the disabled composition refuses. */
 const COMMERCE_DOMAIN_PACK_ID = "commerce";
 
-/** Fails closed: a missing value takes the default; any other value that is not a known composition throws. */
+/**
+ * Fails closed: the local composition needs the commerce module from its composition root (ADR 0104 decision 6). The
+ * message names the variable and never echoes a value.
+ */
+function requireCommerceModule(module: GuestCommerceModule | undefined): GuestCommerceModule {
+  if (module === undefined) {
+    throw new Error(
+      'COMMERCE_ENABLED is on, but no commerce module is injected: commerce composition "local" needs the commerce module from its composition root (ADR 0104 decision 6). The guest server refuses to start without it.',
+    );
+  }
+  return module;
+}
+
+/** Fails closed: a missing value takes the switch-driven default; any other value that is not a known composition throws. */
 function resolveGuestCommerceComposition(
   value: unknown,
 ): GuestCommerceComposition {
-  if (value === undefined) return DEFAULT_GUEST_COMMERCE_COMPOSITION;
+  if (value === undefined) return defaultGuestCommerceComposition();
   if (
     value === GUEST_COMMERCE_COMPOSITION.local ||
     value === GUEST_COMMERCE_COMPOSITION.disabled
@@ -2194,12 +2222,54 @@ function resolveGuestCommerceComposition(
   throw new Error('commerce must be "local" or "disabled"');
 }
 
+/**
+ * Closed reasons for a rejected payment continuation (`/payments/offers/:id/continue`). The page shows one generic
+ * message; the host sees only this reason (ADR 0075: no offer id, URL, reference, contact or provider text).
+ */
+export type PaymentContinuationRejectionReason =
+  | "offer_not_accepted"
+  | "contact_missing"
+  | "payment_window_closed"
+  | "provider_start_failed"
+  | "unclassified";
+
+export interface PaymentContinuationRejectedEvent {
+  readonly code: "PAYMENT_CONTINUATION_REJECTED";
+  readonly reason: PaymentContinuationRejectionReason;
+  /** The closed HTTP-status class of a Paystack rejection. Present only with reason "provider_start_failed" (ADR 0075). */
+  readonly statusClass?: PaystackProviderStatusClass;
+}
+
+/** The closed status class of a rejected Paystack start, when the thrown error is that rejection (ADR 0075). */
+export function paymentContinuationProviderStatusClass(error: unknown): PaystackProviderStatusClass | undefined {
+  return error instanceof PaystackProviderFailure && error.reason === "provider_rejected" ? error.statusClass : undefined;
+}
+
+/** Maps a thrown continuation error to its closed reason. Only the domain's fixed messages are matched. */
+export function paymentContinuationRejectionReason(error: unknown): PaymentContinuationRejectionReason {
+  const message = error instanceof Error ? error.message : "";
+  if (/Checkout initialization requires an accepted offer|not accepted|Only the authoritative payer/i.test(message)) return "offer_not_accepted";
+  if (/phone number is required|email address is required/i.test(message)) return "contact_missing";
+  if (/Payment window has expired/i.test(message)) return "payment_window_closed";
+  if (/Paystack/i.test(message)) return "provider_start_failed";
+  return "unclassified";
+}
+
 export interface GuestRequestHandlerOptions {
-  /** Payment reference keys for the commerce pack (user decision 18 Oct 2026). Omitted: read from the environment (see commerce-reference-keys-local). */
+  /** Metadata-only observation of a rejected payment continuation (closed reason; ADR 0075). */
+  onPaymentContinuationRejected?: (event: PaymentContinuationRejectedEvent) => void;
+  /** Metadata-only observation of a failed chat card start (closed reason; ADR 0075). */
+  onCardCheckoutFailed?: (event: CardCheckoutFailedEvent) => void;
+  /** Payment reference keys for the commerce pack (user decision 18 Oct 2026). Omitted: the injected module reads them from the environment. */
   paymentReferenceKeys?: PaymentReferenceKeys;
   environment?: LocalGuestEnvironment;
-  /** Commerce composition on this handler's database. Default: "local". The Shortlet Worker passes "disabled" (ADR 0101). */
+  /** Commerce composition on this handler's database. Default: "local" only when COMMERCE_ENABLED is "true", otherwise "disabled" (ADR 0104). The Shortlet Worker passes "disabled" (ADR 0101). */
   commerce?: GuestCommerceComposition;
+  /**
+   * The commerce domain, injected by a composition root that ships commerce (ADR 0104 decision 6). Default: none. With the
+   * composition "local" and no module, the handler refuses to start. With the composition "disabled" the module is unused.
+   */
+  commerceModule?: GuestCommerceModule;
   clientScriptPath?: string;
   /** Slice 09a: the bundles/CSS the handler serves; the Node default is `nodeAssetLoader()` (no import-time reads). */
   assets?: AssetLoader;
@@ -2209,6 +2279,12 @@ export interface GuestRequestHandlerOptions {
   landingBinaryAssets?: LandingBinaryAssetLoader;
   geminiClient?: GeminiConciergeClient;
   modelClient?: AssistantModelClient;
+  /** Metadata-only observation for local evaluation and host telemetry. */
+  onAssistantDiagnostic?: (event: AssistantDiagnosticEvent) => void;
+  /** Issue 05: one allow-listed record per assistant turn, passed to every AssistantRuntime this handler builds. */
+  onAssistantTurn?: (record: AssistantTurnRecord) => void;
+  /** Issue 05: the configured primary model id for `gen_ai.request.model`. Hosts that pass `modelClient` supply it. */
+  assistantModelName?: string;
   conciergeMode?:
     | "deterministic"
     | "gemini"
@@ -2236,6 +2312,8 @@ export interface GuestRequestHandlerOptions {
   fixtureRoutes?: boolean;
   /** Issue 19: daily cap on model calls; when it is spent, turns use the deterministic concierge. */
   modelCallBudget?: ModelCallBudget;
+  /** Shared platform-owned per-provider-attempt quota authority. */
+  modelRequestQuota?: ModelRequestQuotaPort;
   /** Slice 26: extra domain packs registered with the assistant runtime (multi-domain shell). */
   additionalPacks?: readonly AssistantDomainPack[];
   /** Issue 19: a session's runtime (environment, SQLite connection, assistant memory) is closed after this idle time. */
@@ -2285,6 +2363,11 @@ export function createGuestRequestHandler(
     );
   }
   const commerceComposition = resolveGuestCommerceComposition(options.commerce);
+  // ADR 0104 decision 6: a composition that is on needs the injected module. Fail closed here, before any state is opened.
+  const commerceModule =
+    commerceComposition === GUEST_COMMERCE_COMPOSITION.local
+      ? requireCommerceModule(options.commerceModule)
+      : undefined;
   // ADR 0101: a handler that composes no commerce must not be given the commerce pack either.
   if (
     commerceComposition === GUEST_COMMERCE_COMPOSITION.disabled &&
@@ -2345,32 +2428,56 @@ export function createGuestRequestHandler(
     (paystackClient === undefined
       ? undefined
       : new PaystackPayments({ card: paystackClient }));
+  const modelRequestQuota = options.modelRequestQuota ?? (mode === "gemini" || mode === "openai-compatible"
+    ? new SqliteModelRequestQuota(env.database, modelRequestQuotaLimitsFromEnvironment(process.env))
+    : undefined);
+  const quotaGuard = (client: AssistantModelClient, runtimeEnvironment: LocalGuestEnvironment): AssistantModelClient => modelRequestQuota
+    ? new ModelQuotaGuardClient(
+      client,
+      modelRequestQuota,
+      { tenantId: runtimeEnvironment.config.tenantId, guestId: runtimeEnvironment.guestPrincipal().id },
+    )
+    : client;
 
   let assistantRuntime: AssistantRuntime | undefined;
   let assistantModelClient: AssistantModelClient | undefined;
   let geminiClient: GeminiConciergeClient | undefined;
+  // Issue 05: the model id the turn record names. A host that injects `modelClient` supplies it; otherwise it is the environment's.
+  let assistantModelName: string | undefined = options.assistantModelName;
 
   if (mode === "assistant-offline") {
     assistantModelClient = options.modelClient ?? new ScriptedAssistantModel();
     assistantRuntime = new AssistantRuntime(env, assistantModelClient, {
+      // ADR 0099 section 6: the host (this composition root) supplies the Shortlet pack.
+      packs: [createShortletAssistantPack(env)],
       additionalPacks: options.additionalPacks,
+      onDiagnostic: options.onAssistantDiagnostic,
+      onTurnRecord: options.onAssistantTurn,
+      modelName: assistantModelName,
     });
   } else if (mode === "gemini" || mode === "openai-compatible") {
     // The production pilot passes a validated client; development commands read the same settings from the environment.
+    const configuredConcierge = options.modelClient ? undefined : loadConciergeConfiguration({ ...process.env, CONCIERGE_MODE: mode });
     assistantModelClient =
       options.modelClient ??
-      createConciergeModelClient(
-        loadConciergeConfiguration({ ...process.env, CONCIERGE_MODE: mode }),
-      );
+      (configuredConcierge && createConciergeModelClient(configuredConcierge));
+    assistantModelName ??= configuredConcierge?.primary?.model;
     if (!assistantModelClient)
       throw new Error(`CONCIERGE_MODE=${mode} requires a model client`);
+    if (production && (!modelRequestQuota || assistantModelClient.supportsProviderAttemptReservation !== true))
+      throw new Error("Production model use requires persistent quota storage and an attempt-aware adapter");
     if (options.modelCallBudget)
       assistantModelClient = new BudgetedModelClient(
         assistantModelClient,
         options.modelCallBudget,
       );
-    assistantRuntime = new AssistantRuntime(env, assistantModelClient, {
+    const guardedModelClient = quotaGuard(assistantModelClient, env);
+    assistantRuntime = new AssistantRuntime(env, guardedModelClient, {
+      packs: [createShortletAssistantPack(env)],
       additionalPacks: options.additionalPacks,
+      onDiagnostic: options.onAssistantDiagnostic,
+      onTurnRecord: options.onAssistantTurn,
+      modelName: assistantModelName,
     });
   }
   const modelCallBudget = options.modelCallBudget
@@ -2381,6 +2488,7 @@ export function createGuestRequestHandler(
     geminiClient,
     assistantRuntime,
     ...modelCallBudget,
+    ...(options.onCardCheckoutFailed === undefined ? {} : { onCardCheckoutFailed: options.onCardCheckoutFailed }),
   });
   // Guest Account sign-in (issue 06). Disabled, not defaulted, when its key, sender or session scoping is missing.
   const accountComposition =
@@ -2430,10 +2538,13 @@ export function createGuestRequestHandler(
   let sessionRuntimesBuilt = 0;
   // Durable state lives in SQLite, so an evicted session's runtime is rebuilt on its next request, exactly as after a
   // restart. Only the in-memory assistant conversation is lost.
+  // Issue 06 (ADR 0070): a runtime with a run in flight is never evicted, idle or least recently used. Its run commits into that
+  // runtime, so closing it would let the run finish against state the store no longer matches.
   const evictIdleRuntimes = (nowMs: number): void => {
     if (sessionRuntimeIdleMs === null) return;
     for (const [key, runtime] of sessionRuntimes) {
       if (nowMs - runtime.lastUsedMs < sessionRuntimeIdleMs) continue;
+      if (runtime.app.hasRunInFlight()) continue;
       sessionRuntimes.delete(key);
       runtime.environment.close();
     }
@@ -2457,12 +2568,13 @@ export function createGuestRequestHandler(
       return existing;
     }
     if (sessionRuntimeLimit !== null) {
-      while (sessionRuntimes.size >= sessionRuntimeLimit) {
-        const [leastRecentlyUsedKey, leastRecentlyUsed] = sessionRuntimes
-          .entries()
-          .next().value!;
-        sessionRuntimes.delete(leastRecentlyUsedKey);
-        leastRecentlyUsed.environment.close();
+      // Least recently used first. A runtime with a run in flight is skipped; when every resident runtime is busy the cap is
+      // exceeded for this request rather than closing a run (issue 06).
+      for (const [key, candidate] of [...sessionRuntimes]) {
+        if (sessionRuntimes.size < sessionRuntimeLimit) break;
+        if (candidate.app.hasRunInFlight()) continue;
+        sessionRuntimes.delete(key);
+        candidate.environment.close();
       }
     }
     // ADR 0004: every session runtime shares the live environment's one handle and inventory. Closing a runtime
@@ -2489,12 +2601,13 @@ export function createGuestRequestHandler(
     const runtime = {
       environment: runtimeEnvironment,
       app: new LocalGuestApp(runtimeEnvironment, {
+        ...(options.onCardCheckoutFailed === undefined ? {} : { onCardCheckoutFailed: options.onCardCheckoutFailed }),
         ...(assistantModelClient
           ? {
               assistantRuntime: new AssistantRuntime(
                 runtimeEnvironment,
-                assistantModelClient,
-                { additionalPacks: options.additionalPacks },
+                quotaGuard(assistantModelClient, runtimeEnvironment),
+                { packs: [createShortletAssistantPack(runtimeEnvironment)], additionalPacks: options.additionalPacks, onDiagnostic: options.onAssistantDiagnostic, onTurnRecord: options.onAssistantTurn, modelName: assistantModelName },
               ),
             }
           : {}),
@@ -4626,7 +4739,14 @@ export function createGuestRequestHandler(
         }
         res.writeHead(303, { Location: checkout.checkoutUrl });
         res.end();
-      } catch {
+      } catch (error) {
+        const reason = paymentContinuationRejectionReason(error);
+        const statusClass = reason === "provider_start_failed" ? paymentContinuationProviderStatusClass(error) : undefined;
+        options.onPaymentContinuationRejected?.({
+          code: "PAYMENT_CONTINUATION_REJECTED",
+          reason,
+          ...(statusClass === undefined ? {} : { statusClass }),
+        });
         sendPageError(req, res, 400, "PAYMENT_CONTINUATION_REJECTED");
       }
       return;
@@ -5461,23 +5581,20 @@ export function createGuestRequestHandler(
 
   // Local composition only. Commerce public routes read the tracking-attempts table, which only the commerce migrations
   // create (issue 27). The Shortlet Worker passes commerce: "disabled", so its object never runs the commerce ledger (ADR 0101).
-  const commerceRouteModules: ReturnType<typeof createCommerceRouteModule>[] =
-    [];
-  if (commerceComposition === GUEST_COMMERCE_COMPOSITION.local) {
+  const commerceRouteModules: RouteModule[] = [];
+  if (commerceModule !== undefined) {
     const commerceClock = () => defaultApp.environment.clock();
-    const commercePack = createCommercePack({
+    const commerce = commerceModule.compose({
       database: defaultApp.environment.database,
       clock: commerceClock,
-      paymentReferenceKeys:
-        options.paymentReferenceKeys ??
-        commerceReferenceKeysFromProcessEnv(process.env, process.env.NODE_ENV),
+      paymentReferenceKeys: options.paymentReferenceKeys,
     });
     applySchemaMigrations(
       defaultApp.environment.database,
-      commercePack.migrations,
+      commerce.migrations,
       commerceClock().toISOString(),
     );
-    commerceRouteModules.push(createCommerceRouteModule(commercePack));
+    commerceRouteModules.push(commerce.routeModule);
   }
   const shell = createGuestShell({
     assets,

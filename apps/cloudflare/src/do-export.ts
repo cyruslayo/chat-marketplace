@@ -69,6 +69,8 @@ export const SHORTLET_EXPORT_TABLES = [
 /** ADR 0101 platform-owned records. Credential exclusions remain excluded from both per-object exports. */
 export const PLATFORM_EXPORT_TABLES = [
   "audit_log",
+  "model_request_guest_reservations",
+  "model_request_tenant_daily",
   "guest_account_rate_events",
   "guest_accounts",
   "guest_account_principals",

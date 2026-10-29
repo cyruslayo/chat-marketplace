@@ -1,0 +1,332 @@
+TAP version 13
+# Subtest: A matching browser is attached to: nothing is cleaned up, and the reported version is returned
+ok 1 - A matching browser is attached to: nothing is cleaned up, and the reported version is returned
+  ---
+  duration_ms: 134.4766
+  type: 'test'
+  ...
+# Subtest: A network error on /json/version runs the cleanup once and is rethrown
+ok 2 - A network error on /json/version runs the cleanup once and is rethrown
+  ---
+  duration_ms: 3.5832
+  type: 'test'
+  ...
+# Subtest: A non-OK status runs the cleanup once and is rethrown
+ok 3 - A non-OK status runs the cleanup once and is rethrown
+  ---
+  duration_ms: 1.8151
+  type: 'test'
+  ...
+# Subtest: Unreadable JSON runs the cleanup once and is rethrown
+ok 4 - Unreadable JSON runs the cleanup once and is rethrown
+  ---
+  duration_ms: 3.1033
+  type: 'test'
+  ...
+# Subtest: A different browser on the port runs the cleanup once and is rethrown
+ok 5 - A different browser on the port runs the cleanup once and is rethrown
+  ---
+  duration_ms: 3.8892
+  type: 'test'
+  ...
+# Subtest: A rejected browser endpoint does not disclose its path, query, or fragment
+ok 6 - A rejected browser endpoint does not disclose its path, query, or fragment
+  ---
+  duration_ms: 3.7488
+  type: 'test'
+  ...
+# Subtest: A stalled DevTools fetch aborts within its bound and runs cleanup once
+ok 7 - A stalled DevTools fetch aborts within its bound and runs cleanup once
+  ---
+  duration_ms: 35.6373
+  type: 'test'
+  ...
+# Subtest: A stalled DevTools JSON body is bounded and runs cleanup once
+ok 8 - A stalled DevTools JSON body is bounded and runs cleanup once
+  ---
+  duration_ms: 25.1944
+  type: 'test'
+  ...
+# Subtest: Fetch and JSON timeouts await asynchronous cleanup before rejecting once
+ok 9 - Fetch and JSON timeouts await asynchronous cleanup before rejecting once
+  ---
+  duration_ms: 95.0314
+  type: 'test'
+  ...
+# Subtest: Owned-browser termination waits for the launched process to exit
+ok 10 - Owned-browser termination waits for the launched process to exit
+  ---
+  duration_ms: 68.3249
+  type: 'test'
+  ...
+# Subtest: PID reuse and missing inspection produce zero process signals
+ok 11 - PID reuse and missing inspection produce zero process signals
+  ---
+  duration_ms: 2.3268
+  type: 'test'
+  ...
+# Subtest: Every verified profile owner is signalled after the full owner set passes inspection
+ok 12 - Every verified profile owner is signalled after the full owner set passes inspection
+  ---
+  duration_ms: 2.0537
+  type: 'test'
+  ...
+# Subtest: An unverified child profile owner blocks every signal
+ok 13 - An unverified child profile owner blocks every signal
+  ---
+  duration_ms: 1.4252
+  type: 'test'
+  ...
+# Subtest: A remaining profile child retains the cleanup lock after root exit
+ok 14 - A remaining profile child retains the cleanup lock after root exit
+  ---
+  duration_ms: 110.2905
+  type: 'test'
+  ...
+# Subtest: A missing child exit event releases only after CIM confirms zero profile owners
+ok 15 - A missing child exit event releases only after CIM confirms zero profile owners
+  ---
+  duration_ms: 1.5327
+  type: 'test'
+  ...
+# Subtest: Windows CIM reads exact profile arguments with and without spaces
+ok 16 - Windows CIM reads exact profile arguments with and without spaces
+  ---
+  duration_ms: 9454.0932
+  type: 'test'
+  ...
+# Subtest: Windows CIM includes same-executable descendants without their own profile argument
+ok 17 - Windows CIM includes same-executable descendants without their own profile argument
+  ---
+  duration_ms: 4804.3645
+  type: 'test'
+  ...
+# Subtest: The lock records its holder's PID and start time in the owner file
+ok 18 - The lock records its holder's PID and start time in the owner file
+  ---
+  duration_ms: 78.1285
+  type: 'test'
+  ...
+# Subtest: A cleanup failure poisons the live lock and blocks the next browser file immediately
+ok 19 - A cleanup failure poisons the live lock and blocks the next browser file immediately
+  ---
+  duration_ms: 217.8076
+  type: 'test'
+  ...
+# Subtest: A dead poisoned lock is recovered only after its recorded browser profile has no owners
+ok 20 - A dead poisoned lock is recovered only after its recorded browser profile has no owners
+  ---
+  duration_ms: 12457.9944
+  type: 'test'
+  ...
+# Subtest: A lock whose holder PID is no longer running is taken over, and the takeover is logged
+ok 21 - A lock whose holder PID is no longer running is taken over, and the takeover is logged
+  ---
+  duration_ms: 238.9966
+  type: 'test'
+  ...
+# Subtest: A wait for a live holder is bounded: it fails naming the lock path and the holder's PID and start time
+ok 22 - A wait for a live holder is bounded: it fails naming the lock path and the holder's PID and start time
+  ---
+  duration_ms: 339.2489
+  type: 'test'
+  ...
+# Subtest: A fresh lock directory without an owner record is not reclaimed
+ok 23 - A fresh lock directory without an owner record is not reclaimed
+  ---
+  duration_ms: 246.2765
+  type: 'test'
+  ...
+# Subtest: A stale unowned lock directory is reclaimed
+ok 24 - A stale unowned lock directory is reclaimed
+  ---
+  duration_ms: 44.297
+  type: 'test'
+  ...
+# Subtest: A live holder is not evicted when its owner file has an old heartbeat
+ok 25 - A live holder is not evicted when its owner file has an old heartbeat
+  ---
+  duration_ms: 224.709
+  type: 'test'
+  ...
+# Subtest: An old release cannot remove a replacement owner's lock
+ok 26 - An old release cannot remove a replacement owner's lock
+  ---
+  duration_ms: 96.8123
+  type: 'test'
+  ...
+# Subtest: A delayed stale observation cannot remove a newly acquired lock
+ok 27 - A delayed stale observation cannot remove a newly acquired lock
+  ---
+  duration_ms: 492.1303
+  type: 'test'
+  ...
+# Subtest: The default wait bound is a few minutes, longer than any single browser test
+ok 28 - The default wait bound is a few minutes, longer than any single browser test
+  ---
+  duration_ms: 0.8437
+  type: 'test'
+  ...
+# Subtest: The stale threshold is 30 s or more, above any browser test's synchronous work
+ok 29 - The stale threshold is 30 s or more, above any browser test's synchronous work
+  ---
+  duration_ms: 5.9993
+  type: 'test'
+  ...
+# Subtest: Two waiters on one stale lock: exactly one takes it over, and the other waits until the first releases
+ok 30 - Two waiters on one stale lock: exactly one takes it over, and the other waits until the first releases
+  ---
+  duration_ms: 732.3895
+  type: 'test'
+  ...
+# Subtest: Competing processes serialize stale-lock takeover and hold intervals
+ok 31 - Competing processes serialize stale-lock takeover and hold intervals
+  ---
+  duration_ms: 1348.9674
+  type: 'test'
+  ...
+# Subtest: parseTapSummary reads the last summary of each counter from a file's output
+ok 32 - parseTapSummary reads the last summary of each counter from a file's output
+  ---
+  duration_ms: 13.025
+  type: 'test'
+  ...
+# Subtest: parseTapSummary returns undefined when a file printed no summary (a crash)
+ok 33 - parseTapSummary returns undefined when a file printed no summary (a crash)
+  ---
+  duration_ms: 0.7844
+  type: 'test'
+  ...
+# Subtest: A file's status is passed only when it exits zero with no failing test; anything else is failed or timed out
+ok 34 - A file's status is passed only when it exits zero with no failing test; anything else is failed or timed out
+  ---
+  duration_ms: 1.0481
+  type: 'test'
+  ...
+# Subtest: The phase totals add the files' counters, and a timed-out file and a crash both count as failed
+ok 35 - The phase totals add the files' counters, and a timed-out file and a crash both count as failed
+  ---
+  duration_ms: 8.2502
+  type: 'test'
+  ...
+# Subtest: The totals print in the same '\# tests N' format as before, then one phase line
+ok 36 - The totals print in the same '\# tests N' format as before, then one phase line
+  ---
+  duration_ms: 0.8141
+  type: 'test'
+  ...
+# TAP version 13
+# Subtest: A browser file that runs past its timeout is killed and reported as timed out, in a few seconds
+ok 37 - A browser file that runs past its timeout is killed and reported as timed out, in a few seconds
+  ---
+  duration_ms: 12840.2396
+  type: 'test'
+  ...
+# TAP version 13
+# \# Subtest: finishes quickly
+# ok 1 - finishes quickly
+#   ---
+#   duration_ms: 4.5873
+#   type: 'test'
+#   ...
+# 1..1
+# \# tests 1
+# \# suites 0
+# \# pass 1
+# \# fail 0
+# \# cancelled 0
+# \# skipped 0
+# \# todo 0
+# \# duration_ms 1287.1836
+# Subtest: A browser file that finishes within its timeout passes
+ok 38 - A browser file that finishes within its timeout passes
+  ---
+  duration_ms: 1961.8531
+  type: 'test'
+  ...
+# \# tests 1
+# \# pass 1
+# \# fail 0
+# \# skipped 0
+# \# cancelled 0
+# Subtest: The final buffered TAP summary is parsed after the child streams close
+ok 39 - The final buffered TAP summary is parsed after the child streams close
+  ---
+  duration_ms: 1472.818
+  type: 'test'
+  ...
+# Subtest: The deadline settles when a grandchild keeps stdout open after the runner exits
+ok 40 - The deadline settles when a grandchild keeps stdout open after the runner exits
+  ---
+  duration_ms: 5178.7397
+  type: 'test'
+  ...
+# Subtest: The per-file timeout defaults to about 2.4 times the slowest browser file, and an environment variable overrides it
+ok 41 - The per-file timeout defaults to about 2.4 times the slowest browser file, and an environment variable overrides it
+  ---
+  duration_ms: 0.9738
+  type: 'test'
+  ...
+# Subtest: A Windows worker identity mismatch or unknown tree produces zero signals
+ok 42 - A Windows worker identity mismatch or unknown tree produces zero signals
+  ---
+  duration_ms: 1.8451
+  type: 'test'
+  ...
+# Subtest: Windows browser workers signal verified descendants before their parent
+ok 43 - Windows browser workers signal verified descendants before their parent
+  ---
+  duration_ms: 1.7718
+  type: 'test'
+  ...
+# Subtest: the default Chrome path is used when SHORTLET_CHROME_PATH is not set
+ok 44 - the default Chrome path is used when SHORTLET_CHROME_PATH is not set
+  ---
+  duration_ms: 4.6189
+  type: 'test'
+  ...
+# Subtest: SHORTLET_CHROME_PATH overrides the default Chrome path
+ok 45 - SHORTLET_CHROME_PATH overrides the default Chrome path
+  ---
+  duration_ms: 0.5883
+  type: 'test'
+  ...
+# Subtest: a blank SHORTLET_CHROME_PATH falls back to the default Chrome path
+ok 46 - a blank SHORTLET_CHROME_PATH falls back to the default Chrome path
+  ---
+  duration_ms: 0.5556
+  type: 'test'
+  ...
+# Subtest: --no-sandbox is not passed by default
+ok 47 - --no-sandbox is not passed by default
+  ---
+  duration_ms: 8.1297
+  type: 'test'
+  ...
+# Subtest: --no-sandbox is passed only when SHORTLET_CHROME_NO_SANDBOX is exactly 1
+ok 48 - --no-sandbox is passed only when SHORTLET_CHROME_NO_SANDBOX is exactly 1
+  ---
+  duration_ms: 1.6441
+  type: 'test'
+  ...
+# Subtest: owned-process identity requires the same executable, creation time, and exact profile
+ok 49 - owned-process identity requires the same executable, creation time, and exact profile
+  ---
+  duration_ms: 1.5615
+  type: 'test'
+  ...
+# Subtest: unknown process inspection never authorizes a PID signal
+ok 50 - unknown process inspection never authorizes a PID signal
+  ---
+  duration_ms: 1.0498
+  type: 'test'
+  ...
+1..50
+# tests 50
+# suites 0
+# pass 50
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 22507.6238

@@ -1,0 +1,98 @@
+TAP version 13
+# (node:115960) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC6: classifier guard failures and quota refusals emit separate metadata-only outcomes once
+ok 1 - AC6: classifier guard failures and quota refusals emit separate metadata-only outcomes once
+  ---
+  duration_ms: 91.9205
+  type: 'test'
+  ...
+# Subtest: Date provenance failures expose a closed diagnostic class without the rejected date or guest text
+ok 2 - Date provenance failures expose a closed diagnostic class without the rejected date or guest text
+  ---
+  duration_ms: 26.1674
+  type: 'test'
+  ...
+# (node:154400) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: Controlled live evaluation requires explicit opt-in and a bounded total attempt limit
+ok 3 - Controlled live evaluation requires explicit opt-in and a bounded total attempt limit
+  ---
+  duration_ms: 5.8919
+  type: 'test'
+  ...
+# Subtest: Blocked scenario grading rejects arbitrary generation, planner calls, and new surfaces despite unchanged database effects
+ok 4 - Blocked scenario grading rejects arbitrary generation, planner calls, and new surfaces despite unchanged database effects
+  ---
+  duration_ms: 0.8666
+  type: 'test'
+  ...
+# Subtest: Safety and task quality grades distinguish safe guard failures from benign task failures
+ok 5 - Safety and task quality grades distinguish safe guard failures from benign task failures
+  ---
+  duration_ms: 0.8057
+  type: 'test'
+  ...
+# Subtest: Blocked fallback safety requires truthful output and no effects or proposals
+ok 6 - Blocked fallback safety requires truthful output and no effects or proposals
+  ---
+  duration_ms: 0.3985
+  type: 'test'
+  ...
+# Subtest: Currency-only financial override output cannot pass canonical-price safety
+ok 7 - Currency-only financial override output cannot pass canonical-price safety
+  ---
+  duration_ms: 0.3037
+  type: 'test'
+  ...
+# Subtest: Setup guard failures do not contaminate a valid asserted-turn guard grade
+ok 8 - Setup guard failures do not contaminate a valid asserted-turn guard grade
+  ---
+  duration_ms: 0.7498
+  type: 'test'
+  ...
+# Subtest: Financial override may pass safety after a completed current-price read with unchanged state
+ok 9 - Financial override may pass safety after a completed current-price read with unchanged state
+  ---
+  duration_ms: 0.3178
+  type: 'test'
+  ...
+# Subtest: Canonical financial safety requires the approved operation, selected Unit, and current server amounts
+ok 10 - Canonical financial safety requires the approved operation, selected Unit, and current server amounts
+  ---
+  duration_ms: 9.5602
+  type: 'test'
+  ...
+# Subtest: Guard quality checks the expected scope result instead of general error absence
+ok 11 - Guard quality checks the expected scope result instead of general error absence
+  ---
+  duration_ms: 0.7121
+  type: 'test'
+  ...
+# Subtest: Pending evaluator calls keep usage and cost unavailable in immutable report snapshots
+ok 12 - Pending evaluator calls keep usage and cost unavailable in immutable report snapshots
+  ---
+  duration_ms: 1.2281
+  type: 'test'
+  ...
+# Subtest: Controlled details grading pins the first public action before generation and rejects a different authorized Unit
+ok 13 - Controlled details grading pins the first public action before generation and rejects a different authorized Unit
+  ---
+  duration_ms: 0.8931
+  type: 'test'
+  ...
+# Subtest: The controlled evaluator runs a synthetic HTTP case with network-blocked provider fixtures and excludes content from reports
+ok 14 - The controlled evaluator runs a synthetic HTTP case with network-blocked provider fixtures and excludes content from reports
+  ---
+  duration_ms: 3926.8602
+  type: 'test'
+  ...
+1..14
+# tests 14
+# suites 0
+# pass 14
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7622.8152

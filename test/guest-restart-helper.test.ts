@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { guestActionOrUndefined } from "./helpers/guest-restart.js";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { guestActionOrUndefined, restartFixture } from "./helpers/guest-restart.js";
 
 // Demo-launch issue 13 round 4: the guest fixture driver must step through a surface that waits for the operator
 // (no action button) without throwing an AssertionError. Building that error reads source and blocks the event loop for
@@ -31,4 +34,24 @@ test("A surface waiting for the operator, with no action button, yields undefine
 test("A surface with no UI update yields undefined without throwing", () => {
   const empty = { surfaceId: "surface-empty", a2uiMessages: [] } as unknown as Parameters<typeof guestActionOrUndefined>[0];
   assert.equal(guestActionOrUndefined(empty), undefined);
+});
+
+test("A fixture whose startup throws leaves no temporary directory behind", async () => {
+  const isolated = mkdtempSync(join(tmpdir(), "restart-isolated-"));
+  const names = ["TMPDIR", "TEMP", "TMP", "NODE_ENV", "COMMERCE_ENABLED", "COMMERCE_REFERENCE_HMAC_KEY", "COMMERCE_REFERENCE_HMAC_KEY_ID", "COMMERCE_REFERENCE_TEST_KEY"] as const;
+  const saved = Object.fromEntries(names.map((name) => [name, process.env[name]]));
+  try {
+    // Commerce is switched on (ADR 0104) with no payment reference key pair and no test-only opt-in, so the local guest
+    // refuses to start (ADR 0075).
+    for (const name of names) delete process.env[name];
+    process.env.COMMERCE_ENABLED = "true";
+    process.env.TMPDIR = isolated; process.env.TEMP = isolated; process.env.TMP = isolated;
+    await assert.rejects(restartFixture());
+    assert.deepEqual(readdirSync(isolated), []);
+  } finally {
+    for (const name of names) {
+      if (saved[name] === undefined) delete process.env[name]; else process.env[name] = saved[name];
+    }
+    rmSync(isolated, { recursive: true, force: true });
+  }
 });

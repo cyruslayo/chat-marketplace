@@ -1,5 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { AssistantRuntime } from "../../apps/local-guest/src/assistant/assistant-runtime.js";
+import { createShortletAssistantPack } from "../../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
 import { TASK_START_EVENT } from "../../apps/local-guest/src/assistant/assistant-platform.js";
 import { createCommerceAssistantPack } from "../../apps/local-guest/src/assistant/commerce-assistant-pack.js";
 import { ScriptedAssistantModel } from "../../apps/local-guest/src/assistant/scripted-assistant-model.js";
@@ -139,7 +140,7 @@ const chatModel = new ScriptedAssistantModel([request => {
   return { toolCalls: [{ id: "capture-search", name: "search_products", args: { query: "cotton tote" } }] };
 }]);
 const chatPack = createCommerceAssistantPack({ database: chatEnvironment.database, clock: chatEnvironment.clock, audit: chatEnvironment.audit });
-const assistant = new AssistantRuntime(chatEnvironment, chatModel, { additionalPacks: [chatPack] });
+const assistant = new AssistantRuntime(chatEnvironment, chatModel, { packs: [createShortletAssistantPack(chatEnvironment)], additionalPacks: [chatPack] });
 const threadId = `g-${crypto.randomUUID()}`;
 await assistant.handleTurn(threadId, "I want to shop");
 const started = assistant.handleAssistantEvent(threadId, TASK_START_EVENT, { domain: "commerce" });

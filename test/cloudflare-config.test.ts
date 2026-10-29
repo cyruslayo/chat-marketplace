@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { rm } from "node:fs/promises";
+import { dirname, relative, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { loadPilotConfiguration, type PilotEnvironmentSource } from "../apps/pilot/src/pilot-config.js";
 import { loadCloudflareConfiguration, cloudflareProvisioningState, type CloudflareEnv } from "../apps/cloudflare/src/cloudflare-config.js";
 import { openNodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
@@ -119,4 +122,129 @@ test("First boot is not provisioned until SQLite contains valid inventory and te
 test("Landing 12: cloudflare.config.ts declares PAYSTACK_CALLBACK_BASE_URL as the environment's public origin, because the guest runtime reads it from Workers process.env", () => {
   const source = readFileSync("apps/cloudflare/cloudflare.config.ts", "utf8");
   assert.match(source, /PAYSTACK_CALLBACK_BASE_URL:\s*bindings\.text\(PUBLIC_ORIGIN\[environment\]\)/);
+});
+
+test("Staging demo: the staging descriptor's SHORTLET_PUBLIC_ORIGIN and PAYSTACK_CALLBACK_BASE_URL both come from PUBLIC_ORIGIN.staging, which is the workers.dev origin (ADR 0087)", () => {
+  const source = readFileSync("apps/cloudflare/cloudflare.config.ts", "utf8");
+  const block = /const PUBLIC_ORIGIN: Record<PilotEnvironment, string> = \{([^}]*)\};/.exec(source)?.[1] ?? "";
+  const staging = /staging:\s*"([^"]+)"/.exec(block)?.[1];
+  assert.equal(staging, "https://shortlet-pilot-staging.khayutsefi.workers.dev");
+  assert.match(source, /SHORTLET_PUBLIC_ORIGIN:\s*bindings\.text\(PUBLIC_ORIGIN\[environment\]\)/);
+  assert.match(source, /PAYSTACK_CALLBACK_BASE_URL:\s*bindings\.text\(PUBLIC_ORIGIN\[environment\]\)/);
+});
+
+/** Relative module specifiers a source file imports, with whether the import carries the cf-worker entrypoint attribute. */
+function relativeImports(source: string): { specifier: string; workerEntrypoint: boolean }[] {
+  const pattern = /\bimport\s+(?:[^;'"]*?\bfrom\s*)?["'](\.{1,2}\/[^"']*)["']([^;\n]*)/g;
+  return [...source.matchAll(pattern)].map(match => ({ specifier: match[1]!, workerEntrypoint: /type:\s*"cf-worker"/.test(match[2] ?? "") }));
+}
+
+test("The cloudflare config's relative imports resolve to existing files under the config loader's exact-specifier rule, with no .js to .ts mapping", () => {
+  // The config loader is plain Node ESM with a resolve hook: a specifier names exactly one file. Worker entrypoints
+  // (import attribute cf-worker) are built by the Worker build, not loaded by the config loader, so they are not followed.
+  const unresolved: string[] = [];
+  const reached = new Set<string>();
+  const visit = (file: string) => {
+    if (reached.has(file)) return;
+    reached.add(file);
+    for (const { specifier, workerEntrypoint } of relativeImports(readFileSync(file, "utf8"))) {
+      if (workerEntrypoint) continue;
+      const target = resolve(dirname(file), specifier);
+      if (!existsSync(target) || !statSync(target).isFile()) {
+        unresolved.push(`${relative(process.cwd(), file).replace(/\\/g, "/")} imports "${specifier}"`);
+        continue;
+      }
+      visit(target);
+    }
+  };
+  visit(resolve("apps/cloudflare/cloudflare.config.ts"));
+  assert.deepEqual(unresolved, []);
+  assert.ok([...reached].some(file => file.replace(/\\/g, "/").endsWith("/packages/commerce-switch/src/commerce-switch.ts")), "the commerce switch parser is in the config's import graph");
+});
+
+// Build-time variables the staging descriptor reads. Each descriptor test sets only what it needs, so the developer's shell cannot leak in.
+const DESCRIPTOR_BUILD_VARIABLES = [
+  "CONCIERGE_MODE", "GEMINI_API_KEY", "LLM_API_KEY", "RESEND_API_KEY", "COMMERCE_ENABLED",
+  "COMMERCE_REFERENCE_HMAC_KEY", "COMMERCE_REFERENCE_HMAC_KEY_ID", "SHORTLET_NOTIFICATION_FROM", "SHORTLET_OPERATOR_ALERT_EMAILS",
+  "CF_ACCESS_TEAM_DOMAIN", "CF_ACCESS_AUD",
+] as const;
+
+interface DescriptorBinding { readonly type: string; readonly value?: string }
+
+/**
+ * Evaluates cloudflare.config.ts for the staging mode in a child Node process with the given build environment and returns the
+ * Worker's env bindings and the raw output. Plain Node cannot load the `cf-worker` entrypoint import, so a load hook stubs it.
+ */
+function stagingDescriptor(build: Record<string, string>): { env: Record<string, DescriptorBinding>; raw: string } {
+  const childEnv: Record<string, string | undefined> = { ...process.env };
+  for (const name of DESCRIPTOR_BUILD_VARIABLES) delete childEnv[name];
+  Object.assign(childEnv, build);
+  const stub = 'export async function load(url, context, next) { if (context.importAttributes?.type === "cf-worker") return { format: "module", source: "export default {};", shortCircuit: true }; return next(url, context); }';
+  const configUrl = pathToFileURL(resolve("apps/cloudflare/cloudflare.config.ts")).href;
+  const script = [
+    'import { register } from "node:module";',
+    `register("data:text/javascript,${encodeURIComponent(stub)}");`,
+    `const config = (await import(${JSON.stringify(configUrl)})).default;`,
+    'process.stdout.write(JSON.stringify((await config({ mode: "staging" })).worker.env));',
+  ].join("\n");
+  const result = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", script], { env: childEnv, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  return { env: JSON.parse(result.stdout) as Record<string, DescriptorBinding>, raw: result.stdout };
+}
+
+const declaredSecrets = (env: Record<string, DescriptorBinding>) => Object.entries(env).filter(([, binding]) => binding.type === "secret").map(([name]) => name).sort();
+
+test("GEMINI_API_KEY is not declared when CONCIERGE_MODE is openai-compatible", () => {
+  const { env } = stagingDescriptor({ CONCIERGE_MODE: "openai-compatible" });
+  assert.equal("GEMINI_API_KEY" in env, false);
+});
+
+test("GEMINI_API_KEY is declared when CONCIERGE_MODE is gemini", () => {
+  const { env } = stagingDescriptor({ CONCIERGE_MODE: "gemini" });
+  assert.deepEqual(env.GEMINI_API_KEY, { type: "secret" });
+});
+
+test("RESEND_API_KEY is not declared when it is unset or empty at build time", () => {
+  assert.equal("RESEND_API_KEY" in stagingDescriptor({}).env, false);
+  assert.equal("RESEND_API_KEY" in stagingDescriptor({ RESEND_API_KEY: "" }).env, false);
+});
+
+test("RESEND_API_KEY is declared when set at build time", () => {
+  // Obviously fake build-time marker: the descriptor must declare the name only and never embed the value.
+  const marker = "re_build_marker_not_a_real_key";
+  const { env, raw } = stagingDescriptor({ RESEND_API_KEY: marker });
+  assert.deepEqual(env.RESEND_API_KEY, { type: "secret" });
+  assert.equal(raw.includes(marker), false, "the descriptor must not contain the build-time value");
+});
+
+test("the four required secrets PAYSTACK_SECRET_KEY, LLM_API_KEY, SHORTLET_GUEST_CODE_HASHING_KEY, OPS_SHARED_SECRET are always declared", () => {
+  const required = ["LLM_API_KEY", "OPS_SHARED_SECRET", "PAYSTACK_SECRET_KEY", "SHORTLET_GUEST_CODE_HASHING_KEY"];
+  const builds: Record<string, string>[] = [{}, { CONCIERGE_MODE: "openai-compatible" }, { CONCIERGE_MODE: "gemini", RESEND_API_KEY: "re_build_marker_not_a_real_key" }];
+  for (const build of builds) {
+    assert.deepEqual(declaredSecrets(stagingDescriptor(build).env).filter(name => required.includes(name)), required);
+  }
+});
+
+test("COMMERCE_ENABLED stays false and no commerce HMAC key is declared when unset", () => {
+  const { env } = stagingDescriptor({});
+  assert.deepEqual(env.COMMERCE_ENABLED, { type: "text", value: "false" });
+  assert.equal("COMMERCE_REFERENCE_HMAC_KEY" in env, false);
+  assert.equal("COMMERCE_REFERENCE_HMAC_KEY_ID" in env, false);
+});
+
+test("CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD are carried into the staging descriptor when set at build time", () => {
+  // ADR 0105 / 11a: the Access issuer and audience the /_ops verifier needs. The team domain is a bare host; the verifier adds https://.
+  const teamDomain = "example-team.cloudflareaccess.com";
+  const audience = "0000000000000000000000000000000000000000000000000000000000000000";
+  const { env, raw } = stagingDescriptor({ CF_ACCESS_TEAM_DOMAIN: teamDomain, CF_ACCESS_AUD: audience });
+  assert.deepEqual(env.CF_ACCESS_TEAM_DOMAIN, { type: "text", value: teamDomain });
+  assert.deepEqual(env.CF_ACCESS_AUD, { type: "text", value: audience });
+  assert.equal(declaredSecrets(env).includes("CF_ACCESS_AUD"), false, "the audience is a text binding, not a secret");
+  assert.equal(raw.includes(teamDomain), true);
+});
+
+test("CF_ACCESS_TEAM_DOMAIN and CF_ACCESS_AUD are omitted from the staging descriptor when unset (fail-closed default)", () => {
+  const { env } = stagingDescriptor({});
+  assert.equal("CF_ACCESS_TEAM_DOMAIN" in env, false);
+  assert.equal("CF_ACCESS_AUD" in env, false);
 });

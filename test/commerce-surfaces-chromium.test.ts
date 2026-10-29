@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { A2UIServerMessage } from "@cylayo/weaver-core";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import { TASK_START_EVENT } from "../apps/local-guest/src/assistant/assistant-platform.js";
 import { createCommerceAssistantPack } from "../apps/local-guest/src/assistant/commerce-assistant-pack.js";
 import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/scripted-assistant-model.js";
@@ -98,7 +99,7 @@ test("real Chromium renders visible discovery, cart and order facts from registe
     if (text.includes("order") || text.includes("track")) return { toolCalls: [{ id: "order-tool", name: "get_order_status", args: { publicCode: order.publicCode } }] };
     return { toolCalls: [{ id: "discovery-tool", name: "search_products", args: { query: "visible northstar tote" } }] };
   }]);
-  const assistant = new AssistantRuntime(environment, model, { additionalPacks: [commercePack(environment)] });
+  const assistant = new ShortletAssistantRuntime(environment, model, { additionalPacks: [commercePack(environment)] });
   const threadId = `commerce-browser-${crypto.randomUUID()}`;
   await assistant.handleTurn(threadId, "I want to shop");
   assert.equal(assistant.handleAssistantEvent(threadId, TASK_START_EVENT, { domain: "commerce" }).ok, true);
@@ -143,7 +144,7 @@ test("real Chromium renders the proposed checkout and the post-confirm payment-u
     if (text.includes("checkout")) return { toolCalls: [{ id: "checkout-tool", name: "propose_checkout", args: { storeId: "browser-store", deliveryZoneId: "browser-zone" } }] };
     return { toolCalls: [{ id: "cart-tool", name: "add_to_store_cart", args: { offerId: "browser-tote-offer", quantity: 2 } }] };
   }]);
-  const assistant = new AssistantRuntime(environment, model, { additionalPacks: [commercePack(environment)] });
+  const assistant = new ShortletAssistantRuntime(environment, model, { additionalPacks: [commercePack(environment)] });
   const threadId = `commerce-checkout-browser-${crypto.randomUUID()}`;
   await assistant.handleTurn(threadId, "I want to shop");
   assert.equal(assistant.handleAssistantEvent(threadId, TASK_START_EVENT, { domain: "commerce" }).ok, true);

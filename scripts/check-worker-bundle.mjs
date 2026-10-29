@@ -63,6 +63,30 @@ export function forbiddenWorkerModules(metafile, output) {
   return offenders;
 }
 
+/**
+ * True when a line that is not indented (module scope, not inside a function or class) reads `import.meta.url`.
+ * Workers see `import.meta.url` as undefined, so such a read runs at startup and throws. Indented reads inside a
+ * function body run only when called and are allowed. Comment lines are ignored.
+ */
+export function hasModuleScopeImportMetaUrl(source) {
+  return /^[^\s/*][^\n]*\bimport\.meta\.url/m.test(source);
+}
+
+/** Worker-graph input paths whose module source reads `import.meta.url` at module scope (see hasModuleScopeImportMetaUrl). */
+export async function moduleScopeImportMetaUrlOffenders(metafile) {
+  const offenders = [];
+  for (const path of Object.keys(metafile.inputs)) {
+    let source;
+    try {
+      source = await readFile(resolve(process.cwd(), path), "utf8");
+    } catch {
+      continue;
+    }
+    if (hasModuleScopeImportMetaUrl(source)) offenders.push(path);
+  }
+  return offenders;
+}
+
 const invokedDirectly = process.argv[1]?.replace(/\\/g, "/").endsWith("scripts/check-worker-bundle.mjs");
 if (invokedDirectly) {
   const { metafile, output } = await bundleWorker();
@@ -71,5 +95,12 @@ if (invokedDirectly) {
     console.error(`Worker bundle guard failed; remove from the Worker graph: ${offenders.join(", ")}`);
     process.exit(1);
   }
-  console.log("Worker bundle guard: the Worker graph carries no node:sqlite or Node SQLite adapter.");
+  const scopeOffenders = await moduleScopeImportMetaUrlOffenders(metafile);
+  if (scopeOffenders.length > 0) {
+    console.error(
+      `Worker bundle guard failed; module-scope import.meta.url is undefined in Workers, move it into a function: ${scopeOffenders.join(", ")}`,
+    );
+    process.exit(1);
+  }
+  console.log("Worker bundle guard: the Worker graph carries no node:sqlite or Node SQLite adapter, and no module-scope import.meta.url.");
 }

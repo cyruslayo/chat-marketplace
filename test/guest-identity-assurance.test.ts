@@ -370,8 +370,12 @@ const CHECK_IN_HELPER = "domains/shortlet/src/guest-check-in-eligibility.ts";
  * stops at the gateway, and its direct importers are pinned below, so a booking or route module cannot reach the store around it.
  */
 const COMPOSITION_ROOT = "apps/local-guest/src/guest-server.ts";
-/** The only modules that compose the gateway: the pilot server and Worker, the local and pilot CLIs, and the preflight script. */
+/**
+ * The only modules that import the gateway: the pilot server and Worker, the local and pilot CLIs, the preflight script, and the payment
+ * continuation log, which imports only the rejection event type (`import type`, no runtime edge, so it cannot reach the store).
+ */
 const GATEWAY_IMPORTERS = [
+  "apps/cloudflare/src/payment-continuation-log.ts",
   "apps/cloudflare/src/shortlet-pilot-do.ts",
   "apps/local-guest/src/cli-start.ts",
   "apps/pilot/src/local-pilot-server.ts",
@@ -506,7 +510,7 @@ test("AC5: only the schema manifest, the import validator, the check-in helper a
   assert.deepEqual(importersOf(GUARDED_HELPER), []);
 });
 
-test("AC5 (issue 07, review D1): only the five composition entrypoints import the gateway, only the gateway imports the account runtime, and only the runtime imports the identity-status reader", () => {
+test("AC5 (issue 07, review D1): only the pinned gateway importers import the gateway, only the gateway imports the account runtime, and only the runtime imports the identity-status reader", () => {
   assert.deepEqual(importersOf(moduleName(COMPOSITION_ROOT)), GATEWAY_IMPORTERS);
   assert.deepEqual(importersOf(moduleName(ACCOUNT_RUNTIME)), [COMPOSITION_ROOT]);
   assert.deepEqual(importersOf(moduleName(STATUS_READER)), [ACCOUNT_RUNTIME]);

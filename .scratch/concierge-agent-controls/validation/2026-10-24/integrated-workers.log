@@ -1,0 +1,103 @@
+
+> test:workers
+> node scripts/check-worker-bundle.mjs && vitest run --config apps/cloudflare/vitest.config.ts
+
+Worker bundle guard: the Worker graph carries no node:sqlite or Node SQLite adapter.
+
+ RUN  v4.1.11 C:/AI2026/chat-marketplace-controls
+
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@google/genai/dist/web/index.mjs" points to missing source files
+9:03:59 PM [vite] (ssr) warning: Automatically externalized node built-in module "node:sqlite" imported from "packages\platform-core\src\node-sqlite-database.ts". Consider adding it to environments.ssr.external if it is intended.
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/createBasicCatalogRendererRegistrations.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/renderers.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/layout.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/markdown.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/styles.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/icon.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/inputs.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/media.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/theme.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic-web-runtime/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic-web-runtime/createBasicWebRuntime.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/actions/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/actions/ActionContextResolver.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-model/clone.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-context/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-context/DataContext.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-model/pointer.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-context/path.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-context/types.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/functions/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/functions/FunctionEvaluator.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/functions/FunctionRegistry.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/functions/types.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/actions/ActionDispatcher.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/checks/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/checks/CheckEvaluator.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/basic-functions/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/basic-functions/createBasicCatalogFunctionImplementations.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/basic-functions/formatDate.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/basic-functions/formatString.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/basic-functions/formatting.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/basic-functions/logic.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/basic-functions/validation.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/basic-catalog/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/basic-catalog/generated-basic-catalog.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/catalog/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/catalog/CatalogRegistry.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/catalog/schema.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/catalog/schema-validator.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/component-tree/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/component-tree/ComponentTreeResolver.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/runtime/safety.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/component-instances/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/component-instances/ComponentInstanceResolver.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/component-properties/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/component-properties/ComponentPropertyResolver.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/input-binding/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/input-binding/InputBindingWriter.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-model/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-model/DataModel.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/message-processor/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/message-processor/A2UIMessageProcessor.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/protocol/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/producer.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/validation.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/client-capabilities.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/validation-error.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/surfaces/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/surfaces/SurfaceStore.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/surfaces/clone.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/runtime/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/runtime/WeaverRuntime.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/runtime/createWeaverRuntime.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/stream-ingestion/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/stream-ingestion/A2UIV091StreamIngestion.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/transport/jsonl/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/transport/jsonl/JsonlDecoder.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/transport/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/transport/session/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-core/dist/transport/session/createA2UITransportSession.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/renderers/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/renderers/RendererRegistry.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/renderers/errors.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/surface/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/surface/WebSurfaceRenderer.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic-functions/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic-functions/createBasicCatalogBrowserFunctionImplementations.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic-functions/openUrl.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/transport/http-sse/index.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/transport/http-sse/createBrowserA2UIHttpSseTransport.js" points to missing source files
+Sourcemap for "C:/AI2026/chat-marketplace/node_modules/@cylayo/weaver-web/dist/transport/http-sse/SseDecoder.js" points to missing source files
+NOSENTRY SQLite alarm overdue, running despite AlarmManager mismatch; scheduledTime = 1792872250.89s; localAlarmTime = 1792872250.901s; currentTime = 1792872250.9410708s; actorId = 9b0880df2dfd30acc2fadcb3f5e9e6f72e62643de4f97584c982a701c33029b2
+
+ Test Files  27 passed (27)
+      Tests  170 passed (170)
+   Start at  21:03:48
+   Duration  82.97s (transform 31.32s, setup 0ms, import 360.42s, tests 93.27s, environment 6ms)
+

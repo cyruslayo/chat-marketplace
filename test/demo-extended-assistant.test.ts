@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/scripted-assistant-model.js";
 import { createShortletAssistantPack } from "../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
 
@@ -14,7 +15,7 @@ function createRuntime(demo: boolean, model: ScriptedAssistantModel) {
   return {
     directory,
     environment,
-    runtime: new AssistantRuntime(environment, model),
+    runtime: new ShortletAssistantRuntime(environment, model),
     close() { environment.close(); rmSync(directory, { recursive: true, force: true }); },
   };
 }

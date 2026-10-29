@@ -1,0 +1,71 @@
+{
+  "model": "offline scripted fixture",
+  "quotaAuthority": "local SQLite",
+  "transportStarts": 3,
+  "findings": [
+    {
+      "state": "quota",
+      "theme": "light",
+      "viewport": 320,
+      "width": 320,
+      "overflow": 0,
+      "smallTargets": []
+    },
+    {
+      "state": "quota",
+      "theme": "dark",
+      "viewport": 320,
+      "width": 320,
+      "overflow": 0,
+      "smallTargets": []
+    },
+    {
+      "state": "quota",
+      "theme": "light",
+      "viewport": 390,
+      "width": 390,
+      "overflow": 0,
+      "smallTargets": []
+    },
+    {
+      "state": "quota",
+      "theme": "dark",
+      "viewport": 390,
+      "width": 390,
+      "overflow": 0,
+      "smallTargets": []
+    },
+    {
+      "state": "quota",
+      "theme": "light",
+      "viewport": 768,
+      "width": 768,
+      "overflow": -15,
+      "smallTargets": []
+    },
+    {
+      "state": "quota",
+      "theme": "dark",
+      "viewport": 768,
+      "width": 768,
+      "overflow": -15,
+      "smallTargets": []
+    },
+    {
+      "state": "quota",
+      "theme": "light",
+      "viewport": 1280,
+      "width": 1280,
+      "overflow": -15,
+      "smallTargets": []
+    },
+    {
+      "state": "quota",
+      "theme": "dark",
+      "viewport": 1280,
+      "width": 1280,
+      "overflow": -15,
+      "smallTargets": []
+    }
+  ]
+}

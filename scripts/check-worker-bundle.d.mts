@@ -11,3 +11,9 @@ export function forbiddenWorkerModules(
   metafile: WorkerBundleMetafile,
   output: string,
 ): string[];
+
+/** True when an unindented line reads `import.meta.url` (undefined in Workers, so it throws at startup). */
+export function hasModuleScopeImportMetaUrl(source: string): boolean;
+
+/** Worker-graph input paths whose module source reads `import.meta.url` at module scope. */
+export function moduleScopeImportMetaUrlOffenders(metafile: WorkerBundleMetafile): Promise<string[]>;
