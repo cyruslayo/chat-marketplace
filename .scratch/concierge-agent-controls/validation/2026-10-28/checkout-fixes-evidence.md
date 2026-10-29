@@ -201,3 +201,18 @@ Each file run as `env -u LLM_API_KEY npx tsx --test <file>`:
 - Live cause of the reported PAYMENT_CONTINUATION_REJECTED (A).
 - Browser and staging screens (no staging calls in this task).
 - Full `npm test` and `npm run test:workers` (once per batch before merge).
+
+### Continuation rejection log wiring (finding A closed in code)
+
+The Cloudflare host now passes `onPaymentContinuationRejected` to the guest handler (`apps/cloudflare/src/shortlet-pilot-do.ts`). A rejected continuation writes one Workers Logs line through `logPaymentContinuationRejected` (`apps/cloudflare/src/payment-continuation-log.ts`): `{"event":"payment_continuation_rejected","reason":"<closed reason>"}`. The line carries no offer id, URL, reference, contact, cookie, secret or provider text.
+
+Tests were written first and failed on the missing module (`Cannot find module '../src/payment-continuation-log.js'`). A worker spec through `SELF.fetch` was tried first and dropped: an unknown offer returns 404 before the continuation's try block, so that path cannot produce a rejection without a full accepted-offer Paystack journey. The spec exercises the observer directly, so the one-line wiring in the Durable Object is verified by typecheck and review, not by a live rejection.
+
+| Command | Result |
+|---|---|
+| `env -u LLM_API_KEY npm run test:workers -- apps/cloudflare/test/payment-continuation-log.spec.ts` (before implementation) | fail: `Cannot find module '../src/payment-continuation-log.js'`, no tests run |
+| `env -u LLM_API_KEY npm run test:workers -- apps/cloudflare/test/payment-continuation-log.spec.ts` (after) | 3 pass, 0 fail |
+| `env -u LLM_API_KEY npm run check` | exit 0 (tsc root, apps/cloudflare, tsconfig.test, tsconfig.tooling, worker bundle guard) |
+| `env -u LLM_API_KEY npm run test:workers -- apps/cloudflare/test/pilot-worker.spec.ts apps/cloudflare/test/edge-security.spec.ts apps/cloudflare/test/payment-continuation-log.spec.ts` | 3 files, 9 pass, 0 fail |
+
+The worker runner resolved `node_modules` through `../chat-marketplace/node_modules` (the main worktree). This is the existing setup, not changed here.

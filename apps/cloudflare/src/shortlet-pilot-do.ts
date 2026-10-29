@@ -37,6 +37,7 @@ import { createOpsHandler, type OpsHandler } from "./ops-routes.js";
 import { SHORTLET_SCHEMA_MIGRATIONS } from "./schema.js";
 import { cloudflareAssetLoader } from "./pilot-assets.js";
 import { R2ReceiptBlobStore } from "./r2-receipt-blob-store.js";
+import { logPaymentContinuationRejected } from "./payment-continuation-log.js";
 import { commerceMigrationClient, platformGuestAccountDependencies, platformGuestData, platformMigrationClient, platformModelRequestQuota } from "./do-clients.js";
 import { commerceSwitchIsOn } from "./commerce-switch.js";
 import { demoMode, pilotDeployment } from "../../pilot/src/pilot-config-core.js";
@@ -323,6 +324,8 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
         ...platformGuestAccountDependencies(this.env, configuration.tenantId),
       },
       payments,
+      // ADR 0075: a rejected continuation reports its closed reason to Workers Logs only.
+      onPaymentContinuationRejected: (event) => logPaymentContinuationRejected(event),
       modelCallBudget,
       // ADR 0101: quota reservations live in PLATFORM, shared by every domain object.
       modelRequestQuota: platformModelRequestQuota(this.env, configuration.tenantId),
