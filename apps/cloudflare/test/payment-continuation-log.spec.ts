@@ -19,7 +19,7 @@ test("A rejected payment continuation writes exactly one closed line with no ide
   expect(written).toEqual(['{"event":"payment_continuation_rejected","reason":"provider_start_failed"}']);
   const [line] = written as [string];
   expect(Object.keys(JSON.parse(line) as object).sort()).toEqual(["event", "reason"]);
-  for (const forbidden of ["offer-", "7f3a", "http", "api.paystack", "sk_test", "psp_ref", "guest@", "+234", "@"]) {
+  for (const forbidden of ["offer-", "7f3a", "http", "api.paystack", "sk_test", "psp_ref", "psp-ref", "guest@", "+234", "@"]) {
     expect(line).not.toContain(forbidden);
   }
 });

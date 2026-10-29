@@ -25,7 +25,7 @@ test("A failed card checkout writes exactly one line with the fixed event name a
   expect(written).toEqual(['{"event":"card_checkout_failed","reason":"provider_rejected"}']);
   const [line] = written as [string];
   expect(Object.keys(JSON.parse(line) as object).sort()).toEqual(["event", "reason"]);
-  for (const forbidden of ["offer-", "chk_", "psp_ref", "http", "api.paystack", "sk_test", "guest@", "+234", "@"]) {
+  for (const forbidden of ["offer-", "chk_", "psp_ref", "psp-ref", "http", "api.paystack", "sk_test", "guest@", "+234", "@"]) {
     expect(line).not.toContain(forbidden);
   }
 });

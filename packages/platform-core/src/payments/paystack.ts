@@ -90,6 +90,8 @@ export function paystackCallbackUrl(configuration: PaystackConfiguration): strin
 }
 
 const PAYSTACK_API_URL = "https://api.paystack.co";
+/** The characters Paystack accepts in a transaction reference (ADR 0049, ADR 0087). */
+const PAYSTACK_ACCEPTED_REFERENCE_PATTERN = /^[A-Za-z0-9.=-]+$/;
 const APPROVED_CHECKOUT_HOSTS = new Set(["checkout.paystack.com"]);
 
 export function isApprovedPaystackCheckoutUrl(value: string): boolean {
@@ -183,6 +185,9 @@ export class DirectPaystackClient implements PaystackClient {
   }
 
   async initializeTransaction(input: PaystackInitializeInput): Promise<PaystackInitializeResult> {
+    // ADR 0049, 0087: Paystack accepts only letters, digits, "-", "." and "=" in a reference. A reference outside that set
+    // is refused here, before any provider call, so it never leaves the process. The message names no reference.
+    if (!PAYSTACK_ACCEPTED_REFERENCE_PATTERN.test(input.reference)) throw new PaystackProviderFailure("reference_conflict", "Payment reference is outside the provider's accepted format");
     if (!Number.isSafeInteger(input.amountKobo) || input.amountKobo < 0) throw new Error("Paystack amount must be a non-negative integer in kobo");
     const payload = {
       email: input.email,

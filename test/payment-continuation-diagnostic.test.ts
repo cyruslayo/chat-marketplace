@@ -30,7 +30,7 @@ test("A rejected payment continuation reports a closed reason and no identifiers
     assert.match(body, /Payment can(?:&#39;|')t continue right now/, "the generic page is unchanged");
     assert.deepEqual(events, [{ code: "PAYMENT_CONTINUATION_REJECTED", reason: "provider_start_failed" }], "one closed reason for the rejection");
     const observed = JSON.stringify(events);
-    assert.doesNotMatch(observed, /offer-|synthetic|https?:|psp_ref|sk_test/, "the reason carries no ids, URLs, references or provider text");
+    assert.doesNotMatch(observed, /offer-|synthetic|https?:|psp_ref|psp-ref|sk_test/, "the reason carries no ids, URLs, references or provider text");
   } finally {
     await fixture.close();
   }

@@ -142,7 +142,7 @@ test("AC11 — The browser cannot override callback URL", () => {
 test("AC12 — A Live Payment Attempt has one stable Paystack reference", () => {
   const { manager, session } = setup({ environment: "test" });
   assert.equal(manager.getCheckoutSession("offer-paystack")?.pspReference, session.pspReference);
-  assert.match(session.pspReference, /^psp_ref_/);
+  assert.match(session.pspReference, /^psp-ref-/);
 });
 
 test("AC13 — Refresh does not initialize another Live Payment Attempt", () => {

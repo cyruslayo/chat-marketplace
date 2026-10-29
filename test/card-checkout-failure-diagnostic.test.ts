@@ -12,7 +12,7 @@ import { guestAction, restartFixture } from "./helpers/guest-restart.js";
 
 const GUEST_MESSAGE = "The secure card checkout could not be started.";
 const PAYSTACK_CONFIG = { secretKey: "sk_test_synthetic_fixture", environment: "test" as const, callbackBaseUrl: "https://demo.example.test" };
-const FORBIDDEN = /synthetic|https?:|psp_ref|sk_test|evil|@|\+234|chk_|offer-/;
+const FORBIDDEN = /synthetic|https?:|psp_ref|psp-ref|sk_test|evil|@|\+234|chk_|offer-/;
 
 interface Outcome {
   readonly result: { readonly ok: boolean; readonly code?: string; readonly message?: string };

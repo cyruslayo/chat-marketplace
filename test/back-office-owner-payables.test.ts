@@ -39,7 +39,7 @@ test("AC1 — Each booking shows the amount received, the owner payable, your ma
     for (const fact of ["Luxury 2-Bedroom Apartment in Old Ikoyi", `Amount received ${formatMoney(received)}`, `Owner payable ${formatMoney(captured.ownerPayableKobo)}`, `Your margin ${formatMoney(captured.marginKobo)}`, "Status Not yet due", "Due 24 hours after Verified Access"]) {
       assert.ok(row.text.includes(fact), `shows ${fact}`);
     }
-    for (const secret of [TEST_CARD_LAST4, TEST_PAYER_EMAIL, "psp_ref_"]) assert.ok(!shown.html.includes(secret), `no ${secret}`);
+    for (const secret of [TEST_CARD_LAST4, TEST_PAYER_EMAIL, "psp_ref_", "psp-ref-"]) assert.ok(!shown.html.includes(secret), `no ${secret}`);
     assert.doesNotMatch(row.html, /<form/, "no payout form before it is due");
 
     // Verified Access starts the 24 hours (ADR 0089); the status turns due lazily, with no command.

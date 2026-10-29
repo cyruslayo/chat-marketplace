@@ -270,7 +270,7 @@ export class PeriodPaymentManager {
 
     const token = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
     const session: DurablePeriodPaymentSession = {
-      pspReference: `psp_ref_period_${period.index}_${token}`,
+      pspReference: `psp-ref-period-${period.index}-${token}`,
       checkoutId: `chk_period_${period.index}_${token}`,
       offerId: input.offerId,
       periodIndex: period.index,

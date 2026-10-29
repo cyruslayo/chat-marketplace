@@ -185,7 +185,7 @@ test("AC6: Period due dates and 7/3/1-day reminders follow ADR 0092. Reminder re
     assert.deepEqual(reminders(`${addDays(PERIOD_2_DUE, -3)}T10:00:00.000Z`).map((reminder) => reminder.daysBeforeDue), [7, 3]);
     assert.deepEqual(reminders(`${addDays(PERIOD_2_DUE, -1)}T10:00:00.000Z`).map((reminder) => reminder.daysBeforeDue), [7, 3, 1]);
     const serialised = JSON.stringify(reminders(`${addDays(PERIOD_2_DUE, -1)}T10:00:00.000Z`));
-    for (const forbidden of ["psp_ref", "pspReference", "contactEmail", "email", "accountNumber", "authorization", "secret", "identity"]) {
+    for (const forbidden of ["psp_ref", "psp-ref", "pspReference", "contactEmail", "email", "accountNumber", "authorization", "secret", "identity"]) {
       assert.equal(serialised.includes(forbidden), false, `a reminder record carries no ${forbidden}`);
     }
     assert.equal(reminders(`${PERIOD_2_DUE}T10:00:00.000Z`).length, 0, "no reminder is sent on the due date itself");
