@@ -22,6 +22,7 @@ import type {
 import type { AssetLoader } from "../../../packages/platform-core/src/asset-loader.js";
 import { nodeAssetLoader } from "../../../packages/platform-core/src/node-asset-loader.js";
 import { GUEST_HTML_SECURITY_HEADERS } from "../../../packages/platform-core/src/security-headers.js";
+import { PaystackProviderFailure, type PaystackProviderStatusClass } from "../../../packages/platform-core/src/payments/index.js";
 import { createGuestShell, type StaticAsset } from "./guest-shell.js";
 import { extendedStayDraftFacts } from "../../web-agent/src/extended-stay-presentation.js";
 import {
@@ -736,6 +737,48 @@ interface PendingDraftReplacement {
  */
 export const PAYSTACK_CHECKOUT_PROVIDER_TIMEOUT_MS = 20_000;
 
+/**
+ * Closed reasons for a failed chat card start (ADR 0075). The host observer receives only one of these codes: no offer id,
+ * URL, reference, contact, key or provider text. The guest-visible copy does not depend on the reason.
+ */
+export type CardCheckoutFailureReason =
+  | "provider_not_configured"
+  | "action_rejected"
+  | "payer_not_authorized"
+  | "offer_not_payable"
+  | "provider_rejected"
+  | "provider_unreachable"
+  | "provider_response_invalid"
+  | "checkout_url_rejected"
+  | "reference_conflict"
+  | "unclassified";
+
+export interface CardCheckoutFailedEvent {
+  readonly code: "CARD_CHECKOUT_FAILED";
+  readonly reason: CardCheckoutFailureReason;
+  /** The closed HTTP-status class of a Paystack rejection. Present only with reason "provider_rejected" (ADR 0075). */
+  readonly statusClass?: PaystackProviderStatusClass;
+}
+
+/** The closed status class of a rejected Paystack call, or undefined for every other failure (ADR 0075). */
+export function cardCheckoutProviderStatusClass(error: unknown): PaystackProviderStatusClass | undefined {
+  return error instanceof PaystackProviderFailure && error.reason === "provider_rejected" ? error.statusClass : undefined;
+}
+
+/**
+ * Maps a thrown card-start error to its closed reason. A Paystack failure carries its own reason; the domain's fixed
+ * messages are matched otherwise. Anything else is "unclassified". Contact prompts never reach this mapping.
+ */
+export function cardCheckoutFailureReason(error: unknown): CardCheckoutFailureReason {
+  if (error instanceof PaystackProviderFailure) return error.reason;
+  const message = error instanceof Error ? error.message : "";
+  if (/Paystack checkout is not configured|Bank transfer is not configured/i.test(message)) return "provider_not_configured";
+  if (/non-card checkout/i.test(message)) return "provider_response_invalid";
+  if (/authoritative payer|Cross-tenant/i.test(message)) return "payer_not_authorized";
+  if (/accepted offer|Payment window has expired|no longer eligible|Extended Stay|Refundable Security Deposit|No deposit payment|offerId is required|accepts only offerId/i.test(message)) return "offer_not_payable";
+  return "unclassified";
+}
+
 export class LocalGuestApp {
   #environment: LocalGuestEnvironment;
   readonly #threads = new Map<string, GuestThreadState>();
@@ -743,6 +786,7 @@ export class LocalGuestApp {
   readonly #assistantRuntime: AssistantRuntime | null;
   readonly #modelCallBudget: ModelCallBudget | null;
   readonly #paystackCheckoutTimeoutMs: number;
+  readonly #onCardCheckoutFailed: ((event: CardCheckoutFailedEvent) => void) | null;
 
   constructor(
     environment: LocalGuestEnvironment,
@@ -753,6 +797,8 @@ export class LocalGuestApp {
       readonly modelCallBudget?: ModelCallBudget;
       /** Issue 06 (M13): bound on the Paystack initialize call that holds the thread's run. Injected by tests. */
       readonly paystackCheckoutTimeoutMs?: number;
+      /** Metadata-only observation of a failed chat card start (closed reason; ADR 0075). */
+      readonly onCardCheckoutFailed?: (event: CardCheckoutFailedEvent) => void;
     } = {},
   ) {
     this.#environment = environment;
@@ -762,6 +808,7 @@ export class LocalGuestApp {
     const timeoutMs = options.paystackCheckoutTimeoutMs ?? PAYSTACK_CHECKOUT_PROVIDER_TIMEOUT_MS;
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) throw new Error("paystackCheckoutTimeoutMs must be a positive integer");
     this.#paystackCheckoutTimeoutMs = timeoutMs;
+    this.#onCardCheckoutFailed = options.onCardCheckoutFailed ?? null;
   }
 
   get environment(): LocalGuestEnvironment {
@@ -1250,6 +1297,16 @@ export class LocalGuestApp {
     return this.#withJourney(threadId, result);
   }
 
+  #reportCardCheckoutFailure(reason: CardCheckoutFailureReason, statusClass?: PaystackProviderStatusClass): void {
+    this.#onCardCheckoutFailed?.({ code: "CARD_CHECKOUT_FAILED", reason, ...(statusClass === undefined ? {} : { statusClass }) });
+  }
+
+  /** Reports a closed reason (and, for a provider rejection, its closed status class) and returns the unchanged guest-visible result. */
+  #rejectCardCheckout(reason: CardCheckoutFailureReason, result: GuestTurnResult, statusClass?: PaystackProviderStatusClass): GuestTurnResult {
+    this.#reportCardCheckoutFailure(reason, statusClass);
+    return result;
+  }
+
   async #handlePaystackCardCheckout(
     threadId: string,
     event: GuestEventPayload,
@@ -1261,32 +1318,35 @@ export class LocalGuestApp {
         message: "Secure card checkout is unavailable.",
       };
     if (!threadId || !THREAD_ID_PATTERN.test(threadId))
-      return {
+      return this.#rejectCardCheckout("action_rejected", {
         ok: false,
         code: "INVALID_THREAD",
         message: "Unknown conversation.",
-      };
+      });
     const thread = this.#threads.get(threadId) ?? (this.#environment.guestDataIsRemote ? null : this.#loadThread(threadId));
     if (!thread)
-      return {
+      return this.#rejectCardCheckout("action_rejected", {
         ok: false,
         code: "UNKNOWN_THREAD",
         message: "Unknown conversation.",
-      };
+      });
     const activeSurfaceId = thread.activeSurfaces.get(PAYMENT_STAGE);
     if (!activeSurfaceId || activeSurfaceId !== event.surfaceId)
-      return {
+      return this.#rejectCardCheckout("action_rejected", {
         ok: false,
         code: "STALE_SURFACE",
         message:
           "That action is no longer available; please use the current options.",
-      };
+      });
+    // The contact pre-check chooses the input surface only; the gate below stays the authority (ADR 0106).
+    const contactPrompt = this.#paymentContactPrompt(thread, event);
+    if (contactPrompt) return contactPrompt;
     const resolved = resolveCardPaymentServerEvent({
       event: this.#handoff(event),
       application: this.#environment.cardPaymentApp,
       principal: this.#environment.guestPrincipal(),
     });
-    if (!resolved.ok) return resolved;
+    if (!resolved.ok) return this.#rejectCardCheckout("action_rejected", resolved);
     try {
       // Issue 06 (M13): the provider await is bounded, so a call that never resolves releases the thread's run (see the constant).
       const session = await this.#boundProviderCall(
@@ -1339,17 +1399,21 @@ export class LocalGuestApp {
         ],
       };
     } catch (error) {
-      if (
-        /email address is required/i.test(
-          error instanceof Error ? error.message : "",
-        )
-      )
+      const message = error instanceof Error ? error.message : "";
+      if (/email address is required/i.test(message))
         return this.#contactSurface(thread, "email", event.context ?? {});
-      return {
-        ok: false,
-        code: "ACTION_NOT_AUTHORIZED",
-        message: "The secure card checkout could not be started.",
-      };
+      if (/phone number is required/i.test(message))
+        return this.#contactSurface(thread, "phone", { ...(event.context ?? {}), resumeAction: "payment" });
+      const reason = cardCheckoutFailureReason(error);
+      return this.#rejectCardCheckout(
+        reason,
+        {
+          ok: false,
+          code: "ACTION_NOT_AUTHORIZED",
+          message: "The secure card checkout could not be started.",
+        },
+        reason === "provider_rejected" ? cardCheckoutProviderStatusClass(error) : undefined,
+      );
     }
   }
 
@@ -1357,13 +1421,45 @@ export class LocalGuestApp {
   async #boundProviderCall<T>(call: Promise<T>): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const bound = new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(() => reject(new Error("Paystack checkout provider call exceeded its bound")), this.#paystackCheckoutTimeoutMs);
+      timer = setTimeout(() => reject(new PaystackProviderFailure("provider_unreachable", "Paystack checkout provider call exceeded its bound")), this.#paystackCheckoutTimeoutMs);
     });
     try {
       return await Promise.race([call, bound]);
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /**
+   * The contact prompt a payment start needs before its command runs: phone first, then email, as the domain checks them
+   * (card-payment.ts). A prompt is offered only for an offer the payer can still pay: accepted, inside its payment window,
+   * with the payer's initialize action on the artifact. Any other offer gets no prompt and falls through to the gate, which
+   * rejects it closed (ADR 0106). The result carries no contact value (ADR 0093).
+   */
+  #paymentContactPrompt(
+    thread: GuestThreadState,
+    event: GuestEventPayload,
+  ): GuestTurnResult | undefined {
+    const environment = this.#environment;
+    const principal = environment.guestPrincipal();
+    let payable: boolean;
+    try {
+      const offer = environment.conditionalOfferApp.getOffer(thread.offerId!);
+      const artifact = environment.cardPaymentApp.getArtifact(thread.offerId!, principal);
+      payable =
+        offer.status === "accepted" &&
+        environment.clock().getTime() < new Date(offer.paymentWindow.expiresAt).getTime() &&
+        artifact.actions.some((action) => action.type === "initialize_checkout");
+    } catch {
+      return undefined;
+    }
+    if (!payable) return undefined;
+    const contact = environment.guestContactApp.get(principal);
+    if (!contact?.phoneNumber)
+      return this.#contactSurface(thread, "phone", { ...(event.context ?? {}), resumeAction: "payment" });
+    if (!contact.contactEmail)
+      return this.#contactSurface(thread, "email", event.context ?? {});
+    return undefined;
   }
 
   #handleEvent(threadId: string, payload: unknown): GuestTurnResult {
@@ -5045,6 +5141,13 @@ export class LocalGuestApp {
       resumeAction,
       ...resumeContext
     } = event.context ?? {};
+    // A phone prompt raised by the payment start resumes the payment, not the booking draft.
+    if (resumeAction === "payment")
+      return this.#handleCardCheckout(thread, {
+        ...event,
+        name: CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT,
+        context: resumeContext,
+      });
     return resumeAction === "review"
       ? this.#handleDraftReview(thread, {
           ...event,
@@ -5527,11 +5630,16 @@ export class LocalGuestApp {
     // The contact application owns email validation and persistence. Present
     // its generated input surface before resolving the payment command so the
     // payment resolver never has to infer a missing contact from a swallowed
-    // application error.
-    if (
-      !environment.guestContactApp.get(environment.guestPrincipal())
-        ?.contactEmail
-    ) {
+    // application error. The phone is checked first, as #paymentContactPrompt
+    // does on the hosted path (the domain requires a phone before payment).
+    const contact = environment.guestContactApp.get(environment.guestPrincipal());
+    if (!contact?.phoneNumber) {
+      return this.#contactSurface(thread, "phone", {
+        ...(event.context ?? {}),
+        resumeAction: "payment",
+      });
+    }
+    if (!contact.contactEmail) {
       return this.#contactSurface(thread, "email", event.context ?? {});
     }
     const resolved = resolveCardPaymentServerEvent({

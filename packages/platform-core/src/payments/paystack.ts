@@ -27,6 +27,43 @@ export interface PaystackEnvironmentSource {
   readonly NODE_ENV?: string;
 }
 
+/**
+ * A Paystack call failure with a closed reason and a fixed message. The message never carries provider text, a URL, a
+ * reference or a key (ADR 0075). The chat checkout maps the reason to its diagnostic code.
+ */
+export type PaystackProviderFailureReason = "provider_rejected" | "provider_unreachable" | "provider_response_invalid" | "checkout_url_rejected" | "reference_conflict";
+
+/**
+ * The closed class of a Paystack rejection (ADR 0075). It is derived from the HTTP status and the body's `status` flag only;
+ * no provider text, body or header is kept. `unsuccessful_body` is a 2xx answer whose body does not report success.
+ */
+export const PAYSTACK_PROVIDER_STATUS_CLASSES = ["auth_failed", "invalid_request", "not_found", "rate_limited", "server_error", "unsuccessful_body", "other"] as const;
+export type PaystackProviderStatusClass = (typeof PAYSTACK_PROVIDER_STATUS_CLASSES)[number];
+
+/** Maps the HTTP status of a rejected Paystack answer to its closed class (ADR 0075). */
+export function paystackProviderStatusClass(httpStatus: number): PaystackProviderStatusClass {
+  if (httpStatus >= 200 && httpStatus < 300) return "unsuccessful_body";
+  if (httpStatus === 401 || httpStatus === 403) return "auth_failed";
+  if (httpStatus === 400 || httpStatus === 422) return "invalid_request";
+  if (httpStatus === 404) return "not_found";
+  if (httpStatus === 429) return "rate_limited";
+  if (httpStatus >= 500 && httpStatus <= 599) return "server_error";
+  return "other";
+}
+
+export class PaystackProviderFailure extends Error {
+  readonly reason: PaystackProviderFailureReason;
+  /** Present only on a `provider_rejected` failure, where Paystack answered with a non-success (ADR 0075). */
+  readonly statusClass?: PaystackProviderStatusClass;
+
+  constructor(reason: PaystackProviderFailureReason, message: string, options: { readonly statusClass?: PaystackProviderStatusClass } = {}) {
+    super(message);
+    this.name = "PaystackProviderFailure";
+    this.reason = reason;
+    if (options.statusClass !== undefined) this.statusClass = options.statusClass;
+  }
+}
+
 export class PaystackConfigurationError extends Error {
   constructor(message: string) {
     super(message);
@@ -74,6 +111,8 @@ export function paystackCallbackUrl(configuration: PaystackConfiguration): strin
 }
 
 const PAYSTACK_API_URL = "https://api.paystack.co";
+/** The characters Paystack accepts in a transaction reference (ADR 0049, ADR 0087). */
+const PAYSTACK_ACCEPTED_REFERENCE_PATTERN = /^[A-Za-z0-9.=-]+$/;
 const APPROVED_CHECKOUT_HOSTS = new Set(["checkout.paystack.com"]);
 
 export function isApprovedPaystackCheckoutUrl(value: string): boolean {
@@ -119,7 +158,7 @@ function paystackStatus(value: unknown): PSPVerifyResult["status"] {
 function assertProviderResponse(response: PaystackHttpResponse, body: unknown, operation: string): PaystackEnvelope {
   const envelope = recordOf(body) as PaystackEnvelope | undefined;
   if (!envelope || envelope.status !== true || response.status < 200 || response.status >= 300) {
-    throw new Error(`Paystack ${operation} request failed`);
+    throw new PaystackProviderFailure("provider_rejected", `Paystack ${operation} request failed`, { statusClass: paystackProviderStatusClass(response.status) });
   }
   return envelope;
 }
@@ -167,6 +206,9 @@ export class DirectPaystackClient implements PaystackClient {
   }
 
   async initializeTransaction(input: PaystackInitializeInput): Promise<PaystackInitializeResult> {
+    // ADR 0049, 0087: Paystack accepts only letters, digits, "-", "." and "=" in a reference. A reference outside that set
+    // is refused here, before any provider call, so it never leaves the process. The message names no reference.
+    if (!PAYSTACK_ACCEPTED_REFERENCE_PATTERN.test(input.reference)) throw new PaystackProviderFailure("reference_conflict", "Payment reference is outside the provider's accepted format");
     if (!Number.isSafeInteger(input.amountKobo) || input.amountKobo < 0) throw new Error("Paystack amount must be a non-negative integer in kobo");
     const payload = {
       email: input.email,
@@ -177,18 +219,31 @@ export class DirectPaystackClient implements PaystackClient {
       channels: ["card"],
       ...(input.payerId === undefined ? {} : { metadata: JSON.stringify({ [this.#metadataKey(input.payerMetadataKey)]: input.payerId }) }),
     };
-    const response = await this.#fetcher(`${PAYSTACK_API_URL}/transaction/initialize`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${this.#configuration.secretKey}`, "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const envelope = assertProviderResponse(response, await response.json(), "initialization");
+    let response: PaystackHttpResponse;
+    try {
+      response = await this.#fetcher(`${PAYSTACK_API_URL}/transaction/initialize`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${this.#configuration.secretKey}`, "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      throw new PaystackProviderFailure("provider_unreachable", "Paystack initialization request could not be sent");
+    }
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      throw new PaystackProviderFailure("provider_response_invalid", "Paystack initialization response was not JSON");
+    }
+    const envelope = assertProviderResponse(response, body, "initialization");
     const data = recordOf(envelope.data);
     const authorizationUrl = data?.authorization_url;
     const reference = data?.reference;
-    if (typeof authorizationUrl !== "string" || !isApprovedPaystackCheckoutUrl(authorizationUrl) || typeof reference !== "string" || reference !== input.reference) {
-      throw new Error("Paystack initialization returned an invalid checkout");
+    if (typeof reference !== "string" || typeof authorizationUrl !== "string") {
+      throw new PaystackProviderFailure("provider_response_invalid", "Paystack initialization returned an invalid checkout");
     }
+    if (reference !== input.reference) throw new PaystackProviderFailure("reference_conflict", "Paystack initialization returned a different reference");
+    if (!isApprovedPaystackCheckoutUrl(authorizationUrl)) throw new PaystackProviderFailure("checkout_url_rejected", "Paystack initialization returned an unapproved checkout URL");
     return Object.freeze({ authorizationUrl, reference, environment: this.configuration.environment });
   }
 

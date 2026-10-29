@@ -21,14 +21,42 @@ export interface ConfirmationTokenPayload {
   expiresAt: string;
 }
 
+/**
+ * Valid confirmation-token digests kept per offer. Every cold restore that loads an open offer issues a fresh token
+ * (the guest's surface carries it), so the bound keeps the tokens of recent renders valid until the payment window ends.
+ * Configurable engineering setting under ADR 0106; the offer's own expiry bounds every digest.
+ */
+export const CONFIRMATION_TOKEN_DIGEST_LIMIT = 16;
+
+/**
+ * The 128-bit random salt makes the token unguessable, so a plain SHA-256 digest is sufficient to store it
+ * (ADR 0086: restricted material "stored only as a secure hash"). No server key is needed for that.
+ */
 export function createConfirmationToken(payload: ConfirmationTokenPayload): string {
   const data = JSON.stringify({
     ...payload,
-    salt: crypto.randomUUID()
+    salt: crypto.randomBytes(16).toString("base64url")
   });
   const b64 = Buffer.from(data).toString("base64url");
   const hmac = crypto.createHmac("sha256", "conditional_offer_secret").update(b64).digest("hex");
   return `tok_${b64}.${hmac}`;
+}
+
+/** The only form of a confirmation token that is ever stored (ADR 0075, ADR 0086). */
+export function confirmationTokenDigest(token: string): string {
+  return crypto.createHash("sha256").update(token, "utf8").digest("hex");
+}
+
+/** Constant-time membership test of a presented token against the offer's valid digests. Empty or missing digests fail closed. */
+function matchesConfirmationTokenDigest(token: string, digests: readonly string[] | undefined): boolean {
+  if (!digests || digests.length === 0) return false;
+  const presented = Buffer.from(confirmationTokenDigest(token), "hex");
+  let matched = false;
+  for (const digest of digests) {
+    const candidate = Buffer.from(digest, "hex");
+    if (candidate.length === presented.length && crypto.timingSafeEqual(candidate, presented)) matched = true;
+  }
+  return matched;
 }
 
 export function decodeConfirmationToken(token: string): ConfirmationTokenPayload {
@@ -94,7 +122,10 @@ export interface ConditionalBookingOffer {
   status: "issued" | "accepted" | "expired" | "stale" | "revoked";
   issuedAt: string;
   acceptedAt?: string;
+  /** The current plaintext token for the guest's surface. Held in memory only; never persisted (ADR 0075). */
   confirmationToken: string;
+  /** SHA-256 digests of the valid tokens, newest last. The only token material that is persisted (ADR 0086). */
+  confirmationTokenDigests?: string[];
   tokenUsed: boolean;
   aggregateVersions: {
     offerVersion: number;
@@ -322,6 +353,7 @@ export class ConditionalOfferManager {
       status: "issued",
       issuedAt: now.toISOString(),
       confirmationToken,
+      confirmationTokenDigests: [confirmationTokenDigest(confirmationToken)],
       tokenUsed: false,
       aggregateVersions
     };
@@ -345,9 +377,8 @@ export class ConditionalOfferManager {
   }
 
   #persistOffer(offer: ConditionalBookingOffer): void {
-    // ADR-0075: the confirmation token is a server-issued secret and never
-    // enters the durable store. The token is regenerated in memory when the
-    // offer is hydrated after a restart; tokenUsed remains authoritative.
+    // ADR-0075 / ADR-0086: the confirmation token is never stored. The durable
+    // record keeps only SHA-256 digests of the valid tokens; tokenUsed remains authoritative.
     const { confirmationToken: _token, ...redacted } = offer;
     this.#store?.saveConditionalOffer({
       offerId: offer.offerId,
@@ -364,6 +395,21 @@ export class ConditionalOfferManager {
     });
   }
 
+  /** Mints the current plaintext token from the offer's claims and records its digest, keeping the newest N digests. */
+  #issueConfirmationToken(offer: ConditionalBookingOffer): void {
+    const token = createConfirmationToken({
+      actorId: offer.parties.primaryGuest.id,
+      tenantId: offer.tenantId,
+      offerId: offer.offerId,
+      offerVersion: offer.offerVersion,
+      quoteVersion: offer.aggregateVersions.quoteVersion,
+      totalAmountDueNowKobo: offer.totalAmountDueNowKobo,
+      expiresAt: offer.paymentWindow.expiresAt
+    });
+    offer.confirmationToken = token;
+    offer.confirmationTokenDigests = [...(offer.confirmationTokenDigests ?? []), confirmationTokenDigest(token)].slice(-CONFIRMATION_TOKEN_DIGEST_LIMIT);
+  }
+
   getOffer(offerId: string): ConditionalBookingOffer {
     let offer = this.#offers.get(offerId);
     if (!offer) {
@@ -372,19 +418,13 @@ export class ConditionalOfferManager {
         try {
           const parsed = JSON.parse(record.offerJson) as ConditionalBookingOffer;
           if (parsed.offerId === offerId && typeof parsed.paymentWindow?.expiresAt === "string") {
-            // Regenerate the server-issued confirmation token from the
-            // deterministic offer facts (the token was never persisted).
-            if (!parsed.tokenUsed && parsed.status !== "accepted") {
-              const regenerated = createConfirmationToken({
-                actorId: parsed.parties.primaryGuest.id,
-                tenantId: parsed.tenantId,
-                offerId: parsed.offerId,
-                offerVersion: parsed.offerVersion,
-                quoteVersion: parsed.aggregateVersions.quoteVersion,
-                totalAmountDueNowKobo: parsed.totalAmountDueNowKobo,
-                expiresAt: parsed.paymentWindow.expiresAt
-              });
-              parsed.confirmationToken = regenerated;
+            // The plaintext token is never persisted, so a restored process cannot reproduce the token the guest
+            // already holds. It keeps that token's digest valid and issues a fresh token for the surface it renders
+            // (ADR 0075, 0086, 0106). Accepted or used offers get no new token.
+            parsed.confirmationTokenDigests = Array.isArray(parsed.confirmationTokenDigests) ? [...parsed.confirmationTokenDigests] : [];
+            if (!parsed.tokenUsed && parsed.status === "issued") {
+              this.#issueConfirmationToken(parsed);
+              this.#persistOffer(parsed);
             }
             offer = parsed;
             this.#offers.set(offerId, offer);
@@ -475,7 +515,7 @@ export class ConditionalOfferManager {
       throw new Error("Confirmation token has already been used");
     }
 
-    if (confirmationToken !== offer.confirmationToken) {
+    if (typeof confirmationToken !== "string" || confirmationToken.length === 0) {
       throw new Error("Invalid confirmation token");
     }
 
@@ -499,10 +539,17 @@ export class ConditionalOfferManager {
       throw new Error("Confirmation token claim validation failed");
     }
 
-    // Mark accepted
+    // The presented token must be one of this offer's issued tokens. Only digests are held, so the comparison is by digest (ADR 0086).
+    if (!matchesConfirmationTokenDigest(confirmationToken, offer.confirmationTokenDigests)) {
+      throw new Error("Invalid confirmation token");
+    }
+
+    // Mark accepted: the token is spent and no digest stays valid (single use, ADR 0072 idempotency).
     offer.status = "accepted";
     offer.tokenUsed = true;
     offer.acceptedAt = now.toISOString();
+    offer.confirmationTokenDigests = [];
+    offer.confirmationToken = "";
     this.#persistOffer(offer);
 
     if (this.#audit) {

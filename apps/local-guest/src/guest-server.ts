@@ -209,9 +209,11 @@ import {
 import {
   DirectPaystackClient,
   PaystackPayments,
+  PaystackProviderFailure,
   isApprovedPaystackCheckoutUrl,
   loadPaystackConfiguration,
   type PaystackClient,
+  type PaystackProviderStatusClass,
   type Payments,
 } from "../../../packages/platform-core/src/payments/index.js";
 import {
@@ -311,6 +313,7 @@ import {
 } from "./guest-account-pages.js";
 
 export * from "./shortlet-app.js";
+import type { CardCheckoutFailedEvent } from "./shortlet-app.js";
 import {
   committedWorkScope,
   ConventionalBookingPage,
@@ -2219,7 +2222,44 @@ function resolveGuestCommerceComposition(
   throw new Error('commerce must be "local" or "disabled"');
 }
 
+/**
+ * Closed reasons for a rejected payment continuation (`/payments/offers/:id/continue`). The page shows one generic
+ * message; the host sees only this reason (ADR 0075: no offer id, URL, reference, contact or provider text).
+ */
+export type PaymentContinuationRejectionReason =
+  | "offer_not_accepted"
+  | "contact_missing"
+  | "payment_window_closed"
+  | "provider_start_failed"
+  | "unclassified";
+
+export interface PaymentContinuationRejectedEvent {
+  readonly code: "PAYMENT_CONTINUATION_REJECTED";
+  readonly reason: PaymentContinuationRejectionReason;
+  /** The closed HTTP-status class of a Paystack rejection. Present only with reason "provider_start_failed" (ADR 0075). */
+  readonly statusClass?: PaystackProviderStatusClass;
+}
+
+/** The closed status class of a rejected Paystack start, when the thrown error is that rejection (ADR 0075). */
+export function paymentContinuationProviderStatusClass(error: unknown): PaystackProviderStatusClass | undefined {
+  return error instanceof PaystackProviderFailure && error.reason === "provider_rejected" ? error.statusClass : undefined;
+}
+
+/** Maps a thrown continuation error to its closed reason. Only the domain's fixed messages are matched. */
+export function paymentContinuationRejectionReason(error: unknown): PaymentContinuationRejectionReason {
+  const message = error instanceof Error ? error.message : "";
+  if (/Checkout initialization requires an accepted offer|not accepted|Only the authoritative payer/i.test(message)) return "offer_not_accepted";
+  if (/phone number is required|email address is required/i.test(message)) return "contact_missing";
+  if (/Payment window has expired/i.test(message)) return "payment_window_closed";
+  if (/Paystack/i.test(message)) return "provider_start_failed";
+  return "unclassified";
+}
+
 export interface GuestRequestHandlerOptions {
+  /** Metadata-only observation of a rejected payment continuation (closed reason; ADR 0075). */
+  onPaymentContinuationRejected?: (event: PaymentContinuationRejectedEvent) => void;
+  /** Metadata-only observation of a failed chat card start (closed reason; ADR 0075). */
+  onCardCheckoutFailed?: (event: CardCheckoutFailedEvent) => void;
   /** Payment reference keys for the commerce pack (user decision 18 Oct 2026). Omitted: the injected module reads them from the environment. */
   paymentReferenceKeys?: PaymentReferenceKeys;
   environment?: LocalGuestEnvironment;
@@ -2448,6 +2488,7 @@ export function createGuestRequestHandler(
     geminiClient,
     assistantRuntime,
     ...modelCallBudget,
+    ...(options.onCardCheckoutFailed === undefined ? {} : { onCardCheckoutFailed: options.onCardCheckoutFailed }),
   });
   // Guest Account sign-in (issue 06). Disabled, not defaulted, when its key, sender or session scoping is missing.
   const accountComposition =
@@ -2560,6 +2601,7 @@ export function createGuestRequestHandler(
     const runtime = {
       environment: runtimeEnvironment,
       app: new LocalGuestApp(runtimeEnvironment, {
+        ...(options.onCardCheckoutFailed === undefined ? {} : { onCardCheckoutFailed: options.onCardCheckoutFailed }),
         ...(assistantModelClient
           ? {
               assistantRuntime: new AssistantRuntime(
@@ -4697,7 +4739,14 @@ export function createGuestRequestHandler(
         }
         res.writeHead(303, { Location: checkout.checkoutUrl });
         res.end();
-      } catch {
+      } catch (error) {
+        const reason = paymentContinuationRejectionReason(error);
+        const statusClass = reason === "provider_start_failed" ? paymentContinuationProviderStatusClass(error) : undefined;
+        options.onPaymentContinuationRejected?.({
+          code: "PAYMENT_CONTINUATION_REJECTED",
+          reason,
+          ...(statusClass === undefined ? {} : { statusClass }),
+        });
         sendPageError(req, res, 400, "PAYMENT_CONTINUATION_REJECTED");
       }
       return;

@@ -79,7 +79,8 @@ export function cardPaymentArtifactFromState({
 }): CardPaymentArtifact {
   const id = cardPaymentArtifactId(offer.offerId);
   const expired = now.getTime() >= new Date(offer.paymentWindow.expiresAt).getTime();
-  const status: CardPaymentStatus = contract && reservation ? "confirmed" : journey?.stage === "stay_settled" ? "deposit_required" : journey?.stage === "compensation_pending" ? "compensation_pending" : journey?.stage === "compensated" ? "compensated" : journey?.stage === "reconciliation_required" ? "reconciliation_required" : session?.status === "failed" ? "failed" : session?.status === "completed" ? "reconciliation_required" : session?.status === "initiated" && !expired ? "checkout_initiated" : expired ? "expired" : "ready";
+  const status: CardPaymentStatus = contract && reservation ? "confirmed" : journey?.stage === "stay_settled" ? "deposit_required" : journey?.stage === "compensation_pending" ? "compensation_pending" : journey?.stage === "compensated" ? "compensated" : journey?.stage === "reconciliation_required" ? "reconciliation_required" : session?.status === "failed" ? "failed" : session?.status === "completed" ? "reconciliation_required" : session?.status === "initiated" && !expired ? "checkout_initiated" : expired || offer.status === "expired" ? "expired" : offer.status === "accepted" ? "ready" : "failed";
+  // Only an accepted offer is payable (ADR 0087/0106). Any other offer state is reported as not paid, never as ready.
   const payer = offer.parties.distinctPayer ?? offer.parties.primaryGuest;
   const canInitialize = (status === "ready" || status === "deposit_required") && viewer.role === "guest" && !!viewer.id && viewer.id === payer.id && !!viewer.tenantId && !!offer.tenantId && viewer.tenantId === offer.tenantId;
   const canVerifyReturn = status === "checkout_initiated" && viewer.role === "guest" && !!viewer.id && viewer.id === payer.id && !!viewer.tenantId && !!offer.tenantId && viewer.tenantId === offer.tenantId;

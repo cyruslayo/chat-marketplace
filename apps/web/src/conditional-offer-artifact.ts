@@ -12,6 +12,8 @@ export interface ConditionalOfferArtifactAction {
   readonly offerVersion: number;
   readonly projectionVersion: number;
   readonly confirmationToken: string;
+  /** SHA-256 digests of every token still valid for this offer. The gate matches the presented token against them (ADR 0086). */
+  readonly confirmationTokenDigests?: readonly string[];
 }
 
 export interface ConditionalOfferArtifact {
@@ -109,7 +111,7 @@ export function conditionalOfferArtifactFromOffer(
     aggregateVersions: { ...offer.aggregateVersions },
   };
   const actions: readonly ConditionalOfferArtifactAction[] = canAccept
-    ? [{ type: "accept", artifactId: id, offerId: offer.offerId, expectedStatus: "issued", offerVersion: offer.offerVersion, projectionVersion, confirmationToken: offer.confirmationToken }]
+    ? [{ type: "accept", artifactId: id, offerId: offer.offerId, expectedStatus: "issued", offerVersion: offer.offerVersion, projectionVersion, confirmationToken: offer.confirmationToken, confirmationTokenDigests: Object.freeze([...(offer.confirmationTokenDigests ?? [])]) }]
     : [];
   return Object.freeze({
     id,
