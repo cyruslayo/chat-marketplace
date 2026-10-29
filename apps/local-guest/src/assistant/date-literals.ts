@@ -7,7 +7,7 @@
  * the booking horizon resolves to nothing; a year-omitted literal resolves to the nearest on-or-after
  * occurrence in Africa/Lagos. Anything unresolved stays unauthorized and the planner must ask again.
  */
-import { BOOKING_HORIZON_DAYS, dateKeyInLagos } from "../../../../domains/shortlet/src/browse.js";
+import { BOOKING_HORIZON_DAYS, dateKeyInLagos } from "../../../../domains/shortlet/src/index.js";
 
 export interface GuestDateLiteral {
   /** Resolved ISO calendar date (YYYY-MM-DD). */
