@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DirectPaystackClient, PaystackProviderFailure, type PaystackHttpFetcher } from "../packages/platform-core/src/payments/index.js";
+import { DirectPaystackClient, PAYSTACK_PROVIDER_STATUS_CLASSES, PaystackProviderFailure, type PaystackHttpFetcher, type PaystackProviderStatusClass } from "../packages/platform-core/src/payments/index.js";
 import { CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT } from "../apps/web/src/card-payment-actions.js";
 import { cardCheckoutFailureReason, type CardCheckoutFailedEvent, type CardCheckoutFailureReason } from "../apps/local-guest/src/shortlet-app.js";
+import { logCardCheckoutFailed } from "../apps/cloudflare/src/card-checkout-log.js";
 import { createPaystackHttpFake } from "./helpers/paystack-http.js";
 import { guestAction, restartFixture } from "./helpers/guest-restart.js";
 
@@ -46,9 +47,9 @@ function assertOneClosedReason(outcome: Outcome, reason: CardCheckoutFailureReas
   assert.doesNotMatch(JSON.stringify(outcome.events), FORBIDDEN, "the reason carries no ids, URLs, references, contacts, keys or provider text");
 }
 
-test("a Paystack rejection of the initialize call is reported as provider_rejected", async () => {
+test("a Paystack rejection of the initialize call is reported as provider_rejected with its closed status class", async () => {
   const rejecting: PaystackHttpFetcher = async () => ({ status: 400, json: async () => ({ status: false, message: "synthetic provider rejection" }) });
-  assertOneClosedReason(await startChatCheckout(clientWith(rejecting)), "provider_rejected");
+  assertProviderRejection(await startChatCheckout(clientWith(rejecting)), "invalid_request");
 });
 
 test("a Paystack request that cannot be sent is reported as provider_unreachable", async () => {
@@ -120,4 +121,69 @@ test("cardCheckoutFailureReason maps each fixed domain message and a provider fa
     ["not an error object", "unclassified"],
   ];
   for (const [error, reason] of cases) assert.equal(cardCheckoutFailureReason(error), reason);
+});
+
+// ADR 0075: a provider rejection carries one closed HTTP-status class and nothing else from the provider. The status class
+// is the only provider-derived value the host sees; the provider's text, ids, URLs, contacts and keys never reach the event,
+// the thrown error or the log line.
+
+const PROVIDER_STATUS_CASES: readonly (readonly [number, PaystackProviderStatusClass])[] = [
+  [401, "auth_failed"],
+  [403, "auth_failed"],
+  [400, "invalid_request"],
+  [422, "invalid_request"],
+  [404, "not_found"],
+  [429, "rate_limited"],
+  [500, "server_error"],
+  [503, "server_error"],
+  [402, "other"],
+  [200, "unsuccessful_body"],
+];
+const PROVIDER_TEXT_BODY = { status: false, message: "synthetic provider text https://api.paystack.co/transaction ref psp-ref-synthetic guest@example.test +2348012345678 sk_test_synthetic" };
+const PROVIDER_TEXT_LEAK = /synthetic|https?:|psp-ref|guest@|\+234|sk_test|api\.paystack/i;
+
+function providerStatusFetcher(status: number): PaystackHttpFetcher {
+  return async () => ({ status, json: async () => PROVIDER_TEXT_BODY });
+}
+
+function assertProviderRejection(outcome: Outcome, statusClass: PaystackProviderStatusClass): void {
+  assert.equal(outcome.result.ok, false, "the guest sees a failure");
+  assert.equal(outcome.result.code, "ACTION_NOT_AUTHORIZED", "the guest-visible code is unchanged");
+  assert.equal(outcome.result.message, GUEST_MESSAGE, "the guest-visible message is unchanged");
+  assert.deepEqual(outcome.events, [{ code: "CARD_CHECKOUT_FAILED", reason: "provider_rejected", statusClass }], "one closed reason and one closed status class");
+  assert.doesNotMatch(JSON.stringify(outcome.events), PROVIDER_TEXT_LEAK, "the event carries no provider text");
+
+  const [event] = outcome.events as [CardCheckoutFailedEvent];
+  const written: string[] = [];
+  logCardCheckoutFailed(event, (line) => written.push(line));
+  assert.equal(written.length, 1, "exactly one log line");
+  const [line] = written as [string];
+  assert.deepEqual(Object.keys(JSON.parse(line) as object).sort(), ["event", "reason", "statusClass"], "the line holds only the allowed keys");
+  assert.deepEqual(JSON.parse(line), { event: "card_checkout_failed", reason: "provider_rejected", statusClass }, "the line holds only the allowed values");
+  assert.doesNotMatch(line, PROVIDER_TEXT_LEAK, "the log line carries no provider text");
+}
+
+test("each Paystack HTTP status and a 2xx body with status false report one closed status class in the chat card start", async () => {
+  for (const [status, statusClass] of PROVIDER_STATUS_CASES) {
+    assert.ok(PAYSTACK_PROVIDER_STATUS_CLASSES.includes(statusClass), `HTTP ${status} maps to a closed class`);
+    assertProviderRejection(await startChatCheckout(clientWith(providerStatusFetcher(status))), statusClass);
+  }
+});
+
+test("a thrown provider rejection carries its status class and the fixed message only", async () => {
+  const client = clientWith(providerStatusFetcher(400));
+  const error = await client
+    .initializeTransaction({ email: "guest@example.test", amountKobo: 1000, currency: "NGN", reference: "ref-status-1", callbackUrl: "https://demo.example.test/payments/paystack/callback" })
+    .then(() => assert.fail("the rejection must throw"), (caught: unknown) => caught);
+  assert.ok(error instanceof PaystackProviderFailure);
+  assert.equal(error.reason, "provider_rejected");
+  assert.equal(error.statusClass, "invalid_request");
+  assert.doesNotMatch(error.message, PROVIDER_TEXT_LEAK, "the message is the fixed text only");
+});
+
+test("a provider failure that is not a rejection reports no status class", async () => {
+  const unreachable: PaystackHttpFetcher = async () => {
+    throw new TypeError("fetch failed");
+  };
+  assertOneClosedReason(await startChatCheckout(clientWith(unreachable)), "provider_unreachable");
 });

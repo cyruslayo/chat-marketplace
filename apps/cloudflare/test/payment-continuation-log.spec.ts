@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
-import { paymentContinuationRejectionReason, type PaymentContinuationRejectionReason } from "../../local-guest/src/guest-server.js";
+import { paymentContinuationRejectionReason, type PaymentContinuationRejectedEvent, type PaymentContinuationRejectionReason } from "../../local-guest/src/guest-server.js";
+import { PAYSTACK_PROVIDER_STATUS_CLASSES } from "../../../packages/platform-core/src/payments/paystack.js";
 import { logPaymentContinuationRejected } from "../src/payment-continuation-log.js";
 
 // ADR 0075 / ADR 0087: a rejected payment continuation reaches Workers Logs as one closed line only: a fixed event name
@@ -42,4 +43,30 @@ test("The default writer sends the line to console.log, the Workers Logs sink", 
     console.log = original;
   }
   expect(logged).toEqual(['{"event":"payment_continuation_rejected","reason":"unclassified"}']);
+});
+
+// ADR 0075: a provider start failure adds exactly one closed HTTP-status class. Other reasons never carry one.
+test("A provider start failure writes its closed status class and no other key", () => {
+  for (const statusClass of PAYSTACK_PROVIDER_STATUS_CLASSES) {
+    const written: string[] = [];
+    logPaymentContinuationRejected({ code: "PAYMENT_CONTINUATION_REJECTED", reason: "provider_start_failed", statusClass }, (line) => written.push(line));
+    expect(written).toEqual([JSON.stringify({ event: "payment_continuation_rejected", reason: "provider_start_failed", statusClass })]);
+    const [line] = written as [string];
+    expect(Object.keys(JSON.parse(line) as object).sort()).toEqual(["event", "reason", "statusClass"]);
+  }
+});
+
+test("The status class is omitted for every reason other than provider_start_failed", () => {
+  for (const reason of CLOSED_REASONS.filter((candidate) => candidate !== "provider_start_failed")) {
+    const written: string[] = [];
+    logPaymentContinuationRejected({ code: "PAYMENT_CONTINUATION_REJECTED", reason, statusClass: "server_error" } as PaymentContinuationRejectedEvent, (line) => written.push(line));
+    expect(written).toEqual([JSON.stringify({ event: "payment_continuation_rejected", reason })]);
+  }
+});
+
+test("A status class outside the closed list is omitted rather than written", () => {
+  const written: string[] = [];
+  logPaymentContinuationRejected({ code: "PAYMENT_CONTINUATION_REJECTED", reason: "provider_start_failed", statusClass: "Bearer sk_test_synthetic" } as unknown as PaymentContinuationRejectedEvent, (line) => written.push(line));
+  expect(written).toEqual(['{"event":"payment_continuation_rejected","reason":"provider_start_failed"}']);
+  expect(written[0]).not.toContain("sk_test");
 });

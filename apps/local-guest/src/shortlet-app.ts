@@ -22,7 +22,7 @@ import type {
 import type { AssetLoader } from "../../../packages/platform-core/src/asset-loader.js";
 import { nodeAssetLoader } from "../../../packages/platform-core/src/node-asset-loader.js";
 import { GUEST_HTML_SECURITY_HEADERS } from "../../../packages/platform-core/src/security-headers.js";
-import { PaystackProviderFailure } from "../../../packages/platform-core/src/payments/index.js";
+import { PaystackProviderFailure, type PaystackProviderStatusClass } from "../../../packages/platform-core/src/payments/index.js";
 import { createGuestShell, type StaticAsset } from "./guest-shell.js";
 import { extendedStayDraftFacts } from "../../web-agent/src/extended-stay-presentation.js";
 import {
@@ -736,6 +736,13 @@ export type CardCheckoutFailureReason =
 export interface CardCheckoutFailedEvent {
   readonly code: "CARD_CHECKOUT_FAILED";
   readonly reason: CardCheckoutFailureReason;
+  /** The closed HTTP-status class of a Paystack rejection. Present only with reason "provider_rejected" (ADR 0075). */
+  readonly statusClass?: PaystackProviderStatusClass;
+}
+
+/** The closed status class of a rejected Paystack call, or undefined for every other failure (ADR 0075). */
+export function cardCheckoutProviderStatusClass(error: unknown): PaystackProviderStatusClass | undefined {
+  return error instanceof PaystackProviderFailure && error.reason === "provider_rejected" ? error.statusClass : undefined;
 }
 
 /**
@@ -1228,13 +1235,13 @@ export class LocalGuestApp {
     return this.#withJourney(threadId, result);
   }
 
-  #reportCardCheckoutFailure(reason: CardCheckoutFailureReason): void {
-    this.#onCardCheckoutFailed?.({ code: "CARD_CHECKOUT_FAILED", reason });
+  #reportCardCheckoutFailure(reason: CardCheckoutFailureReason, statusClass?: PaystackProviderStatusClass): void {
+    this.#onCardCheckoutFailed?.({ code: "CARD_CHECKOUT_FAILED", reason, ...(statusClass === undefined ? {} : { statusClass }) });
   }
 
-  /** Reports a closed reason and returns the unchanged guest-visible result. */
-  #rejectCardCheckout(reason: CardCheckoutFailureReason, result: GuestTurnResult): GuestTurnResult {
-    this.#reportCardCheckoutFailure(reason);
+  /** Reports a closed reason (and, for a provider rejection, its closed status class) and returns the unchanged guest-visible result. */
+  #rejectCardCheckout(reason: CardCheckoutFailureReason, result: GuestTurnResult, statusClass?: PaystackProviderStatusClass): GuestTurnResult {
+    this.#reportCardCheckoutFailure(reason, statusClass);
     return result;
   }
 
@@ -1333,11 +1340,16 @@ export class LocalGuestApp {
         return this.#contactSurface(thread, "email", event.context ?? {});
       if (/phone number is required/i.test(message))
         return this.#contactSurface(thread, "phone", { ...(event.context ?? {}), resumeAction: "payment" });
-      return this.#rejectCardCheckout(cardCheckoutFailureReason(error), {
-        ok: false,
-        code: "ACTION_NOT_AUTHORIZED",
-        message: "The secure card checkout could not be started.",
-      });
+      const reason = cardCheckoutFailureReason(error);
+      return this.#rejectCardCheckout(
+        reason,
+        {
+          ok: false,
+          code: "ACTION_NOT_AUTHORIZED",
+          message: "The secure card checkout could not be started.",
+        },
+        reason === "provider_rejected" ? cardCheckoutProviderStatusClass(error) : undefined,
+      );
     }
   }
 

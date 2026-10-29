@@ -33,13 +33,34 @@ export interface PaystackEnvironmentSource {
  */
 export type PaystackProviderFailureReason = "provider_rejected" | "provider_unreachable" | "provider_response_invalid" | "checkout_url_rejected" | "reference_conflict";
 
+/**
+ * The closed class of a Paystack rejection (ADR 0075). It is derived from the HTTP status and the body's `status` flag only;
+ * no provider text, body or header is kept. `unsuccessful_body` is a 2xx answer whose body does not report success.
+ */
+export const PAYSTACK_PROVIDER_STATUS_CLASSES = ["auth_failed", "invalid_request", "not_found", "rate_limited", "server_error", "unsuccessful_body", "other"] as const;
+export type PaystackProviderStatusClass = (typeof PAYSTACK_PROVIDER_STATUS_CLASSES)[number];
+
+/** Maps the HTTP status of a rejected Paystack answer to its closed class (ADR 0075). */
+export function paystackProviderStatusClass(httpStatus: number): PaystackProviderStatusClass {
+  if (httpStatus >= 200 && httpStatus < 300) return "unsuccessful_body";
+  if (httpStatus === 401 || httpStatus === 403) return "auth_failed";
+  if (httpStatus === 400 || httpStatus === 422) return "invalid_request";
+  if (httpStatus === 404) return "not_found";
+  if (httpStatus === 429) return "rate_limited";
+  if (httpStatus >= 500 && httpStatus <= 599) return "server_error";
+  return "other";
+}
+
 export class PaystackProviderFailure extends Error {
   readonly reason: PaystackProviderFailureReason;
+  /** Present only on a `provider_rejected` failure, where Paystack answered with a non-success (ADR 0075). */
+  readonly statusClass?: PaystackProviderStatusClass;
 
-  constructor(reason: PaystackProviderFailureReason, message: string) {
+  constructor(reason: PaystackProviderFailureReason, message: string, options: { readonly statusClass?: PaystackProviderStatusClass } = {}) {
     super(message);
     this.name = "PaystackProviderFailure";
     this.reason = reason;
+    if (options.statusClass !== undefined) this.statusClass = options.statusClass;
   }
 }
 
@@ -137,7 +158,7 @@ function paystackStatus(value: unknown): PSPVerifyResult["status"] {
 function assertProviderResponse(response: PaystackHttpResponse, body: unknown, operation: string): PaystackEnvelope {
   const envelope = recordOf(body) as PaystackEnvelope | undefined;
   if (!envelope || envelope.status !== true || response.status < 200 || response.status >= 300) {
-    throw new PaystackProviderFailure("provider_rejected", `Paystack ${operation} request failed`);
+    throw new PaystackProviderFailure("provider_rejected", `Paystack ${operation} request failed`, { statusClass: paystackProviderStatusClass(response.status) });
   }
   return envelope;
 }

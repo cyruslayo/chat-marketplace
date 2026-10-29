@@ -209,9 +209,11 @@ import {
 import {
   DirectPaystackClient,
   PaystackPayments,
+  PaystackProviderFailure,
   isApprovedPaystackCheckoutUrl,
   loadPaystackConfiguration,
   type PaystackClient,
+  type PaystackProviderStatusClass,
   type Payments,
 } from "../../../packages/platform-core/src/payments/index.js";
 import {
@@ -2232,6 +2234,13 @@ export type PaymentContinuationRejectionReason =
 export interface PaymentContinuationRejectedEvent {
   readonly code: "PAYMENT_CONTINUATION_REJECTED";
   readonly reason: PaymentContinuationRejectionReason;
+  /** The closed HTTP-status class of a Paystack rejection. Present only with reason "provider_start_failed" (ADR 0075). */
+  readonly statusClass?: PaystackProviderStatusClass;
+}
+
+/** The closed status class of a rejected Paystack start, when the thrown error is that rejection (ADR 0075). */
+export function paymentContinuationProviderStatusClass(error: unknown): PaystackProviderStatusClass | undefined {
+  return error instanceof PaystackProviderFailure && error.reason === "provider_rejected" ? error.statusClass : undefined;
 }
 
 /** Maps a thrown continuation error to its closed reason. Only the domain's fixed messages are matched. */
@@ -4712,9 +4721,12 @@ export function createGuestRequestHandler(
         res.writeHead(303, { Location: checkout.checkoutUrl });
         res.end();
       } catch (error) {
+        const reason = paymentContinuationRejectionReason(error);
+        const statusClass = reason === "provider_start_failed" ? paymentContinuationProviderStatusClass(error) : undefined;
         options.onPaymentContinuationRejected?.({
           code: "PAYMENT_CONTINUATION_REJECTED",
-          reason: paymentContinuationRejectionReason(error),
+          reason,
+          ...(statusClass === undefined ? {} : { statusClass }),
         });
         sendPageError(req, res, 400, "PAYMENT_CONTINUATION_REJECTED");
       }
