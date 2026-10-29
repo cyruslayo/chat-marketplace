@@ -216,3 +216,120 @@ Tests were written first and failed on the missing module (`Cannot find module '
 | `env -u LLM_API_KEY npm run test:workers -- apps/cloudflare/test/pilot-worker.spec.ts apps/cloudflare/test/edge-security.spec.ts apps/cloudflare/test/payment-continuation-log.spec.ts` | 3 files, 9 pass, 0 fail |
 
 The worker runner resolved `node_modules` through `../chat-marketplace/node_modules` (the main worktree). This is the existing setup, not changed here.
+
+## Task: chat card start diagnostics (29 Oct 2026)
+
+Branch `fix/staging-checkout-journey`, worktree `C:\AI2026\chat-marketplace-fixes`. Offline only: no live or paid call, no Cloudflare, wrangler or cf command, no push, merge or deploy. `env -u LLM_API_KEY` on every command. No environment was printed.
+
+### Where the live message comes from
+
+`"The secure card checkout could not be started."` (code `ACTION_NOT_AUTHORIZED`) is produced only by the `catch` at the end of `#handlePaystackCardCheckout` in `apps/local-guest/src/shortlet-app.ts`. Everything after the contact pre-check and the gate sits inside that `try`: `initializePaystackCheckout` (domain checks, session creation, the Paystack initialize call, the approved-URL and reference checks, `updateCheckoutUrl`), then `getArtifact`, `#supersede`, `#emitTransition` and the A2UI build. Before this change the catch wrote nothing to the host, which is why Workers Logs showed no line. Gate rejections return their own codes and messages, so they cannot produce this text.
+
+### ADR table (AGENTS.md, implementation protocol)
+
+| ADR | Constraint | Where it is met |
+|---|---|---|
+| 0075 | No ids, URLs, references, contacts, keys or provider text in logs or errors | Closed reason enum; `PaystackProviderFailure` messages are fixed strings; `card-checkout-log.ts` writes only `event` and `reason` |
+| 0046 | One live attempt; replacements need unique references; no reset of the window | The observer changes no state. The guest result is unchanged. No reference format changed |
+| 0049 | Fresh PSP-hosted checkout only at an approved hosted URL | `checkout_url_rejected` keeps the existing approved-host check (`checkout.paystack.com`) |
+| 0106 | Gate and server-owned authority stay fail closed | Gate, contact pre-check and guards are untouched; gate rejections are reported as `action_rejected` only |
+
+### Commits
+
+| Commit | Scope |
+|---|---|
+| `bd4f87c` | Tests first: `test/card-checkout-failure-diagnostic.test.ts`, `apps/cloudflare/test/card-checkout-log.spec.ts` (red until the following commits) |
+| `eb00783` | `packages/platform-core/src/payments/paystack.ts`: typed `PaystackProviderFailure`; `test/paystack-pilot.test.ts` expectation moved to the new fixed message |
+| `e019a2d` | `apps/local-guest/src/shortlet-app.ts` observer and classifier; `apps/local-guest/src/guest-server.ts` option wiring |
+| `0c40693` | `apps/cloudflare/src/card-checkout-log.ts` helper; `apps/cloudflare/src/shortlet-pilot-do.ts` wiring |
+
+### Failure branches and their closed reasons
+
+| Branch (where it fires) | Paystack call made? | Reason |
+|---|---|---|
+| Initialize returns non-2xx or `status: false` (`assertProviderResponse`) | Yes | `provider_rejected` |
+| Request cannot be sent (fetch throws) | Attempted | `provider_unreachable` |
+| Response body is not JSON | Yes | `provider_response_invalid` |
+| Returned reference differs from the one sent | Yes | `reference_conflict` |
+| Returned `authorization_url` not on the approved host | Yes | `checkout_url_rejected` |
+| Gate rejection, stale surface, unknown thread (no Paystack call) | No | `action_rejected` |
+| Payment window closed (rejected by the gate, no Paystack call) | No | `action_rejected` |
+| Domain messages: accepted-offer, window, eligibility, deposit (`initializeCardCheckout`) | No | `offer_not_payable` (classifier) |
+| Domain messages: authoritative payer, cross-tenant | No | `payer_not_authorized` (classifier) |
+| `Paystack checkout is not configured` (apps/web, only without a provider override) | No | `provider_not_configured` (classifier only; the chat always passes its provider) |
+| Non-card checkout returned by `payments.start` | Yes | `provider_response_invalid` (classifier) |
+| Anything else, including persistence errors | Unknown | `unclassified` |
+
+Not reported: the phone and email prompts (`:contact:` surfaces are normal results, `ok: true`). `persistence_failed` was not added because a store error has no reliable message to match and is not wrapped; such errors are `unclassified`.
+
+### Offline findings
+
+- Config: `loadPaystackConfiguration` runs when the Durable Object is built (`loadPilotCoreConfiguration`). An empty `PAYSTACK_SECRET_KEY` on the Worker fails there with `PAYSTACK_SECRET_KEY is required`, which would stop the Durable Object, not produce this chat message. The config-empty hypothesis does not explain the live text.
+- No offline bug reproduces the live message on the success path. The fake Paystack success path reaches the resumed payment card, the approved-URL check accepts the `checkout.paystack.com` shape, and no `await` is missing on this path.
+- Candidate for the live cause (not verified, and not changed): the Paystack reference is built as `psp_ref_<8 chars of command id>_<ms>` in `domains/shortlet/src/card-payment.ts` (`initializeCardCheckout`). It contains underscores. From memory of Paystack's documentation, which could not be checked here without a live call, Paystack accepts only letters, digits, `-`, `.` and `=` in a transaction reference. If Paystack rejects it, Initialize fails with no transaction, which matches the empty Paystack dashboard and the silent logs. The new log line tells the owner the category: a `provider_rejected` on staging points to Paystack's side. Changing reference format touches ADR 0046 and 0049 references and needs an owner decision.
+- Retry behaviour: a failed first start leaves the session `initiated` with the placeholder checkout URL (`https://checkout.psp.example.com/...`), and the next click reuses the same reference (`apps/web/src/card-payment-application.ts`, `initializePaystackCheckout`). One rejected reference therefore fails every retry. Noted, not changed.
+
+### Commands and counts
+
+Red (before the implementation):
+
+    env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test test/card-checkout-failure-diagnostic.test.ts
+
+- The module failed to load, because `PaystackProviderFailure` and the observer did not exist: `tests 1, fail 1`.
+
+Green (after `eb00783` and `e019a2d`):
+
+    env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test test/card-checkout-failure-diagnostic.test.ts
+
+- First run: `tests 9, pass 8, fail 1`. The failing case expected a no-module chat start to fail. It succeeds on the deterministic local PSP, so the observer call for it was removed and the case now asserts the local path reports nothing.
+- After that change: `tests 9, pass 9, fail 0`.
+
+Worker spec:
+
+    env -u LLM_API_KEY npm run test:workers -- apps/cloudflare/test/card-checkout-log.spec.ts
+
+- The bundle guard passed, and vitest ran only the spec: `Test Files 1 passed (1)`, `Tests 3 passed (3)`. The spec was written before its helper but not run separately red.
+
+Type check:
+
+    env -u LLM_API_KEY npm run check
+
+- Exit 0. Covers root, `apps/cloudflare`, `tsconfig.test.json`, `tsconfig.tooling.json` and the worker bundle guard.
+
+Affected non-browser files:
+
+    env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test test/card-checkout-failure-diagnostic.test.ts test/payment-continuation-diagnostic.test.ts test/assistant-paystack-checkout-contact.test.ts test/paystack-pilot.test.ts test/platform-payments.test.ts test/paystack-transfer-adapter.test.ts test/integrate-card-payment-application.test.ts test/guest-payment-choice.test.ts test/guest-payment-consistency.test.ts test/pilot-production-composition.test.ts test/assistant-cold-journey.test.ts
+
+- First run: `tests 98, pass 97, fail 1`. The failure was `paystack-pilot` AC14, which asserted the old message `/invalid checkout/`. Its expectation now matches `/unapproved checkout URL/`, the same rejection.
+- After that change: `tests 98, pass 98, fail 0`.
+
+Related restart and pilot files:
+
+    env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test test/guest-browser-restart.test.ts test/guest-never-silent.test.ts test/pilot-local.test.ts test/guest-process-restart.test.ts test/assistant-booking-journey.test.ts
+
+- `tests 82, pass 81, fail 1`. The failure was `pilot-local` AC4 ("Production pilot:start still fails without required Paystack credentials"), which spawns a child process. The same flake was recorded above.
+- `env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test test/pilot-local.test.ts` run alone: `tests 44, pass 44, fail 0`.
+
+Not run: real-browser and Chromium suites; full `npm test` and the batch `npm run test:workers` (pre-merge, once per batch); the workerd local load of the bundle (needs wrangler, which the owner runs).
+
+### Staging bundle
+
+Command, from `apps/cloudflare`, with the exact environment given in the task:
+
+    env -u LLM_API_KEY -u COMMERCE_ENABLED -u RESEND_API_KEY -u GEMINI_API_KEY SHORTLET_DEMO=enabled CONCIERGE_MODE=openai-compatible LLM_BASE_URL=https://openrouter.ai/api/v1 LLM_MODEL=openai/gpt-6-luna LLM_PROVIDER_LABEL=openrouter CONCIERGE_DAILY_MODEL_CALL_CAP=1500 CF_ACCESS_TEAM_DOMAIN=lucky-silence-5605.cloudflareaccess.com CF_ACCESS_AUD=<aud> node ../../node_modules/@cloudflare/vite-plugin/bin/cf-vite build --mode staging
+
+- Exit 0. The bundle `.cloudflare/output/v0/workers/default/bundle/index.js` contains `card_checkout_failed`, `provider_unreachable` and `PaystackProviderFailure`.
+
+Descriptor `apps/cloudflare/.cloudflare/output/v0/workers/default/worker.config.json`, checked by key name and type; values printed only for non-secret fields:
+
+- Name `shortlet-pilot-staging`: PASS.
+- `COMMERCE_ENABLED` is the text `false`: PASS.
+- `SHORTLET_DEPLOYMENT` `staging`, `PAYSTACK_ENVIRONMENT` `test`, `SHORTLET_DEMO` `enabled`: PASS.
+- `CONCIERGE_DAILY_MODEL_CALL_CAP` `1500`: PASS.
+- Origin `https://shortlet-pilot-staging.khayutsefi.workers.dev` (workers.dev); `PAYSTACK_CALLBACK_BASE_URL` equals it: PASS.
+- `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` present and equal to the given values: PASS.
+- `LLM_BASE_URL`, `LLM_MODEL`, `LLM_PROVIDER_LABEL` equal the given values: PASS.
+- `RESEND_API_KEY` and `GEMINI_API_KEY` absent: PASS.
+- Secret-typed bindings are exactly `PAYSTACK_SECRET_KEY`, `LLM_API_KEY`, `SHORTLET_GUEST_CODE_HASHING_KEY`, `OPS_SHARED_SECRET`: PASS. `PAYSTACK_SECRET_KEY` is secret-typed: PASS.
+
+Unverified: the live staging behaviour (no live call allowed); the workerd local load of the bundle; the Paystack reference-format hypothesis; the owner's deploy, which has not happened.
