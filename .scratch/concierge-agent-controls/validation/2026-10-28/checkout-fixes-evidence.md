@@ -431,3 +431,30 @@ Not verified: loading the bundle in local workerd, live staging behaviour, the o
 2. Later Billing Period attempts stuck with a legacy reference block retries for their 20-minute window (`A live attempt already exists`), then are superseded. They self-heal and are not re-minted.
 3. A refused chat start leaves the card on the `payment:checkout` surface with a `verify-return` button, not the start button. The guest resumes through `/payments/offers/<id>/continue`, which calls `initializePaystackCheckout`. Chat UX is unchanged here.
 4. Pre-existing: the `card_payment.checkout_initialized` audit includes `pspReference`, allowed only under the ADR 0096 `audit_log` exemption.
+
+## Task D: closed Paystack status class on the card-start and continuation logs (29 Oct 2026)
+
+Purpose: live staging logged `card_checkout_failed` with `reason: provider_rejected` and no way to tell why Paystack refused the initialize call. A closed `statusClass` now says which kind of refusal it was: auth_failed (401/403), invalid_request (400/422), not_found (404), rate_limited (429), server_error (5xx), unsuccessful_body (2xx whose body reports `status: false`), other (any other HTTP status).
+
+Rules applied (ADR 0075, ADR 0046, ADR 0106):
+- ADR 0075: the class is the only provider-derived value written. No provider text, body, headers, ids, URLs, references, contacts or keys reach the event, the thrown error or the log line. Each thrown message stays a fixed string.
+- ADR 0046: no change to the payment-attempt rules; the class is observation only.
+- ADR 0106: the guard diagnostics record closed codes only. The chat card start tests use the cold-restore fixture (`restartFixture`) and the staging-like clock and guest of the existing file.
+- The `Authorization` header is never read or logged.
+- statusClass is written only for `provider_rejected` (card start) and `provider_start_failed` (continuation, when the thrown error is that rejection). Other reasons, and any class outside the closed list, omit it. `provider_unreachable` and `provider_response_invalid` have no HTTP status, so they carry none.
+
+Commit: `85e88f8` (source and tests, explicit paths). Changed: `packages/platform-core/src/payments/paystack.ts`, `apps/local-guest/src/shortlet-app.ts`, `apps/local-guest/src/guest-server.ts`, `apps/cloudflare/src/card-checkout-log.ts`, `apps/cloudflare/src/payment-continuation-log.ts`, and the four test files below.
+
+### Red, then green
+
+- Red: tests written first. `env -u LLM_API_KEY npx tsx --test test/card-checkout-failure-diagnostic.test.ts test/payment-continuation-diagnostic.test.ts` before the implementation: the new status-class assertions failed (exact per-file counts were not kept).
+- The first green run after the implementation showed three assertion failures, all in expectations of the old event shape or a leak regex that matched the fixed message "Paystack initialization request failed". Those expectations were corrected in the test files. Product code was not changed for them.
+
+### Commands and counts (final)
+
+- `env -u LLM_API_KEY npm run check`: exit 0 (after the implementation, and again after the test corrections).
+- `env -u LLM_API_KEY npx tsx --test test/card-checkout-failure-diagnostic.test.ts test/payment-continuation-diagnostic.test.ts test/paystack-pilot.test.ts`: tests 60, pass 60, fail 0. Includes the 10 HTTP-status and 2xx-body cases through the chat card start, the thrown-error check, the continuation 429 and 2xx-body cases, and the unchanged original cases.
+- `env -u LLM_API_KEY npx tsx --test test/paystack-psp-reference-format.test.ts test/assistant-paystack-checkout-contact.test.ts`: tests 19, pass 19, fail 0.
+- `env -u LLM_API_KEY npm run test:workers -- apps/cloudflare/test/card-checkout-log.spec.ts apps/cloudflare/test/payment-continuation-log.spec.ts`: test files 2 passed; tests 12 passed (each file: 3 original tests and 3 new ones).
+
+Not run in this task: full `npm test`, full `npm run test:workers` (pre-merge, once per batch) and any real-Chrome file (no guest screen changed).
