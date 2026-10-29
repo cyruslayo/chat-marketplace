@@ -1,4 +1,5 @@
 import { createPlatformCommandEnvelope } from "../../packages/platform-core/src/index.js";
+import assert from "node:assert/strict";
 import type { LocalApartmentOwnerEnvironment } from "../../apps/local-owner/src/index.js";
 import { repricedByOwner } from "./owner-terms.js";
 
@@ -12,6 +13,15 @@ export const SECOND_UNIT_TITLE = "Garden Flat in Old Ikoyi";
 /** A page's text as a reader sees it: no scripts, styles or tags, whitespace collapsed. */
 export function visibleText(html: string): string {
   return html.replace(/<script[\s\S]*?<\/script>/g, " ").replace(/<style[\s\S]*?<\/style>/g, " ").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
+}
+
+export function assertNoPaymentMaterial(html: string, forbiddenValues: readonly string[]): void {
+  // UUIDs are unrelated identifiers, even when four hex digits coincide with a card suffix.
+  const withoutUuids = html.replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi, "[opaque-id]");
+  for (const value of forbiddenValues) {
+    const candidate = /^\d{4}$/.test(value) ? withoutUuids : html;
+    assert.ok(!candidate.includes(value), "Payment material must not appear in the page");
+  }
 }
 
 /** A second owner you also hold a grant for (ADR 0082), with its own apartment. */
