@@ -5384,11 +5384,16 @@ export class LocalGuestApp {
     // The contact application owns email validation and persistence. Present
     // its generated input surface before resolving the payment command so the
     // payment resolver never has to infer a missing contact from a swallowed
-    // application error.
-    if (
-      !environment.guestContactApp.get(environment.guestPrincipal())
-        ?.contactEmail
-    ) {
+    // application error. The phone is checked first, as #paymentContactPrompt
+    // does on the hosted path (the domain requires a phone before payment).
+    const contact = environment.guestContactApp.get(environment.guestPrincipal());
+    if (!contact?.phoneNumber) {
+      return this.#contactSurface(thread, "phone", {
+        ...(event.context ?? {}),
+        resumeAction: "payment",
+      });
+    }
+    if (!contact.contactEmail) {
       return this.#contactSurface(thread, "email", event.context ?? {});
     }
     const resolved = resolveCardPaymentServerEvent({

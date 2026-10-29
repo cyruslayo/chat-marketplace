@@ -212,3 +212,18 @@ test("resuming the payment link after a true cold restore returns the approved h
     }
   } finally { h.f.close(); }
 });
+
+test("Start checkout without a Paystack module asks for the phone number before the email, as the Paystack path does", async () => {
+  const clock = { now: new Date(START_MS) };
+  const h: Harness = { f: datedFixture(scriptedPlanner(SCRIPT).client, undefined, { clock: () => clock.now, stagingGuest: true }), clock, threadId: "g-d1b0000409" };
+  try {
+    const payment = await reachPaymentReady(h);
+    clearPhone(h);
+    clearEmail(h);
+    const ask = successOf(await coldApp(h).handleEventAsync(h.threadId, firstButtonAction(payment)), "Start checkout");
+    assert.match(ask.surfaces[0]!.surfaceId, /:contact:phone:/, "checkout asks for the phone number first");
+    const phoneAsk = firstButtonAction(ask.surfaces[0]!);
+    const saved = successOf(await coldApp(h).handleEventAsync(h.threadId, { ...phoneAsk, context: { ...phoneAsk.context, contactValue: PHONE } }), "Save phone number");
+    assert.match(saved.surfaces[0]!.surfaceId, /:contact:email:/, "the phone save resumes the payment, which then asks for the email");
+  } finally { h.f.close(); }
+});
