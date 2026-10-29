@@ -8,6 +8,7 @@ import { launchRealBrowser, type RealBrowserInstance, type RealBrowserTab } from
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { startLocalGuestServer, type LocalGuestServerHandle } from "../apps/local-guest/src/guest-server.js";
 import type { PSPVerifyResult } from "../domains/shortlet/src/index.js";
+import { CLIENT_TURN_TIMEOUT_MS } from "../apps/local-guest/src/turn-budget.js";
 
 const PROMPT = "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people";
 const VIEWPORTS = [
@@ -271,6 +272,13 @@ test("AC2: A turn that times out shows Retry and keeps the text", async () => {
         : { status: 200, headers: [{ name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify({ ok: true, messages: ["Retry complete."], surfaces: [] })) };
     });
     try {
+      // The browser waits CLIENT_TURN_TIMEOUT_MS (188 s, derived from the server budget; guest-turn-timeout.test.ts pins it). Shorten
+      // only that one wait in the page so the timeout path runs in seconds; every other AbortSignal.timeout keeps its value.
+      await c.tab.evaluate(`(() => {
+        const realTimeout = AbortSignal.timeout.bind(AbortSignal);
+        AbortSignal.timeout = (ms) => ms === ${CLIENT_TURN_TIMEOUT_MS} ? (() => { const c = new AbortController(); setTimeout(() => c.abort(new DOMException("The operation timed out.", "TimeoutError")), 1_500); return c.signal; })() : realTimeout(ms);
+        return true;
+      })()`);
       await sendPrompt(c.tab, "Keep this draft on failure");
       await c.tab.waitForText("Retry", 12_000);
       assert.equal(await c.tab.evaluate<string>("document.getElementById('composer-input').value"), "Keep this draft on failure");
