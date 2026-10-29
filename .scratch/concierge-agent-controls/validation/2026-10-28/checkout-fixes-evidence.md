@@ -132,3 +132,72 @@ Worker spec (the domain offer code is bundled into the Worker):
 - `Test Files 1 passed (1); Tests 2 passed (2)`.
 
 Not run: the real-browser and Chromium files (offline-only instruction), and the full `npm test` and `npm run test:workers` (pre-merge, once per batch).
+
+---
+
+## Payment link after "checkout ready" (fix/staging-checkout-journey, HEAD 335dfb5)
+
+Scope: offline only. No live network, no Cloudflare/wrangler, no push, deploy or merge. Synthetic data. Full `npm test` and `npm run test:workers` were not run (per-issue scope).
+
+### Reported symptom
+
+Offer accepted, email saved in chat, chat reported "Payment checkout is ready", and `/payments/offers/<id>/continue` showed "Payment can't continue right now" (PAYMENT_CONTINUATION_REJECTED).
+
+### What the code does (traced offline)
+
+1. The contact-save resume (email save, and phone save with `resumeAction: "payment"`) calls `#handleCardCheckout`, the deterministic path. It creates the session through `initializeCheckout` with no provider call. The chat surface links to `/continue`.
+2. `/continue` calls `initializePaystackCheckout`. That is the first Paystack `transaction/initialize` for the reference. Its failure is caught by one silent catch.
+3. `persistSession` does not store `checkoutUrl` (ADR 0075 as coded). A cold restore hydrates a placeholder URL that `isApprovedPaystackCheckoutUrl` rejects, so a later start re-initializes the same reference.
+
+### Hypotheses
+
+| # | Hypothesis | Result |
+|---|---|---|
+| 1 | Chat started Paystack, then `/continue` starts a second attempt for the same reference | Eliminated for the current code: the chat resume makes 0 provider calls (commit 1221dab asserts this before `/continue`). The mechanism is real only if the chat ever starts Paystack (Finding B). |
+| 2 | Cold restore loses checkout state | Partly confirmed: the hosted URL is not durable. In-process, a restored resume returns an approved URL with one provider call. Not enough on its own to explain the live failure. |
+| 3 | Paystack start fails for a reason a closed code reveals | Not reproduced offline (fake returns success). Closed reason now recorded (commit ea08b85). Live cause unknown. |
+| 4 | `cardPaymentArtifactFromState` shows non-accepted offers as ready | Real defect, fixed (bceb75e). Not the owner's case, which had an accepted offer. |
+| 5 | No phone pre-check on the deterministic checkout | Real defect, fixed (98fc9ac). |
+
+The offline reproduction does not reproduce the live failure. The continuation succeeds in-process with the fake Paystack client.
+
+### Commits
+
+| Commit | Change | Test |
+|---|---|---|
+| 1221dab | Characterization: resume after a true cold restore gives an approved URL with exactly one provider initialization for the session's reference. Passes at HEAD (no fix needed). | `resuming the payment link after a true cold restore returns the approved hosted checkout with one Paystack initialization` |
+| 98fc9ac | Phone asked before email on `#handleCardCheckout` | `Start checkout without a Paystack module asks for the phone number before the email, as the Paystack path does`. Failed before the fix (`...:contact:email:...`). |
+| bceb75e | Artifact payable only when the offer is accepted: issued/stale/revoked -> `failed`; expired -> `expired`; accepted -> `ready` | `A payment artifact for an offer that is not accepted is never shown as ready to pay`. Failed before the fix (`a issued offer is not payable`). The revoked-offer contact test now also accepts the closed `STALE_ACTION`. |
+| ea08b85 | Optional `onPaymentContinuationRejected` observer with closed reasons (`offer_not_accepted`, `contact_missing`, `payment_window_closed`, `provider_start_failed`, `unclassified`). No ids, URLs, references or provider text. The guest page is unchanged. | `A rejected payment continuation reports a closed reason and no identifiers or provider text`. Written after the change, so not observed failing first. |
+
+### Counts (after the four commits)
+
+Each file run as `env -u LLM_API_KEY npx tsx --test <file>`:
+
+| File | Result |
+|---|---|
+| test/assistant-paystack-checkout-contact.test.ts | 9 pass, 0 fail |
+| test/assistant-cold-journey.test.ts | 3 pass, 0 fail |
+| test/guest-must-fix-ux.test.ts | 7 pass, 0 fail |
+| test/phase4-booking-payment-presentation.test.ts | 17 pass, 0 fail |
+| test/paystack-pilot.test.ts | 45 pass, 0 fail |
+| test/render-card-payment-weaver-a2ui.test.ts | 1 pass, 0 fail |
+| test/guest-payment-choice.test.ts | 4 pass, 0 fail |
+| test/guest-payment-consistency.test.ts | 5 pass, 0 fail |
+| test/payment-continuation-diagnostic.test.ts | 1 pass, 0 fail |
+
+`env -u LLM_API_KEY npm run check` (tsc, apps/cloudflare, tooling, worker bundle guard): exit 0.
+
+### Findings and decisions for the owner
+
+- **A. Live cause still open.** Once a build passes `onPaymentContinuationRejected` to the host and staging logs the reason: `provider_start_failed` means Paystack rejected the initialize call (check that reference in the Paystack dashboard, no secrets printed); `contact_missing`, `offer_not_accepted` or `payment_window_closed` mean domain state at click time; `unclassified` means extend the enum. The Cloudflare host does not pass the observer yet. Wiring it is a host change to approve before deploy.
+- **B. Decision needed.** The contact-save resume creates the checkout without a Paystack start even when Paystack is configured, so chat says "ready" before the provider sees the payment. Routing the resume through `#handlePaystackCardCheckout` moves the first provider call into chat and changes when the live attempt starts (ADR 0046). Not implemented.
+- **C. Decision needed.** The hosted checkout URL is not persisted (ADR 0075 as coded), so any restore-then-start re-initializes the same reference. Options: persist the authorization URL (policy change under ADR 0075), or mint a new reference and supersede the old attempt (ADR 0046/0049). Unverified: whether Paystack rejects a reused reference. Not assumed either way.
+- **D. Mapping choice.** Non-accepted offers map to the existing `failed` status ("Payment was not verified. No Reservation was created."). No new status invented. Owner to confirm the copy.
+
+### Not verified
+
+- Live Paystack behaviour for a reused reference (C).
+- Live cause of the reported PAYMENT_CONTINUATION_REJECTED (A).
+- Browser and staging screens (no staging calls in this task).
+- Full `npm test` and `npm run test:workers` (once per batch before merge).
