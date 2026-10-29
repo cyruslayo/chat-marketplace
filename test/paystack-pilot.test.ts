@@ -156,7 +156,7 @@ test("AC14 — Returned checkout URLs are restricted to approved Paystack hosts"
   assert.equal(isApprovedPaystackCheckoutUrl("https://evil.example/pay"), false);
   const fake = createPaystackHttpFake({ authorizationUrl: "https://evil.example/pay" });
   const client = new DirectPaystackClient({ secretKey: "sk_test_secret", environment: "test", callbackBaseUrl: "https://pilot.example" }, fake.fetcher);
-  await assert.rejects(client.initializeTransaction({ email: "guest@example.com", amountKobo: 1, currency: "NGN", reference: "platform-ref", callbackUrl: "https://pilot.example/payments/paystack/callback" }), /invalid checkout/);
+  await assert.rejects(client.initializeTransaction({ email: "guest@example.com", amountKobo: 1, currency: "NGN", reference: "platform-ref", callbackUrl: "https://pilot.example/payments/paystack/callback" }), /unapproved checkout URL/);
 });
 
 test("AC15 — Callback arrival alone cannot mark payment successful", () => {

@@ -27,6 +27,22 @@ export interface PaystackEnvironmentSource {
   readonly NODE_ENV?: string;
 }
 
+/**
+ * A Paystack call failure with a closed reason and a fixed message. The message never carries provider text, a URL, a
+ * reference or a key (ADR 0075). The chat checkout maps the reason to its diagnostic code.
+ */
+export type PaystackProviderFailureReason = "provider_rejected" | "provider_unreachable" | "provider_response_invalid" | "checkout_url_rejected" | "reference_conflict";
+
+export class PaystackProviderFailure extends Error {
+  readonly reason: PaystackProviderFailureReason;
+
+  constructor(reason: PaystackProviderFailureReason, message: string) {
+    super(message);
+    this.name = "PaystackProviderFailure";
+    this.reason = reason;
+  }
+}
+
 export class PaystackConfigurationError extends Error {
   constructor(message: string) {
     super(message);
@@ -119,7 +135,7 @@ function paystackStatus(value: unknown): PSPVerifyResult["status"] {
 function assertProviderResponse(response: PaystackHttpResponse, body: unknown, operation: string): PaystackEnvelope {
   const envelope = recordOf(body) as PaystackEnvelope | undefined;
   if (!envelope || envelope.status !== true || response.status < 200 || response.status >= 300) {
-    throw new Error(`Paystack ${operation} request failed`);
+    throw new PaystackProviderFailure("provider_rejected", `Paystack ${operation} request failed`);
   }
   return envelope;
 }
@@ -177,18 +193,31 @@ export class DirectPaystackClient implements PaystackClient {
       channels: ["card"],
       ...(input.payerId === undefined ? {} : { metadata: JSON.stringify({ [this.#metadataKey(input.payerMetadataKey)]: input.payerId }) }),
     };
-    const response = await this.#fetcher(`${PAYSTACK_API_URL}/transaction/initialize`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${this.#configuration.secretKey}`, "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const envelope = assertProviderResponse(response, await response.json(), "initialization");
+    let response: PaystackHttpResponse;
+    try {
+      response = await this.#fetcher(`${PAYSTACK_API_URL}/transaction/initialize`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${this.#configuration.secretKey}`, "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      throw new PaystackProviderFailure("provider_unreachable", "Paystack initialization request could not be sent");
+    }
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      throw new PaystackProviderFailure("provider_response_invalid", "Paystack initialization response was not JSON");
+    }
+    const envelope = assertProviderResponse(response, body, "initialization");
     const data = recordOf(envelope.data);
     const authorizationUrl = data?.authorization_url;
     const reference = data?.reference;
-    if (typeof authorizationUrl !== "string" || !isApprovedPaystackCheckoutUrl(authorizationUrl) || typeof reference !== "string" || reference !== input.reference) {
-      throw new Error("Paystack initialization returned an invalid checkout");
+    if (typeof reference !== "string" || typeof authorizationUrl !== "string") {
+      throw new PaystackProviderFailure("provider_response_invalid", "Paystack initialization returned an invalid checkout");
     }
+    if (reference !== input.reference) throw new PaystackProviderFailure("reference_conflict", "Paystack initialization returned a different reference");
+    if (!isApprovedPaystackCheckoutUrl(authorizationUrl)) throw new PaystackProviderFailure("checkout_url_rejected", "Paystack initialization returned an unapproved checkout URL");
     return Object.freeze({ authorizationUrl, reference, environment: this.configuration.environment });
   }
 
