@@ -1,4 +1,5 @@
 import test from "node:test";
+import { assertNoPaymentMaterial } from "./helpers/back-office-page.js";
 import assert from "node:assert/strict";
 import { FOREIGN_ORIGIN, decideRequest, operatorGet, operatorPost, revokeRepresentativeGrant, startOperatorServer, startSignedInOperator, signInOperator, type SignedInOperator } from "./helpers/operator-session.js";
 import { TEST_CARD_LAST4, TEST_PAYER_EMAIL, guestCardPayments } from "./helpers/guest-card-payment.js";
@@ -83,7 +84,7 @@ test("AC1 — The Reservation page shows the owner, apartment, stay dates, party
     for (const fact of [OWNER, APARTMENT, "10–13 Sept 2026", "3 nights", "1 occupant", "Arrival window 14:00–22:00 WAT", "Checkout 11:00 WAT", `Amount paid ${formatMoney(contract.amountPaidKobo)}`, "Payment method Card", "Guest phone +2348012345678"]) {
       assert.ok(shown.text.includes(fact), `shows ${fact}`);
     }
-    for (const secret of [TEST_CARD_LAST4, TEST_PAYER_EMAIL, "psp_ref_"]) assert.ok(!shown.html.includes(secret), `no ${secret}`);
+    assertNoPaymentMaterial(shown.html, [TEST_CARD_LAST4, TEST_PAYER_EMAIL, "psp_ref_"]);
 
     // The unit changes after booking; the Reservation keeps its snapshot (ADR 0077).
     const unit = env.unitRepository.findById(env.config.unitId)!;

@@ -4,6 +4,7 @@ import { FOREIGN_ORIGIN, decideRequest, operatorGet, operatorPost, revokeReprese
 import { TEST_CARD_LAST4, TEST_PAYER_EMAIL, guestCardPayments, type GuestCardPayments } from "./helpers/guest-card-payment.js";
 import { formatWat } from "../apps/local-owner/src/back-office-view.js";
 import { PAYMENT_PROCESSING_GRACE_MINUTES } from "../domains/shortlet/src/index.js";
+import { assertNoPaymentMaterial } from "./helpers/back-office-page.js";
 
 // B4 — bookings and their payment state (scratch/operator-dashboard/issues/04-bookings.md).
 
@@ -171,7 +172,7 @@ test("AC2 — Payment deadlines are shown as absolute WAT, and an ended booking 
       assert.match(row(html, late).text, /Ended Payment arrived after the deadline; a full refund is owed to the Guest/);
 
       // No card, account, reference or contact details anywhere on the page.
-      for (const secret of [TEST_CARD_LAST4, TEST_PAYER_EMAIL, "psp_ref_", "chk_", "+234"]) assert.ok(!html.includes(secret), `no ${secret}`);
+      assertNoPaymentMaterial(html, [TEST_CARD_LAST4, TEST_PAYER_EMAIL, "psp_ref_", "chk_", "+234"]);
     });
   } finally { await f.close(); }
 
@@ -188,7 +189,7 @@ test("AC2 — Payment deadlines are shown as absolute WAT, and an ended booking 
         const found = row(await bookingsPage(r), id);
         assert.equal(found.stage, "ended");
         assert.match(found.text, refundStatus === "pending" ? /Ended Refund started; not yet received by the Guest/ : /Ended Payment refunded in full/);
-        for (const secret of [TEST_CARD_LAST4, TEST_PAYER_EMAIL, "psp_ref_", "refund-"]) assert.ok(!found.html.includes(secret), `no ${secret}`);
+        assertNoPaymentMaterial(found.html, [TEST_CARD_LAST4, TEST_PAYER_EMAIL, "psp_ref_", "refund-"]);
       }, { refundStatus });
     } finally { await r.close(); }
   }

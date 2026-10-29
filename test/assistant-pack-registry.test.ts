@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { temporaryDatabasePath } from "./helpers/temporary-database.js";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
@@ -41,7 +42,7 @@ function stubPack(overrides: Partial<AssistantDomainPack> = {}): AssistantDomain
 let testDbIndex = 0;
 function createTestRuntime(model: ScriptedAssistantModel) {
   testDbIndex++;
-  const databasePath = `.scratch/local-guest/packregistry_test_${testDbIndex}_${Date.now()}.sqlite`;
+  const databasePath = temporaryDatabasePath(`packregistry_test_${testDbIndex}_${Date.now()}.sqlite`);
   const env = LocalGuestEnvironment.openNode({ databasePath });
   return { env, runtime: new AssistantRuntime(env, model) };
 }
@@ -87,7 +88,7 @@ test("Prompt composition prefixes the platform preamble to the active pack's sec
   assert.equal(registry.hasTool("stub_tool"), true);
   assert.equal(registry.hasTool("search_stays"), false);
 
-  const env = LocalGuestEnvironment.openNode({ databasePath: `.scratch/local-guest/packregistry_shortlet_${Date.now()}.sqlite` });
+  const env = LocalGuestEnvironment.openNode({ databasePath: temporaryDatabasePath(`packregistry_shortlet_${Date.now()}.sqlite`) });
   const shortlet = createShortletAssistantPack(env);
   assert.equal(composeSystemInstruction(shortlet), ASSISTANT_SYSTEM_INSTRUCTION);
   assert.equal(shortlet.toolNames.includes("search_stays"), true);

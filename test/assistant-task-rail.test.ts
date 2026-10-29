@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { temporaryDatabasePath } from "./helpers/temporary-database.js";
 import test from "node:test";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
@@ -9,7 +10,7 @@ import { createFakeShopPack } from "./helpers/fake-domain-pack.js";
 let testDbIndex = 0;
 function createTestRuntime(model: ScriptedAssistantModel) {
   testDbIndex++;
-  const databasePath = `.scratch/local-guest/taskrail_test_${testDbIndex}_${Date.now()}.sqlite`;
+  const databasePath = temporaryDatabasePath(`taskrail_test_${testDbIndex}_${Date.now()}.sqlite`);
   const env = LocalGuestEnvironment.openNode({ databasePath });
   const runtime = new AssistantRuntime(env, model, { additionalPacks: [createFakeShopPack()] });
   return { env, runtime };

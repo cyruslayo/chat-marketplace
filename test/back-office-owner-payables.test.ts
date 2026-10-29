@@ -6,7 +6,7 @@ import { TEST_CARD_LAST4, TEST_PAYER_EMAIL } from "./helpers/guest-card-payment.
 import { repricedByOwner } from "./helpers/owner-terms.js";
 import { cookieOf, openComplaint, principal, recordAccess, reservation, travelTo, windowOpens } from "./helpers/back-office-reservation.js";
 import { contractOf, naira, ownerTotals, pay, payableRow, payoutRecords, payoutVersion, payoutsPage, settlement } from "./helpers/back-office-payouts.js";
-import { SECOND_OWNER, SECOND_OWNER_ID, SECOND_UNIT_ID, addSecondOwner as addSecondOwnerTo, visibleText } from "./helpers/back-office-page.js";
+import { SECOND_OWNER, SECOND_OWNER_ID, SECOND_UNIT_ID, addSecondOwner as addSecondOwnerTo, visibleText, assertNoPaymentMaterial } from "./helpers/back-office-page.js";
 import { formatWat } from "../apps/local-owner/src/back-office-view.js";
 import { formatMoney } from "../apps/web/src/ui-kit.js";
 
@@ -39,7 +39,10 @@ test("AC1 — Each booking shows the amount received, the owner payable, your ma
     for (const fact of ["Luxury 2-Bedroom Apartment in Old Ikoyi", `Amount received ${formatMoney(received)}`, `Owner payable ${formatMoney(captured.ownerPayableKobo)}`, `Your margin ${formatMoney(captured.marginKobo)}`, "Status Not yet due", "Due 24 hours after Verified Access"]) {
       assert.ok(row.text.includes(fact), `shows ${fact}`);
     }
-    for (const secret of [TEST_CARD_LAST4, TEST_PAYER_EMAIL, "psp_ref_"]) assert.ok(!shown.html.includes(secret), `no ${secret}`);
+    // Force a valid ID collision in the rendered HTML without changing payment or booking state.
+    const privacyHtml = shown.html.replaceAll(id, "req-aabc4242-abcd-4abc-8abc-deaf00000001");
+    assert.ok(privacyHtml.includes("4242"));
+    assertNoPaymentMaterial(privacyHtml, [TEST_CARD_LAST4, TEST_PAYER_EMAIL, "psp_ref_"]);
     assert.doesNotMatch(row.html, /<form/, "no payout form before it is due");
 
     // Verified Access starts the 24 hours (ADR 0089); the status turns due lazily, with no command.
