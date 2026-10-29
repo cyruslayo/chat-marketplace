@@ -333,3 +333,101 @@ Descriptor `apps/cloudflare/.cloudflare/output/v0/workers/default/worker.config.
 - Secret-typed bindings are exactly `PAYSTACK_SECRET_KEY`, `LLM_API_KEY`, `SHORTLET_GUEST_CODE_HASHING_KEY`, `OPS_SHARED_SECRET`: PASS. `PAYSTACK_SECRET_KEY` is secret-typed: PASS.
 
 Unverified: the live staging behaviour (no live call allowed); the workerd local load of the bundle; the Paystack reference-format hypothesis; the owner's deploy, which has not happened.
+
+
+## Chat card checkout: Paystack reference format (commit d6724a4)
+
+Worktree `C:\AI2026\chat-marketplace-fixes`, branch `fix/staging-checkout-journey`, base `fd668c7`. The `apps/local-guest/dist/*.js` and `apps/cloudflare/public/_headers` changes that were already in the worktree were not staged or committed.
+
+### Root cause (hypothesis from the task; the fix is in code, the live provider response is not in this repository)
+
+`domains/shortlet/src/card-payment.ts` minted `psp_ref_<commandId 8 chars>_<ms>`. Paystack accepts only letters, digits, `-`, `.` and `=` in a transaction reference, so the initialize for that reference is refused. `apps/web/src/card-payment-application.ts` `initializePaystackCheckout` reused the stuck `initiated` session on every retry, so the same bad reference failed every retry for the offer.
+
+### Every reference site found
+
+Created:
+- `domains/shortlet/src/card-payment.ts` `initializeCardCheckout`: stay and deposit attempt reference. Now `mintCardPspReference`, giving `psp-ref-<8 letters/digits>-<ms>`.
+- `domains/shortlet/src/period-payment.ts` (~line 273): later Billing Period reference, now `psp-ref-period-<index>-<token>`.
+- `domains/shortlet/src/bank-transfer.ts` (~line 476): Pay with Transfer reference `exp_trf_<12 hex>`, sent to Paystack as the Charge API `reference` in `PaystackBankTransferClient.createTransferAccount`. It still has an underscore and is NOT changed here (open issue 1).
+- `domains/shortlet/src/bank-transfer.ts` (~line 1295) `ref_<hex>` and `packages/platform-core/src/reconciliation.ts` `ref-...`: internal refund ids, never sent to Paystack.
+- `domains/commerce/src/payment-reference.ts`: comment only; commerce is parked (ADR 0104). Not changed.
+
+Sent to the provider, matched or stored:
+- `packages/platform-core/src/payments/paystack.ts` `initializeTransaction`: the new boundary guard (closed reason `reference_conflict`, no provider call) and the existing check that the returned reference equals the sent one.
+- `packages/platform-core/src/payments/paystack.ts` `verifyTransaction`: `GET /transaction/verify/<encoded ref>`; the returned reference is compared by the domain.
+- `packages/platform-core/src/payments/payments.ts` `start` (registry by reference), `confirm`, `verifyTransfer`, `handleWebhook` (`charge.success` looks up the exact `data.reference`; no format check, so old and new references both reconcile).
+- `apps/local-guest/src/guest-server.ts` `/webhooks/paystack` (~line 5006): `getCheckoutSessionByReference`, then the bank transfer fallback `getSessionByReference`.
+- `apps/web/src/card-payment-application.ts`: `initializePaystackCheckout` (retry, now with re-mint), `initializePeriodPaystackCheckout`, `verifyAndConfirm`, `verifyAndConfirmPaystack`, `periodOfferIdForReference`.
+- `domains/shortlet/src/card-payment.ts`: `getCheckoutSession`, `getCheckoutSessionByReference`, `verifyAndConfirmCardPayment` (find by reference, processed-reference check, mismatch check), `updateCheckoutUrl`, `remintUnboundCheckoutReference` (new), and the derived placeholder URL `https://checkout.psp.example.com/pay/<ref>`.
+- `apps/local-guest/src/shortlet-app.ts`: chat card start (~line 1283), assistant runtime `verifyAndConfirm(session.pspReference)` (~lines 1556-1559), the card return (~line 5560).
+- `apps/local-guest/src/fixture.ts` (~line 533): deterministic local PSP; verify echoes the reference.
+- `apps/local-guest/src/guest-server.ts` (~line 4693): local checkout redirect `?reference=`.
+- `apps/local-guest/src/local-bank-transfer-provider.ts`: local transfer provider, echoes the reference.
+- `domains/shortlet/src/bank-transfer.ts` (~line 618): transfer result reference compared with `session.transferReference`.
+- `apps/web/src/cancellation-application.ts` (~line 42), `apps/web/src/relocation-application.ts` (~line 30), `domains/shortlet/src/extended-stay-changes.ts` (~lines 148, 285-290): refund source reference, read only.
+- Stored: `domains/shortlet/src/guest-interaction-store.ts` tables `guest_checkout_sessions.psp_reference` (non-unique index), `guest_period_payment_sessions`, `guest_period_payments`, `guest_period_payment_refunds`, `guest_processed_psp_references` (primary key). No DDL change; existing rows keep their stored value.
+- Exported: `apps/cloudflare/src/do-export.ts` (plaintext export, ADR 0096).
+- Audit: `card_payment.checkout_initialized` records `pspReference` (pre-existing, inside the ADR 0096 `audit_log` payload exemption). The new `card_payment.reference_reminted` records the checkout id only.
+- Tests and fixtures: listed under Changes below.
+
+Sites were checked by grep and by reading the code paths above. Owner-payable and back-office projections were matched by grep only and were not read line by line.
+
+### ADR conclusion
+
+- **ADR 0046** (one live attempt; replacement only after the PSP confirms technical failure; unique reference; locked idempotent transition; window not reset; old success refunded): the re-mint is permitted here. The only case is an `initiated` attempt whose Paystack initialize was refused, so no provider transaction exists for its reference. The replacement is unique (checked against all stored references), keeps the checkout id, amount and Payment Window (expiry checked, not reset), is persisted to the same row, and the old reference is never sent again. A bound attempt (provider environment recorded) or a paid attempt is never re-minted. The refusal is the provider's technical-failure answer. No ADR text was amended.
+- **ADR 0049** (fresh PSP-hosted checkout; unique booking-specific reference; one live attempt; a terminal decline may be replaced before the deadline without resetting it): consistent. Every attempt still gets a unique reference. No card data is stored.
+- **ADR 0075 and `docs/agents/coding-standards.md`** (bearer credentials; minimal audit): the guard message and the re-mint audit carry no reference or URL. The re-mint audit records the checkout id, offer id and time only.
+- **ADR 0096** (export keeps the four payment-reference columns plaintext): the columns keep their shape. New rows hold the new format; legacy rows keep the old one. No export code change is needed.
+- **ADR 0087 and 0088** (Paystack; verification by reference; webhook only a prompt): verification and webhook logic are unchanged; the exact-match lookup reconciles both formats.
+- **ADR 0044** (20-minute Payment Window): preserved; the re-mint refuses after the window.
+- **ADR 0047** (bank transfer with expiring accounts): not changed. The transfer charge still uses an underscore reference (open issue 1).
+- **ADR 0106** (concierge controls): the chat card tests run with the assistant runtime enabled, on the staging-like guest, on the 27 Oct 2026 clock, with a true cold restore (a new `LocalGuestEnvironment` over the same file database) before the resume and the webhook steps.
+
+No ADR amendment note was added, because the re-mint fits ADR 0046's replacement rule and nothing needed overriding.
+
+### Changes
+
+- `domains/shortlet/src/card-payment.ts`: `PLATFORM_PSP_REFERENCE_PATTERN`, `mintCardPspReference`, `remintUnboundCheckoutReference`, and the new minted reference.
+- `domains/shortlet/src/period-payment.ts`: period reference format.
+- `apps/web/src/card-payment-application.ts`: retry re-mint, only for initiated, unbound, legacy-format attempts; imports.
+- `packages/platform-core/src/payments/paystack.ts`: `PAYSTACK_ACCEPTED_REFERENCE_PATTERN` guard in `initializeTransaction` (`reference_conflict`, before any fetch).
+- Existing tests updated to the new format: `test/platform-payments.test.ts` (`psp_ref_*` references now `psp-ref-*`), `test/paystack-pilot.test.ts` (`/^psp_ref_/` now `/^psp-ref-/`), `test/helpers/paystack-http.ts` (fake default reference). Leak-check lists now also forbid `psp-ref-`: `test/back-office-bookings.test.ts`, `test/back-office-owner-payables.test.ts`, `test/back-office-reservation.test.ts`, `test/card-checkout-failure-diagnostic.test.ts`, `test/payment-continuation-diagnostic.test.ts`, `test/pay-each-demo-billing-period.test.ts`, `apps/cloudflare/test/card-checkout-log.spec.ts`, `apps/cloudflare/test/payment-continuation-log.spec.ts`.
+- Shared journey extracted from `test/assistant-paystack-checkout-contact.test.ts` into `test/helpers/paystack-checkout-journey.ts` (no behaviour change; that file's 9 tests still pass).
+- New: `test/paystack-psp-reference-format.test.ts` (10 tests).
+
+### Tests run (exact commands and counts)
+
+- `env -u LLM_API_KEY npx tsx --test test/paystack-psp-reference-format.test.ts`: tests 10, pass 10, fail 0. The first run, before the implementation, failed at module link (`PLATFORM_PSP_REFERENCE_PATTERN` not exported), the expected red state. Later failing runs were fixture problems (payer attribution metadata, the chat retry surface after a refused start, and a deposit outcome for the stay payment), corrected in the test and not in the product code.
+- `env -u LLM_API_KEY npx tsx --test test/assistant-paystack-checkout-contact.test.ts`: tests 9, pass 9, fail 0 (after restoring the `PHONE` import; an earlier batch failed on that missing import).
+- Batch A: `env -u LLM_API_KEY npx tsx --test test/assistant-paystack-checkout-contact.test.ts test/paystack-pilot.test.ts test/platform-payments.test.ts test/paystack-psp-reference-format.test.ts test/card-checkout-failure-diagnostic.test.ts test/payment-continuation-diagnostic.test.ts`: tests 79, pass 79, fail 0.
+- Batch B: `env -u LLM_API_KEY npx tsx --test test/guest-process-restart.test.ts test/integrate-card-payment-application.test.ts test/pay-each-demo-billing-period.test.ts test/later-period-payment-routes.test.ts test/back-office-bookings.test.ts test/back-office-owner-payables.test.ts test/back-office-reservation.test.ts`: tests 56, pass 56, fail 0.
+- `env -u LLM_API_KEY npm run check` after all edits: exit 0. An earlier run exited 1 only because of the missing `PHONE` import, now fixed.
+- `env -u LLM_API_KEY npm run test:workers -- apps/cloudflare/test/card-checkout-log.spec.ts apps/cloudflare/test/payment-continuation-log.spec.ts apps/cloudflare/test/demo-extended-stay.spec.ts`: test files 3 passed; tests 8 passed.
+- `env -u LLM_API_KEY npm run test:workers -- apps/cloudflare/test/pilot-worker.spec.ts`: test files 1 passed; tests 4 passed.
+
+Not run: full `npm test` and full `npm run test:workers` (pre-merge, once per batch, per the Test scope). The real-Chrome files were not run, because this change does not alter those screens.
+
+### Staging bundle (built from this worktree after d6724a4)
+
+Run from `apps/cloudflare` with `env -u LLM_API_KEY -u COMMERCE_ENABLED -u RESEND_API_KEY -u GEMINI_API_KEY` and the required `SHORTLET_DEMO`, `CONCIERGE_MODE`, `LLM_*`, `CONCIERGE_DAILY_MODEL_CALL_CAP=1500` and `CF_ACCESS_*` values, then `node ../../node_modules/@cloudflare/vite-plugin/bin/cf-vite build --mode staging`: exit 0; `index.js` 2,894.81 kB.
+
+Descriptor check (`apps/cloudflare/.cloudflare/output/v0/workers/default/worker.config.json`; values were not printed, only compared or typed):
+- name `shortlet-pilot-staging`: PASS.
+- secret-type bindings are exactly `PAYSTACK_SECRET_KEY`, `LLM_API_KEY`, `SHORTLET_GUEST_CODE_HASHING_KEY`, `OPS_SHARED_SECRET`: PASS.
+- `COMMERCE_ENABLED` text, equal to `false`: PASS.
+- `RESEND_API_KEY` and `GEMINI_API_KEY` absent: PASS.
+- `CONCIERGE_DAILY_MODEL_CALL_CAP` equal to 1500: PASS.
+- `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUD` equal to the given values: PASS.
+- `LLM_BASE_URL`, `LLM_MODEL`, `LLM_PROVIDER_LABEL`, `CONCIERGE_MODE`, `SHORTLET_DEMO` equal to the given values: PASS.
+- `SHORTLET_PUBLIC_ORIGIN` host ends in `.workers.dev`: PASS.
+- `PAYSTACK_ENVIRONMENT` equal to `test`: PASS.
+- The bundle contains `psp-ref-` and no `psp_ref_${` template: PASS.
+
+Not verified: loading the bundle in local workerd, live staging behaviour, the owner's deploy, and the real Paystack answer to an underscore reference.
+
+### Open issues (not fixed in this batch)
+
+1. Pay with Transfer references `exp_trf_<hex>` (`domains/shortlet/src/bank-transfer.ts`) contain an underscore and are sent to Paystack's Charge API as `reference`. They likely fail the same way. The guard is not applied to `createTransferAccount`, and the scheme is unchanged. Needs its own decision (ADR 0047 idempotency and existing transfer rows).
+2. Later Billing Period attempts stuck with a legacy reference block retries for their 20-minute window (`A live attempt already exists`), then are superseded. They self-heal and are not re-minted.
+3. A refused chat start leaves the card on the `payment:checkout` surface with a `verify-return` button, not the start button. The guest resumes through `/payments/offers/<id>/continue`, which calls `initializePaystackCheckout`. Chat UX is unchanged here.
+4. Pre-existing: the `card_payment.checkout_initialized` audit includes `pspReference`, allowed only under the ADR 0096 `audit_log` exemption.
