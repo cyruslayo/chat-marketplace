@@ -2217,7 +2217,35 @@ function resolveGuestCommerceComposition(
   throw new Error('commerce must be "local" or "disabled"');
 }
 
+/**
+ * Closed reasons for a rejected payment continuation (`/payments/offers/:id/continue`). The page shows one generic
+ * message; the host sees only this reason (ADR 0075: no offer id, URL, reference, contact or provider text).
+ */
+export type PaymentContinuationRejectionReason =
+  | "offer_not_accepted"
+  | "contact_missing"
+  | "payment_window_closed"
+  | "provider_start_failed"
+  | "unclassified";
+
+export interface PaymentContinuationRejectedEvent {
+  readonly code: "PAYMENT_CONTINUATION_REJECTED";
+  readonly reason: PaymentContinuationRejectionReason;
+}
+
+/** Maps a thrown continuation error to its closed reason. Only the domain's fixed messages are matched. */
+export function paymentContinuationRejectionReason(error: unknown): PaymentContinuationRejectionReason {
+  const message = error instanceof Error ? error.message : "";
+  if (/Checkout initialization requires an accepted offer|not accepted|Only the authoritative payer/i.test(message)) return "offer_not_accepted";
+  if (/phone number is required|email address is required/i.test(message)) return "contact_missing";
+  if (/Payment window has expired/i.test(message)) return "payment_window_closed";
+  if (/Paystack/i.test(message)) return "provider_start_failed";
+  return "unclassified";
+}
+
 export interface GuestRequestHandlerOptions {
+  /** Metadata-only observation of a rejected payment continuation (closed reason; ADR 0075). */
+  onPaymentContinuationRejected?: (event: PaymentContinuationRejectedEvent) => void;
   /** Payment reference keys for the commerce pack (user decision 18 Oct 2026). Omitted: the injected module reads them from the environment. */
   paymentReferenceKeys?: PaymentReferenceKeys;
   environment?: LocalGuestEnvironment;
@@ -4678,7 +4706,11 @@ export function createGuestRequestHandler(
         }
         res.writeHead(303, { Location: checkout.checkoutUrl });
         res.end();
-      } catch {
+      } catch (error) {
+        options.onPaymentContinuationRejected?.({
+          code: "PAYMENT_CONTINUATION_REJECTED",
+          reason: paymentContinuationRejectionReason(error),
+        });
         sendPageError(req, res, 400, "PAYMENT_CONTINUATION_REJECTED");
       }
       return;
