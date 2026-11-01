@@ -79,11 +79,11 @@ An occupancy model granting one guest party exclusive use of a self-contained un
 _Avoid_: Private apartment, shared room, room category
 
 **Short Stay**:
-A reservation or aggregated continuous occupancy at one property lasting between one and fourteen consecutive nights under the launch product. Longer stays are Extended Stays (ADR 0092).
+A reservation or aggregated continuous occupancy at one property lasting between one and twenty-nine consecutive nights (ADR 0023 as amended 1 Nov 2026). Stays of 30 nights or more are Extended Stays (ADR 0092).
 _Avoid_: Extended stay, monthly stay, tenancy
 
 **Extended Stay**:
-A reservation or aggregated continuous occupancy at one property of 30 to 90 consecutive nights at a unit that has opted in, contracted at once and paid one Billing Period at a time (ADR 0092).
+A reservation or aggregated continuous occupancy at one property of 30 to 180 consecutive nights (marketed as 1 to 6 months) at a unit that has opted in, contracted at once and paid one Billing Period at a time (ADR 0092).
 _Avoid_: Tenancy, lease, monthly rental, long let
 
 **Billing Period**:

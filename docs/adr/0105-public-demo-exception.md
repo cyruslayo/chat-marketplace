@@ -16,6 +16,8 @@ Permit anyone with the staging URL to start a demo session without a beta invite
 
 ### Amendment (22 Oct 2026): staging Extended Stay limit
 
+> Superseded in part on 1 Nov 2026: ADR 0092 as amended now allows 30–180-night Extended Stays everywhere, and ADR 0023 as amended allows 1–29-night Short Stays. The 180-night limit below is therefore no longer an exception, and the 15–29-night gap no longer exists. The demo-label and no-termination rules below still apply to synthetic demo bookings.
+
 The owner authorizes the synthetic staging demo to accept Extended Stays of 30 to 180 consecutive nights. This exception overrides only ADR 0092's 90-night maximum, only when demo mode runs outside production. It does not change ADR 0092 for production or other non-demo deployments. The 90-day check-in horizon remains in force. Short Stays remain 1–14 nights, and 15–29 nights remain unsupported.
 
 A demo stay of 180 nights contains six 30-night Billing Periods. Keep ADR 0092's first-period confirmation, separate later Period Payments, Monthly Agreed Amounts plus margin, shorter-final-period nightly pricing, 7-day due date, and 7/3/1-day reminders. Do not create recurring charges or collect more than the next payable period. The demo must use the domain quote, booking, payment and owner-payable paths. It must keep all operational data synthetic. Any production maximum above 90 nights requires counsel's review and a new owner decision.
