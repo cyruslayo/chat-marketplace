@@ -201,6 +201,7 @@ import {
   SEARCH_AREAS,
   type CriteriaEdit,
 } from "./concierge.js";
+import { ContinuousOccupancyError } from "../../../domains/shortlet/src/index.js";
 import {
   amenityQuestions,
   extractStayRequestFacts,
@@ -4331,7 +4332,9 @@ export class LocalGuestApp {
 
     const environment = this.#environment;
     const guest: CommandPrincipal = environment.guestPrincipal();
-    const draft = environment.bookingRequestApp.createDraft(
+    let draft: ReturnType<typeof environment.bookingRequestApp.createDraft>;
+    try {
+      draft = environment.bookingRequestApp.createDraft(
       {
         unitId: detail.unitId,
         primaryGuest: {
@@ -4343,7 +4346,12 @@ export class LocalGuestApp {
         ...this.#stayDatesFor(thread),
       },
       guest,
-    );
+      );
+    } catch (error) {
+      // ADR 0023 as amended 1 Nov 2026: a Continuous Occupancy refusal is an ordinary guest-facing refusal with the server's sentence.
+      if (error instanceof ContinuousOccupancyError) return { ok: false, code: "CONTINUOUS_OCCUPANCY_REFUSED", message: error.message };
+      throw error;
+    }
     thread.draftId = draft.draftId;
     const requestSurfaceId = `thread-${thread.threadId}:request:draft:${draft.draftId}`;
     this.#supersede(thread, UNIT_STAGE);
@@ -4926,11 +4934,18 @@ export class LocalGuestApp {
         aggregateId: thread.draftId,
         surfaceId: event.surfaceId,
       });
-      const disclosed = this.#environment.bookingRequestApp.disclose(
-        thread.draftId,
-        this.#environment.guestPrincipal(),
-        this.#environment.config.autoDeliverRequests !== false,
-      );
+      let disclosed;
+      try {
+        disclosed = this.#environment.bookingRequestApp.disclose(
+          thread.draftId,
+          this.#environment.guestPrincipal(),
+          this.#environment.config.autoDeliverRequests !== false,
+        );
+      } catch (error) {
+        // ADR 0023 as amended 1 Nov 2026: refused at submission before any hold, with the server's sentence.
+        if (error instanceof ContinuousOccupancyError) return { ok: false, code: "CONTINUOUS_OCCUPANCY_REFUSED", message: error.message };
+        throw error;
+      }
       thread.requestId = disclosed.requestId;
       this.#supersede(thread, REQUEST_STAGE);
       const surface = this.#requestSurface(thread, disclosed.requestId);

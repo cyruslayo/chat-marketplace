@@ -8,12 +8,12 @@ Work top to bottom. The frontier is the first issue that is open, unblocked and 
 
 | # | Issue | Type | Status | Blocked by |
 | --- | --- | --- | --- | --- |
-| 01 | [Booking service accepts Short Stays of 1 to 29 nights](issues/01-booking-service-short-stays-to-29-nights.md) | task | ready-for-agent | none |
-| 02 | [Concierge and assistant accept 1 to 29 nights](issues/02-concierge-and-assistant-short-stays-to-29-nights.md) | task | ready-for-agent | 01 |
-| 03 | [Landing chip validator follows the Short Stay limit](issues/03-landing-chip-validator-follows-short-stay-limit.md) | task | ready-for-agent | 01 |
+| 01 | [Booking service accepts Short Stays of 1 to 29 nights](issues/01-booking-service-short-stays-to-29-nights.md) | task | resolved | none |
+| 02 | [Concierge and assistant accept 1 to 29 nights](issues/02-concierge-and-assistant-short-stays-to-29-nights.md) | task | resolved | 01 |
+| 03 | [Landing chip validator follows the Short Stay limit](issues/03-landing-chip-validator-follows-short-stay-limit.md) | task | resolved | 01 |
 | 04 | [Decide how Continuous Occupancy is enforced](issues/04-decide-continuous-occupancy-enforcement.md) | grilling | resolved | none |
-| 06 | [Enforce Continuous Occupancy across back-to-back stays](issues/06-enforce-continuous-occupancy.md) | task | ready-for-agent | 04 |
-| 05 | [Turn on Extended Stays in every deployment, including production](issues/05-turn-on-extended-stays-in-every-deployment.md) | task | ready-for-agent | 01 |
+| 05 | [Turn on Extended Stays in every deployment, including production](issues/05-turn-on-extended-stays-in-every-deployment.md) | task | resolved | 01 |
+| 06 | [Enforce Continuous Occupancy across back-to-back stays](issues/06-enforce-continuous-occupancy.md) | task | resolved | 04 |
 
 ## Not in this effort
 

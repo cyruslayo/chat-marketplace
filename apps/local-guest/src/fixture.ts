@@ -479,11 +479,14 @@ export class LocalGuestEnvironment {
         `guest-demo-${String(++this.#searchCounter).padStart(3, "0")}`,
     });
 
+    // ADR 0023 as amended 1 Nov 2026: the confirmed Reservations are read for Continuous Occupancy (the same tables as below).
+    const requestBookingState = new SqliteBookingStateRepository(sqlDatabase);
     this.bookingRequestApp = createBookingRequestApplication({
       repository: this.unitRepository,
       calendar: this.calendar,
       audit: this.audit,
       store: this.interactionStore,
+      bookingState: requestBookingState,
       // ADR-0082: operator representative authority is evaluated through the
       // real server-side grant store on every consequential operator command.
       operatorAuthority: this.grantStore,

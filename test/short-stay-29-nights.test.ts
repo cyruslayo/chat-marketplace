@@ -11,6 +11,7 @@ import { DEMO_EXTENDED_STAY_POLICY } from "../domains/shortlet/src/extended-stay
 import { createPlatformCommandEnvelope, type CommandPrincipal } from "../packages/platform-core/src/index.js";
 import { SYNTHETIC_NOW, addDays, extendedStayUnit } from "./helpers/demo-extended-journey.js";
 import { demoDatabase, removeDemoDatabase } from "./helpers/demo-mode-fixture.js";
+import { fixedOccupancyLedger } from "./helpers/continuous-occupancy-fixture.js";
 
 const CHECK_IN = "2026-09-10";
 const SRC_DIR = fileURLToPath(new URL("../domains/shortlet/src/", import.meta.url));
@@ -106,6 +107,7 @@ test("AC4: A Booking Amendment that brings a Short Stay to 29 nights is accepted
   const seen: string[] = [];
   const contract = shortStayContract();
   const deps: BookingAmendmentDependencies = {
+    continuousOccupancy: fixedOccupancyLedger({ unitProperties: { "unit-29-1": "property-29" } }),
     contractRepository: {
       getContract: () => contract,
       mutateContract: (_id, _version, mutation) => mutation(contract),

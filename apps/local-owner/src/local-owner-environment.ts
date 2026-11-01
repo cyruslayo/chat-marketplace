@@ -716,6 +716,7 @@ export class LocalApartmentOwnerEnvironment {
       operatorAuthority: this.grantStore,
       clock: this.clock,
       store: this.interactionStore,
+      bookingState: this.#bookingState,
       audit: this.audit,
       // ADR 0092 as amended 1 Nov 2026: Extended Stays are on in every deployment; ADR 0105 labels are demo-only.
       extendedStayPolicy: this.config.extendedStayPolicy ?? EXTENDED_STAY_POLICY,
