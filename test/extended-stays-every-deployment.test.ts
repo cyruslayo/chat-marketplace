@@ -18,6 +18,7 @@ import { UnitRepository, seedIssue01Units, type BookingContract } from "../domai
 import type { Unit } from "../domains/shortlet/src/browse.js";
 import { addDays, extendUnit, SYNTHETIC_NOW } from "./helpers/demo-extended-journey.js";
 import { demoDatabase, removeDemoDatabase } from "./helpers/demo-mode-fixture.js";
+import { openNodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
 
 const CHECK_IN = "2026-09-10";
 
@@ -91,6 +92,34 @@ test("AC1: A production composition accepts a search, quote and Booking Request 
     const unitId = optIn(guest);
     assert.throws(() => draftFor(guest, unitId, 181), /stay|nights|range|maximum|180/i, "181 nights is refused in production");
   });
+});
+
+test("AC1 (owner composition): a production owner composition accepts a 30-night Booking Request at an opted-in unit", () => {
+  const files = demoDatabase();
+  const database = openNodeSqliteDatabase(files.path);
+  const unitRepository = new UnitRepository();
+  seedIssue01Units(unitRepository);
+  const seeded = unitRepository.findAll()[0]!;
+  unitRepository.save(extendUnit(seeded));
+  const owner = new LocalApartmentOwnerEnvironment({ databasePath: files.path, clock: () => SYNTHETIC_NOW, production: true, demo: false, deployment: "production", seedFixture: false }, { database, unitRepository, operatorRepository: null });
+  try {
+    assert.equal(owner.config.demo, false, "the owner composition is not demo");
+    const principal = { id: "synthetic-owner-composition-guest", role: "guest" as const, tenantId: owner.config.tenantId };
+    const draft = owner.bookingRequestApp.createDraft({
+      unitId: seeded.id,
+      primaryGuest: { id: principal.id, name: "Synthetic Guest" },
+      occupants: [{ name: "Synthetic Guest" }],
+      selfBookingAttestation: { accepted: true, version: "self-booking-v1" },
+      checkIn: CHECK_IN,
+      checkOut: addDays(CHECK_IN, 30),
+    }, principal);
+    const requestId = owner.bookingRequestApp.disclose(draft.draftId, principal).requestId;
+    assert.equal(owner.bookingRequestApp.getRequest(requestId).quote.stayType, "extended", "the owner composition books a 30-night Extended Stay");
+  } finally {
+    owner.close();
+    database.close();
+    removeDemoDatabase(files.dir);
+  }
 });
 
 test("AC2: In production, a unit that has not opted in, or lacks Monthly Agreed Amounts or a utilities statement, never appears for 30+ nights", () => {

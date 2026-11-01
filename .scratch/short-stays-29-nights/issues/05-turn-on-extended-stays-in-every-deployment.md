@@ -87,3 +87,17 @@ See `docs/agents/issue-tracker.md`. Record the exact test commands and pass coun
 - ADR 0105's amendment text still says Short Stays remain 1 to 14 nights. That is pre-existing and outside this issue; not changed.
 - The Worker spec ran from the repo root with `npm run test:workers -- <path>`; the filter worked.
 - No deploy, push or merge was performed.
+
+### Review corrections (1 Nov 2026)
+
+1. **Owner composition.** `apps/local-owner/src/local-owner-environment.ts` `createBookingRequestApplication` now receives `extendedStayPolicy: config.extendedStayPolicy ?? EXTENDED_STAY_POLICY` and `demoTerms: config.demo === true`. It was the one Extended Stay booking gate the first pass had missed. Checked every other `create*Application` call in that file and in `fixture.ts`: the owner conditional-offer call already had the policy; `createCheckInSupportApplication` takes no policy; the fixture's discovery, booking-request, conditional-offer and card-payment calls already had it; the fixture bank-transfer application takes no policy. Added `AC1 (owner composition): a production owner composition accepts a 30-night Booking Request at an opted-in unit` in `test/extended-stays-every-deployment.test.ts`.
+2. **Regexes tightened.** `test/demo-extended-stay.test.ts` AC7 now asserts `/not configured for Extended Stay/i`. `test/demo-extended-stay-180.test.ts` non-demo loop asserts `/not configured for Extended Stay/i`. `test/short-stay-29-nights.test.ts` AC2 draft assertion asserts `/not configured for Extended Stay/`. Domain-level no-policy assertions (`productionDiscovery`, `productionQuote`) still assert `/29 nights/`.
+3. **Notice to End message.** `domains/shortlet/src/extended-stay-changes.ts` now throws `Notice to End needs an Extended Stay policy (ADR 0092)`. The matching assertion in `test/demo-extended-cancellation-notice.test.ts` is updated to that text, and its title now reads `AC3: Notice to End is refused without an Extended Stay policy (ADR 0092)`.
+
+**Commands and counts.**
+- `env -u LLM_API_KEY npx tsx --test test/extended-stays-every-deployment.test.ts`: 6 tests, 6 pass.
+- `env -u LLM_API_KEY npx tsx --test test/demo-extended-stay.test.ts test/demo-extended-stay-180.test.ts test/short-stay-29-nights.test.ts test/demo-extended-cancellation-notice.test.ts`: 55 tests, 55 pass.
+- Wide set (21 files, same list as before, chromium and real-browser excluded): 146 tests, 146 pass.
+- `env -u LLM_API_KEY npm run test:workers -- apps/cloudflare/test/demo-extended-stay.spec.ts`: 3 tests, 3 pass.
+- `env -u LLM_API_KEY npm run check`: exit 0, zero type errors.
+

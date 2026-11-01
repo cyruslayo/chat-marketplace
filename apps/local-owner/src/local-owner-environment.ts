@@ -717,6 +717,9 @@ export class LocalApartmentOwnerEnvironment {
       clock: this.clock,
       store: this.interactionStore,
       audit: this.audit,
+      // ADR 0092 as amended 1 Nov 2026: Extended Stays are on in every deployment; ADR 0105 labels are demo-only.
+      extendedStayPolicy: this.config.extendedStayPolicy ?? EXTENDED_STAY_POLICY,
+      demoTerms: this.config.demo === true,
       guestContacts: {
         find: (guestId: string, tenantId: string) => ({
           guestId,

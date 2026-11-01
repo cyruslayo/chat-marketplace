@@ -336,11 +336,11 @@ test("AC3: A Short Stay cannot take a Notice to End", async () => {
   });
 });
 
-test("AC3: Notice to End is refused outside the staging demo policy, so production policy is unchanged", async () => {
+test("AC3: Notice to End is refused without an Extended Stay policy (ADR 0092)", async () => {
   await withConfirmedExtendedStay({ unit: journeyUnit(), checkIn: CHECK_IN, checkOut: CHECK_OUT }, (context) => {
     const contract = contractOf(context);
     const { store, manager } = noticeManager(contract, { now: "2026-10-01T09:00:00.000Z", noPolicy: true, paid: [1, 2] });
-    assert.throws(() => manager.giveNotice(contract.contractId, principalOf(contract)), /staging demo/);
+    assert.throws(() => manager.giveNotice(contract.contractId, principalOf(contract)), /needs an Extended Stay policy \(ADR 0092\)/);
     assert.equal(store.current.contractVersion, contract.contractVersion);
   });
 });

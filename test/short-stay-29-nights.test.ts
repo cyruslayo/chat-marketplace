@@ -85,7 +85,7 @@ test("AC2: Without an Extended Stay policy (production), 30 nights is refused be
 
   withProductionGuest((guest) => {
     const blockedBefore = guest.unitRepository.findAll()[0]!.blockedDates.length;
-    assert.throws(() => productionDraft(guest, 30), /29 nights|not configured for Extended Stay/, "the Request Draft refuses 30 nights before inventory is blocked");
+    assert.throws(() => productionDraft(guest, 30), /not configured for Extended Stay/, "the Request Draft refuses 30 nights at a unit without Extended Stay terms before inventory is blocked");
     assert.throws(() => productionDraft(guest, 0), /must be after checkIn|outside the configured ranges/i, "the Request Draft refuses 0 nights");
     assert.equal(guest.unitRepository.findAll()[0]!.blockedDates.length, blockedBefore, "a refused 30-night draft blocks no inventory");
   });

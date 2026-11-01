@@ -204,7 +204,7 @@ export class NoticeToEndManager {
 
   giveNotice(contractId: string, principal: CommandPrincipal): NoticeToEndResult {
     if (!this.#o.extendedStayPolicy) {
-      throw new Error("Notice to End is available only in the staging demo (ADR 0105); production policy is unchanged (ADR 0092)");
+      throw new Error("Notice to End needs an Extended Stay policy (ADR 0092)");
     }
     const contract = this.#o.contracts.getContract(contractId);
     if (!guestAuthorized(contract, principal)) throw new Error("Notice to End is not authorized for this principal");

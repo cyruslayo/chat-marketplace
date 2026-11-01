@@ -159,7 +159,7 @@ test("AC4: lengths of more than 180 nights are rejected before search results, q
         selfBookingAttestation: nonDemo.selfBookingAttestation(),
         checkIn: CHECK_IN,
         checkOut: addDays(CHECK_IN, nights),
-      }, nonDemo.guestPrincipal()), /cannot exceed 29 nights|outside the configured ranges|not configured for Extended Stay/i, `non-demo ${nights} nights`);
+      }, nonDemo.guestPrincipal()), /not configured for Extended Stay/i, `non-demo ${nights} nights`);
     }
   } finally {
     nonDemo.close();

@@ -304,7 +304,7 @@ test("AC7: Extended Stay booking needs an opted-in unit when demo mode is disabl
       selfBookingAttestation: guest.selfBookingAttestation(),
       checkIn: "2026-09-10",
       checkOut: "2026-10-10",
-    }, guest.guestPrincipal()), /not configured for Extended Stay|stay cannot exceed 29 nights/i);
+    }, guest.guestPrincipal()), /not configured for Extended Stay/i);
   } finally {
     guest.close();
     removeDemoDatabase(files.dir);
