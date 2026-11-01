@@ -15,7 +15,7 @@ PRD: [PRD.md](PRD.md). Research: [../assistant-date-understanding/RESEARCH.md](.
 ```
 
 Start now (unblocked, ready-for-agent): 03, 06, 08, 10, 12, 14, 15.
-Owner decisions: 01, 17.
+Owner decisions: 01. (17 resolved: path retired.)
 
 | # | Issue | Status | Blocked by |
 |---|---|---|---|
@@ -35,7 +35,7 @@ Owner decisions: 01, 17.
 | 14 | [Plain-word date clarification](issues/14-plain-word-date-clarification.md) | ready-for-agent | none |
 | 15 | [Bug: invented defaults in the request summary](issues/15-remove-invented-defaults-in-request-summary.md) | ready-for-agent | none |
 | 16 | [Parity suite for both concierges](issues/16-parity-suite-for-both-concierges.md) | needs-triage | 04, 05, 07, 08, 09, 11, 12, 13 |
-| 17 | [Decide the legacy Gemini concierge](issues/17-decide-the-legacy-gemini-concierge.md) | ready-for-human | none |
+| 17 | [Decide the legacy Gemini concierge](issues/17-decide-the-legacy-gemini-concierge.md) | resolved | none |
 
 ## Already connected (no issue needed)
 
@@ -43,4 +43,4 @@ Every button event (View, Compare, Request to Book, Submit, phone, email, Accept
 
 ## Resolved
 
-(none yet)
+- 17: the older Gemini concierge path is removed; see the issue's Answer.
