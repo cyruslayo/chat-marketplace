@@ -104,6 +104,7 @@ export class BookingRequestManager {
   readonly #requestStore: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
   readonly #guestContacts?: GuestContactSource;
   readonly #extendedStayPolicy?: ExtendedStayPolicy;
+  readonly #demoTerms: boolean;
 
   constructor({
     repository = null,
@@ -112,7 +113,8 @@ export class BookingRequestManager {
     guestVerification,
     store = null,
     guestContacts,
-    extendedStayPolicy
+    extendedStayPolicy,
+    demoTerms = false
   }: {
     repository?: any;
     audit?: any;
@@ -121,6 +123,7 @@ export class BookingRequestManager {
     store?: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
     guestContacts?: GuestContactSource;
     extendedStayPolicy?: ExtendedStayPolicy;
+    demoTerms?: boolean;
   } = {}) {
     this.#repository = repository;
     this.#audit = audit;
@@ -130,6 +133,7 @@ export class BookingRequestManager {
     this.#requestStore = store;
     this.#guestContacts = guestContacts;
     this.#extendedStayPolicy = extendedStayPolicy;
+    this.#demoTerms = demoTerms;
   }
 
   createDraft(
@@ -383,7 +387,7 @@ export class BookingRequestManager {
     const now = clock();
     const watNow = getWatTime(now);
 
-    // ADR 0105: the staging demo supplies its own scoped Extended Stay policy.
+    // ADR 0092 as amended 1 Nov 2026: the Extended Stay policy applies in every deployment.
     let dateRange: StayDateRange;
     try {
       dateRange = new StayDateRange(draft.checkIn, draft.checkOut, now, this.#extendedStayPolicy);
@@ -436,6 +440,7 @@ export class BookingRequestManager {
       partySize: draft.occupants.length || 1,
       selectedOptionalServices: draft.selectedOptionalServices,
       extendedStayPolicy: this.#extendedStayPolicy,
+      demoTerms: this.#demoTerms,
       clock
     });
 

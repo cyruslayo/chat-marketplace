@@ -4413,6 +4413,7 @@ export class LocalGuestApp {
       checkOut: draft.checkOut,
       partySize: draft.occupants.length || 1,
       ...(this.#environment.extendedStayPolicy ? { extendedStayPolicy: this.#environment.extendedStayPolicy } : {}),
+      demoTerms: this.#environment.config.demo === true,
       clock: this.#environment.clock,
     });
     return requestDraftArtifactFromProjection(
@@ -4582,6 +4583,7 @@ export class LocalGuestApp {
       checkOut: stay.checkOut,
       partySize: stay.partySize,
       ...(environment.extendedStayPolicy ? { extendedStayPolicy: environment.extendedStayPolicy } : {}),
+      demoTerms: environment.config.demo === true,
       clock: environment.clock,
     });
     return {

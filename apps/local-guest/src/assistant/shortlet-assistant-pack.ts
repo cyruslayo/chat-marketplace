@@ -787,7 +787,7 @@ export function executeAssistantTool(
         checkIn,
         checkOut,
       }, principal);
-      const quote = createStayQuote({ unit, checkIn, checkOut, partySize: guests, extendedStayPolicy: context.environment.extendedStayPolicy, clock: context.environment.clock });
+      const quote = createStayQuote({ unit, checkIn, checkOut, partySize: guests, extendedStayPolicy: context.environment.extendedStayPolicy, demoTerms: context.environment.config.demo === true, clock: context.environment.clock });
       const artifact = requestDraftArtifactFromProjection({
         draftId: draft.draftId,
         unitId: unit.id,

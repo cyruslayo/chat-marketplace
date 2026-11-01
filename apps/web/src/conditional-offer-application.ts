@@ -23,6 +23,8 @@ export interface ConditionalOfferApplicationDependencies {
   readonly operatorAuthority?: OperatorRepresentativeAuthority;
   readonly store?: import("../../../domains/shortlet/src/index.js").SqliteGuestInteractionStore | null;
   readonly extendedStayPolicy?: import("../../../domains/shortlet/src/index.js").ExtendedStayPolicy;
+  /** ADR 0105: true only in the staging demo, which labels the Extended cancellation terms as demo terms. */
+  readonly demoTerms?: boolean;
 }
 
 const managers = new WeakMap<ConditionalOfferApplication, ConditionalOfferManager>();

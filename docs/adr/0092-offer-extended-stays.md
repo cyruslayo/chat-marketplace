@@ -180,3 +180,4 @@ The owner reports that counsel approved all five pending items as drafted, with 
 - **ADR 0105.** The staging demo's 180-night exception now matches production, so it is no longer an exception.
 - **Unchanged.** The 90-day Booking Horizon applies to check-in only (ADR 0055), so a 180-night stay may check out about nine months ahead. Inspection, Management Authority and regulatory validity must still cover every night through Contractual Checkout. Billing Periods, Period Payments, pricing, deposits and owner payables are unchanged.
 - **Still open in issue 02.** The advising firm and the dated written answer (issue 02 AC1). Questions 6–11 there (registrations and levies, consumer law, non-circumvention, exclusivity, central pricing, revenue floor) were not part of this approval.
+- **Deployments.** Extended Stays are on in every deployment, including production (owner decision, 1 Nov 2026). Units must still opt in.

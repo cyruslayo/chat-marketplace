@@ -8,15 +8,19 @@ export interface BookingContractApplicationOptions {
   readonly policy?: ArrivalDisclosurePolicy;
   readonly audit?: ArrivalReleaseAudit;
   readonly clock?: () => Date;
+  /** ADR 0105: true only in the staging demo, which labels the Notice to End terms as demo terms. */
+  readonly demoTerms?: boolean;
 }
 
 export class BookingContractApplication {
   readonly #manager: ContractAndArrivalReleaseManager;
   readonly #clock: () => Date;
+  readonly #demoTerms: boolean;
 
-  constructor(manager: ContractAndArrivalReleaseManager, clock: () => Date = () => new Date()) {
+  constructor(manager: ContractAndArrivalReleaseManager, clock: () => Date = () => new Date(), demoTerms = false) {
     this.#manager = manager;
     this.#clock = clock;
+    this.#demoTerms = demoTerms;
   }
 
   getArtifact(contractId: string, trustedViewer: CommandPrincipal): BookingContractArtifact {
@@ -24,7 +28,7 @@ export class BookingContractApplication {
     const trustedEnvelope = { ...envelope, timestamp: this.#clock().toISOString() };
     const view = this.#manager.getBookingContractView(trustedEnvelope);
     const contract = this.#manager.getAuthorizedContractForApplication(trustedEnvelope);
-    return bookingContractArtifactFromView(view, contract, trustedViewer);
+    return bookingContractArtifactFromView(view, contract, trustedViewer, { demoTerms: this.#demoTerms });
   }
 
   getProtectedArrivalView(contractId: string, trustedViewer: CommandPrincipal): ProtectedArrivalView {
@@ -34,6 +38,6 @@ export class BookingContractApplication {
 }
 
 export function createBookingContractApplication(options: BookingContractApplicationOptions): BookingContractApplication {
-  const { repository, policy, audit, clock = () => new Date() } = options;
-  return new BookingContractApplication(new ContractAndArrivalReleaseManager({ repository, policy, audit }), clock);
+  const { repository, policy, audit, clock = () => new Date(), demoTerms } = options;
+  return new BookingContractApplication(new ContractAndArrivalReleaseManager({ repository, policy, audit }), clock, demoTerms === true);
 }

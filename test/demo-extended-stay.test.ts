@@ -286,7 +286,7 @@ test("AC5: an unverified first Period Payment releases its 30-night hold at the 
   }, (_reference, amount, payerId) => ({ reference: "synthetic-ref", method: "card", verified: false, status: "pending", amountKobo: amount, currency: "NGN", providerReference: "synthetic-ref", payerId, environment: "test" }), nowRef);
 });
 
-test("AC7: Extended Stay booking is refused when demo mode is disabled and production refuses demo configuration", () => {
+test("AC7: Extended Stay booking needs an opted-in unit when demo mode is disabled, and production refuses demo configuration", () => {
   assert.throws(() => loadPilotCoreConfiguration(PRODUCTION_WITH_DEMO_SOURCE), /refused in production/i);
   const productionFiles = demoDatabase();
   try {
@@ -304,7 +304,7 @@ test("AC7: Extended Stay booking is refused when demo mode is disabled and produ
       selfBookingAttestation: guest.selfBookingAttestation(),
       checkIn: "2026-09-10",
       checkOut: "2026-10-10",
-    }, guest.guestPrincipal()), /stay cannot exceed 29 nights/i);
+    }, guest.guestPrincipal()), /not configured for Extended Stay|stay cannot exceed 29 nights/i);
   } finally {
     guest.close();
     removeDemoDatabase(files.dir);

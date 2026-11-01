@@ -1,7 +1,7 @@
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import type { BookingContract } from "./card-payment.js";
 import type { CancellationEconomics } from "./cancellation-noshow.js";
-import { EXTENDED_CANCELLATION_POLICY_VERSION, NOTICE_TO_END_DAYS, NOTICE_TO_END_DEMO_TERMS, type ExtendedStayPolicy } from "./extended-stay.js";
+import { EXTENDED_CANCELLATION_POLICY_VERSION, NOTICE_TO_END_DAYS, noticeToEndTerms, type ExtendedStayPolicy } from "./extended-stay.js";
 import { ownerShareAfterCancellation, type OwnerPeriodNoticeAdjustment, type OwnerPeriodNoticeLedger } from "./owner-payable.js";
 import type { BillingPeriodQuote } from "./quote.js";
 
@@ -169,8 +169,10 @@ export interface NoticeToEndManagerOptions {
   /** ADR 0061: an open safety, operator or platform failure takes its remedy path, never the voluntary Notice to End. */
   readonly failures: { hasOpenFailure(reservationId: string): boolean };
   readonly refunds: NoticeRefundPort;
-  /** Supplied only by the staging demo composition (ADR 0105). Absent in production, which refuses Notice to End. */
+  /** The Extended Stay policy (ADR 0092 as amended 1 Nov 2026). Absent means Notice to End is refused. */
   readonly extendedStayPolicy?: ExtendedStayPolicy;
+  /** ADR 0105: true only in the staging demo, which labels the Notice to End terms as demo terms. */
+  readonly demoTerms?: boolean;
   readonly clock: () => Date;
 }
 
@@ -182,7 +184,7 @@ export interface NoticeToEndResult extends NoticeCalculation {
   readonly refunds: readonly { readonly periodIndex: number; readonly amountKobo: number; readonly refundId?: string; readonly status: "pending" | "settled" | "failed" | "reconciliation_required" }[];
   /** The owner-payable reductions written to the per-period ledger; a period whose payable did not move is absent. */
   readonly ownerAdjustments: readonly OwnerPeriodNoticeAdjustment[];
-  readonly demoTerms: string;
+  readonly noticeToEndTerms: string;
 }
 
 function guestAuthorized(contract: BookingContract, principal: CommandPrincipal): boolean {
@@ -274,7 +276,7 @@ export class NoticeToEndManager {
       newVersion: committed.contractVersion,
       refunds: Object.freeze(refunds),
       ownerAdjustments: Object.freeze(ownerAdjustments),
-      demoTerms: NOTICE_TO_END_DEMO_TERMS,
+      noticeToEndTerms: noticeToEndTerms(this.#o.demoTerms === true),
     });
   }
 

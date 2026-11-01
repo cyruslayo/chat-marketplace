@@ -32,7 +32,7 @@ function addExtendedTerms(environment: LocalGuestEnvironment, version: string): 
   });
 }
 
-test("Staging demo Assistant tools expose and execute one 30-night stay; non-demo tools remain limited to 14 nights", async () => {
+test("Staging demo Assistant tools expose and execute one 30-night stay; non-demo tools accept the 180-night Extended Stay maximum", async () => {
   let offeredMaximum = 0;
   let stayRef = "";
   const model = new ScriptedAssistantModel([
@@ -89,7 +89,7 @@ test("Staging demo Assistant tools expose and execute one 30-night stay; non-dem
     const tools = createShortletAssistantPack(shortStay.environment).toolsForState({ goal: null, stayIntent: {}, shortlist: [] });
     const searchTool = tools.find((tool) => tool.name === "search_stays");
     const schema = searchTool?.parametersSchema as { readonly properties?: { readonly nights?: { readonly maximum?: number } } } | undefined;
-    assert.equal(schema?.properties?.nights?.maximum, 14);
+    assert.equal(schema?.properties?.nights?.maximum, 180);
   } finally {
     shortStay.close();
   }

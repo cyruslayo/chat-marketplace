@@ -513,7 +513,8 @@ function artifactFor(contract: BookingContract) {
     contractVersion: contract.contractVersion, projectionVersion: "projection-13", addressAvailability: "locked", accessAvailability: "locked", disclosures: [],
   } as unknown as Parameters<typeof bookingContractArtifactFromView>[0];
   const viewer = { id: contract.parties.primaryGuest.id, role: "guest" as const, tenantId: contract.tenantId ?? "" };
-  return bookingContractArtifactFromView(view, contract as unknown as Parameters<typeof bookingContractArtifactFromView>[1], viewer);
+  // ADR 0105: the demo composition labels its Notice to End terms as demo terms; production does not.
+  return bookingContractArtifactFromView(view, contract as unknown as Parameters<typeof bookingContractArtifactFromView>[1], viewer, { demoTerms: true });
 }
 
 test("AC6: The guest booking contract shows the Notice to End demo terms in chat and on the confirmation page", async () => {

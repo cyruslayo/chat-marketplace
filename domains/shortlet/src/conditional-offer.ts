@@ -144,6 +144,7 @@ export class ConditionalOfferManager {
   #bookingRequestManager: any;
   #operatorAuthority?: OperatorRepresentativeAuthority;
   #extendedStayPolicy?: ExtendedStayPolicy;
+  #demoTerms: boolean;
   #offers = new Map<string, ConditionalBookingOffer>();
   readonly #store: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
 
@@ -154,7 +155,8 @@ export class ConditionalOfferManager {
     bookingRequestManager = null,
     operatorAuthority = undefined,
     store = null,
-    extendedStayPolicy
+    extendedStayPolicy,
+    demoTerms = false
   }: {
     repository?: any;
     audit?: any;
@@ -163,6 +165,7 @@ export class ConditionalOfferManager {
     operatorAuthority?: OperatorRepresentativeAuthority;
     store?: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
     extendedStayPolicy?: ExtendedStayPolicy;
+    demoTerms?: boolean;
   } = {}) {
     this.#repository = repository;
     this.#audit = audit;
@@ -170,6 +173,7 @@ export class ConditionalOfferManager {
     this.#bookingRequestManager = bookingRequestManager;
     this.#operatorAuthority = operatorAuthority;
     this.#extendedStayPolicy = extendedStayPolicy;
+    this.#demoTerms = demoTerms;
     this.#store = store;
   }
 
@@ -250,6 +254,7 @@ export class ConditionalOfferManager {
       partySize: request.occupants.length || 1,
       selectedOptionalServices: request.quote?.lineItems?.optionalServices ?? [],
       extendedStayPolicy: this.#extendedStayPolicy,
+      demoTerms: this.#demoTerms,
       clock
     });
     // ADR 0014/0058: reprice the offer, but never replace the immutable

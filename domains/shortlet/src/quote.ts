@@ -2,7 +2,7 @@ import { generatePlatformId } from "../../../packages/platform-core/src/index.js
 import { StayDateRange } from "./browse.js";
 import { guestPriceFromOwnerTerms, marginOnKobo, ownerSettlementFor, unitOwnerTerms } from "./owner-terms.js";
 import type { OwnerSettlementSnapshot } from "./owner-terms.js";
-import { EXTENDED_CANCELLATION_DEMO_SUMMARY, EXTENDED_CANCELLATION_POLICY_VERSION, assertStayLength, monthlyAmountsAreValid, utilitiesStatementIsValid, type ExtendedStayPolicy } from "./extended-stay.js";
+import { EXTENDED_CANCELLATION_POLICY_VERSION, assertStayLength, extendedCancellationTerms, monthlyAmountsAreValid, utilitiesStatementIsValid, type ExtendedStayPolicy } from "./extended-stay.js";
 import { calculateSecurityDepositPolicySnapshot, calculateRefundableSecurityDeposit, SECURITY_DEPOSIT_POLICY_VERSION, type SecurityDepositPolicySnapshot } from "./security-deposit.js";
 
 export interface OptionalServiceCatalogueItem {
@@ -178,8 +178,10 @@ export interface CreateStayQuoteOptions {
   commissionRate?: number;
   clock?: () => Date;
   idFactory?: () => string;
-  /** Supplied only by an authoritative staging demo composition. */
+  /** The Extended Stay policy (ADR 0092 as amended 1 Nov 2026). Supplied by every guest composition. */
   extendedStayPolicy?: ExtendedStayPolicy;
+  /** ADR 0105: true only in the staging demo, which labels the Extended cancellation terms as demo terms. */
+  demoTerms?: boolean;
 }
 
 export interface BillingPeriodQuote {
@@ -222,7 +224,8 @@ export function createStayQuote({
   commissionRate = 0.12,
   clock = () => new Date(),
   idFactory = () => crypto.randomUUID(),
-  extendedStayPolicy
+  extendedStayPolicy,
+  demoTerms = false
 }: CreateStayQuoteOptions) {
   if (!unit || !unit.id || !unit.price) {
     throw new TypeError("A valid unit with price details is required");
@@ -355,7 +358,7 @@ export function createStayQuote({
   const cancellationPolicy = Object.freeze({
     type: policyType,
     version: policyVersion,
-    policySummary: isExtendedQuote ? EXTENDED_CANCELLATION_DEMO_SUMMARY : configuredCancellationPolicy?.summary ?? "Standard launch cancellation policy"
+    policySummary: isExtendedQuote ? extendedCancellationTerms(demoTerms) : configuredCancellationPolicy?.summary ?? "Standard launch cancellation policy"
   });
 
   const revenueClassification = classifyRevenue({

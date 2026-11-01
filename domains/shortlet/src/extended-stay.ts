@@ -1,6 +1,6 @@
 import { MAX_STAY_NIGHTS } from "./browse.js";
 
-/** The authoritative staging demo policy for issue 08, derived from ADR 0092 and ADR 0105. */
+/** The Extended Stay policy (ADR 0092 as amended 1 Nov 2026, ADR 0023 as amended 1 Nov 2026). */
 export interface ExtendedStayPolicy {
   readonly minimumNights: number;
   readonly maximumNights: number;
@@ -8,15 +8,20 @@ export interface ExtendedStayPolicy {
 }
 
 /**
- * ADR 0105 (amended 22 Oct 2026): the staging demo accepts Extended Stays of 30 to 180 nights, six 30-night Billing
- * Periods at most. Only the demo composition supplies this policy; production keeps ADR 0092's 30-90 nights and
- * receives no policy at all until its ordinary launch gates close.
+ * ADR 0092 as amended 1 Nov 2026: Extended Stays of 30 to 180 nights (six 30-night Billing Periods) are on in every
+ * deployment, including production (owner decision, 1 Nov 2026). Each unit must still opt in.
  */
-export const DEMO_EXTENDED_STAY_POLICY: ExtendedStayPolicy = Object.freeze({
+export const EXTENDED_STAY_POLICY: ExtendedStayPolicy = Object.freeze({
   minimumNights: 30,
   maximumNights: 180,
   billingPeriodNights: 30,
 });
+
+/**
+ * Alias kept so existing imports keep working. It is the same object as EXTENDED_STAY_POLICY: the staging demo no longer
+ * has its own Extended Stay limit (ADR 0105, amended 1 Nov 2026). Demo labels are a separate concern (see demoTerms).
+ */
+export const DEMO_EXTENDED_STAY_POLICY: ExtendedStayPolicy = EXTENDED_STAY_POLICY;
 
 export interface MonthlyAgreedAmounts {
   readonly accommodationKobo: number;
@@ -68,13 +73,31 @@ export function utilitiesStatementIsValid(value: UtilitiesAndServicingStatement 
 
 /**
  * Demo-launch issue 13 (ADR 0092, ADR 0105). The Extended catalogue entry used by every Extended Stay. Its thresholds
- * (T-30d, T-14d) and the 14-day Notice to End are ADR 0092 values that await counsel approval [counsel]; they are
- * demonstrated only by the synthetic staging demo, labelled as demo terms. They are not counsel-approved.
+ * (T-30d, T-14d) and the 14-day Notice to End are ADR 0092 values, approved by counsel on 1 Nov 2026 (ADR 0092 amendment).
+ * Demo mode labels the same sentences as demo terms for a synthetic staging booking (ADR 0105); other deployments show
+ * them unlabelled.
  */
 export const EXTENDED_CANCELLATION_POLICY_VERSION = "cancellation-extended-adr0092-v1";
-export const EXTENDED_CANCELLATION_DEMO_SUMMARY =
-  "Demo terms for a synthetic staging booking, pending counsel review: 100% of the first Billing Period's cancellation base is refunded if you cancel 30 or more days before check-in, 50% if you cancel 14 or more days before, and nothing after that. Later Billing Periods are never charged.";
-/** ADR 0092: a Notice to End takes effect 14 days after notice. The 14 days await counsel approval [counsel]. */
+const CANCELLATION_TERMS_BODY =
+  "100% of the first Billing Period's cancellation base is refunded if you cancel 30 or more days before check-in, 50% if you cancel 14 or more days before, and nothing after that. Later Billing Periods are never charged.";
+/** ADR 0092: a Notice to End takes effect 14 days after notice. */
 export const NOTICE_TO_END_DAYS = 14;
-export const NOTICE_TO_END_DEMO_TERMS =
-  "Demo Notice to End terms for a synthetic staging booking, pending counsel review: the stay ends 14 days after notice, and paid nights after that date are refunded at their nightly values.";
+const NOTICE_TO_END_TERMS_BODY =
+  "the stay ends 14 days after notice, and paid nights after that date are refunded at their nightly values.";
+/** The demo label. It omits "pending counsel review", because counsel has approved these values. */
+const DEMO_TERMS_PREFIX = "Demo terms for a synthetic staging booking: ";
+
+/** The Extended cancellation terms. Only demo mode carries the demo label. */
+export function extendedCancellationTerms(demoTerms: boolean): string {
+  return demoTerms ? DEMO_TERMS_PREFIX + CANCELLATION_TERMS_BODY : CANCELLATION_TERMS_BODY;
+}
+
+/** The Notice to End terms. Only demo mode carries the demo label. */
+export function noticeToEndTerms(demoTerms: boolean): string {
+  if (demoTerms) return DEMO_TERMS_PREFIX + NOTICE_TO_END_TERMS_BODY;
+  return NOTICE_TO_END_TERMS_BODY.charAt(0).toUpperCase() + NOTICE_TO_END_TERMS_BODY.slice(1);
+}
+
+/** Demo-mode values, kept as constants for existing demo tests and imports. */
+export const EXTENDED_CANCELLATION_DEMO_SUMMARY = extendedCancellationTerms(true);
+export const NOTICE_TO_END_DEMO_TERMS = noticeToEndTerms(true);

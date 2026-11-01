@@ -59,7 +59,7 @@ export type PeriodVerificationOutcome =
 export interface PeriodPaymentManagerOptions {
   readonly store: SqliteGuestInteractionStore | null;
   readonly contracts: { getBookingContract(offerId: string): BookingContract | undefined };
-  /** Supplied only by the authoritative staging demo composition (ADR 0105); absent in production. */
+  /** The Extended Stay policy (ADR 0092 as amended 1 Nov 2026). Every guest composition supplies it; absent means refused. */
   readonly extendedStayPolicy?: ExtendedStayPolicy;
   /** The authoritative Unit source, rechecked at each Period Payment (ADR 0092, ADR 0055). */
   readonly unitSource?: { findById(id: string): unknown };

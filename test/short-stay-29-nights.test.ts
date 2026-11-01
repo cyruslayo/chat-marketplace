@@ -77,7 +77,7 @@ test("AC1: A search, quote, Request Draft and Booking Request of 15, 21 and 29 n
   }
 });
 
-test("AC2: Without an Extended Stay policy (production), 30 nights is refused before search, quoting, inventory blocking or payment, with an error that names the 29-night maximum. 0 nights is still refused.", () => {
+test("AC2: Without an Extended Stay policy (production), 30 nights is refused before search, quoting, inventory blocking or payment, with an error that names the 29-night maximum. 0 nights is still refused. Since issue 05, a 30-night draft at a unit without Extended Stay terms is refused for that reason before inventory is blocked.", () => {
   const unit = extendedStayUnit({ claimsThrough: addDays(CHECK_IN, 60) });
   assert.throws(() => productionDiscovery([unit]).search({ checkIn: CHECK_IN, checkOut: addDays(CHECK_IN, 30), partySize: 1 }), /29 nights/, "search refuses 30 nights before any results are produced");
   assert.throws(() => productionQuote(unit, addDays(CHECK_IN, 30)), /29 nights/, "quoting names the 29-night maximum");
@@ -85,7 +85,7 @@ test("AC2: Without an Extended Stay policy (production), 30 nights is refused be
 
   withProductionGuest((guest) => {
     const blockedBefore = guest.unitRepository.findAll()[0]!.blockedDates.length;
-    assert.throws(() => productionDraft(guest, 30), /29 nights/, "the Request Draft refuses 30 nights before inventory is blocked");
+    assert.throws(() => productionDraft(guest, 30), /29 nights|not configured for Extended Stay/, "the Request Draft refuses 30 nights before inventory is blocked");
     assert.throws(() => productionDraft(guest, 0), /must be after checkIn|outside the configured ranges/i, "the Request Draft refuses 0 nights");
     assert.equal(guest.unitRepository.findAll()[0]!.blockedDates.length, blockedBefore, "a refused 30-night draft blocks no inventory");
   });

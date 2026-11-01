@@ -107,7 +107,7 @@ import {
 import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit-log.js";
 import { SqliteTelemetry } from "../../../packages/platform-core/src/sqlite-telemetry.js";
 import type { TelemetryEvent } from "../../../packages/platform-core/src/telemetry.js";
-import { DEMO_EXTENDED_STAY_POLICY, SqliteRevenueAccountingRepository, SqliteRevenueReleaseStateStore } from "../../../domains/shortlet/src/index.js";
+import { EXTENDED_STAY_POLICY, SqliteRevenueAccountingRepository, SqliteRevenueReleaseStateStore } from "../../../domains/shortlet/src/index.js";
 import { DEMO_TRUST_EXPIRES_ON } from "../../../domains/shortlet/src/index.js";
 
 export interface LocalOwnerFixtureConfig {
@@ -126,6 +126,8 @@ export interface LocalOwnerFixtureConfig {
   /** Production composition: the demo-only request list is never read or written (ADR 0004). */
   readonly production?: boolean;
   readonly demo?: boolean;
+  /** ADR 0092 as amended 1 Nov 2026: the Extended Stay policy. Defaults to EXTENDED_STAY_POLICY in every deployment. */
+  readonly extendedStayPolicy?: import("../../../domains/shortlet/src/index.js").ExtendedStayPolicy;
   readonly deployment?: "production" | "staging";
   readonly clock?: () => Date;
 }
@@ -733,7 +735,9 @@ export class LocalApartmentOwnerEnvironment {
       operatorAuthority: this.grantStore,
       audit: this.audit,
       clock: this.clock,
-      ...(this.config.demo && this.config.deployment !== "production" ? { extendedStayPolicy: DEMO_EXTENDED_STAY_POLICY } : {}),
+      // ADR 0092 as amended 1 Nov 2026: Extended Stays are on in every deployment. ADR 0105 labels are demo-only.
+      extendedStayPolicy: this.config.extendedStayPolicy ?? EXTENDED_STAY_POLICY,
+      demoTerms: this.config.demo === true,
     });
 
     if (this.config.seedFixture !== false) this.#seedFixture();
