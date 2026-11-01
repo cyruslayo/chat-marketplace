@@ -112,12 +112,12 @@ test("AC3 failure path: keeping the current draft changes nothing and costs noth
   } finally { await fixture.close(); }
 });
 
-test("AC3 failure path: a stay over the 14-night limit is refused and the draft is unchanged", async () => {
+test("AC3 failure path: a stay over the 29-night limit is refused and the draft is unchanged", async () => {
   const { fixture, draftId } = await twoNightDraft();
   try {
-    const refused = success(await fixture.send("/api/turn", { text: "make it 20 nights" }));
+    const refused = success(await fixture.send("/api/turn", { text: "make it 30 nights" }));
     assert.equal(refused.surfaces.length, 0);
-    assert.match(refused.messages[0]!, /14 nights/);
+    assert.match(refused.messages[0]!, /29 nights/);
     assert.equal(refused.messages.at(-1), "Your Request Draft is unchanged.");
     assert.equal(fixture.environment.bookingRequestApp.getDraft(draftId).checkOut, "2026-09-12");
   } finally { await fixture.close(); }

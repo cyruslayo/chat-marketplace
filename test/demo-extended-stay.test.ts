@@ -304,7 +304,7 @@ test("AC7: Extended Stay booking is refused when demo mode is disabled and produ
       selfBookingAttestation: guest.selfBookingAttestation(),
       checkIn: "2026-09-10",
       checkOut: "2026-10-10",
-    }, guest.guestPrincipal()), /stay cannot exceed 14 nights/i);
+    }, guest.guestPrincipal()), /stay cannot exceed 29 nights/i);
   } finally {
     guest.close();
     removeDemoDatabase(files.dir);

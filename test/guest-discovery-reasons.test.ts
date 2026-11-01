@@ -100,8 +100,8 @@ test("AC3: After a clarify reply, the quick replies match the missing criterion"
     // Failure paths: a search result and a limit refusal ask nothing, so they offer no quick replies.
     const searched = success(await fixture.send("/api/turn", { text: "I need an apartment in Lagos from 10 Sept for 3 nights for 2 people" }));
     assert.equal(searched.quickReplies, undefined);
-    const refused = success(await fixture.send("/api/turn", { threadId: `g-${crypto.randomUUID()}`, text: "Lagos, 2 guests, from 10 Sept for 20 nights" }));
-    assert.match(refused.messages.join(" "), /at most 14 nights/);
+    const refused = success(await fixture.send("/api/turn", { threadId: `g-${crypto.randomUUID()}`, text: "Lagos, 2 guests, from 10 Sept for 30 nights" }));
+    assert.match(refused.messages.join(" "), /at most 29 nights/);
     assert.equal(refused.quickReplies, undefined);
   } finally { await fixture.close(); }
 });

@@ -1,6 +1,6 @@
 # 01 · Booking service accepts Short Stays of 1 to 29 nights
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: none
 Requested: 1 Nov 2026
@@ -40,3 +40,43 @@ Update the existing tests that assert 15 to 29 nights are refused; keep their fa
 See `docs/agents/issue-tracker.md`. Record the exact test commands and pass counts in Comments.
 
 ## Comments
+
+### 1 Nov 2026, implementation (branch feat/short-stays-and-extended-production)
+
+**Files changed**
+- `domains/shortlet/src/browse.ts`: `MAX_STAY_NIGHTS` 14 to 29, comment cites ADR 0023 as amended 1 Nov 2026. The 104-day comment on `DEMO_TRUST_EXPIRES_ON` now reads 119 days (90 + 29); no code reads that figure.
+- `domains/shortlet/src/extended-stay.ts`: `assertStayLength` uses `MAX_STAY_NIGHTS` in all three places, including both messages. Imports the constant from `./browse.js`. The import cycle (browse imports extended-stay) is safe: the constant is read only inside functions; both load orders were checked.
+- `domains/shortlet/src/booking-amendment.ts`: `#validate` and `requestAmendment` use `MAX_STAY_NIGHTS`; the message is now "Stay length exceeds the maximum Short Stay limit of 29 nights".
+- `test/short-stay-29-nights.test.ts` (new): one test per AC1 to AC5.
+- Boundary updates only (15 to 29 nights refused becomes 30 refused; exact 14 allowed becomes exact 29): `test/browse-one-eligible-unit.test.ts`, `test/guest-real-dates.test.ts`, `test/submit-and-resolve-timed-booking-request.test.ts`, `test/demo-extended-stay.test.ts`, `test/demo-extended-stay-180.test.ts`, `test/guest-criteria-strip.test.ts`, `test/guest-discovery-reasons.test.ts`, `test/guest-draft-revision.test.ts`, `test/assistant-tool-authorization.test.ts` (its `maximum-range` case moved from 15 to 30 nights so it still exercises the boundary).
+- No new constant. No file under `apps/` changed. `test/demo-extended-assistant.test.ts` not changed.
+
+**Commands and counts**
+- `env -u LLM_API_KEY npx tsx --test test/short-stay-29-nights.test.ts`: 5 pass, 0 fail (final run).
+- `env -u LLM_API_KEY npx tsx --test <26 affected domain and app-facing test files>` (the grep set minus chromium files and `demo-extended-assistant`): 210 tests, 210 pass, 0 fail (final run, after all edits).
+- `env -u LLM_API_KEY npx tsx --test test/demo-extended-assistant.test.ts`: 1 pass, 0 fail (run only to report; not touched).
+- `env -u LLM_API_KEY npm run check`: passes with zero type errors, and the worker-bundle guard passes.
+- Not run, per Test scope: full `npm test`, `npm run test:workers`, and any chromium or real-browser file. No `apps/cloudflare/test` spec asserts the 14-night limit, so no Worker spec was run.
+
+**ADRs applied**
+- 0023 (amended 1 Nov 2026): Short Stay 1 to 29 nights through `MAX_STAY_NIGHTS`; 30+ refused at search, quote and draft (AC1, AC2); amendments within 29 nights accepted, 30 refused (AC4).
+- 0092 (amended 1 Nov 2026): Extended Stay 30 to 180 nights from policy; no new constant (AC3).
+- 0055: the 90-day horizon still applies to check-in only; the latest-checkout bound grows by 15 days through `MAX_STAY_NIGHTS`, as the issue describes.
+- 0024: `revenue-release.ts` has no night check (see below).
+- 0105: the demo policy is unchanged (AC3).
+
+**AC evidence**
+- AC1 to AC5 each have a named `test()` in `test/short-stay-29-nights.test.ts`. AC4 covers the Short Stay extension to 29 nights (accepted) and to 30 nights (refused with the 29-night message).
+- AC5 is a source scan of `domains/shortlet/src/*.ts` code lines for stay-length comparisons against 14 or "14-night" wording. It finds none. The 14-day review window (`verified-stay-review.ts`) and the 14-day Notice to End and T-14d cancellation values are not stay-length limits and are not matched.
+
+**revenue-release.ts night check (ADR 0024)**
+`domains/shortlet/src/revenue-release.ts` has no reference to nights or any stay-length comparison (zero "night" matches, zero `14` literals). Its payout logic is keyed on checkout, payout plan and risk hold. No change needed.
+
+**Left for other issues or the owner (not changed here)**
+- `apps/local-guest/src/landing-copy.ts:12` still has `LAUNCH_MAX_STAY_NIGHTS = 14` for the example chip validator, and a comment at `apps/local-guest/src/concierge.ts:612` still says "one through fourteen nights". `concierge.ts` itself already reads `MAX_STAY_NIGHTS`. These are `apps/` and belong to issues 02, 03 and 05.
+- Extended Stay contracts: `requestAmendment` now refuses any contract whose stay would exceed 29 nights, including an Extended Stay. It refused more than 14 before this change, so the behaviour is unchanged, but the ADR amendment does not settle Extended Stay amendments. Flagged, not changed.
+- Trust-record refresh deadline: with the stay-length term at 29, the trust-record window is 119 days, not 104. For the staging CSV expiry of 2027-12-31 that moves the offer cut-off from about 19 Sep 2027 to about 3 Sep 2027. The owner should plan the refresh against 3 Sep 2027.
+- DoD item 7 asks for `npm test` to pass. Per the batch Test scope, the full suite runs once before the merge to main, not per issue.
+
+**Acceptance criteria**
+- AC1: pass (named test). AC2: pass (named test). AC3: pass (named test). AC4: pass (named test). AC5: pass (named test).

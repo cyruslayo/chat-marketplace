@@ -133,9 +133,9 @@ test("AC3: staging demo requests from 30 through 180 nights pass only for opted-
   });
 });
 
-test("AC4: lengths of 15 to 29 or more than 180 nights are rejected before search results, quote, identity verification, hold or payment", async () => {
+test("AC4: lengths of more than 180 nights are rejected before search results, quote, identity verification, hold or payment", async () => {
   const unit = extendedStayUnit({ claimsThrough: addDays(CHECK_IN, 220) });
-  for (const nights of [15, 29, 181]) {
+  for (const nights of [181]) {
     const checkOut = addDays(CHECK_IN, nights);
     assert.throws(() => discoveryFor([unit]).search({ checkIn: CHECK_IN, checkOut, partySize: 1 }), /outside the configured ranges/i, `search ${nights}`);
     assert.throws(() => quoteFor(unit, checkOut), /outside the configured ranges/i, `quote ${nights}`);
@@ -147,7 +147,7 @@ test("AC4: lengths of 15 to 29 or more than 180 nights are rejected before searc
   assert.equal(isExtendedStayLength(181, DEMO_EXTENDED_STAY_POLICY), false);
   assert.equal(isExtendedStayLength(180, DEMO_EXTENDED_STAY_POLICY), true);
 
-  assert.throws(() => assertStayLength(91), /stay cannot exceed 14 nights/, "without the demo policy a 91-night stay is refused");
+  assert.throws(() => assertStayLength(91), /stay cannot exceed 29 nights/, "without the demo policy a 91-night stay is refused");
   const files = demoDatabase();
   const nonDemo = LocalGuestEnvironment.openNode({ databasePath: files.path, demo: false, clock: () => SYNTHETIC_NOW });
   try {
@@ -159,7 +159,7 @@ test("AC4: lengths of 15 to 29 or more than 180 nights are rejected before searc
         selfBookingAttestation: nonDemo.selfBookingAttestation(),
         checkIn: CHECK_IN,
         checkOut: addDays(CHECK_IN, nights),
-      }, nonDemo.guestPrincipal()), /cannot exceed 14 nights|outside the configured ranges/i, `non-demo ${nights} nights`);
+      }, nonDemo.guestPrincipal()), /cannot exceed 29 nights|outside the configured ranges/i, `non-demo ${nights} nights`);
     }
   } finally {
     nonDemo.close();
@@ -253,7 +253,7 @@ test("AC6: a 14-night Short Stay under the demo policy keeps its nightly price, 
   assert.equal(quote.allInStayTotalKobo, withoutDemoPolicy.allInStayTotalKobo);
   assert.equal(quote.totalAmountDueNowKobo, withoutDemoPolicy.totalAmountDueNowKobo);
   assert.equal(quote.refundableSecurityDepositKobo, withoutDemoPolicy.refundableSecurityDepositKobo);
-  assert.throws(() => quoteFor(unit, addDays(CHECK_IN, 15)), /outside the configured ranges/i, "15 nights stay unsupported");
+  assert.throws(() => quoteFor(unit, addDays(CHECK_IN, 181)), /outside the configured ranges/i, "181 nights stay unsupported");
 });
 
 test("AC1: the first Period Payment collects only the first Billing Period, never the six-period total", async () => {

@@ -132,7 +132,7 @@ test("Disclosure remains fail-closed for cross-principal requests before invento
   assert.equal(audit.entries().length, before);
 });
 
-test("Disclosure enforces one-to-fourteen nights, 90-day horizon, active hours window, and safe cutoff", () => {
+test("Disclosure enforces one-to-twenty-nine nights, 90-day horizon, active hours window, and safe cutoff", () => {
   const { manager, unit } = setup();
 
   // 1. Enforce stay length: 0 nights
@@ -157,7 +157,7 @@ test("Disclosure enforces one-to-fourteen nights, 90-day horizon, active hours w
     /checkOut must be after checkIn/i
   );
 
-  // 2. Enforce stay length: 15 nights
+  // 2. Enforce stay length: 30 nights (the Short Stay maximum is 29, ADR 0023 as amended 1 Nov 2026)
   assert.throws(
     () => {
       const draft = manager.createDraft({
@@ -166,7 +166,7 @@ test("Disclosure enforces one-to-fourteen nights, 90-day horizon, active hours w
         selfBookingAttestation: { accepted: true, version: "self-booking-v1" },
         occupants: [{ name: "Tunde Ednut" }],
         checkIn: "2026-08-01",
-        checkOut: "2026-08-16"
+        checkOut: "2026-08-31"
       }, { clock: () => new Date("2026-07-22T10:00:00Z") });
       const env = createPlatformCommandEnvelope({
         commandName: "booking_request.disclose",
@@ -176,7 +176,7 @@ test("Disclosure enforces one-to-fourteen nights, 90-day horizon, active hours w
       manager.discloseBookingRequest(env, { clock: () => new Date("2026-07-22T10:00:00Z") });
     },
     // Same entry-point alignment as case 1: createDraft range-checks the stay before disclosure.
-    /stay cannot exceed 14 nights/i
+    /stay cannot exceed 29 nights/i
   );
 
   // 3. Enforce 90-day booking horizon (>90 days from today)

@@ -10,8 +10,11 @@ import { assertStayLength, isExtendedStayLength, monthlyAmountsAreValid, utiliti
 
 const LAGOS_TIME_ZONE = "Africa/Lagos";
 const SUPPORTED_LOCATIONS = new Set(["Lagos", "Abuja"]);
-/** ADR-0023: launch Short Stays are one through fourteen nights. */
-export const MAX_STAY_NIGHTS = 14;
+/**
+ * ADR-0023 as amended 1 Nov 2026: Short Stays are one through twenty-nine nights. This is the only source of the
+ * Short Stay maximum. Stays of 30 nights or more are Extended Stays (ADR-0092) and need an Extended Stay policy.
+ */
+export const MAX_STAY_NIGHTS = 29;
 /** ADR-0055: check-in falls within a rolling 90-day horizon in Africa/Lagos time. */
 export const BOOKING_HORIZON_DAYS = 90;
 const AUTHORITY_PERMISSIONS = [
@@ -491,8 +494,9 @@ export class UnitDiscoveryQuery {
 /**
  * Synthetic demo trust-record expiry (inspection, management authority, licence and insurance) for the demo seeds: twelve
  * months past the staging clock of 27 Oct 2026. The offer check (onboarding.ts; ADR 0056, 0057, 0065) needs every trust
- * record to outlast today plus the 90-night horizon and the 14-night stay (104 days). Refresh this constant, and the
- * demo CSVs in apps/cloudflare/demo, before the clock comes within 104 days of it, or offers stop issuing.
+ * record to outlast today plus the 90-night horizon and the 29-night stay (119 days, ADR-0023 as amended 1 Nov 2026).
+ * Refresh this constant, and the demo CSVs in apps/cloudflare/demo, before the clock comes within 119 days of it, or
+ * offers stop issuing.
  */
 export const DEMO_TRUST_EXPIRES_ON = "2027-10-27";
 

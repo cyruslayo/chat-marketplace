@@ -75,13 +75,13 @@ test("AC2: \"this weekend\" resolves to the Friday–Sunday range after the inje
   assert.equal(saturday.filters.checkOut, "2026-09-13");
 });
 
-test("AC3: A range longer than 14 nights or beyond the 90-day horizon is refused with a plain explanation that states the limit", () => {
-  assert.equal(MAX_STAY_NIGHTS, 14);
+test("AC3: A range longer than 29 nights or beyond the 90-day horizon is refused with a plain explanation that states the limit", () => {
+  assert.equal(MAX_STAY_NIGHTS, 29);
   assert.equal(BOOKING_HORIZON_DAYS, 90);
 
   const tooLong = resolve(`Ikoyi from 10 Sept for ${MAX_STAY_NIGHTS + 1} nights for 2 guests`);
   assert.equal(tooLong.kind, "refuse"); if (tooLong.kind !== "refuse") return;
-  assert.match(tooLong.reply, /14 nights/);
+  assert.match(tooLong.reply, /29 nights/);
 
   // 90 days after Thu 3 Sept 2026 is Wed 2 Dec 2026; 3 Dec is one day beyond.
   const tooFar = resolve("Ikoyi from 3 Dec for 2 nights for 2 guests");
@@ -89,9 +89,9 @@ test("AC3: A range longer than 14 nights or beyond the 90-day horizon is refused
   assert.match(tooFar.reply, /90 days/);
   assert.match(tooFar.reply, /Wed 2 Dec 2026/);
 
-  // Failure paths at the boundary: exactly 14 nights and exactly day 90 are allowed.
-  assert.equal(resolve("Ikoyi from 10 Sept for 14 nights for 2 guests").kind, "search");
-  assert.equal(resolve("Ikoyi from 2 Dec for 14 nights for 2 guests").kind, "search");
+  // Failure paths at the boundary: exactly 29 nights and exactly day 90 are allowed.
+  assert.equal(resolve("Ikoyi from 10 Sept for 29 nights for 2 guests").kind, "search");
+  assert.equal(resolve("Ikoyi from 2 Dec for 29 nights for 2 guests").kind, "search");
 });
 
 test("AC4: \"me and my wife\" sets 2 guests, and \"just me\" sets 1", () => {

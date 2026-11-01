@@ -1,3 +1,5 @@
+import { MAX_STAY_NIGHTS } from "./browse.js";
+
 /** The authoritative staging demo policy for issue 08, derived from ADR 0092 and ADR 0105. */
 export interface ExtendedStayPolicy {
   readonly minimumNights: number;
@@ -40,11 +42,12 @@ export function isExtendedStayLength(nights: number, policy: ExtendedStayPolicy 
   return policy !== undefined && nights >= policy.minimumNights && nights <= policy.maximumNights;
 }
 
+/** ADR-0023 as amended 1 Nov 2026: the Short Stay maximum is MAX_STAY_NIGHTS (29); no other constant holds it. */
 export function assertStayLength(nights: number, policy?: ExtendedStayPolicy): "short" | "extended" {
-  if (nights >= 1 && nights <= 14) return "short";
+  if (nights >= 1 && nights <= MAX_STAY_NIGHTS) return "short";
   if (isExtendedStayLength(nights, policy)) return "extended";
-  if (policy === undefined && nights > 14) throw new RangeError("stay cannot exceed 14 nights");
-  throw new RangeError("stay length is outside the configured ranges (Short Stay is 14 nights or fewer)");
+  if (policy === undefined && nights > MAX_STAY_NIGHTS) throw new RangeError(`stay cannot exceed ${MAX_STAY_NIGHTS} nights`);
+  throw new RangeError(`stay length is outside the configured ranges (Short Stay is ${MAX_STAY_NIGHTS} nights or fewer)`);
 }
 
 export function monthlyAmountsAreValid(value: MonthlyAgreedAmounts | undefined): value is MonthlyAgreedAmounts {
