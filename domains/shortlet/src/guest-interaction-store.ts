@@ -997,22 +997,16 @@ export class SqliteGuestInteractionStore {
   }
 
   /**
-   * The Booking Requests of one Primary Guest, optionally limited to one tenant (ADR 0023 Continuous Occupancy). The
-   * tenant is a filter, not a key: a missing tenant reads the guest's requests in every tenant, so a stay is never skipped.
+   * The Booking Requests of one Primary Guest in one tenant (ADR 0023 Continuous Occupancy). The tenant is required:
+   * a missing tenant reads nothing, so no caller can read another tenant's stays by omitting it.
    */
-  findBookingRequestsForPrimaryGuest(primaryGuestId: string, tenantId?: string): DurableBookingRequest[] {
-    if (!primaryGuestId) return [];
-    const rows = tenantId
-      ? this.#database
-        .prepare(`SELECT * FROM guest_booking_requests
-          WHERE primary_guest_id = $primaryGuestId AND tenant_id = $tenantId
-          ORDER BY disclosed_at, request_id`)
-        .all({ $primaryGuestId: primaryGuestId, $tenantId: tenantId }) as unknown as BookingRequestRow[]
-      : this.#database
-        .prepare(`SELECT * FROM guest_booking_requests
-          WHERE primary_guest_id = $primaryGuestId
-          ORDER BY disclosed_at, request_id`)
-        .all({ $primaryGuestId: primaryGuestId }) as unknown as BookingRequestRow[];
+  findBookingRequestsForPrimaryGuest(primaryGuestId: string, tenantId: string): DurableBookingRequest[] {
+    if (!primaryGuestId || !tenantId) return [];
+    const rows = this.#database
+      .prepare(`SELECT * FROM guest_booking_requests
+        WHERE primary_guest_id = $primaryGuestId AND tenant_id = $tenantId
+        ORDER BY disclosed_at, request_id`)
+      .all({ $primaryGuestId: primaryGuestId, $tenantId: tenantId }) as unknown as BookingRequestRow[];
     return rows.map(bookingRequestFromRow);
   }
 

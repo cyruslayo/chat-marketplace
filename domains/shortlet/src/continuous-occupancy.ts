@@ -49,12 +49,15 @@ export interface ContinuousOccupancyAssessment {
 
 const DAY_MS = 86_400_000;
 
+/** The one fail-closed refusal for a stay that cannot be checked: unresolved tenant, Property, Primary Guest or status. */
+const UNRESOLVED = "These dates cannot be checked against your other stays at this property.";
+
 function nightsBetween(checkIn: string, checkOut: string): number {
   const start = Date.parse(`${checkIn}T00:00:00Z`);
   const end = Date.parse(`${checkOut}T00:00:00Z`);
   const nights = (end - start) / DAY_MS;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(checkIn) || !/^\d{4}-\d{2}-\d{2}$/.test(checkOut) || !Number.isInteger(nights)) {
-    throw new ContinuousOccupancyError("These dates cannot be checked against your other stays at this property.");
+    throw new ContinuousOccupancyError(UNRESOLVED);
   }
   return nights;
 }
@@ -63,7 +66,7 @@ function nightsBetween(checkIn: string, checkOut: string): number {
 function chainLimit(extendedChain: boolean, policy: ExtendedStayPolicy | undefined): number {
   if (!extendedChain) return MAX_STAY_NIGHTS;
   // Fail closed: an Extended Stay in the chain with no policy to bound it is refused, never assumed to fit.
-  if (policy === undefined) throw new ContinuousOccupancyError("These dates cannot be checked against your other stays at this property.");
+  if (policy === undefined) throw new ContinuousOccupancyError(UNRESOLVED);
   return policy.maximumNights;
 }
 
@@ -78,12 +81,12 @@ export function assessContinuousOccupancy(
   policy: ExtendedStayPolicy | undefined,
 ): ContinuousOccupancyAssessment {
   const candidateNights = nightsBetween(candidate.checkIn, candidate.checkOut);
-  if (candidateNights < 1) throw new ContinuousOccupancyError("These dates cannot be checked against your other stays at this property.");
+  if (candidateNights < 1) throw new ContinuousOccupancyError(UNRESOLVED);
   const members = new Map<string, OccupancyStay & { readonly nights: number }>();
   members.set(candidate.ref, { ...candidate, nights: candidateNights });
   for (const stay of counted) {
     if (stay.ref === candidate.ref || stay.propertyId !== candidate.propertyId) continue;
-    if (!stay.propertyId || !stay.unitId) throw new ContinuousOccupancyError("These dates cannot be checked against your other stays at this property.");
+    if (!stay.propertyId || !stay.unitId) throw new ContinuousOccupancyError(UNRESOLVED);
     members.set(stay.ref, { ...stay, nights: nightsBetween(stay.checkIn, stay.checkOut) });
   }
 
@@ -138,7 +141,7 @@ export interface CountableBookingRequest {
 export interface ContinuousOccupancyLedgerOptions {
   /** The durable store: its offers and booking snapshots. Null when the composition keeps no store (in-memory). */
   readonly store: {
-    listConditionalOffersByRequestId(requestId: string): readonly { readonly offerId: string; readonly status: string }[];
+    listConditionalOffersByRequestId(requestId: string): readonly { readonly offerId: string; readonly status: string; readonly tenantId: string }[];
     findBookingSnapshotByOfferId(offerId: string): { readonly reservationId: string; readonly contractId: string } | null;
   } | null;
   /** The authoritative booking state: confirmed reservations and their contracts (ADR 0092 dates and status). */
@@ -149,7 +152,7 @@ export interface ContinuousOccupancyLedgerOptions {
   /** The Property of a Unit, or undefined when the Unit cannot be read (fail closed). */
   readonly unitPropertyId: (unitId: string) => string | undefined;
   /** The Booking Requests of one Primary Guest in one tenant, with projected status. */
-  readonly listBookingRequests: (input: { readonly tenantId: string | undefined; readonly primaryGuestId: string; readonly now: Date }) => readonly CountableBookingRequest[];
+  readonly listBookingRequests: (input: { readonly tenantId: string; readonly primaryGuestId: string; readonly now: Date }) => readonly CountableBookingRequest[];
   readonly extendedStayPolicy?: ExtendedStayPolicy;
 }
 
@@ -174,14 +177,14 @@ export class ContinuousOccupancyLedger {
     this.#options = options;
   }
 
-  countedStays(input: { readonly tenantId?: string; readonly primaryGuestId: string; readonly now: Date; readonly exclude?: CountedStayExclusion }): OccupancyStay[] {
-    if (!input.primaryGuestId) throw new ContinuousOccupancyError("These dates cannot be checked against your other stays at this property.");
+  countedStays(input: { readonly tenantId: string | undefined; readonly primaryGuestId: string; readonly now: Date; readonly exclude?: CountedStayExclusion }): OccupancyStay[] {
+    // Fail closed: a stay is only ever read inside the caller's tenant. No tenant, no read (never a cross-tenant read).
+    if (!input.primaryGuestId || !input.tenantId) throw new ContinuousOccupancyError(UNRESOLVED);
+    const tenantId = input.tenantId;
     const stays = new Map<string, OccupancyStay>();
-    for (const request of this.#options.listBookingRequests({ tenantId: input.tenantId, primaryGuestId: input.primaryGuestId, now: input.now })) {
-      if ((input.tenantId !== undefined && request.tenantId !== input.tenantId) || request.primaryGuestId !== input.primaryGuestId) {
-        throw new ContinuousOccupancyError("These dates cannot be checked against your other stays at this property.");
-      }
-      for (const stay of this.#staysForRequest(request)) {
+    for (const request of this.#options.listBookingRequests({ tenantId, primaryGuestId: input.primaryGuestId, now: input.now })) {
+      if (request.tenantId !== tenantId || request.primaryGuestId !== input.primaryGuestId) throw new ContinuousOccupancyError(UNRESOLVED);
+      for (const stay of this.#staysForRequest(request, tenantId)) {
         if (input.exclude?.contractId !== undefined && stay.contractId === input.exclude.contractId) continue;
         if (input.exclude?.offerId !== undefined && stay.offerId === input.exclude.offerId) continue;
         stays.set(stay.ref, stay);
@@ -190,9 +193,9 @@ export class ContinuousOccupancyLedger {
     return [...stays.values()];
   }
 
-  #staysForRequest(request: CountableBookingRequest): OccupancyStay[] {
+  #staysForRequest(request: CountableBookingRequest, tenantId: string): OccupancyStay[] {
     if (NOT_HOLDING_REQUEST_STATUSES.has(request.status)) return [];
-    if (!HOLDING_REQUEST_STATUSES.has(request.status)) throw new ContinuousOccupancyError("These dates cannot be checked against your other stays at this property.");
+    if (!HOLDING_REQUEST_STATUSES.has(request.status)) throw new ContinuousOccupancyError(UNRESOLVED);
     const fromRequest = (offerId?: string) => this.#stay({
       ref: `request:${request.requestId}`,
       unitId: request.unitId,
@@ -209,8 +212,9 @@ export class ContinuousOccupancyLedger {
     if (offers.length === 0) return [fromRequest()];
     const stays: OccupancyStay[] = [];
     for (const offer of offers) {
+      if (offer.tenantId !== tenantId) throw new ContinuousOccupancyError(UNRESOLVED);
       if (CLOSED_OFFER_STATUSES.has(offer.status)) continue;
-      if (!OPEN_OFFER_STATUSES.has(offer.status)) throw new ContinuousOccupancyError("These dates cannot be checked against your other stays at this property.");
+      if (!OPEN_OFFER_STATUSES.has(offer.status)) throw new ContinuousOccupancyError(UNRESOLVED);
       if (offer.status === "issued") {
         stays.push(fromRequest(offer.offerId));
         continue;
@@ -221,22 +225,22 @@ export class ContinuousOccupancyLedger {
         stays.push(fromRequest(offer.offerId));
         continue;
       }
-      const reserved = this.#reservationStay(snapshot.reservationId, snapshot.contractId, offer.offerId);
+      const reserved = this.#reservationStay(snapshot.reservationId, snapshot.contractId, offer.offerId, tenantId);
       if (reserved !== null) stays.push(reserved);
     }
     // A confirmed request with no open offer (every offer closed, or a cancelled reservation) holds nothing.
     return stays;
   }
 
-  #reservationStay(reservationId: string, contractId: string, offerId: string): OccupancyStay | null {
+  #reservationStay(reservationId: string, contractId: string, offerId: string, tenantId: string): OccupancyStay | null {
     const state = this.#options.bookingState;
-    if (state === null) throw new ContinuousOccupancyError("These dates cannot be checked against your other stays at this property.");
+    if (state === null) throw new ContinuousOccupancyError(UNRESOLVED);
     const reservation = state.findReservationById(reservationId);
-    if (!reservation) throw new ContinuousOccupancyError("These dates cannot be checked against your other stays at this property.");
+    if (!reservation) throw new ContinuousOccupancyError(UNRESOLVED);
     if (reservation.status === "cancelled" || reservation.status === "no_show") return null;
-    if (reservation.status !== "confirmed") throw new ContinuousOccupancyError("These dates cannot be checked against your other stays at this property.");
+    if (reservation.status !== "confirmed") throw new ContinuousOccupancyError(UNRESOLVED);
     const contract = state.findContractById(contractId);
-    if (!contract || contract.contractId !== contractId) throw new ContinuousOccupancyError("These dates cannot be checked against your other stays at this property.");
+    if (!contract || contract.contractId !== contractId || contract.tenantId !== tenantId) throw new ContinuousOccupancyError(UNRESOLVED);
     return this.#stay({
       ref: `contract:${contractId}`,
       unitId: contract.unitId,
@@ -249,13 +253,13 @@ export class ContinuousOccupancyLedger {
 
   #stay(input: { readonly ref: string; readonly unitId: string; readonly checkIn: string; readonly checkOut: string; readonly contractId?: string; readonly offerId?: string }): OccupancyStay {
     const propertyId = this.#options.unitPropertyId(input.unitId);
-    if (!propertyId) throw new ContinuousOccupancyError("These dates cannot be checked against your other stays at this property.");
+    if (!propertyId) throw new ContinuousOccupancyError(UNRESOLVED);
     const nights = nightsBetween(input.checkIn, input.checkOut);
     let stayType: "short" | "extended";
     try {
       stayType = assertStayLength(nights, this.#options.extendedStayPolicy);
     } catch {
-      throw new ContinuousOccupancyError("These dates cannot be checked against your other stays at this property.");
+      throw new ContinuousOccupancyError(UNRESOLVED);
     }
     return {
       ref: input.ref,
@@ -273,7 +277,7 @@ export class ContinuousOccupancyLedger {
   /** The candidate's own Property, read through the same fail-closed rule. */
   propertyIdFor(unitId: string): string {
     const propertyId = this.#options.unitPropertyId(unitId);
-    if (!propertyId) throw new ContinuousOccupancyError("These dates cannot be checked against your other stays at this property.");
+    if (!propertyId) throw new ContinuousOccupancyError(UNRESOLVED);
     return propertyId;
   }
 }
@@ -282,7 +286,7 @@ function candidateStayType(nights: number, policy: ExtendedStayPolicy | undefine
   try {
     return assertStayLength(nights, policy);
   } catch {
-    throw new ContinuousOccupancyError("These dates cannot be checked against your other stays at this property.");
+    throw new ContinuousOccupancyError(UNRESOLVED);
   }
 }
 
@@ -292,7 +296,8 @@ function candidateStayType(nights: number, policy: ExtendedStayPolicy | undefine
  */
 export function assertContinuousOccupancy(input: {
   readonly ledger: ContinuousOccupancyLedger;
-  readonly tenantId?: string;
+  /** Undefined when the caller's tenant cannot be resolved: the guard refuses (fail closed). */
+  readonly tenantId: string | undefined;
   readonly primaryGuestId: string;
   readonly unitId: string;
   readonly checkIn: string;
@@ -313,7 +318,7 @@ export function assertContinuousOccupancy(input: {
     stayType: candidateStayType(nights, input.policy),
   };
   const counted = input.ledger.countedStays({
-    ...(input.tenantId !== undefined ? { tenantId: input.tenantId } : {}),
+    tenantId: input.tenantId,
     primaryGuestId: input.primaryGuestId,
     now: input.now,
     ...(input.exclude !== undefined ? { exclude: input.exclude } : {}),

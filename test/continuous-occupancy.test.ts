@@ -3,9 +3,11 @@ import test from "node:test";
 import {
   BookingAmendmentManager,
   ContinuousOccupancyError,
+  SELF_BOOKING_ATTESTATION_VERSION,
   ContinuousOccupancyLedger,
   EXTENDED_STAY_POLICY,
   MAX_STAY_NIGHTS,
+  assertContinuousOccupancy,
   assessContinuousOccupancy,
   continuousOccupancyRefusal,
   type BookingContract,
@@ -17,6 +19,7 @@ import {
   OCCUPANCY_TENANT,
   OTHER_GUEST,
   OTHER_PROPERTY,
+  OTHER_TENANT,
   PROPERTY,
   UNIT_A,
   UNIT_B,
@@ -310,4 +313,88 @@ test("the refusal wording is the owner-confirmed short and extended chain senten
   assert.equal(extendedAssessment.limit, 70);
   assert.equal(continuousOccupancyRefusal(extendedAssessment).message, "These dates join another stay of yours at this property, making 80 nights, more than the 70-night maximum.");
   assert.doesNotMatch(continuousOccupancyRefusal(extendedAssessment).message, /synthetic|guest-occupancy|ctr-|req-/);
+});
+
+test("Continuous Occupancy never reads another tenant's stays: a same-guest-id stay in tenant B is not counted for tenant A", () => {
+  const repository = occupancyUnits();
+  const stores = openOccupancyStores();
+  try {
+    const { manager } = occupancyManager({ repository, clock, stores });
+    // Tenant B: the same Primary Guest id holds 20 nights at Unit A, ending on the candidate's check-in.
+    confirmedStayFor(stores, manager, clock, { unitId: UNIT_A, tenantId: OTHER_TENANT, checkIn: "2026-08-01", checkOut: "2026-08-21" });
+    // Tenant A sees none of it: 10 nights are allowed.
+    const draftA = draftFor(manager, clock, { unitId: UNIT_B, checkIn: "2026-08-21", checkOut: "2026-08-31" });
+    assert.equal(disclose(manager, clock, draftA.draftId).nights, 10, "tenant A's 10 nights are not joined to tenant B's stay");
+    // The control: the same candidate in tenant B is refused by its own stay.
+    assert.throws(() => draftFor(manager, clock, { unitId: UNIT_B, tenantId: OTHER_TENANT, checkIn: "2026-08-21", checkOut: "2026-08-31" }), (error: unknown) => {
+      assert.ok(error instanceof ContinuousOccupancyError);
+      return true;
+    }, "the same guest id is counted in its own tenant");
+    // The durable reader itself reads nothing without a tenant.
+    assert.deepEqual(stores.store.findBookingRequestsForPrimaryGuest(GUEST, ""), [], "no tenant, no request is read");
+  } finally {
+    stores.close();
+  }
+});
+
+test("A stay with no resolvable tenant is refused, not checked across tenants", () => {
+  const repository = occupancyUnits();
+  const stores = openOccupancyStores();
+  const refusal = "These dates cannot be checked against your other stays at this property.";
+  try {
+    const { manager } = occupancyManager({ repository, clock, stores });
+    confirmedStayFor(stores, manager, clock, { unitId: UNIT_A, checkIn: "2026-08-01", checkOut: "2026-08-21" });
+    // A draft with no tenant (no principal) is refused, even for a 3-night stay that would otherwise fit.
+    assert.throws(() => manager.createDraft({
+      unitId: UNIT_B,
+      primaryGuest: { id: GUEST, name: "Synthetic Guest", isGovernmentIdVerified: true },
+      occupants: [{ name: "Synthetic Guest" }],
+      selfBookingAttestation: { accepted: true, version: SELF_BOOKING_ATTESTATION_VERSION },
+      checkIn: "2026-08-21",
+      checkOut: "2026-08-24",
+    }, { clock }), (error: unknown) => error instanceof ContinuousOccupancyError && error.message === refusal, "a draft with no tenant is refused");
+    // A draft with no tenant and no counted stays is refused too: the tenant is never assumed.
+    assert.throws(() => manager.createDraft({
+      unitId: UNIT_B,
+      primaryGuest: { id: OTHER_GUEST, name: "Other Synthetic Guest", isGovernmentIdVerified: true },
+      occupants: [{ name: "Other Synthetic Guest" }],
+      selfBookingAttestation: { accepted: true, version: SELF_BOOKING_ATTESTATION_VERSION },
+      checkIn: "2026-08-21",
+      checkOut: "2026-08-24",
+    }, { clock }), (error: unknown) => error instanceof ContinuousOccupancyError && error.message === refusal, "a tenant-less draft is refused even with no stays to count");
+    // An amendment whose contract has no tenant is refused by the same rule.
+    const contract = {
+      contractId: "ctr-no-tenant",
+      reservationId: "res-no-tenant",
+      offerId: "offer-no-tenant",
+      unitId: UNIT_B,
+      parties: { primaryGuest: { id: GUEST, name: "Synthetic Guest" }, operator: { id: "operator-occupancy" }, distinctPayer: null },
+      dates: { checkIn: "2026-08-20", checkOut: "2026-08-26", nights: 6 },
+      occupants: [{ name: "Synthetic Guest" }],
+      quote: {},
+      totalAmountDueNowKobo: 0,
+      policies: { cancellationPolicy: {}, guestConductRules: [] },
+      paymentDetails: { paymentMethod: "fresh_card", pspReference: "psp-ref-no-tenant" },
+      contractVersion: 1,
+    } as unknown as BookingContract;
+    const amendments = new BookingAmendmentManager(amendmentDependencies(contract, fixedOccupancyLedger({ unitProperties: { [UNIT_B]: PROPERTY } })));
+    assert.throws(() => amendments.requestAmendment(createPlatformCommandEnvelope({
+      commandName: "booking_amendment.request",
+      principal: guestPrincipal(GUEST),
+      payload: { contractId: "ctr-no-tenant", changes: { dates: { checkIn: "2026-08-20", checkOut: "2026-08-22" } } },
+    }), () => new Date("2026-08-10T10:00:00Z")), /Booking amendment is not authorized/, "an amendment whose contract has no tenant is refused before any date is read");
+    // The guard itself, with no tenant resolved, refuses with the fail-closed sentence and reads no stay.
+    assert.throws(() => assertContinuousOccupancy({
+      ledger: fixedOccupancyLedger({ unitProperties: { [UNIT_B]: PROPERTY }, requests: [] }),
+      tenantId: undefined,
+      primaryGuestId: GUEST,
+      unitId: UNIT_B,
+      checkIn: "2026-08-21",
+      checkOut: "2026-08-24",
+      now: NOW,
+      policy: undefined,
+    }), (error: unknown) => error instanceof ContinuousOccupancyError && error.message === refusal, "the guard refuses an unresolved tenant");
+  } finally {
+    stores.close();
+  }
 });

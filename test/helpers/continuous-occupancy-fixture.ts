@@ -10,7 +10,6 @@ import { join } from "node:path";
 import { InMemoryAuditLog, createPlatformCommandEnvelope } from "../../packages/platform-core/src/index.js";
 import { openNodeSqliteDatabase } from "../../packages/platform-core/src/node-sqlite-database.js";
 import {
-  BookingAmendmentManager,
   BookingRequestManager,
   ContinuousOccupancyLedger,
   SELF_BOOKING_ATTESTATION_VERSION,
@@ -30,6 +29,7 @@ import { createTestAvailabilityCalendar } from "./availability-calendar.js";
 import { extendUnit } from "./demo-extended-journey.js";
 
 export const OCCUPANCY_TENANT = "tenant-occupancy";
+export const OTHER_TENANT = "tenant-occupancy-other";
 export const GUEST = "guest-occupancy-1";
 export const OTHER_GUEST = "guest-occupancy-2";
 export const PROPERTY = "property-occupancy-p";
@@ -111,12 +111,12 @@ export function occupancyManager(options: OccupancyManagerOptions) {
 }
 
 /** The Primary Guest principal the tests act as. */
-export function guestPrincipal(id: string) {
-  return { id, role: "guest" as const, tenantId: OCCUPANCY_TENANT };
+export function guestPrincipal(id: string, tenantId: string = OCCUPANCY_TENANT) {
+  return { id, role: "guest" as const, tenantId };
 }
 
 /** Creates a Request Draft for one Primary Guest, through the manager's own rules. */
-export function draftFor(manager: BookingRequestManager, clock: () => Date, input: { unitId: string; guestId?: string; checkIn: string; checkOut: string }) {
+export function draftFor(manager: BookingRequestManager, clock: () => Date, input: { unitId: string; guestId?: string; tenantId?: string; checkIn: string; checkOut: string }) {
   const guestId = input.guestId ?? GUEST;
   return manager.createDraft({
     unitId: input.unitId,
@@ -125,14 +125,14 @@ export function draftFor(manager: BookingRequestManager, clock: () => Date, inpu
     selfBookingAttestation: { accepted: true, version: SELF_BOOKING_ATTESTATION_VERSION },
     checkIn: input.checkIn,
     checkOut: input.checkOut,
-  }, { clock, tenantId: OCCUPANCY_TENANT });
+  }, { clock, tenantId: input.tenantId ?? OCCUPANCY_TENANT });
 }
 
 /** Submits a draft (Booking Request disclosure) as its Primary Guest. */
-export function disclose(manager: BookingRequestManager, clock: () => Date, draftId: string, guestId: string = GUEST) {
+export function disclose(manager: BookingRequestManager, clock: () => Date, draftId: string, guestId: string = GUEST, tenantId: string = OCCUPANCY_TENANT) {
   return manager.discloseBookingRequest(createPlatformCommandEnvelope({
     commandName: "booking_request.disclose",
-    principal: guestPrincipal(guestId),
+    principal: guestPrincipal(guestId, tenantId),
     payload: { draftId },
   }), { clock });
 }
@@ -210,10 +210,10 @@ export function confirmedStayFor(
   stores: OccupancyStores,
   manager: BookingRequestManager,
   clock: () => Date,
-  input: { unitId: string; guestId?: string; checkIn: string; checkOut: string; reservationStatus?: "confirmed" | "cancelled" },
+  input: { unitId: string; guestId?: string; tenantId?: string; checkIn: string; checkOut: string; reservationStatus?: "confirmed" | "cancelled" },
 ): string {
   const draft = draftFor(manager, clock, input);
-  const requestId = disclose(manager, clock, draft.draftId, input.guestId ?? GUEST).requestId;
+  const requestId = disclose(manager, clock, draft.draftId, input.guestId ?? GUEST, input.tenantId ?? OCCUPANCY_TENANT).requestId;
   confirmStay(stores, storedRequest(stores, requestId), {
     offerStatus: "accepted",
     reservationStatus: input.reservationStatus,
@@ -245,4 +245,3 @@ export function amendmentDependencies(contract: BookingContract, continuousOccup
   };
 }
 
-export { BookingAmendmentManager };

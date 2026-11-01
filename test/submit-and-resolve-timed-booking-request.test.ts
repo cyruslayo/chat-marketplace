@@ -28,7 +28,7 @@ test("Undelivered Booking Requests reject both Operator decisions", () => {
     occupants: [{ name: "Undelivered Guest" }],
     checkIn: "2026-08-20",
     checkOut: "2026-08-22",
-  }, { clock });
+  }, { tenantId: "tenant-lagos", clock });
   const request = manager.discloseBookingRequest(createPlatformCommandEnvelope({
     commandName: "booking_request.disclose",
     principal: { id: "guest-undelivered", role: "guest", tenantId: "tenant-lagos" },
@@ -62,7 +62,7 @@ test("Drafts do not block inventory; successfully disclosed requests do so exclu
     }
   });
 
-  const draft = manager.createDraft(draftEnvelope, { clock });
+  const draft = manager.createDraft(draftEnvelope, { tenantId: "tenant-lagos", clock });
 
   assert.ok(draft.draftId);
   assert.equal(draft.status, "draft");
@@ -120,7 +120,7 @@ test("Disclosure remains fail-closed for cross-principal requests before invento
     selfBookingAttestation: { accepted: true, version: "self-booking-v1" },
     checkIn: "2026-08-01",
     checkOut: "2026-08-03"
-  }, { clock });
+  }, { tenantId: "tenant-lagos", clock });
   const before = audit.entries().length;
   assert.throws(() => manager.discloseBookingRequest(createPlatformCommandEnvelope({
     commandName: "booking_request.disclose",
@@ -145,7 +145,7 @@ test("Disclosure enforces one-to-twenty-nine nights, 90-day horizon, active hour
         occupants: [{ name: "Tunde Ednut" }],
         checkIn: "2026-08-01",
         checkOut: "2026-08-01"
-      }, { clock: () => new Date("2026-07-22T10:00:00Z") });
+      }, { tenantId: "tenant-lagos", clock: () => new Date("2026-07-22T10:00:00Z") });
       const env = createPlatformCommandEnvelope({
         commandName: "booking_request.disclose",
         principal: { id: "guest-101", role: "guest", tenantId: "tenant-lagos" },
@@ -167,7 +167,7 @@ test("Disclosure enforces one-to-twenty-nine nights, 90-day horizon, active hour
         occupants: [{ name: "Tunde Ednut" }],
         checkIn: "2026-08-01",
         checkOut: "2026-08-31"
-      }, { clock: () => new Date("2026-07-22T10:00:00Z") });
+      }, { tenantId: "tenant-lagos", clock: () => new Date("2026-07-22T10:00:00Z") });
       const env = createPlatformCommandEnvelope({
         commandName: "booking_request.disclose",
         principal: { id: "guest-101", role: "guest", tenantId: "tenant-lagos" },
@@ -189,7 +189,7 @@ test("Disclosure enforces one-to-twenty-nine nights, 90-day horizon, active hour
         occupants: [{ name: "Tunde Ednut" }],
         checkIn: "2026-11-01", // > 90 days from July 22
         checkOut: "2026-11-05"
-      }, { clock: () => new Date("2026-07-22T10:00:00Z") });
+      }, { tenantId: "tenant-lagos", clock: () => new Date("2026-07-22T10:00:00Z") });
       const env = createPlatformCommandEnvelope({
         commandName: "booking_request.disclose",
         principal: { id: "guest-101", role: "guest", tenantId: "tenant-lagos" },
@@ -211,7 +211,7 @@ test("Disclosure enforces one-to-twenty-nine nights, 90-day horizon, active hour
         occupants: [{ name: "Tunde Ednut" }],
         checkIn: "2026-08-01",
         checkOut: "2026-08-03"
-      }, { clock: () => new Date("2026-07-22T18:35:00Z") }); // 19:35 WAT
+      }, { tenantId: "tenant-lagos", clock: () => new Date("2026-07-22T18:35:00Z") }); // 19:35 WAT
       const env = createPlatformCommandEnvelope({
         commandName: "booking_request.disclose",
         principal: { id: "guest-101", role: "guest", tenantId: "tenant-lagos" },
@@ -230,7 +230,7 @@ test("Disclosure enforces one-to-twenty-nine nights, 90-day horizon, active hour
     occupants: [{ name: "Tunde Ednut" }],
     checkIn: "2026-08-01",
     checkOut: "2026-08-03"
-  }, { clock: () => new Date("2026-07-22T18:25:00Z") }); // 19:25 WAT
+  }, { tenantId: "tenant-lagos", clock: () => new Date("2026-07-22T18:25:00Z") }); // 19:25 WAT
   const validEveningEnv = createPlatformCommandEnvelope({
     commandName: "booking_request.disclose",
     principal: { id: "guest-101", role: "guest", tenantId: "tenant-lagos" },
@@ -250,7 +250,7 @@ test("Disclosure enforces one-to-twenty-nine nights, 90-day horizon, active hour
         occupants: [{ name: "Tunde Ednut" }],
         checkIn: "2026-07-22",
         checkOut: "2026-07-24"
-      }, { clock: () => new Date("2026-07-22T09:56:00Z") }); // 10:56 WAT
+      }, { tenantId: "tenant-lagos", clock: () => new Date("2026-07-22T09:56:00Z") }); // 10:56 WAT
       const env = createPlatformCommandEnvelope({
         commandName: "booking_request.disclose",
         principal: { id: "guest-101", role: "guest", tenantId: "tenant-lagos" },
@@ -269,7 +269,7 @@ test("Disclosure enforces one-to-twenty-nine nights, 90-day horizon, active hour
     occupants: [{ name: "Tunde Ednut" }],
     checkIn: "2026-07-22",
     checkOut: "2026-07-24"
-  }, { clock: () => new Date("2026-07-22T09:50:00Z") }); // 10:50 WAT
+  }, { tenantId: "tenant-lagos", clock: () => new Date("2026-07-22T09:50:00Z") }); // 10:50 WAT
   const validSameDayEnv = createPlatformCommandEnvelope({
     commandName: "booking_request.disclose",
     principal: { id: "guest-101", role: "guest", tenantId: "tenant-lagos" },
@@ -291,7 +291,7 @@ test("Technical delivery, delivery failure, Operator response, expiry, confirmat
     occupants: [{ name: "Kemi Adetiba" }],
     checkIn: "2026-08-05",
     checkOut: "2026-08-08"
-  }, { clock: clock1 });
+  }, { tenantId: "tenant-lagos", clock: clock1 });
 
   const discloseEnv1 = createPlatformCommandEnvelope({
     commandName: "booking_request.disclose",
@@ -325,7 +325,7 @@ test("Technical delivery, delivery failure, Operator response, expiry, confirmat
     occupants: [{ name: "David Adeleke" }],
     checkIn: "2026-08-08",
     checkOut: "2026-08-10"
-  }, { clock: clock1 });
+  }, { tenantId: "tenant-lagos", clock: clock1 });
 
   const discloseEnvDF = createPlatformCommandEnvelope({
     commandName: "booking_request.disclose",
@@ -360,7 +360,7 @@ test("Technical delivery, delivery failure, Operator response, expiry, confirmat
     occupants: [{ name: "Bolu Tokunbo" }],
     checkIn: "2026-08-10",
     checkOut: "2026-08-12"
-  }, { clock: clock1 });
+  }, { tenantId: "tenant-lagos", clock: clock1 });
   const discloseEnv2 = createPlatformCommandEnvelope({
     commandName: "booking_request.disclose",
     principal: { id: "guest-2", role: "guest", tenantId: "tenant-lagos" },
@@ -392,7 +392,7 @@ test("Technical delivery, delivery failure, Operator response, expiry, confirmat
     occupants: [{ name: "Seyi Shay" }],
     checkIn: "2026-08-15",
     checkOut: "2026-08-18"
-  }, { clock: clock1 });
+  }, { tenantId: "tenant-lagos", clock: clock1 });
   const discloseEnv3 = createPlatformCommandEnvelope({
     commandName: "booking_request.disclose",
     principal: { id: "guest-3", role: "guest", tenantId: "tenant-lagos" },
@@ -424,7 +424,7 @@ test("Technical delivery, delivery failure, Operator response, expiry, confirmat
 test("A disclosed Booking Request creates an explicit 30-minute booking request block", () => {
   const { manager, calendar, unit } = setup();
   const clock = () => new Date("2026-07-22T10:00:00Z");
-  const draft = manager.createDraft({ unitId: unit.id, primaryGuest: { id: "guest-block", name: "Block Guest", isGovernmentIdVerified: true }, selfBookingAttestation: { accepted: true, version: "self-booking-v1" }, occupants: [{ name: "Block Guest" }], checkIn: "2026-08-25", checkOut: "2026-08-27" }, { clock });
+  const draft = manager.createDraft({ unitId: unit.id, primaryGuest: { id: "guest-block", name: "Block Guest", isGovernmentIdVerified: true }, selfBookingAttestation: { accepted: true, version: "self-booking-v1" }, occupants: [{ name: "Block Guest" }], checkIn: "2026-08-25", checkOut: "2026-08-27" }, { tenantId: "tenant-lagos", clock });
   const request = manager.discloseBookingRequest(createPlatformCommandEnvelope({ commandName: "booking_request.disclose", principal: { id: "guest-block", role: "guest", tenantId: "tenant-lagos" }, payload: { draftId: draft.draftId } }), { clock });
 
   assert.equal(request.inventoryCommitmentId, request.holdId);
@@ -448,7 +448,7 @@ test("Booking Request confirmation atomically transitions the same commitment to
   const { manager, calendar, unit } = setup();
   const disclosureClock = () => new Date("2026-07-22T10:00:00Z");
   const confirmationClock = () => new Date("2026-07-22T10:10:00Z");
-  const draft = manager.createDraft({ unitId: unit.id, primaryGuest: { id: "guest-confirm", name: "Confirm Guest", isGovernmentIdVerified: true }, selfBookingAttestation: { accepted: true, version: "self-booking-v1" }, occupants: [{ name: "Confirm Guest" }], checkIn: "2026-09-01", checkOut: "2026-09-04" }, { clock: disclosureClock });
+  const draft = manager.createDraft({ unitId: unit.id, primaryGuest: { id: "guest-confirm", name: "Confirm Guest", isGovernmentIdVerified: true }, selfBookingAttestation: { accepted: true, version: "self-booking-v1" }, occupants: [{ name: "Confirm Guest" }], checkIn: "2026-09-01", checkOut: "2026-09-04" }, { tenantId: "tenant-lagos", clock: disclosureClock });
   const request = manager.discloseBookingRequest(createPlatformCommandEnvelope({ commandName: "booking_request.disclose", principal: { id: "guest-confirm", role: "guest", tenantId: "tenant-lagos" }, payload: { draftId: draft.draftId } }), { clock: disclosureClock });
   const confirmed = manager.confirmBookingRequest(createPlatformCommandEnvelope({ commandName: "booking_request.confirm", principal: { id: unit.operator.id, role: "operator", tenantId: "tenant-lagos" }, payload: { requestId: request.requestId } }), { clock: confirmationClock });
 
@@ -467,7 +467,7 @@ test("Disclosure and confirmation use one captured instant with an advancing clo
   const disclosureStart = new Date("2026-07-22T10:00:00Z");
   let disclosureCalls = 0;
   const disclosureClock = () => new Date(disclosureStart.getTime() + disclosureCalls++ * 60 * 1000);
-  const draft = manager.createDraft({ unitId: unit.id, primaryGuest: { id: "guest-clock", name: "Clock Guest", isGovernmentIdVerified: true }, selfBookingAttestation: { accepted: true, version: "self-booking-v1" }, occupants: [{ name: "Clock Guest" }], checkIn: "2026-10-01", checkOut: "2026-10-04" }, { clock: draftClock });
+  const draft = manager.createDraft({ unitId: unit.id, primaryGuest: { id: "guest-clock", name: "Clock Guest", isGovernmentIdVerified: true }, selfBookingAttestation: { accepted: true, version: "self-booking-v1" }, occupants: [{ name: "Clock Guest" }], checkIn: "2026-10-01", checkOut: "2026-10-04" }, { tenantId: "tenant-lagos", clock: draftClock });
   const request = manager.discloseBookingRequest(createPlatformCommandEnvelope({ commandName: "booking_request.disclose", principal: { id: "guest-clock", role: "guest", tenantId: "tenant-lagos" }, payload: { draftId: draft.draftId } }), { clock: disclosureClock });
   const disclosureT = disclosureStart.toISOString();
   const disclosureExpiry = new Date(disclosureStart.getTime() + 30 * 60 * 1000).toISOString();
@@ -505,7 +505,7 @@ test("Agent, conventional web, and permitted Operator interfaces produce the sam
     occupants: [{ name: "Wande Coal" }],
     checkIn: "2026-08-20",
     checkOut: "2026-08-22"
-  }, { clock });
+  }, { tenantId: "tenant-lagos", clock });
 
   // Agent interface envelope
   const agentEnvelope = createPlatformCommandEnvelope({
@@ -565,7 +565,7 @@ test("Booking Request disclosure preserves booking requirements without requirin
     selfBookingAttestation: { accepted: true, version: "self-booking-v1" },
     checkIn: "2026-08-01",
     checkOut: "2026-08-03"
-  }, { clock });
+  }, { tenantId: "tenant-lagos", clock });
   const unverifiedRequest = manager.discloseBookingRequest(createPlatformCommandEnvelope({
       commandName: "booking_request.disclose",
       principal: { id: "guest-unverified", role: "guest", tenantId: "tenant-lagos" },
@@ -597,7 +597,7 @@ test("Booking Request disclosure preserves booking requirements without requirin
     distinctPayerAttestation: { accepted: true, version: "distinct-payer-v1", rawEvidence: "secret" },
     checkIn: "2026-08-05",
     checkOut: "2026-08-07"
-  } as any, { clock });
+  } as any, { tenantId: "tenant-lagos", clock });
   assert.equal((rawDraft.primaryGuest as Record<string, unknown>).ninNumber, undefined);
   assert.equal((rawDraft.distinctPayer as Record<string, unknown>).passportNumber, undefined);
   assert.equal((rawDraft.distinctPayer as Record<string, unknown>).ninNumber, undefined);
@@ -639,7 +639,7 @@ test("Booking Request disclosure preserves booking requirements without requirin
     selfBookingAttestation: { accepted: true, version: "self-booking-v1" },
     checkIn: "2026-08-10",
     checkOut: "2026-08-12"
-  }, { clock });
+  }, { tenantId: "tenant-lagos", clock });
   assert.throws(
     () => manager.discloseBookingRequest(createPlatformCommandEnvelope({
       commandName: "booking_request.disclose",

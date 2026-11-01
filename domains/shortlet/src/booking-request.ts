@@ -159,7 +159,7 @@ export class BookingRequestManager {
   }
 
   /** The Primary Guest's Booking Requests with status projected at `now` (ADR 0041, 0043), read from the store when there is one. */
-  #countableRequests({ tenantId, primaryGuestId, now }: { tenantId: string | undefined; primaryGuestId: string; now: Date }): CountableBookingRequest[] {
+  #countableRequests({ tenantId, primaryGuestId, now }: { tenantId: string; primaryGuestId: string; now: Date }): CountableBookingRequest[] {
     const project = (record: { requestId: string; tenantId: string; primaryGuestId: string; unitId: string; checkIn: string; checkOut: string; status: string; delivered: boolean; deliveryDeadlineAt: string; operatorResponseDeadlineAt: string }): CountableBookingRequest => ({
       requestId: record.requestId,
       tenantId: record.tenantId,
@@ -173,7 +173,7 @@ export class BookingRequestManager {
       return this.#requestStore.findBookingRequestsForPrimaryGuest(primaryGuestId, tenantId).map(project);
     }
     return [...this.#requests.values()]
-      .filter((request) => (tenantId === undefined || request.tenantId === tenantId) && request.primaryGuest?.id === primaryGuestId)
+      .filter((request) => request.tenantId === tenantId && request.primaryGuest?.id === primaryGuestId)
       .map((request) => project({
         requestId: request.requestId,
         tenantId: request.tenantId,

@@ -82,3 +82,26 @@ See `docs/agents/issue-tracker.md`. Record the exact test commands and pass coun
 5. Draft creation without a principal reads the guest's stays in every tenant. In practice the tenant is always present in production (the guest principal), so this path only affects in-process callers.
 6. Pre-existing, not changed: `booking-amendment.ts` still refuses any amended stay over `MAX_STAY_NIGHTS` (29) before the new check, so an Extended Stay cannot be amended to a longer length. Owner decision needed (ADR 0092 "Extensions"). Left as is.
 7. No ADR amendment was made; the 1 Nov 2026 amendments are applied as written.
+
+**2026-11-01, review corrections (agent).**
+
+1. *Tenant scope fails closed.* `findBookingRequestsForPrimaryGuest(primaryGuestId, tenantId)` now requires the tenant: a missing tenant returns nothing (`guest-interaction-store.ts`, about line 1003). `ContinuousOccupancyLedger.countedStays` throws the fail-closed sentence when the tenant or Primary Guest is missing, and when a request, offer or contract belongs to another tenant (`continuous-occupancy.ts`, lines about 182, 186, 215, 243). `assertContinuousOccupancy` takes `tenantId: string | undefined` and refuses with the same sentence (line about 296). `listConditionalOffersByRequestId` cannot cross tenants by itself: it is keyed by a request id that is already tenant-scoped. The offer's own `tenantId` is now checked in the ledger (line about 215).
+   Callers and what they do now (all production callers pass a guest principal, so the tenant resolves):
+   - `apps/local-guest/src/shortlet-app.ts` about 4337 (Request to Book draft, guest principal) and about 4744 (guest principal).
+   - `apps/local-guest/src/assistant/shortlet-assistant-pack.ts` about 785 (principal).
+   - `apps/local-guest/src/assistant/shortlet-stage-handlers.ts` about 133 (guest principal; the planner `prepare_request_draft` path).
+   - `apps/local-owner/src/local-owner-environment.ts` about 933 (`guestPrincipal`).
+   - `apps/web/src/booking-request-application.ts` 64-71 (envelope principal; `createDraft` reads its tenant from the envelope).
+   - No production caller omits the principal. Test callers that omitted it (`test/submit-and-resolve-timed-booking-request.test.ts`, 21 draft calls; `test/response-window-starts-at-delivery.test.ts`, 1 call) now pass `tenantId: "tenant-lagos"` in the draft options, the tenant their disclose principals already use. Their behaviour is otherwise unchanged; `missingTenantDraft` still asserts the disclose refusal for a principal with no tenant.
+   - New tests: "Continuous Occupancy never reads another tenant's stays: a same-guest-id stay in tenant B is not counted for tenant A" and "A stay with no resolvable tenant is refused, not checked across tenants" (`test/continuous-occupancy.test.ts`). The second covers a tenant-less draft, a tenant-less draft with no counted stays, an amendment whose contract has no tenant (refused by the existing authorization check, "Booking amendment is not authorized"), and a direct call to the guard with no tenant.
+
+2. *Planner path test.* "AC8 (planner): a planner prepare_request_draft that would breach Continuous Occupancy is a tool_denial with the server sentence, not CONCIERGE_UNAVAILABLE" (`test/assistant-continuous-occupancy.test.ts`). It runs search, view (`get_unit_details`), then `prepare_request_draft`, each as a cold restore over the same store on the 27 Oct 2026 clock, using a scripted planner that uses the pack's `stay-1`. A pending 20-night request for the same guest ends on the check-in. The test asserts the reply is exactly the refusal sentence, no Request Draft surface, the `prepare_request_draft` application-operation failure in diagnostics, a `turn_stop` with `stopReason` "tool_denial", no new Booking Request, and no hold.
+
+*Commands and counts (`env -u LLM_API_KEY`; the test runs also set `NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow`).*
+- `npx tsc --noEmit -p .`: clean after each change.
+- `npx tsx --test test/continuous-occupancy.test.ts test/assistant-continuous-occupancy.test.ts test/domain-boundary.test.ts`: 20 tests, 20 pass (continuous-occupancy 14, assistant-continuous-occupancy 2, domain-boundary 4).
+- Affected group 1 (amend-material, short-stay-29-nights, submit-and-resolve-timed-booking-request, issue-and-accept-conditional-booking-offer, domain-boundary, extended-stays-every-deployment, integrate-booking-request-application, integrate-conditional-offer-application, response-window-starts-at-delivery, operator-request-inbox, guest-request-handler, plus the three files above): 113 tests, 113 pass.
+- Affected group 2 (assistant-short-stays-29-nights, assistant-cold-journey, assistant-thread-lock, demo-extended-assistant, demo-extended-cancellation-notice, demo-extended-stay-180, demo-extended-stay, conditional-offer-token-restore, demo-auto-accept, guest-contact-pilot, http-shim-multipart, paystack-transfer-adapter, provider-issued-transfer-account): 144 tests, 144 pass.
+- `env -u LLM_API_KEY npm run check`: see the commit verification below.
+- Not run: full `npm test` and `npm run test:workers` (pre-merge batch gate).
+
