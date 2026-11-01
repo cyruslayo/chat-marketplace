@@ -114,13 +114,14 @@ test("AC2: Editing a chip re-runs the search and replaces the results surface wi
   } finally { await sent.close(); }
 });
 
-test("AC3: An edit that breaks policy (for example 30 nights) is rejected inline with the limit stated, and the previous value is kept", async () => {
+test("AC3: An edit that breaks policy (for example 181 nights) is rejected inline with the limit stated, and the previous value is kept", async () => {
   const fixture = await restartFixture();
   try {
     const search = await fixture.advance("discovery");
     const before = snapshot(await fixture.state());
-    const message = rejected(await criteriaEvent(fixture, CRITERIA_EDIT_EVENT, { field: "when", checkIn: "2026-09-10", nights: 30, basedOn: before.criteria!.key }), "CRITERIA_REJECTED");
-    assert.equal(message, "Stays can be at most 29 nights. Please choose 29 nights or fewer.");
+    const message = rejected(await criteriaEvent(fixture, CRITERIA_EDIT_EVENT, { field: "when", checkIn: "2026-09-10", nights: 181, basedOn: before.criteria!.key }), "CRITERIA_REJECTED");
+    // Issue 02 (ADR 0092 amended 1 Nov 2026): the policy maximum is 180, so 181 is the first refused length with the policy.
+    assert.equal(message, "Stays can be at most 180 nights. Please choose 180 nights or fewer.");
     const tooFar = rejected(await criteriaEvent(fixture, CRITERIA_EDIT_EVENT, { field: "when", checkIn: "2027-01-10", nights: 2, basedOn: before.criteria!.key }), "CRITERIA_REJECTED");
     assert.match(tooFar, /at most 90 days ahead/);
 

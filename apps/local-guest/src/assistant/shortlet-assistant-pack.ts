@@ -1,6 +1,6 @@
 import { generatePlatformId } from "../../../../packages/platform-core/src/index.js";
 import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantStayDetailsError, containsGuestDate } from "./date-tokens.js";
-import { StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
+import { StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, MAX_STAY_NIGHTS, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
 import {
   discoveryArtifactToA2UI,
   bookingRequestArtifactToA2UI,
@@ -64,7 +64,7 @@ export const ASSISTANT_TOOL_DEFINITIONS: readonly AssistantToolDefinition[] = [
         city: { type: "string", description: "City name, e.g. 'Lagos' or 'Abuja'" },
         neighbourhood: { type: ["string", "null"], description: "Optional neighbourhood, e.g. 'Old Ikoyi', 'Lekki Phase 1', 'Victoria Island'" },
         checkIn: { type: ["string", "null"], description: "Explicit check-in date in YYYY-MM-DD format if provided by user, or null" },
-        nights: { type: ["integer", "null"], minimum: 1, maximum: 14, description: "Guest-requested stay duration, or null when unknown. Never default to one." },
+        nights: { type: ["integer", "null"], minimum: 1, maximum: MAX_STAY_NIGHTS, description: "Guest-requested stay duration, or null when unknown. Never default to one." },
         guests: { type: ["integer", "null"], minimum: 1, description: "Guest-requested party size, or null when unknown. Never default to one." },
         bedrooms: { type: ["integer", "null"], minimum: 0, description: "Guest-requested exact bedroom count, or null when unknown. Zero means an explicitly requested studio." },
         maxBudgetKobo: { type: ["integer", "null"], description: "Optional maximum all-in budget in kobo" },
@@ -164,7 +164,7 @@ export const ASSISTANT_TOOL_DEFINITIONS: readonly AssistantToolDefinition[] = [
       type: "object",
       properties: {
         stayRef: { type: "string", description: "A stay reference from the current authoritative shortlist, such as stay-1" },
-        nights: { type: "integer", minimum: 1, maximum: 14, description: "Guest-requested stay duration" },
+        nights: { type: "integer", minimum: 1, maximum: MAX_STAY_NIGHTS, description: "Guest-requested stay duration" },
         guests: { type: "integer", minimum: 1, description: "Guest-requested party size" },
       },
       required: ["stayRef", "nights", "guests"],
@@ -196,9 +196,10 @@ export const ASSISTANT_TOOL_DEFINITIONS: readonly AssistantToolDefinition[] = [
 ];
 
 function stayToolDefinitions(policy?: ExtendedStayPolicy): readonly AssistantToolDefinition[] {
-  const maximumNights = policy?.maximumNights ?? 14;
+  // ADR 0023 as amended 1 Nov 2026: without a policy the maximum is the Short Stay maximum; the policy widens it (ADR 0092).
+  const maximumNights = policy?.maximumNights ?? MAX_STAY_NIGHTS;
   return ASSISTANT_TOOL_DEFINITIONS.map((tool) => {
-    if (maximumNights <= 14 || (tool.name !== "search_stays" && tool.name !== "prepare_request_draft")) return tool;
+    if (maximumNights <= MAX_STAY_NIGHTS || (tool.name !== "search_stays" && tool.name !== "prepare_request_draft")) return tool;
     const nights = tool.parametersSchema.properties?.nights;
     if (!nights || typeof nights !== "object") return tool;
     return { ...tool, parametersSchema: { ...tool.parametersSchema, properties: { ...tool.parametersSchema.properties, nights: { ...nights, maximum: maximumNights } } } };
@@ -415,8 +416,9 @@ export function executeAssistantTool(
       if (hasStayDetails && (nights === undefined || guests === undefined)) {
         throw new AssistantStayDetailsError("nights and party size are required with stay details");
       }
-      if (hasStayDetails && (!Number.isSafeInteger(nights) || nights! < 1 || (nights! > 14 && !isExtendedStayLength(nights!, context.environment.extendedStayPolicy)))) {
-        throw new RangeError("nights must fit the configured Short Stay or Extended Stay range");
+      // ADR 0023 as amended / ADR 0106: an out-of-range length is a rejected tool call (tool_denial), never a thrown error.
+      if (hasStayDetails && (!Number.isSafeInteger(nights) || nights! < 1 || (nights! > MAX_STAY_NIGHTS && !isExtendedStayLength(nights!, context.environment.extendedStayPolicy)))) {
+        throw new AssistantStayDetailsError("nights must fit the configured Short Stay or Extended Stay range");
       }
       if (hasStayDetails && (!Number.isSafeInteger(guests) || guests! < 1)) {
         throw new RangeError("guests must be a positive integer");
@@ -754,7 +756,8 @@ export function executeAssistantTool(
       if (!stay) throw new Error(`Stay reference '${stayRef}' is not in the current shortlist.`);
       const nights = Number(args.nights);
       const guests = Number(args.guests);
-      if (!Number.isSafeInteger(nights) || nights < 1 || (nights > 14 && !isExtendedStayLength(nights, context.environment.extendedStayPolicy))) throw new RangeError("nights must fit the configured Short Stay or Extended Stay range");
+      // ADR 0023 as amended / ADR 0106: an out-of-range length is a rejected tool call (tool_denial), never a thrown error.
+      if (!Number.isSafeInteger(nights) || nights < 1 || (nights > MAX_STAY_NIGHTS && !isExtendedStayLength(nights, context.environment.extendedStayPolicy))) throw new AssistantStayDetailsError("nights must fit the configured Short Stay or Extended Stay range");
       if (!Number.isSafeInteger(guests) || guests < 1) throw new RangeError("guests must be a positive integer");
 
       const checkIn = taskState.stayIntent.checkIn ?? context.demoCheckIn;

@@ -4512,7 +4512,7 @@ export class LocalGuestApp {
         surfaces: [],
       };
     }
-    // The 14-night and 90-day refusals are the discovery ones, unchanged.
+    // The 29-night Short Stay and 90-day refusals are the discovery ones, unchanged (ADR 0023 as amended 1 Nov 2026).
     if (resolution.kind !== "search")
       return {
         ok: true,

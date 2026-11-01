@@ -56,7 +56,7 @@ test("AC1: unknown, unavailable, malformed, extra, missing, mistyped, out-of-ran
     { id: "missing-city", name: "search_stays", args: {} },
     { id: "wrong-type", name: "search_stays", args: { ...searchArguments, nights: "4" } },
     { id: "invalid-range", name: "search_stays", args: { ...searchArguments, nights: 0 } },
-    { id: "maximum-range", name: "search_stays", args: { ...searchArguments, nights: 30 } },
+    { id: "maximum-range", name: "search_stays", args: { ...searchArguments, nights: 181 } },
     { id: "invalid-array", name: "search_stays", args: { ...searchArguments, requiredAmenities: ["wifi", 7] } },
     { id: "unavailable-state", name: "get_unit_details", args: { stayRef: "stay-1" } },
   ];

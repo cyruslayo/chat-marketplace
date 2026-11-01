@@ -65,7 +65,26 @@ test("Staging demo Assistant tools expose and execute one 30-night stay; non-dem
     demo.close();
   }
 
-  for (const nights of [15, 29, 181]) {
+  // ADR 0023 as amended 1 Nov 2026 (issue 02 AC5): 15 and 29 nights are Short Stays and create a discovery surface.
+  for (const nights of [15, 29]) {
+    const shortModel = new ScriptedAssistantModel([
+      (request) => {
+        if (request.history.at(-1)?.role === "user") return { toolCalls: [{ id: `search-short-${nights}`, name: "search_stays", args: { city: "Lagos", neighbourhood: "Old Ikoyi", checkIn: null, nights, guests: 2 } }] };
+        return { text: "I checked the requested stay." };
+      },
+    ]);
+    const short = createRuntime(true, shortModel);
+    try {
+      addExtendedTerms(short.environment, `assistant-short-${nights}`);
+      const response = await short.runtime.handleTurn(`g-assistant-short-${nights}`, `I need an apartment in Ikoyi for ${nights} nights for two guests.`);
+      assert.equal(response.surfaces?.length ?? 0, 1, `${nights} nights is a Short Stay and creates a discovery surface`);
+    } finally {
+      short.close();
+    }
+  }
+
+  // ADR 0092 (amended 1 Nov 2026): 181 nights is above the 180-night Extended Stay maximum and is still refused.
+  for (const nights of [181]) {
     const badModel = new ScriptedAssistantModel([
       (request) => {
         if (request.history.at(-1)?.role === "user") return { toolCalls: [{ id: `search-${nights}`, name: "search_stays", args: { city: "Lagos", neighbourhood: "Old Ikoyi", checkIn: null, nights, guests: 2 } }] };

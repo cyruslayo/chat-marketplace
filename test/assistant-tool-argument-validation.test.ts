@@ -117,7 +117,7 @@ test("a tool call with an argument of the wrong type is rejected before the tool
 });
 
 test("a numeric argument outside minimum/maximum is rejected before the tool runs", async () => {
-  const { diagnostics, results } = await runRejectedCall("search_stays", { city: "Lagos", nights: 99, guests: 2 });
+  const { diagnostics, results } = await runRejectedCall("search_stays", { city: "Lagos", nights: 181, guests: 2 });
 
   assert.equal(executedToolCount(diagnostics), 0);
   assert.equal(results[0]?.result.error, "invalid_arguments");
