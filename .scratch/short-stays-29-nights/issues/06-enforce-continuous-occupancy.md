@@ -105,3 +105,11 @@ See `docs/agents/issue-tracker.md`. Record the exact test commands and pass coun
 - `env -u LLM_API_KEY npm run check`: see the commit verification below.
 - Not run: full `npm test` and `npm run test:workers` (pre-merge batch gate).
 
+**2026-11-01, gate fix (agent).** The pre-merge gate failed `test/assistant-pack-registry.test.ts` AC1 ("the runtime has no import from domains/shortlet"): `assistant-runtime.ts` imported `ContinuousOccupancyError` from the shortlet domain. Fix:
+- `apps/local-guest/src/assistant/date-tokens.ts`: new domain-neutral `AssistantGuestRefusalError`, a rejected tool call whose reply is a server-owned guest-facing sentence (ADR 0106, ADR 0099). The existing `AssistantStayDetailsError` pattern was reused.
+- `apps/local-guest/src/assistant/assistant-runtime.ts`: no domain import. The runtime treats `AssistantGuestRefusalError` as `tool_denial` and replies with its message.
+- `apps/local-guest/src/assistant/shortlet-stage-handlers.ts` and `shortlet-assistant-pack.ts`: the shortlet code catches `ContinuousOccupancyError` from `createDraft` and rethrows `AssistantGuestRefusalError` with the same sentence. Behaviour is unchanged.
+- `apps/local-guest/src/shortlet-app.ts` (button path, `CONTINUOUS_OCCUPANCY_REFUSED`) is the app layer, not the runtime, and is unchanged.
+
+Commands and counts (`env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test` on these 7 files): `test/assistant-pack-registry.test.ts`, `test/assistant-continuous-occupancy.test.ts`, `test/continuous-occupancy.test.ts`, `test/domain-boundary.test.ts`, `test/assistant-short-stays-29-nights.test.ts`, `test/assistant-cold-journey.test.ts`, `test/assistant-tool-argument-validation.test.ts`: 48 tests, 48 pass, 0 fail. Both AC8 tests pass as written. `env -u LLM_API_KEY npx tsc --noEmit -p .`: clean.
+

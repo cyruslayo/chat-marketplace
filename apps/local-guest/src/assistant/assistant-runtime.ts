@@ -29,10 +29,8 @@ import {
   type AssistantReplyPlanKind,
 } from "./assistant-platform.js";
 import { validatedCheckOutForNights } from "./shortlet-assistant-pack.js";
-import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantStayDetailsError, containsGuestDate, currentTurnDateRoles } from "./date-tokens.js";
+import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantGuestRefusalError, AssistantStayDetailsError, containsGuestDate, currentTurnDateRoles } from "./date-tokens.js";
 import { PLANNER_REQUEST_TIMEOUT_MS, SERVER_TURN_MAX_MS } from "../turn-budget.js";
-// ADR 0023 as amended 1 Nov 2026 and ADR 0106: a Continuous Occupancy refusal is a rejected tool call with the server's own sentence.
-import { ContinuousOccupancyError } from "../../../../domains/shortlet/src/index.js";
 import { ModelScopeClassifier, ScopeClassificationError, assessScopeSafely, scopedMixedInput, type ScopeClassifier, type ScopeAssessment, type ConciergeIntent } from "./scope-classifier.js";
 import { RetryingScopeClassifier, ScopeClassifierRetryError, SCOPE_TOTAL_BUDGET_MS, type ScopeClassifierRetryEvent, type ScopeClassifierRetryResult } from "./scope-classifier-retry.js";
 import { ASSISTANT_CONTROL_COPY } from "./control-copy.js";
@@ -1367,7 +1365,7 @@ export class AssistantRuntime {
     } catch (error) {
       // Issue 02: the turn deadline and a rejected planner date/stay detail are stops of their own; every other failure is `error`.
       const turnDeadline = error instanceof AssistantTurnDeadlineError;
-      const toolDenial = error instanceof AssistantDateProvenanceError || error instanceof AssistantDateValidationError || error instanceof AssistantStayDetailsError || error instanceof ContinuousOccupancyError;
+      const toolDenial = error instanceof AssistantDateProvenanceError || error instanceof AssistantDateValidationError || error instanceof AssistantStayDetailsError || error instanceof AssistantGuestRefusalError;
       stopReason = turnDeadline ? "turn_deadline" : toolDenial ? "tool_denial" : "error";
       if (error instanceof ModelRequestGuardError && (error.code === "quota_denied" || error.code === "quota_unavailable")) {
         controlOutcome = error.code === "quota_denied" ? "quota_refusal" : "guard_failure";
@@ -1398,8 +1396,8 @@ export class AssistantRuntime {
         recordOutcome(controlOutcome);
         candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
         this.#commitHistory(thread, candidateHistory, candidatePack(), thread.taskState);
-        // A Continuous Occupancy refusal carries its own guest-facing sentence (no guest identifier, ADR 0075).
-        const clarification = error instanceof ContinuousOccupancyError
+        // A pack's guest-facing refusal carries its own sentence (ADR 0106; no guest identifier, ADR 0075).
+        const clarification = error instanceof AssistantGuestRefusalError
           ? error.message
           : error instanceof AssistantStayDetailsError
             ? candidatePack().stayDetailsClarification

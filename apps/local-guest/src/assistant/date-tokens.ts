@@ -20,6 +20,12 @@ export class AssistantDateValidationError extends Error {}
  */
 export class AssistantStayDetailsError extends Error {}
 
+/**
+ * A rejected tool call whose reply is a server-owned, guest-facing sentence (ADR 0106, ADR 0099). Domain-neutral: a pack
+ * translates its own domain refusal into this error, and the runtime answers the guest with its message as a tool_denial.
+ */
+export class AssistantGuestRefusalError extends Error {}
+
 const CHECKOUT_KEYWORD = /\bcheck[\s-]*out\b/i;
 const CLAUSE_BOUNDARY = /^[\s\S]*(?:[;,.!?\n]|\d{4}-\d{2}-\d{2})/;
 

@@ -1,6 +1,6 @@
 import { generatePlatformId } from "../../../../packages/platform-core/src/index.js";
-import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantStayDetailsError, containsGuestDate } from "./date-tokens.js";
-import { StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, MAX_STAY_NIGHTS, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
+import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantGuestRefusalError, AssistantStayDetailsError, containsGuestDate } from "./date-tokens.js";
+import { ContinuousOccupancyError, StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, MAX_STAY_NIGHTS, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
 import {
   discoveryArtifactToA2UI,
   bookingRequestArtifactToA2UI,
@@ -782,14 +782,21 @@ export function executeAssistantTool(
       if (!unit) throw new Error("The selected Unit no longer exists.");
 
       const principal = context.environment.guestPrincipal();
-      const draft = context.environment.bookingRequestApp.createDraft({
-        unitId: unit.id,
-        primaryGuest: { id: principal.id, name: context.environment.config.guestName },
-        occupants: context.environment.demoOccupants(guests),
-        selfBookingAttestation: context.environment.selfBookingAttestation(),
-        checkIn,
-        checkOut,
-      }, principal);
+      let draft;
+      try {
+        draft = context.environment.bookingRequestApp.createDraft({
+          unitId: unit.id,
+          primaryGuest: { id: principal.id, name: context.environment.config.guestName },
+          occupants: context.environment.demoOccupants(guests),
+          selfBookingAttestation: context.environment.selfBookingAttestation(),
+          checkIn,
+          checkOut,
+        }, principal);
+      } catch (error) {
+        // ADR 0023 as amended 1 Nov 2026: a Continuous Occupancy refusal is a guest-facing refusal of this tool call (ADR 0106).
+        if (error instanceof ContinuousOccupancyError) throw new AssistantGuestRefusalError(error.message);
+        throw error;
+      }
       const quote = createStayQuote({ unit, checkIn, checkOut, partySize: guests, extendedStayPolicy: context.environment.extendedStayPolicy, demoTerms: context.environment.config.demo === true, clock: context.environment.clock });
       const artifact = requestDraftArtifactFromProjection({
         draftId: draft.draftId,
