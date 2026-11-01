@@ -14,8 +14,16 @@ import {
   getUnitOnboardingStatus,
   REQUIRED_INSPECTION_SCOPE,
   REQUIRED_AUTHORITY_PERMISSIONS,
-  latestPossibleCheckoutDate
+  latestPossibleCheckoutDate,
+  BOOKING_HORIZON_DAYS,
+  MAX_STAY_NIGHTS
 } from "../domains/shortlet/src/index.js";
+
+// The furthest sellable checkout: the 90-day booking horizon plus the longest Short Stay (ADR 0055, ADR 0023 as amended 1 Nov 2026).
+function addUtcDays(dateKey: string, days: number): string {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day) + days * 86400000).toISOString().slice(0, 10);
+}
 
 function setup() {
   const repository = new UnitRepository();
@@ -160,7 +168,8 @@ test("publication requires eligibility through the furthest sellable checkout", 
   seedIssue01Units(repository);
   const publicationDate = new Date("2026-07-22T00:00:00Z");
 
-  assert.equal(latestPossibleCheckoutDate(publicationDate), "2026-11-03");
+  const furthestCheckout = addUtcDays("2026-07-22", BOOKING_HORIZON_DAYS + MAX_STAY_NIGHTS);
+  assert.equal(latestPossibleCheckoutDate(publicationDate), furthestCheckout);
 
   const unit = repository.findById("unit-lagos-001");
   assert.ok(unit);
@@ -174,12 +183,24 @@ test("publication requires eligibility through the furthest sellable checkout", 
     /Physical inspection expired or invalid/
   );
 
+  // An inspection that lapses one day before the furthest checkout is still refused.
+  const dayBeforeUnit = repository.findById("unit-lagos-001");
+  assert.ok(dayBeforeUnit);
+  repository.save({
+    ...dayBeforeUnit,
+    inspection: { ...dayBeforeUnit.inspection, expiresAt: addUtcDays(furthestCheckout, -1) }
+  });
+  assert.throws(
+    () => publishUnit(repository, "unit-lagos-001", { clock: () => publicationDate }),
+    /Physical inspection expired or invalid/
+  );
+
   const boundaryUnit = repository.findById("unit-lagos-001");
   assert.ok(boundaryUnit);
   repository.save({
     ...boundaryUnit,
     published: true,
-    inspection: { ...boundaryUnit.inspection, expiresAt: "2026-11-03" }
+    inspection: { ...boundaryUnit.inspection, expiresAt: furthestCheckout }
   });
 
   assert.equal(publishUnit(repository, "unit-lagos-001", { clock: () => publicationDate }).published, true);

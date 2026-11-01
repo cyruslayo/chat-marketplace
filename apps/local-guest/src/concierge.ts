@@ -160,7 +160,8 @@ const LOCATION_PATTERNS: readonly {
   { pattern: /\b(lagos)\b/i, city: "Lagos" },
 ];
 
-const NIGHTS_PATTERN = /\b(\d{1,2})\s*(?:nights?|nitesc?|nts?)\b/i;
+// Up to three digits: Extended Stays run to 180 nights (ADR 0092, amended 1 Nov 2026), so two digits cannot read them.
+const NIGHTS_PATTERN = /\b(\d{1,3})\s*(?:nights?|nitesc?|nts?)\b/i;
 const GUESTS_PATTERN = /\b(\d{1,2})\s*(?:people|persons?|guests?|adults?|pax)\b/i;
 const BEDROOMS_PATTERN = /\b(\d{1,2}|one|two|three|four)\s*[- ]?bedrooms?\b/i;
 const BEDROOM_WORDS: Readonly<Record<string, number>> = { one: 1, two: 2, three: 3, four: 4 };

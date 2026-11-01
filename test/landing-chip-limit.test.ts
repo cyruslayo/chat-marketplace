@@ -28,7 +28,7 @@ test("AC2: The landing module has no stay-length constant of its own; the limit 
   const source = readFileSync(fileURLToPath(new URL("../apps/local-guest/src/landing-copy.ts", import.meta.url)), "utf8");
   assert.doesNotMatch(source, /LAUNCH_MAX_STAY_NIGHTS/, "the local launch constant is removed");
   assert.doesNotMatch(source, /(?:const|let)\s+\w*(?:MAX|NIGHTS)\w*\s*=\s*\d/, "no stay-length number is declared in the module");
-  assert.match(source, /import \{ MAX_STAY_NIGHTS \} from "\.\.\/\.\.\/\.\.\/domains\/shortlet\/src\/browse\.js";/, "the module imports the domain limit");
+  assert.match(source, /import \{ MAX_STAY_NIGHTS \} from "\.\.\/\.\.\/\.\.\/domains\/shortlet\/src\/index\.js";/, "the module imports the domain limit from the domain's public index (ADR 0099)");
 });
 
 test("AC3: The approved chips and the landing copy tests (test/landing-page.test.ts) pass unchanged", () => {

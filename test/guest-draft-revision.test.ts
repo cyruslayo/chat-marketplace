@@ -112,12 +112,13 @@ test("AC3 failure path: keeping the current draft changes nothing and costs noth
   } finally { await fixture.close(); }
 });
 
-test("AC3 failure path: a stay over the 29-night limit is refused and the draft is unchanged", async () => {
+test("AC3 failure path: a stay over the 180-night maximum is refused and the draft is unchanged", async () => {
   const { fixture, draftId } = await twoNightDraft();
   try {
-    const refused = success(await fixture.send("/api/turn", { text: "make it 30 nights" }));
+    // 30 to 180 nights is an Extended Stay (ADR 0092, amended 1 Nov 2026), so 181 is the first refused length.
+    const refused = success(await fixture.send("/api/turn", { text: "make it 181 nights" }));
     assert.equal(refused.surfaces.length, 0);
-    assert.match(refused.messages[0]!, /29 nights/);
+    assert.match(refused.messages[0]!, /^Stays can be at most 180 nights\. Please choose 180 nights or fewer\.$/);
     assert.equal(refused.messages.at(-1), "Your Request Draft is unchanged.");
     assert.equal(fixture.environment.bookingRequestApp.getDraft(draftId).checkOut, "2026-09-12");
   } finally { await fixture.close(); }

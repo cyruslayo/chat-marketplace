@@ -1,4 +1,4 @@
-import { MAX_STAY_NIGHTS } from "../../../domains/shortlet/src/browse.js";
+import { MAX_STAY_NIGHTS } from "../../../domains/shortlet/src/index.js";
 
 /**
  * The approved marketing copy of the landing page. Sources: the copy deck (owner approval 12 Oct 2026: the deck table, the

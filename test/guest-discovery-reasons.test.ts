@@ -100,8 +100,25 @@ test("AC3: After a clarify reply, the quick replies match the missing criterion"
     // Failure paths: a search result and a limit refusal ask nothing, so they offer no quick replies.
     const searched = success(await fixture.send("/api/turn", { text: "I need an apartment in Lagos from 10 Sept for 3 nights for 2 people" }));
     assert.equal(searched.quickReplies, undefined);
-    const refused = success(await fixture.send("/api/turn", { threadId: `g-${crypto.randomUUID()}`, text: "Lagos, 2 guests, from 10 Sept for 30 nights" }));
-    assert.match(refused.messages.join(" "), /at most 29 nights/);
+    // 30 to 180 nights is an Extended Stay (ADR 0092, amended 1 Nov 2026), so 181 is the first refused length.
+    const refused = success(await fixture.send("/api/turn", { threadId: `g-${crypto.randomUUID()}`, text: "Lagos, 2 guests, from 10 Sept for 181 nights" }));
+    assert.match(refused.messages.join(" "), /at most 180 nights/);
+    assert.equal(refused.quickReplies, undefined);
+  } finally { await fixture.close(); }
+});
+
+test("Extended Stay lengths of 100 to 180 nights are read from guest text", async () => {
+  const fixture = await restartFixture();
+  try {
+    // Two-digit and three-digit lengths read as typed: 21 is a Short Stay, 120 and 180 are Extended Stays (ADR 0092, amended 1 Nov 2026).
+    for (const nights of [21, 120, 180]) {
+      const turn = success(await fixture.send("/api/turn", { threadId: `g-${crypto.randomUUID()}`, text: `Lagos, 2 guests, from 10 Sept for ${nights} nights` }));
+      assert.equal(turn.criteria?.when?.nights, nights, `${nights} nights is read as ${nights}`);
+      assert.doesNotMatch(turn.messages.join(" "), /how many nights/, `${nights} nights is not asked again`);
+    }
+    // 181 is the first refused length, and the refusal is the 180-night message with no quick replies.
+    const refused = success(await fixture.send("/api/turn", { threadId: `g-${crypto.randomUUID()}`, text: "Lagos, 2 guests, from 10 Sept for 181 nights" }));
+    assert.match(refused.messages.join(" "), /^Stays can be at most 180 nights\. Please choose 180 nights or fewer\.$/);
     assert.equal(refused.quickReplies, undefined);
   } finally { await fixture.close(); }
 });
