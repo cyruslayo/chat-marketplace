@@ -272,3 +272,15 @@ Commands and counts:
 - Lock tests, `node --import tsx --test test/assistant-thread-lock.test.ts test/assistant-session-thread-lock.test.ts`: 31 tests, 31 pass.
 
 Still red after this pass: failure 1 (domain-boundary AC4) and failure 5 (mobile journey AC2). Both fail at the base, so neither was introduced by the hardening work, and neither was fixed here. Failure 6 is a timing sensitivity that did not reproduce against the six-spec set. The pre-merge gate stays open until the owner decides on 1 and 5.
+
+### Owner fix A (1 Nov 2026): the runtime imports the booking horizon from the domain index (pre-merge gate failure 1)
+
+**Change.** `apps/local-guest/src/assistant/date-literals.ts` imported `BOOKING_HORIZON_DAYS` and `dateKeyInLagos` from `domains/shortlet/src/browse.js`, a deep import that is not on the boundary allow-list (ADR 0099). It now imports both from `domains/shortlet/src/index.js`. `domains/shortlet/src/index.ts` already re-exports `./browse.js` (`export * from "./browse.js"`), so no change to the index was needed. No allow-list entry was added. Behaviour is unchanged (same two values).
+
+**Tests first.** `test/domain-boundary.test.ts` run before the edit: AC4 fails with `apps/local-guest/src/assistant/date-literals.ts` as the only unlisted pair (3 pass, 1 fail).
+
+**Commands and counts (after the fix).**
+- `env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow node --import tsx --test test/domain-boundary.test.ts test/assistant-runtime-boundary.test.ts test/assistant-date-literals.test.ts test/assistant-date-literal-authority.test.ts test/assistant-search-unknowns.test.ts`: 37 tests, 37 pass, 0 fail.
+- `env -u LLM_API_KEY npm run check`: exit 0 (root `tsc`, `apps/cloudflare` `tsc`, its test and tooling configs, worker bundle guard).
+
+**ADR table (fix A).** ADR 0099 (the runtime imports no domain internals; now satisfied through the façade, AC4 passes). ADR 0106 (date authority unchanged: same resolver, same horizon).
