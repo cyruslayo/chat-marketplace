@@ -115,3 +115,32 @@ Prepend one line per turn to the classifier and planner context: today's date an
 5. **Plain-word date clarification copy** (4.3, last point).
 
 Order: 1, then 2 and 4 in parallel, then 3, then 5.
+
+## 6. Appendix: what the non-assistant concierge does that the assistant path does not use
+
+When the assistant runtime is on, `LocalGuestApp.#handleTurn` (`apps/local-guest/src/shortlet-app.ts:910`) sends every turn to it. Everything after line 925 runs only when the assistant is off or its provider is unavailable. The assistant imports one helper from `concierge.ts` (`searchAreaFor`). Found by reading the code and grepping; items marked (verify) need a test before building on them.
+
+| # | Non-assistant behaviour (where) | Assistant path today |
+|---|---|---|
+| 1 | Relative dates resolved on the Lagos clock, shown back, searched only after "yes" (`concierge.ts:272`, issue 01) | Refused; asks for YYYY-MM-DD |
+| 2 | Date ranges "20 Nov to 23 Nov" give check-in and checkout (`concierge.ts` given dates) | Classifier `checkOut` slot is only used to reject; `search_stays` has no checkout; the model must compute `nights`, with no check against the guest's checkout |
+| 3 | Budget parsing: ₦, k, m, naira, per night vs per stay, small numbers are not money (`extractBudget`, issue 03b) | `maxBudgetKobo` "all-in" only; the model converts naira to kobo and multiplies per-night prices itself; no provenance check |
+| 4 | Amenity words to catalogue ids, including Nigerian "light" for power (`AMENITY_QUESTIONS`) | `requiredAmenities` is free text; an id the catalogue does not use gives zero results silently (`browse.ts:469`) |
+| 5 | Location aliases and a location-change question before searching (`LOCATION_PATTERNS`, `pendingLocationChange`) | `normalizeNeighbourhood` passes unknown names through; no change question |
+| 6 | Unfilterable preferences acknowledged (gym, kitchen, balcony; issue 02 AC3) | No equivalent |
+| 7 | Asking order where, who, when, nights, with quick-reply chips (`quickRepliesFor`, issue 11 AC3) | Fixed clarification sentence, no quick replies |
+| 8 | "Show me the apartment", "the last one" opens a result (`viewResultIntent`, issue 10 C4) | Left to the model (verify) |
+| 9 | An unrelated turn keeps the current results | Left to the model (verify) |
+| 10 | Facility questions answered from `unit.amenities`, with "isn't listed, so I can't confirm" (issue 04a AC2) | Details reply lists amenities; no per-question honest "not listed" answer |
+| 11 | Change requests after submission explained (`#changeExplanation`, ADR 0005, 0060) | No equivalent copy found |
+| 12 | Draft revision from chat, with the relative-date confirm (`#proposeDraftReplacement`, issue 14) | No equivalent found (verify) |
+| 13 | Stage-aware capability replies (`#capabilityReply`) | No equivalent found |
+
+Also on the assistant path: the request summary falls back to `nights ?? 3` and `partySize ?? 1` (`shortlet-assistant-pack.ts:730`), which shows the guest made-up values, against the "never default" rule in the same file. A third, older model path (`gemini-concierge.ts`) only runs without the assistant runtime.
+
+**How to connect them without a keyword fast path (ADR 0106).** Don't route around the model. Use the deterministic code as the server-side normalizer and validator of what the model returns:
+
+- Dates and budget: the model passes the guest's own words; the server parses them with the shared resolver and `extractBudget`, then shows back what it understood.
+- Amenities and areas: closed enums in the tool schema, built from the catalogue and `SEARCH_AREAS`, so a wrong value cannot be sent.
+- Checkout: accept a checkout phrase and derive nights on the server.
+- Show-back, quick replies, the unsupported-preference note, honest amenity answers and the change explanations become reply-plan outputs the runtime renders from the same helpers as the non-assistant path.
