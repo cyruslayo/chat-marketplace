@@ -1,6 +1,6 @@
 # 04 · Decide how Continuous Occupancy is enforced
 
-Status: ready-for-human
+Status: resolved
 Type: grilling
 Blocked by: none
 Requested: 1 Nov 2026
@@ -24,5 +24,13 @@ A search of `domains/shortlet/src` on 1 Nov 2026 found **no code that aggregates
 When answered, this becomes a task issue (05) with acceptance criteria.
 
 ## Answer
+
+Owner decision, 1 Nov 2026 (all three recommendations):
+
+1. **Same party** = the same Primary Guest account. Bookings by different accounts are never added together in the pilot.
+2. **Adjacent** = a check-in on the checkout date of another counted stay (same-day handover), in either direction. Chains of several stays are added up end to end. A gap of one night or more breaks the chain.
+3. **Where** = the whole Property (`Unit.propertyId`), across Units, as ADR 0023 says ("aggregated across units").
+
+Enforcement goes to issue 06.
 
 ## Comments
