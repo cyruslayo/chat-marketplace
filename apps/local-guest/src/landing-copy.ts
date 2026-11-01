@@ -1,3 +1,5 @@
+import { MAX_STAY_NIGHTS } from "../../../domains/shortlet/src/browse.js";
+
 /**
  * The approved marketing copy of the landing page. Sources: the copy deck (owner approval 12 Oct 2026: the deck table, the
  * Q1 answer change and recommended addition 1, `.scratch/landing-page/copy/final-copy-deck.md`) and the "A + C · Lagos, in
@@ -7,9 +9,6 @@
  * Only marketing copy lives here. The phone and chat-window screens and the strings from guest-content.ts are NOT in this
  * module (ADR-0077: one source for guest wording). Apostrophes and quotes are typographic (’ “ ”).
  */
-
-/** The launch maximum for one stay, in nights (ADR-0023). Example chips must describe stays within it. */
-export const LAUNCH_MAX_STAY_NIGHTS = 14;
 
 /** One FAQ entry. `placeholder` marks an answer that is still bracketed text: it renders only with placeholders on (Issue 08 AC6). */
 export interface LandingFaqItem {
@@ -229,7 +228,10 @@ export function heroHeadingText(
   return `${heading.before}${heading.accent}${heading.after}`;
 }
 
-/** A problem with each example chip: an empty text, or a night count that is not a whole number from 1 to 14 (ADR-0023). */
+/**
+ * A problem with each example chip: an empty text, or a night count that is not a whole number from 1 to MAX_STAY_NIGHTS
+ * (the Short Stay maximum, ADR 0023 as amended 1 Nov 2026). The limit comes from the domain, not from a copy here.
+ */
 export function validateExampleChips(
   chips: readonly { readonly text: string; readonly nights: number }[],
 ): string[] {
@@ -239,10 +241,10 @@ export function validateExampleChips(
     if (
       !Number.isInteger(chip.nights) ||
       chip.nights < 1 ||
-      chip.nights > LAUNCH_MAX_STAY_NIGHTS
+      chip.nights > MAX_STAY_NIGHTS
     ) {
       problems.push(
-        `"${chip.text}" describes ${chip.nights} nights; a launch stay is 1 to ${LAUNCH_MAX_STAY_NIGHTS} nights (ADR-0023)`,
+        `"${chip.text}" describes ${chip.nights} nights; a Short Stay is 1 to ${MAX_STAY_NIGHTS} nights (ADR 0023)`,
       );
     }
   }

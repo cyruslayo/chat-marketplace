@@ -1509,13 +1509,13 @@ test("Issue 08 AC3: The example conversation sits in one chat window that carrie
   );
 });
 
-test("Issue 08 AC8: Every example chip describes a stay of 1–14 nights", () => {
+test("Issue 08 AC8: Every example chip describes a stay of 1–29 nights", () => {
   const html = renderLandingHtml();
   assert.equal(LANDING_COPY.exampleChips.length, 3, "three example chips");
   assert.deepEqual(
     validateExampleChips(LANDING_COPY.exampleChips),
     [],
-    "every chip has between 1 and 14 nights (ADR-0023)",
+    "every chip has between 1 and 29 nights (ADR 0023)",
   );
   for (const chip of LANDING_COPY.exampleChips) {
     assert.ok(
@@ -1523,11 +1523,11 @@ test("Issue 08 AC8: Every example chip describes a stay of 1–14 nights", () =>
       `the chip is rendered as a button: ${chip.text}`,
     );
   }
-  // Failure path: the same validator rejects a 15-night chip, a zero-night chip and a fractional one.
+  // Failure path: the same validator rejects a 30-night chip, a zero-night chip and a fractional one.
   assert.equal(
-    validateExampleChips([{ text: "Ikoyi, 15 nights", nights: 15 }]).length,
+    validateExampleChips([{ text: "Ikoyi, 30 nights", nights: 30 }]).length,
     1,
-    "15 nights is rejected",
+    "30 nights is rejected",
   );
   assert.equal(
     validateExampleChips([{ text: "Ikoyi, no nights", nights: 0 }]).length,
