@@ -11919,6 +11919,10 @@ Known schemas:
       return false;
     }
   }
+  function clientTurnTimeoutMs() {
+    const override = window.__shortletTurnTimeoutMs;
+    return typeof override === "number" && Number.isInteger(override) && override > 0 ? override : CLIENT_TURN_TIMEOUT_MS;
+  }
   async function sendTurn(text) {
     if (isLoading) return;
     setLoading(true);
@@ -11926,7 +11930,7 @@ Known schemas:
       workingStatus.textContent = GUEST_ASSISTANT_COPY.stillWorking;
     }, TURN_STILL_WORKING_AFTER_MS);
     try {
-      if (renderResponse(await postJson("/api/turn", { threadId, text }, CLIENT_TURN_TIMEOUT_MS))) {
+      if (renderResponse(await postJson("/api/turn", { threadId, text }, clientTurnTimeoutMs()))) {
         if (composerInput.value.trim() === text) composerInput.value = "";
       }
     } catch {

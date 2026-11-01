@@ -2568,13 +2568,22 @@ async function showLandedTurn(text: string): Promise<boolean> {
   }
 }
 
+/**
+ * Test-only hook: a browser test sets window.__shortletTurnTimeoutMs to shorten the wait for POST /api/turn. The app never
+ * sets it, so the production wait is CLIENT_TURN_TIMEOUT_MS. Read at send time; any value that is not a positive integer is ignored.
+ */
+function clientTurnTimeoutMs(): number {
+  const override = (window as unknown as { __shortletTurnTimeoutMs?: unknown }).__shortletTurnTimeoutMs;
+  return typeof override === "number" && Number.isInteger(override) && override > 0 ? override : CLIENT_TURN_TIMEOUT_MS;
+}
+
 async function sendTurn(text: string): Promise<void> {
   if (isLoading) return;
   setLoading(true);
   // A normal turn takes 5 to 8 seconds. A slower one says it is still working instead of looking stuck.
   const stillWorking = setTimeout(() => { workingStatus.textContent = GUEST_ASSISTANT_COPY.stillWorking; }, TURN_STILL_WORKING_AFTER_MS);
   try {
-    if (renderResponse(await postJson("/api/turn", { threadId, text }, CLIENT_TURN_TIMEOUT_MS))) {
+    if (renderResponse(await postJson("/api/turn", { threadId, text }, clientTurnTimeoutMs()))) {
       if (composerInput.value.trim() === text) composerInput.value = "";
     }
   } catch {

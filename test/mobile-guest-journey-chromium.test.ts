@@ -271,6 +271,9 @@ test("AC2: A turn that times out shows Retry and keeps the text", async () => {
         : { status: 200, headers: [{ name: "Content-Type", value: "application/json" }], body: Buffer.from(JSON.stringify({ ok: true, messages: ["Retry complete."], surfaces: [] })) };
     });
     try {
+      // Test-only hook (client.ts clientTurnTimeoutMs): shorten the browser's wait for /api/turn so the late stub
+      // times out in 2 s. Unset in production, where the wait stays CLIENT_TURN_TIMEOUT_MS.
+      await c.tab.evaluate("window.__shortletTurnTimeoutMs = 2000");
       await sendPrompt(c.tab, "Keep this draft on failure");
       await c.tab.waitForText("Retry", 12_000);
       assert.equal(await c.tab.evaluate<string>("document.getElementById('composer-input').value"), "Keep this draft on failure");
