@@ -55,6 +55,16 @@ export type AssistantControlOutcome = typeof ASSISTANT_CONTROL_OUTCOMES[number];
 /** ADR 0106/0079: a closed code for one application effect this turn produced. Diagnostics only. */
 export type AssistantToolEffectCode = "request_draft_created_availability_checked_not_reserved";
 
+/** Issue 13a (ADR 0106, 2 Nov 2026; ADR 0080): a nights or party change the planner's search call asks for while a Request Draft is open. */
+export interface DraftRevisionRequest {
+  readonly draftId: string;
+  readonly checkIn: string;
+  readonly nights: number;
+  readonly partySize: number;
+  readonly city: string;
+  readonly neighbourhood?: string;
+}
+
 export interface AssistantToolExecutionResult {
   readonly result: Record<string, unknown>;
   readonly updatedTaskState: AssistantTaskState;
@@ -65,6 +75,8 @@ export interface AssistantToolExecutionResult {
   readonly projectedSurface?: { readonly kind: "discovery" | "cart" | "checkout" | "order"; readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] };
   /** Diagnostics only: the closed effect code of this execution, set by the pack that ran it (issue 04). */
   readonly effectCode?: AssistantToolEffectCode;
+  /** Issue 13a: set when the call is a draft revision, so no search ran and the draft stage quotes the change. */
+  readonly draftRevision?: DraftRevisionRequest;
 }
 
 export interface AssistantSurfaceMessages {

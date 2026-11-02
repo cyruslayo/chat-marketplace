@@ -1,3 +1,4 @@
+import { draftReplacementTerms, draftReplacementUnavailable, DRAFT_REPLACEMENT_PROPOSED_COPY, type DraftReplacementStay, type PendingDraftReplacement } from "./draft-replacement.js";
 import {
   createServer,
   type IncomingMessage,
@@ -719,25 +720,6 @@ function isDiscoveryArtifactProjection(value: unknown): value is DiscoveryArtifa
   return Array.isArray((record.facts as Record<string, unknown>).results);
 }
 
-/** The stay a replacement Request Draft would cover (issue 14). */
-interface DraftReplacementStay {
-  readonly location: string;
-  readonly neighbourhood?: string;
-  readonly checkIn: string;
-  readonly checkOut: string;
-  readonly partySize: number;
-}
-
-interface PendingDraftReplacement {
-  readonly basedOnDraftId: string;
-  readonly basedOn: string;
-  readonly unitId: string;
-  readonly stay: DraftReplacementStay;
-  readonly filters: StayRequestFilters;
-  readonly context: DiscoverySearchContext;
-  readonly proposed: DraftStayTerms;
-  readonly surfaceId: string;
-}
 
 /**
  * Issue 06 (M13, engineering setting): the longest the Paystack checkout waits for the provider's initialize call while it holds the
@@ -2519,6 +2501,7 @@ export class LocalGuestApp {
       pendingAction: thread.pendingAction,
       pendingActionSurfaceId: thread.pendingActionSurfaceId,
       replacedPendingAction: thread.replacedPendingAction,
+      pendingDraftReplacement: thread.pendingDraftReplacement,
     };
   }
 
@@ -2531,6 +2514,7 @@ export class LocalGuestApp {
     // Issue 13b: a comparison is restored as the results it was opened from.
     if (surfaceId.includes(":discovery:") || surfaceId.includes(":compare:"))
       return DISCOVERY_STAGE;
+    if (surfaceId.includes(":request:replacement:")) return DRAFT_REPLACEMENT_STAGE;
     if (surfaceId.includes(":unit:")) return UNIT_STAGE;
     if (
       surfaceId.includes(":request:draft:") ||
@@ -2683,8 +2667,9 @@ export class LocalGuestApp {
       replacedPendingAction: projection.replacedPendingAction,
       compareSelection: null,
       draftChangeContext: null,
-      pendingDraftReplacement: null,
+      pendingDraftReplacement: projection.pendingDraftReplacement ?? null,
     };
+    if (thread.pendingDraftReplacement) thread.activeSurfaces.set(DRAFT_REPLACEMENT_STAGE, thread.pendingDraftReplacement.surfaceId);
     this.#threads.set(threadId, thread);
     this.#rebuildAssistantDiscovery(thread);
     const restoredProjection = thread.assistantContext
@@ -3278,6 +3263,7 @@ export class LocalGuestApp {
       ...(currentContractId ? { currentContractId } : {}),
       pendingAction: thread.pendingAction,
       replacedPendingAction: thread.replacedPendingAction,
+      pendingDraftReplacement: thread.pendingDraftReplacement,
     };
     const canonicalUserFacts = context.isDemoDate === false
       ? [context.checkIn, context.checkOut].filter((fact): fact is string => typeof fact === "string")
@@ -3341,6 +3327,12 @@ export class LocalGuestApp {
       // ADR 0106: the same unit-detail artifact id `#openUnitDetail` issues, so the detail's Request to Book stays authorized.
       thread.unitDetail = unit ? { unitId: unit.id, artifactId: unitDetailArtifactId(unit.id, thread.discoveryArtifact.projectionVersion) } : null;
     } else if (!selected) thread.unitDetail = null;
+    // Issue 13a (ADR 0074, ADR 0080): the open replacement of the Request Draft and the surface id the guest holds for it. A search
+    // that changes the stay has already retired it in the runtime, so the thread drops it too.
+    const replacement = assistant.taskState.pendingDraftReplacement ?? null;
+    thread.pendingDraftReplacement = replacement;
+    if (replacement) thread.activeSurfaces.set(DRAFT_REPLACEMENT_STAGE, replacement.surfaceId);
+    else this.#supersede(thread, DRAFT_REPLACEMENT_STAGE);
     const activeSurface = assistant.lastSurfaces.at(-1);
     const stage = activeSurface ? this.#stageForSurfaceId(activeSurface.surfaceId) : null;
     // ADR 0106: the planner's discovery card is the shell's current discovery surface. Adopting its id keeps the id the
@@ -4533,7 +4525,7 @@ export class LocalGuestApp {
         context: merged.context,
         proposed: proposal,
       },
-      "Here is your Request Draft with the new details. It changes only if you choose “Use the new details”.",
+      DRAFT_REPLACEMENT_PROPOSED_COPY,
     );
   }
 
@@ -4542,38 +4534,11 @@ export class LocalGuestApp {
     unitId: string,
     stay: DraftReplacementStay,
   ): DraftStayTerms | null {
-    const environment = this.#environment;
-    // Revalidate availability and capacity for the stay itself, not budget or bedroom preferences.
-    const results = environment.discoveryQuery.search({ ...stay }).facts
-      .results;
-    const unit = environment.unitRepository.findById(unitId) as Unit | null;
-    if (!unit || !results.some((candidate) => candidate.id === unitId))
-      return null;
-    const quote = createStayQuote({
-      unit,
-      checkIn: stay.checkIn,
-      checkOut: stay.checkOut,
-      partySize: stay.partySize,
-      ...(environment.extendedStayPolicy ? { extendedStayPolicy: environment.extendedStayPolicy } : {}),
-      demoTerms: environment.config.demo === true,
-      clock: environment.clock,
-    });
-    return {
-      checkIn: quote.checkIn,
-      checkOut: quote.checkOut,
-      nights: quote.nights,
-      partySize: stay.partySize,
-      allInStayTotalKobo: quote.allInStayTotalKobo,
-      refundableSecurityDepositKobo: quote.refundableSecurityDepositKobo,
-      amountDueNowKobo: quote.totalAmountDueNowKobo,
-    };
+    return draftReplacementTerms(this.#environment, unitId, stay);
   }
 
   #replacementUnavailable(unitId: string, stay: DraftReplacementStay): string {
-    const title =
-      (this.#environment.unitRepository.findById(unitId) as Unit | null)
-        ?.title ?? `This ${GUEST_GLOSSARY.unit}`;
-    return `${title} isn't available for ${formatStayDates(stay.checkIn, stay.checkOut)} for ${stay.partySize} ${stay.partySize === 1 ? "guest" : "guests"}.`;
+    return draftReplacementUnavailable(this.#environment, unitId, stay);
   }
 
   #presentDraftReplacement(

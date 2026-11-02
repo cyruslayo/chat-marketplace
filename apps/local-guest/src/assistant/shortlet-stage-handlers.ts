@@ -5,6 +5,7 @@ import type { PendingAssistantAction } from "./pending-actions.js";
 import { AssistantStaleProposalError, PENDING_ACTION_STAGE, retireOwnStages, type AssistantStageHandler, type StageTurnContext } from "./assistant-stage-handler.js";
 import { ContinuousOccupancyError, UnitUnavailableError } from "../../../../domains/shortlet/src/index.js";
 import { AssistantGuestRefusalError } from "./date-tokens.js";
+import { proposeDraftRevision } from "./shortlet-draft-revision.js";
 
 /**
  * Issue 04: the shortlet pack's stage handlers. Each handler owns one stage name, the stages it retires, the copy a failed
@@ -19,6 +20,8 @@ export const REQUEST_STAGE = "request";
 export const OFFER_STAGE = "offer";
 export const PAYMENT_STAGE = "payment";
 export const BOOKING_STAGE = "booking";
+/** Issue 13a: the replacement of the open Request Draft, proposed until the guest accepts or keeps it (ADR 0080). */
+export const DRAFT_REPLACEMENT_STAGE = "draft_replacement";
 
 const DISCOVERY_FALLBACK = "Your current search results are ready below. You can refine them or open a stay.";
 const UNIT_FALLBACK = "The selected stay details are ready below.";
@@ -46,16 +49,18 @@ export function proposalStillAuthorised(action: PendingAssistantAction | null | 
  */
 const discoveryHandler: AssistantStageHandler = {
   stage: DISCOVERY_STAGE,
-  supersedes: [DISCOVERY_STAGE, UNIT_STAGE],
+  supersedes: [DISCOVERY_STAGE, UNIT_STAGE, DRAFT_REPLACEMENT_STAGE],
   project({ toolName, execution }, turn: StageTurnContext) {
     // Issue 09: a held location change runs no search, so the current results and their surface stay as they are.
     // Issue 04: a pending date show-back runs no search either (ADR 0106, 2 Nov 2026).
-    if (toolName !== "search_stays" || execution.result.locationChangePending === true || execution.result.dateConfirmationPending === true) return undefined;
+    if (toolName !== "search_stays" || execution.result.locationChangePending === true || execution.result.dateConfirmationPending === true || execution.result.draftRevisionPending === true) return undefined;
     const { tx } = turn;
     if (!pendingProposalAuthorised(turn.pack, tx.taskState) && replacePendingProposal(tx.taskState, "search_changed")) {
       tx.supersede(PENDING_ACTION_STAGE);
     }
     retireOwnStages(discoveryHandler, turn);
+    // ADR 0074: a search that changes the stay removes an open draft replacement with it.
+    tx.taskState.pendingDraftReplacement = null;
     if (!execution.discoveryArtifact) {
       throw new Error("Authoritative discovery did not return an artifact");
     }
@@ -407,8 +412,31 @@ const startCheckoutHandler: AssistantStageHandler = {
  * The shortlet handlers, in the order the runtime calls them. A claim by an earlier projection handler ends the search. The
  * confirm handlers are found by their `confirms` kind, after the runtime's authority checks.
  */
+/**
+ * Issue 13a (ADR 0080, ADR 0074): a nights or party change on the open Request Draft. The replacement is filed under this stage and
+ * the existing accept or keep runs only on the guest's choice. A stay the length rules refuse is a rejected tool call (thrown); a Unit
+ * that can't take the stay is refused and the draft is unchanged.
+ */
+const draftReplacementHandler: AssistantStageHandler = {
+  stage: DRAFT_REPLACEMENT_STAGE,
+  supersedes: [DRAFT_REPLACEMENT_STAGE],
+  project({ toolName, execution }, turn: StageTurnContext) {
+    const change = execution.draftRevision;
+    if (toolName !== "search_stays" || change === undefined) return undefined;
+    const { tx } = turn;
+    const proposal = proposeDraftRevision({ environment: turn.environment, threadId: turn.threadId, taskState: tx.taskState, change, now: turn.environment.clock() });
+    if ("unavailable" in proposal) throw new AssistantGuestRefusalError(`${proposal.unavailable} Your Request Draft is unchanged.`);
+    retireOwnStages(draftReplacementHandler, turn);
+    tx.taskState.pendingDraftReplacement = proposal.pending;
+    tx.place(DRAFT_REPLACEMENT_STAGE, proposal.surfaceId);
+    turn.setStage("a2ui");
+    return { surface: { surfaceId: proposal.surfaceId, a2uiMessages: proposal.a2uiMessages }, fallbackMessage: proposal.fallbackMessage };
+  },
+};
+
 export const SHORTLET_STAGE_HANDLERS: readonly AssistantStageHandler[] = [
   discoveryHandler,
+  draftReplacementHandler,
   unitHandler,
   requestDraftHandler,
   requestToBookHandler,

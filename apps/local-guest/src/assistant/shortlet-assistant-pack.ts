@@ -1,3 +1,4 @@
+import { draftRevisionRequest } from "./shortlet-draft-revision.js";
 import { generatePlatformId } from "../../../../packages/platform-core/src/index.js";
 import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantGuestRefusalError, AssistantStayDetailsError, containsGuestDate } from "./date-tokens.js";
 import { ContinuousOccupancyError, StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, MAX_STAY_NIGHTS, BOOKING_HORIZON_DAYS, dateKeyInLagos, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
@@ -642,6 +643,10 @@ export function executeAssistantTool(
           ? resolvedNeighbourhood ?? undefined
           : city === held.location ? held.neighbourhood : undefined,
       };
+      // Issue 13a (ADR 0106, 2 Nov 2026 classifier decision; ADR 0080): a nights or party change while a Request Draft is open is a
+      // draft revision, not a search. The draft stage quotes it through the shared replacement and no search runs.
+      const draftChange = draftRevisionRequest({ environment: context.environment, args, taskState, city, neighbourhood: requestedArea.neighbourhood });
+      if (draftChange) return { result: { draftRevisionPending: true }, updatedTaskState: taskState, draftRevision: draftChange };
       const pending = held.pendingLocation;
       // The guest answers the open question with the pending area: the search runs there and the question is cleared.
       const answersPending = pending !== undefined && pending.city === requestedArea.city && pending.neighbourhood === requestedArea.neighbourhood;

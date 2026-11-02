@@ -1,3 +1,4 @@
+import type { PendingDraftReplacement } from "../draft-replacement.js";
 import type { PendingAssistantAction } from "./pending-actions.js";
 import type { AssistantConversationStep } from "./assistant-model.js";
 
@@ -91,6 +92,8 @@ export interface AssistantTaskState {
    * authority. The next explicit confirmation is answered with a fixed reply instead of a model call, then the marker clears.
    */
   replacedPendingAction?: ReplacedPendingAction | null;
+  /** Issue 13a: the open replacement of the current Request Draft (ADR 0074, ADR 0080). Its surface id is re-keyed on a cold restore. */
+  pendingDraftReplacement?: PendingDraftReplacement | null;
 }
 
 export type PendingReplacementReason = "search_changed" | "task_switched";
@@ -174,11 +177,14 @@ export function cloneTaskState(state: AssistantTaskState): AssistantTaskState {
     },
     shortlist: state.shortlist.map((item) => ({ ...item, amenities: [...item.amenities] })),
     selectedStayRef: state.selectedStayRef,
+    // Issue 13a: the open draft and its replacement survive a clone (a restore clones the task state).
+    currentDraftId: state.currentDraftId,
     currentBookingRequestId: state.currentBookingRequestId,
     currentOfferId: state.currentOfferId,
     currentReservationId: state.currentReservationId,
     currentContractId: state.currentContractId,
     pendingAction: state.pendingAction ? { ...state.pendingAction } : null,
     replacedPendingAction: state.replacedPendingAction ? { ...state.replacedPendingAction } : null,
+    pendingDraftReplacement: state.pendingDraftReplacement ?? null,
   };
 }

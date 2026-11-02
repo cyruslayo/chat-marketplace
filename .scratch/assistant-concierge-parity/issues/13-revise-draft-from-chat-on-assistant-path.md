@@ -111,3 +111,53 @@ Why it stops. The routing and the surface are open in the record:
 The record of cb2f9d2 shows only "moved to ready-for-agent" and the order (13a before 13b). It does not record an answer to (a) or (b), although the parent instruction describes the options as approved. Owner to confirm (a) and (b) before 13a is built. Recommended by this run, for the owner to accept or veto: (a)(ii) if the classifier prompt should stay as written, and (b) option 2, since it avoids changing the ADR 0072 closed list.
 
 Open items: the 13b split (AC5) waits on 04 and 05; AC6 says 11 tests, the file has 10.
+
+### Owner decisions (2 Nov 2026, recorded by the coordinator; supersede the open questions above)
+
+- (a) Planner route: keep the classifier prompt as written (`scope-classifier.ts:83`). The planner treats a nights or party change with a current draft as a draft revision. A draft is not a "sent, offered or booked" stay, so the verdict stays `search`.
+- (b) Surface: a stage-handler surface that runs the existing replacement only on accept. The ADR 0072 closed `PendingActionType` list does not change.
+
+### 13a completion record (agent, 2 Nov 2026, after the owner decisions above)
+
+Scope: nights and party changes on an open Request Draft (AC1 to AC4, and the AC6 twins of the seven non-date deterministic tests). 13b (AC5, relative dates, and the three date twins at `test/guest-draft-revision.test.ts` :176, :200, :217) is not started. Status stays `ready-for-agent`; not resolved.
+
+ADR table (read: 0106 with the 26 Oct, 27 Oct and 2 Nov amendments; 0092; 0093; 0080; 0074; 0072; 0015):
+
+| ADR | Constraint | Where it is met |
+|---|---|---|
+| 0080 | One handler for both paths; the agent makes no state transition | `shortlet-draft-revision.ts` quotes through `draft-replacement.ts` (shared with `shortlet-app.ts #replacementTerms`); accept and keep are the existing shell handlers |
+| 0072 | Accept runs through the existing checks; `PendingActionType` list unchanged (owner, b) | accept checks `draftId`, `basedOn` and the surface id in `#handleDraftReplacementAccept`; no new pending action type |
+| 0074 | Fail closed on forged or stale ids; a search that changes the stay removes the open proposal | `#stageForSurfaceId` maps `:request:replacement:`; `discoveryHandler` retires `draft_replacement` and clears `pendingDraftReplacement` |
+| 0015 | Re-quote is all-in | `draftReplacementTerms` (`createStayQuote`), no model arithmetic |
+| 0106 (26 Oct) | A rejected tool call is `tool_denial`, not `CONCIERGE_UNAVAILABLE` | `proposeDraftRevision` throws `AssistantStayDetailsError` for a stay the length rules refuse; `AssistantGuestRefusalError` for a Unit that can't take it |
+| 0106 (27 Oct) | Nights and party are structured facts, with no date authority | the revision carries no date; an args date disables the revision (13b) |
+| 0106 (2 Nov) | Relative dates need confirmation | not in 13a (13b) |
+| 0092 / 0093 | Extended stay length and minimal projection | `StayDateRange` gates the length; the persisted pending replacement holds only the stay, terms and ids |
+
+Implementation (commit below):
+- Planner route (owner a): `search_stays` with an open draft and a changed nights or party count is a draft revision (`draftRevisionRequest`, `shortlet-draft-revision.ts`). The classifier prompt is unchanged. No search runs.
+- Stage handler (owner b): `draftReplacementHandler` (stage `draft_replacement`, `shortlet-stage-handlers.ts`) files the replacement surface `thread-<id>:request:replacement:<draftId>`. The runtime holds it in `taskState.pendingDraftReplacement`. The shell mirrors it into the durable thread after each assistant turn (`#syncAssistantPersistence`) and persists it in the projection (`guest-projection.ts`), so a cold restore re-keys the same surface id.
+- Pre-existing defect fixed: `cloneTaskState` did not copy `currentDraftId`, so every turn after a restore lost the open draft. It now copies it.
+
+Commands and counts (worktree `C:\AI2026\chat-marketplace-parity`):
+- `env -u LLM_API_KEY npx tsx --test test/assistant-draft-revision.test.ts`: 8 pass, 0 fail (after the fixes below; first run 2 pass, 6 fail, as expected).
+- `env -u LLM_API_KEY npm run check`: exit 0.
+- Affected, batch 1: `guest-draft-revision`, `assistant-cold-journey`, `assistant-persistent-continuity`, `assistant-continuous-occupancy`, `assistant-pending-action-restore`, `assistant-proposal-replacement`, `assistant-proposal-supersession`, `assistant-shortlet-stage-behaviour`: 59 pass, 0 fail.
+- Affected, batch 2: `assistant-stage-handlers`, `assistant-turn-stop-cold-restore`, `assistant-context-isolation`, `assistant-search-unknowns`, `assistant-location-change`, `assistant-discovery-view`, `assistant-task-rail`, `assistant-recorded-journeys`, `assistant-booking-journey`, `guest-process-restart`, `guest-chip-continuity`: 76 of 77 passed on the first run. The one failure was `criterion 6: each shortlet stage handler declares the supersede rule` (issue 04's pinned handler list). It is expected: discovery now also retires the replacement, and there is a new stage handler. Updated that expectation in `test/assistant-stage-handlers.test.ts`; re-run 16 of 16 pass (with the 13a suite).
+- Affected, batch 3: `assistant-where-chip`, `assistant-budget-chip`, `assistant-short-stays-29-nights`, `assistant-turn-date-context`, `assistant-tool-authorization`, `assistant-thread-lock`, `assistant-reply-coverage`, `guest-booking-journey`, `local-guest-shell`, `assistant-control-metrics`: 97 pass, 0 fail.
+- Not run: full `npm test`, `npm run test:workers` (batch gate). No real-Chrome file: no new screen or copy (the replacement uses the existing draft-replacement surface and its copy).
+
+Definition of Done for 13a:
+1. Named tests per criterion: done (AC1; AC2 accept and keep as two tests; AC3 two failure tests; AC4 two tests; AC6 twin of the new-place test). The AC6 wording says "each of the 10": 13a has the seven non-date twins, the other three are 13b.
+2. Failure paths asserted: done (181 nights, 9 guests, forged surface, tampered context, newer proposal, price change, stale draft review after a new place).
+3. ADRs listed and read: done (table above).
+4. No unused injected dependency: checked (the `threadId`, `taskState` and `now` inputs of `proposeDraftRevision` are all read).
+5. No invented policy: done. Copy is shared from `draft-replacement.ts`, the length rule is `StayDateRange`, and no new number was added.
+6. No credential or identity in logs: done (no new log lines).
+7. `npm run check` passes: yes. `npm test`: left to the batch gate.
+
+Open items for the owner:
+- AC4 wording: the criterion says a tampered or stale accept returns `STALE_SURFACE`. The existing deterministic code returns `INVALID_CONTEXT` for a tampered context, and `STALE_SURFACE` only for a forged surface id. The tests assert those existing codes. Decide: keep the codes (amend the criterion) or change the handler.
+- Reload: after a cold restore the replacement's accept and keep work, but a page reload does not re-render the replacement surface (the restore keeps the id, not the screen). Same gap exists for the deterministic path.
+- Accept is the existing shell handler, not an ADR 0072 pending action (owner b). The guard is the `basedOn` and surface id, as on the deterministic path.
+- A date in the planner call (checkIn, checkOut or a phrase) is not a draft revision here; it runs an ordinary search as before. That is 13b.

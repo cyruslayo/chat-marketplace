@@ -1,5 +1,6 @@
 import type { DiscoveryArtifactProjection } from "../../../apps/web-agent/src/index.js";
 import { parseDiscoverySearchContext, type DiscoverySearchContext } from "./concierge.js";
+import { parsePendingDraftReplacement, type PendingDraftReplacement } from "./draft-replacement.js";
 import { isAssistantBudgetPer, type AssistantBudgetPer } from "./assistant/assistant-state.js";
 import { SEARCH_AREAS } from "./stay-vocabulary.js";
 import type { PendingAssistantAction } from "./assistant/pending-actions.js";
@@ -58,6 +59,8 @@ export interface GuestPersistentProjection {
   readonly pendingActionSurfaceId: string | null;
   /** ADR 0074: the proposal a search change or task switch removed. Missing or invalid reads as null. */
   readonly replacedPendingAction: PersistedReplacedProposal | null;
+  /** Issue 13a: the open Request Draft replacement and the surface id the guest holds for it. A cold restore re-keys that id. Missing reads as null. */
+  readonly pendingDraftReplacement?: PendingDraftReplacement | null;
 }
 
 /** The pending action as the runtime holds it, validated field by field on restore. Executed actions are never stored. */
@@ -325,6 +328,7 @@ export function parseGuestProjection(value: unknown): GuestPersistentProjection 
     pendingAction,
     pendingActionSurfaceId,
     replacedPendingAction,
+    pendingDraftReplacement: parsePendingDraftReplacement(value.pendingDraftReplacement ?? null),
     version: 1,
     timeline: Object.freeze(value.timeline.map((entry) => Object.freeze({ role: entry.role, text: entry.text }))),
     discoveryContext,
