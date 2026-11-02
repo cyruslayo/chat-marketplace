@@ -120,6 +120,12 @@ export interface AssistantDomainPack {
   projectToolResult?(name: string, result: Record<string, unknown>, limits: { readonly maxItems: number }): Record<string, unknown>;
   /** Canonical bounded facts used when older operation pairs leave retained history. */
   projectStateSummary?(taskState: AssistantTaskState, limits: { readonly maxItems: number }): Record<string, unknown>;
+  /**
+   * Issue 03 (ADR 0099): one line of per-turn context for the classifier and planner, built from the turn clock (for example
+   * today's date). It goes only into per-turn request context, never the system instruction (prompt cache), and it grants no
+   * authority (ADR 0106). Undefined adds nothing.
+   */
+  turnContext?(now: Date): string | undefined;
   /** Where a task in this domain is right now, for the shell task rail. */
   taskSummary(taskState: AssistantTaskState): AssistantTaskSummary;
   /** Projections the runtime renders for this pack's authoritative results. */

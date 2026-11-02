@@ -470,6 +470,14 @@ export class AssistantRuntime {
   }
 
   /**
+   * Issue 03 (ADR 0099, ADR 0106): the pack's per-turn context line for a classifier or planner request. It travels as the request's
+   * own `turnContext` field, so it is never part of the system instruction, the history, the persisted thread or date authority.
+   */
+  #turnContext(pack: AssistantDomainPack): string | undefined {
+    return pack.turnContext?.(this.#environment.clock());
+  }
+
+  /**
    * The pack of the thread's active task, or undefined when that task's domain is not registered here. No other pack answers for it
    * (issue 04 follow-up, fail closed): callers refuse.
    */
@@ -1060,6 +1068,7 @@ export class AssistantRuntime {
     const assessment = text.length > this.#maxInputCharacters ? undefined : await assessScopeSafely(this.#scopeClassifier, safeUserText, {
       domain: packForScope.id, description: packForScope.scopeDescription ?? packForScope.label,
       hasShortlist: tx.taskState.shortlist.length > 0, hasSelectedStay: Boolean(tx.taskState.selectedStayRef), hasOffer: Boolean(tx.taskState.currentOfferId),
+      turnContext: this.#turnContext(packForScope),
     }, this.#scopeOuterTimeoutMs, (error) => {
       // A retry failure carries the stage's decisive error; the first failure's outcome stands for refused or skipped retries (ADR 0106 amendment).
       const cause = error instanceof ScopeClassifierRetryError ? error.failure : error;
@@ -1132,6 +1141,7 @@ export class AssistantRuntime {
           systemInstruction: composeSystemInstruction(candidatePack()),
           tools: taskTools(),
           history: this.#boundedHistory(candidateHistory, candidatePack(), tx.taskState),
+          turnContext: this.#turnContext(candidatePack()),
           timeoutMs: plannerTimeoutMs,
           structuredOutput: { name: "assistant_reply_plan", schema: replyPlanSchema(successfulToolNames(turnRawResults)), strict: true },
           maxOutputTokens: this.#maxPlanningOutputTokens,
@@ -1337,6 +1347,7 @@ export class AssistantRuntime {
           systemInstruction: composeSystemInstruction(candidatePack()),
           tools: [],
           history: this.#boundedHistory(candidateHistory, candidatePack(), tx.taskState),
+          turnContext: this.#turnContext(candidatePack()),
           timeoutMs: summaryTimeoutMs,
           structuredOutput: { name: "assistant_reply_plan", schema: replyPlanSchema(successfulToolNames(turnRawResults)), strict: true },
           maxOutputTokens: this.#maxReplyOutputTokens,

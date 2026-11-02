@@ -1,6 +1,6 @@
 import { generatePlatformId } from "../../../../packages/platform-core/src/index.js";
 import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantGuestRefusalError, AssistantStayDetailsError, containsGuestDate } from "./date-tokens.js";
-import { ContinuousOccupancyError, StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, MAX_STAY_NIGHTS, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
+import { ContinuousOccupancyError, StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, MAX_STAY_NIGHTS, BOOKING_HORIZON_DAYS, dateKeyInLagos, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
 import { stayBudgetKobo } from "../concierge.js";
 import {
   discoveryArtifactToA2UI,
@@ -1044,6 +1044,27 @@ function renderShortletReply(plan: AssistantReplyPlan | undefined, results: read
   return GUEST_ASSISTANT_COPY.safeClarification;
 }
 
+const MS_PER_DAY = 86_400_000;
+
+/** A calendar day as "27 October 2026", or "Tuesday 27 October 2026" with the weekday. en-GB words, no comma; formatted in UTC so no zone shift applies. */
+function formatDayKey(dateKey: string, withWeekday: boolean): string {
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", weekday: "long", day: "numeric", month: "long", year: "numeric" })
+    .formatToParts(new Date(`${dateKey}T12:00:00Z`));
+  const part = (type: Intl.DateTimeFormatPartTypes): string => parts.find((candidate) => candidate.type === type)?.value ?? "";
+  const day = `${part("day")} ${part("month")} ${part("year")}`;
+  return withWeekday ? `${part("weekday")} ${day}` : day;
+}
+
+/**
+ * Issue 03 (ADR 0055, 0092, 0106): today's Africa/Lagos date and the last bookable check-in (today plus the booking horizon, the same
+ * offset the date-literal and StayDateRange rules accept). It is context for the models only; it grants no date authority.
+ */
+export function bookingTurnContext(now: Date): string {
+  const today = dateKeyInLagos(now, "now");
+  const lastCheckIn = new Date((Date.parse(`${today}T00:00:00Z`) / MS_PER_DAY + BOOKING_HORIZON_DAYS) * MS_PER_DAY).toISOString().slice(0, 10);
+  return `Today is ${formatDayKey(today, true)} (Africa/Lagos). The last bookable check-in is ${formatDayKey(lastCheckIn, false)}.`;
+}
+
 /** The shortlet pack: prompt section, tools and surface projections for the shortlet domain. */
 export function createShortletAssistantPack(environment: LocalGuestEnvironment): AssistantDomainPack {
   return {
@@ -1054,6 +1075,7 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     scopeDescription: "Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.",
     dateClarification: GUEST_ASSISTANT_COPY.datesClarification,
     stayDetailsClarification: GUEST_ASSISTANT_COPY.stayClarification,
+    turnContext: bookingTurnContext,
     scopeLocations: [...new Set(environment.unitRepository.findAll().map((unit) => unit.location.neighbourhood))],
     toolIntentMap: {
       search: ["search_stays"],
