@@ -247,6 +247,36 @@ export const GUEST_CHANGE_EXPLANATION = Object.freeze({
   booking: (): string => `Changes to a confirmed ${GUEST_GLOSSARY.reservation} are made as a booking amendment, which re-checks availability and price. I can't start one from this conversation yet. Nothing has been changed.`,
 });
 
+/**
+ * Issue 11 (ADR 0080, 0075, 0077): the answer to a facility question on the selected stay. Both the deterministic concierge
+ * (`#stageReply`) and the assistant's shortlet pack read these sentences. The amenity name and the stay title come from the
+ * server's own records, never from guest text (ADR 0075).
+ */
+export const GUEST_FACILITY_COPY = Object.freeze({
+  listed: (title: string, amenityLabel: string): string => `Yes: ${title} lists ${amenityLabel}.`,
+  notListed: (title: string, facilityLabel: string): string => `${facilityLabel} isn't listed for ${title}, so I can't confirm it.`,
+});
+
+/** Issue 11: the stages a sent stay can be in, for the stage reply. `current` covers every stage before a request is sent. */
+export type GuestCapabilityStage = "request" | "offer" | "payment" | "booking" | "current";
+
+/**
+ * Issue 11 (ADR 0005, 0060, 0080, 0077): what the guest can do at each stage, with the stay named when there is one. The deterministic
+ * concierge (`#capabilityReply`) and the assistant's shortlet pack read this one function, so a vague turn gets the same reply on both paths.
+ */
+export function guestCapabilityReply(stage: GuestCapabilityStage, unit?: { readonly title: string; readonly operatorName?: string | undefined }): string {
+  const about = unit === undefined ? "" : ` I can also answer questions about ${unit.title}, such as parking or Wi-Fi.`;
+  if (stage === "request")
+    return `Your ${GUEST_GLOSSARY.bookingRequest} is with ${guestOperatorName(unit?.operatorName)} for review; the details are in the workspace.${about}`;
+  if (stage === "offer")
+    return `Your ${GUEST_GLOSSARY.conditionalBookingOffer} is in the workspace. Review it and accept it there if it suits you.${about}`;
+  if (stage === "payment")
+    return `Your payment step is in the workspace.${about}`;
+  if (stage === "booking")
+    return `Your booking details are in the workspace.${about}`;
+  return `Your current details are in the workspace.${about}`;
+}
+
 /** ADR-0006: names the contracting party only where the contract can form. */
 export function accommodationProviderLine(operatorName: string | undefined): string {
   return `Provided by ${guestOperatorName(operatorName)} (your accommodation provider)`;

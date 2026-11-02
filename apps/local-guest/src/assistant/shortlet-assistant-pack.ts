@@ -5,7 +5,7 @@ import { SEARCH_AREAS, formatGuestDay, locationConflictQuestion, quickRepliesFor
 import { phraseIsGuestAuthored, readCheckInPhrase, type CheckInPhraseReading } from "./date-phrases.js";
 import { isExplicitConfirmation } from "./pending-actions.js";
 import { extractBudget, type StayBudget } from "../stay-budget.js";
-import { normalizeRequiredAmenities, unsupportedAmenityLabelFor } from "../stay-vocabulary.js";
+import { FACILITY_KEYS, facilityFor, normalizeRequiredAmenities, unsupportedAmenityLabelFor } from "../stay-vocabulary.js";
 import {
   discoveryArtifactToA2UI,
   bookingRequestArtifactToA2UI,
@@ -19,7 +19,7 @@ import { unitDetailArtifactFromProjection } from "../../../web/src/unit-detail-a
 import { requestDraftArtifactFromProjection } from "../../../web/src/request-draft-artifact.js";
 import { requestDraftArtifactToA2UI } from "../../../web-agent/src/request-draft-a2ui.js";
 import { extendedStayDraftFacts } from "../../../web-agent/src/extended-stay-presentation.js";
-import { GUEST_ASSISTANT_COPY, GUEST_AMENITY_IDS, GUEST_CHANGE_EXPLANATION } from "../../../web-agent/src/guest-content.js";
+import { GUEST_ASSISTANT_COPY, GUEST_AMENITY_IDS, GUEST_CHANGE_EXPLANATION, GUEST_FACILITY_COPY, guestAmenityLabel, guestCapabilityReply, type GuestCapabilityStage } from "../../../web-agent/src/guest-content.js";
 import type { LocalGuestEnvironment } from "../fixture.js";
 import type { AssistantToolDefinition } from "./assistant-model.js";
 import type {
@@ -98,12 +98,14 @@ export const ASSISTANT_TOOL_DEFINITIONS: readonly AssistantToolDefinition[] = [
   },
   {
     name: "get_unit_details",
-    description: "Get detailed information about a shortlisted stay using its conversational reference (e.g. 'stay-1').",
+    description: "Get detailed information about a shortlisted stay using its conversational reference (e.g. 'stay-1'). When the guest asks whether the stay has one facility, name it in facility and the answer comes from the stay's listed amenities.",
     category: "read",
     parametersSchema: {
       type: "object",
       properties: {
         stayRef: { type: "string", description: "Conversational stay reference, e.g. 'stay-1'" },
+        // Issue 11 (ADR 0106): a closed facility the guest asks about. The server answers from the stay's own amenities; the model never states the answer.
+        facility: { type: "string", enum: [...FACILITY_KEYS], description: `Optional facility the guest asks about, chosen only from: ${FACILITY_KEYS.join(", ")}. Omit it when the guest asks for the stay's details.` },
       },
       required: ["stayRef"],
       additionalProperties: false,
@@ -925,6 +927,14 @@ export function executeAssistantTool(
       const projection = toDiscoveryProjection(unit,
         new StayDateRange(checkIn, checkOut, context.now, context.environment.extendedStayPolicy),
         context.environment.extendedStayPolicy, context.now);
+      // Issue 11 (ADR 0106, 0080): a facility the planner names is answered from the Unit's own amenities, as the deterministic concierge
+      // answers it. A key outside the closed list is refused, never answered.
+      const facilityKey = typeof args.facility === "string" ? args.facility : undefined;
+      const facility = facilityKey === undefined ? undefined : facilityFor(facilityKey);
+      if (facilityKey !== undefined && facility === undefined) {
+        throw new AssistantGuestRefusalError(GUEST_ASSISTANT_COPY.safeClarification);
+      }
+      const listedFacilityId = facility?.ids.find((id) => unit.amenities.includes(id));
       taskState.selectedStayRef = stay.stayRef;
       return {
         result: {
@@ -941,6 +951,9 @@ export function executeAssistantTool(
           isDemoDate: taskState.stayIntent.checkIn === undefined,
           inspectionStatus: stay.inspectionStatus,
           managementAuthorityStatus: stay.managementAuthorityStatus,
+          ...(facility === undefined
+            ? {}
+            : { facility: facility.key, facilityListed: listedFacilityId !== undefined, ...(listedFacilityId === undefined ? {} : { facilityAmenity: listedFacilityId }) }),
         },
         updatedTaskState: taskState,
       };
@@ -1370,6 +1383,14 @@ function renderShortletReplyBody(plan: AssistantReplyPlan | undefined, results: 
     return count > 0 ? GUEST_ASSISTANT_COPY.results(count, place) : GUEST_ASSISTANT_COPY.noResults(place);
   }
   if (operation.name === "get_unit_details") {
+    // Issue 11 (ADR 0080, 0077): a facility question is answered with the deterministic concierge's sentence, never with the amenity list.
+    const facility = typeof data.facility === "string" ? facilityFor(data.facility) : undefined;
+    if (facility !== undefined) {
+      const title = String(data.title ?? "This stay");
+      return data.facilityListed === true && typeof data.facilityAmenity === "string"
+        ? GUEST_FACILITY_COPY.listed(title, guestAmenityLabel(data.facilityAmenity))
+        : GUEST_FACILITY_COPY.notListed(title, facility.label);
+    }
     const amenities = Array.isArray(data.amenities) ? data.amenities.filter((item): item is string => typeof item === "string").join(", ") : "";
     return GUEST_ASSISTANT_COPY.details(String(data.title ?? "This stay"), amenities, data.inspectionStatus === "passed");
   }
@@ -1459,6 +1480,20 @@ function sentStageFor(taskState: AssistantTaskState, environment: LocalGuestEnvi
   return undefined;
 }
 
+/**
+ * Issue 11 (ADR 0005, 0077, 0080, 0106): the stage reply for a vague turn after a stay is sent. The unit is the sent request's Unit, or the
+ * selected stay's when no request is held. Undefined before anything is sent, so the turn keeps the fixed clarification.
+ */
+function sentStageReply(taskState: AssistantTaskState, environment: LocalGuestEnvironment): string | undefined {
+  const stage = sentStageFor(taskState, environment);
+  if (stage === undefined) return undefined;
+  const unitId = taskState.currentBookingRequestId === undefined
+    ? taskState.shortlist.find((stay) => stay.stayRef === taskState.selectedStayRef)?.unitId
+    : environment.bookingRequestApp.getArtifact(taskState.currentBookingRequestId, environment.guestPrincipal()).facts.unitId;
+  const unit = unitId === undefined ? undefined : environment.unitRepository.findById(unitId);
+  return guestCapabilityReply(stage, unit === undefined || unit === null ? undefined : { title: unit.title, operatorName: unit.operator?.name });
+}
+
 /** The shortlet pack: prompt section, tools and surface projections for the shortlet domain. */
 export function createShortletAssistantPack(environment: LocalGuestEnvironment): AssistantDomainPack {
   return {
@@ -1488,7 +1523,10 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     },
     // ADR 0005, 0060, 0080, 0106 (issue 12): a sent Booking Request, offer, payment or Reservation answers a change with its explanation
     // and no planner call. Before anything is sent this returns undefined and the turn goes to the planner as a search.
+    // Issue 11 (ADR 0106, 0080): a vague turn (no intents, which the classifier returns only as unclear) after a stay is sent gets the
+    // stage reply, with no planner call. Before anything is sent it returns undefined and the fixed clarification stands.
     answerValidatedTurn: ({ intents, slots, taskState }) => {
+      if (intents.length === 0) return sentStageReply(taskState, environment);
       if (!asksToChangeStay(intents, slots)) return undefined;
       const stage = sentStageFor(taskState, environment);
       if (stage === "request" && taskState.currentBookingRequestId !== undefined) {
@@ -1511,7 +1549,7 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     executeTool: executeAssistantTool,
     settlePendingGuestFacts: (text, state, now) => settlePendingStayDate(text, state, now, environment.extendedStayPolicy),
     projectToolResult: (_name, result, limits) => {
-      const keys = new Set(["locationChangePending", "dateConfirmationPending", "stayRef", "city", "capacity", "bedrooms", "resultCount", "checkIn", "checkOut", "nights", "partySize", "isDemoDate", "nightlyKobo", "mandatoryFeesKobo", "allInStayTotalKobo", "refundableSecurityDepositKobo", "amountDueNowKobo", "totalAmountDueNowKobo", "currency", "inspectionStatus", "managementAuthorityStatus", "status", "expiresAt", "expiresAtIso", "hasOffer", "hasBooking", "draftCreated", "created", "availabilityChecked", "inventoryReserved", "operation", "available", "stays", "compared", "result", "hasRequest", "requestStatus"]);
+      const keys = new Set(["locationChangePending", "dateConfirmationPending", "stayRef", "city", "capacity", "bedrooms", "resultCount", "checkIn", "checkOut", "nights", "partySize", "isDemoDate", "nightlyKobo", "mandatoryFeesKobo", "allInStayTotalKobo", "refundableSecurityDepositKobo", "amountDueNowKobo", "totalAmountDueNowKobo", "currency", "inspectionStatus", "managementAuthorityStatus", "status", "expiresAt", "expiresAtIso", "hasOffer", "hasBooking", "draftCreated", "created", "availabilityChecked", "inventoryReserved", "operation", "available", "stays", "compared", "result", "hasRequest", "requestStatus", "facility", "facilityListed", "facilityAmenity"]);
       const closedStatuses = new Set(["passed", "failed", "expired", "verified", "unverified", "none", "request_draft", "request_submitted", "request_disclosed", "offer_issued", "issued", "accepted", "payment_pending", "paid", "cancelled", "rejected", "stale", "revoked", "confirmed", "no_active_booking", "unknown"]);
       const project = (value: unknown): unknown => {
         if (Array.isArray(value)) return value.slice(0, limits.maxItems).map(project).filter((entry) => entry !== undefined);
@@ -1525,7 +1563,8 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
             if (nested !== undefined) projected[key] = nested;
           } else if (["capacity", "bedrooms", "resultCount", "nights", "partySize", "nightlyKobo", "mandatoryFeesKobo", "allInStayTotalKobo", "refundableSecurityDepositKobo", "amountDueNowKobo", "totalAmountDueNowKobo"].includes(key)
             && typeof item === "number" && Number.isFinite(item)) projected[key] = item;
-          else if (["isDemoDate", "hasOffer", "hasBooking", "draftCreated", "created", "availabilityChecked", "inventoryReserved", "available", "hasRequest", "locationChangePending", "dateConfirmationPending"].includes(key) && typeof item === "boolean") projected[key] = item;
+          else if (["isDemoDate", "hasOffer", "hasBooking", "draftCreated", "created", "availabilityChecked", "inventoryReserved", "available", "hasRequest", "locationChangePending", "dateConfirmationPending", "facilityListed"].includes(key) && typeof item === "boolean") projected[key] = item;
+          else if (["facility", "facilityAmenity"].includes(key) && typeof item === "string" && FACILITY_KEYS.includes(item)) projected[key] = item;
           else if (key === "operation" && item === "request_draft.create") projected[key] = item;
           else if (key === "stayRef" && typeof item === "string" && /^stay-[1-9]\d{0,3}$/.test(item)) projected[key] = item;
           else if (key === "city" && (item === "Lagos" || item === "Abuja")) projected[key] = item;

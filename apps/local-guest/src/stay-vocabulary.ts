@@ -56,6 +56,26 @@ export function searchAmenityIdsFor(word: string): readonly string[] | undefined
   return AMENITY_CATALOGUE_IDS.includes(value) ? [value] : undefined;
 }
 
+/** Issue 11 (ADR 0106): one facility the planner may ask about, read from the shared alias table (never from guest text). */
+export interface FacilityEntry {
+  /** The closed value the planner's `get_unit_details` argument names (a catalogue id, or a catalogue-less word such as gym). */
+  readonly key: string;
+  /** The label the not-listed answer uses (the deterministic concierge's copy). */
+  readonly label: string;
+  /** Catalogue ids that answer "listed", most specific first. Empty when the catalogue never lists the facility. */
+  readonly ids: readonly string[];
+}
+
+/** Every facility key the closed `facility` argument accepts: each alias's catalogue ids plus the catalogue-less words. */
+export const FACILITY_KEYS: readonly string[] = [...new Set(AMENITY_ALIASES.flatMap((alias) => [...alias.ids, ...(alias.unsupportedLabel === undefined ? [] : [alias.unsupportedLabel])]))];
+
+/** The facility a closed key names, or `undefined` for a key outside the closed list (fail closed). */
+export function facilityFor(key: string): FacilityEntry | undefined {
+  const alias = AMENITY_ALIASES.find((entry) => entry.ids.includes(key) || entry.unsupportedLabel === key);
+  if (alias === undefined) return undefined;
+  return { key, label: alias.label, ids: alias.ids };
+}
+
 /**
  * Issue 09 (ADR 0080): the note label for a guest's word the catalogue never lists (gym, kitchen, balcony), or `undefined` when the word
  * is listed, unknown or ambiguous. Used on the model's own argument values, never on guest text.

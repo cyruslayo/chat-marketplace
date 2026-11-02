@@ -1,6 +1,6 @@
 # Assistant: answer facility questions from the listing, and reply for the booking stage
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 Blocked by: 08
 Requested: 1 Nov 2026
@@ -21,11 +21,11 @@ Requested: 1 Nov 2026
 
 ## Acceptance criteria
 
-- [ ] AC1: With a stay selected, "is there parking?" gives the listed answer for a unit that lists parking.
-- [ ] AC2 failure path: "is there a gym?" gives the "isn't listed, so I can't confirm it" answer and never says yes.
-- [ ] AC3: After submit, a vague turn gets the request-stage reply.
-- [ ] AC4: Guest text is never echoed in the reply (ADR 0075).
-- [ ] AC5: Same answer as the deterministic path (parity test).
+- [x] AC1: With a stay selected, "is there parking?" gives the listed answer for a unit that lists parking.
+- [x] AC2 failure path: "is there a gym?" gives the "isn't listed, so I can't confirm it" answer and never says yes.
+- [x] AC3: After submit, a vague turn gets the request-stage reply.
+- [x] AC4: Guest text is never echoed in the reply (ADR 0075).
+- [x] AC5: Same answer as the deterministic path (parity test).
 
 ## ADR compliance
 
@@ -111,3 +111,45 @@ h. **Facility questions with no stay selected.** AC1 says "with a stay selected"
 - Suggested split: 11a is facility answers (AC1, AC2, AC4 and the facility part of AC5). 11b is the stage reply and copy move (AC3 and the stage part of AC5), which depends on (e). 11b is small and could go first, if the owner decides (e) quickly.
 
 - Owner decision (2 Nov 2026): moved to ready-for-agent. Order: 04+05 (one agent), 11, 13a, then 13b and 16.
+
+### Implementation (agent, 2 Nov 2026)
+
+Decisions taken, from the triage notes and the owner's move to ready-for-agent. The owner's answers to the gym split and the facility mechanism are not separately recorded in this file; these are the recommended options and the owner should confirm them.
+- Gym split (triage 3a): a facility question about the selected stay is answered here. A search wish ("with a gym") stays in issue 09.
+- Facility mechanism (triage 3b, option 1): an optional closed `facility` argument on `get_unit_details`, enum from the shared alias table (`FACILITY_KEYS`, `stay-vocabulary.ts`). No new classifier intent, no new reply kind.
+- Stage reply (triage 3e): a vague turn after a stay is sent is answered by the pack's `answerValidatedTurn` hook with no planner call. Before a send it keeps the fixed clarification.
+- Unclear turns: the runtime (`assistant-runtime.ts`) lets an unclear verdict reach the hook only when the pack returns an answer. Otherwise it returns the fixed clarification as before.
+- Copy: `GUEST_FACILITY_COPY` and `guestCapabilityReply` are in `apps/web-agent/src/guest-content.ts` (ADR 0077). The deterministic `#stageReply` and `#capabilityReply` now call them, with the same strings.
+
+ADR table:
+
+| ADR | Constraint | Where |
+|---|---|---|
+| 0106 | Closed tool values; server computes the answer; no fast path around the model; cold restore before each event | `get_unit_details.facility` schema; `executeAssistantTool`; the unclear hook in `assistant-runtime.ts` |
+| 0080 | Same answer on both paths | AC5 tests; shared copy |
+| 0075 | No guest text in replies | `renderShortletReplyBody` uses only the closed key, the stay title and the amenity label (AC4 tests) |
+| 0077 | One copy module | `guest-content.ts` helpers |
+| 0005, 0060 | Stage reply names the sent Booking Request, not a Reservation | `guestCapabilityReply` `request` branch |
+| 0099 | Domain logic in the pack, not the runtime | runtime change only lets the pack's answer through |
+
+Known deviations and open items:
+1. AC3 uses the `answerValidatedTurn` hook (triage 2nd pass seam), not the pack's stage handlers as the issue body wrote. Recorded as a deviation.
+2. A facility answer for a stay also places the existing unit card (`get_unit_details` surface, existing behaviour). The text is what is compared.
+3. Triage (h), facility question with no stay selected: unchanged. The planner may still pick a shortlist stay through `get_unit_details`. Owner question open.
+4. Triage (g), the stay-clarification regex in `renderShortletReplyBody` (`/how many|nights|\bstay\b|somewhere|\bplace\b|lagos|abuja|lekki|ikoyi/i`) and the support regex remain. AC3 no longer reaches them. The support regex is still for the owner (issue 14).
+5. A vague turn after send is recorded as `successful_model_handling`, as issue 12's change explanation is. Owner may want a distinct closed outcome.
+
+Commands and counts:
+- `env -u LLM_API_KEY npx tsx --test test/assistant-facility-answers.test.ts`: 9 pass, 0 fail (new file; 9 tests, one per AC plus failure-path and parity tests).
+- Affected non-browser files (list in scratchpad `affected-files.txt`, 78 files, excluding chromium, commerce, paystack, landing-page and pilot-agent): `env -u LLM_API_KEY npx tsx --test <files>` gave 734 tests, 733 pass, 1 fail. The failure, `guest-request-handler.test.ts` "ADR 0101 ... commerce", is an env gap: it needs `COMMERCE_REFERENCE_HMAC_KEY` unless `NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow`. Re-run with those test-only switches: 734 tests, 734 pass, 0 fail.
+- `env -u LLM_API_KEY npm run check`: exit 0 (final tree).
+- Not run here: full `npm test` and `npm run test:workers`, left to the batch gate per the Test scope rules. No real-Chrome file run (no screen changed).
+
+Definition of Done:
+1. Every AC has a dedicated named test: yes (AC2, AC3, AC4 and AC5 each have a failure-path or parity test of their own).
+2. Failure paths asserted: yes (gym never "Yes"; unlisted catalogue id; before-send vague turn keeps the fixed clarification; no echo).
+3. ADRs listed and cited: yes (table above).
+4. No unused injected dependency: no new constructor parameters.
+5. No invented policy string: copy moved, not created; facility keys derived from `AMENITY_ALIASES`.
+6. No bearer credential in logs or audit: none added.
+7. `npm run check` passes: yes. `npm test` full run: left to the batch gate (not run per issue).

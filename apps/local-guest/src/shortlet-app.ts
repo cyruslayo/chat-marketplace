@@ -69,6 +69,9 @@ import {
   guestOperatorName,
   guestReservationStatus,
   guestAmenityLabel,
+  GUEST_FACILITY_COPY,
+  guestCapabilityReply,
+  type GuestCapabilityStage,
   discoveryFallbackMessage,
   type DiscoveryArtifactProjection,
 } from "../../../apps/web-agent/src/index.js";
@@ -1061,9 +1064,10 @@ export class LocalGuestApp {
             const listed = question.ids.find((id) =>
               unit.amenities.includes(id),
             );
+            // Issue 11 (ADR 0077): the same sentences the assistant's facility answer reads (guest-content.ts).
             return listed === undefined
-              ? `${question.label} isn't listed for ${unit.title}, so I can't confirm it.`
-              : `Yes: ${unit.title} lists ${guestAmenityLabel(listed)}.`;
+              ? GUEST_FACILITY_COPY.notListed(unit.title, question.label)
+              : GUEST_FACILITY_COPY.listed(unit.title, guestAmenityLabel(listed));
           });
     const facts = extractStayRequestFacts(text, {
       now: this.#environment.clock(),
@@ -1093,20 +1097,14 @@ export class LocalGuestApp {
     return GUEST_CHANGE_EXPLANATION.booking();
   }
 
+  /** Issue 11 (ADR 0077): the stage copy lives in guest-content.ts, shared with the assistant's stage reply. */
   #capabilityReply(stage: GuestStage, unit: Unit | null): string {
-    const about =
-      unit === null
-        ? ""
-        : ` I can also answer questions about ${unit.title}, such as parking or Wi-Fi.`;
-    if (stage === "request")
-      return `Your ${GUEST_GLOSSARY.bookingRequest} is with ${guestOperatorName(unit?.operator?.name)} for review; the details are in the workspace.${about}`;
-    if (stage === "offer")
-      return `Your ${GUEST_GLOSSARY.conditionalBookingOffer} is in the workspace. Review it and accept it there if it suits you.${about}`;
-    if (stage === "payment")
-      return `Your payment step is in the workspace.${about}`;
-    if (stage === "booking")
-      return `Your booking details are in the workspace.${about}`;
-    return `Your current details are in the workspace.${about}`;
+    const capabilityStage: GuestCapabilityStage =
+      stage === "request" || stage === "offer" || stage === "payment" || stage === "booking" ? stage : "current";
+    return guestCapabilityReply(
+      capabilityStage,
+      unit === null ? undefined : { title: unit.title, operatorName: unit.operator?.name },
+    );
   }
 
   /**

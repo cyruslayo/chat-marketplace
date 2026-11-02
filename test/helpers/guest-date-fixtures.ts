@@ -165,7 +165,9 @@ export interface ScriptedTurn {
   /** A planner reply plan with no tool call (ADR 0106 typed reply kind), for example "clarify_stay" or "support_guidance". */
   readonly reply?: "clarify_stay" | "support_guidance";
   /** The classifier's scope for this message. Defaults to in_scope. */
-  readonly scope?: "out_of_scope";
+  readonly scope?: "out_of_scope" | "unclear";
+  /** A planner reply plan returned after the tool result (ADR 0106 typed reply kind). Defaults to prose, which the runtime rejects. */
+  readonly replyAfterTool?: { readonly kind: string; readonly references: readonly string[] };
 }
 
 /**
@@ -177,11 +179,12 @@ export function scriptedPlanner(turns: Readonly<Record<string, ScriptedTurn>>, p
     if (isScopeRequest(request)) {
       const turn = turns[classifiedMessage(request)];
       if (turn?.scope === "out_of_scope") return completion({ content: JSON.stringify({ ...scopeVerdict({}, []), scope: "out_of_scope", reasonCode: "outside" }) });
+      if (turn?.scope === "unclear") return completion({ content: JSON.stringify({ ...scopeVerdict({}, []), scope: "unclear", reasonCode: "unclear" }) });
       return completion({ content: JSON.stringify(scopeVerdict(turn?.slots ?? {}, turn?.intents)) });
     }
-    if (lastRoleIsTool(request)) return completion({ content: "Search complete." });
     const text = latestUserText(request);
     const turn = text === undefined ? undefined : turns[text];
+    if (lastRoleIsTool(request)) return completion({ content: turn?.replyAfterTool ? JSON.stringify(turn.replyAfterTool) : "Search complete." });
     planner.push(request);
     if (turn?.reply) return completion({ content: JSON.stringify({ kind: turn.reply, references: [] }) });
     if (turn?.search) return searchToolCall(`search-${text?.length ?? 0}`, turn.search);

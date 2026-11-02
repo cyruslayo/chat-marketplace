@@ -1093,7 +1093,12 @@ export class AssistantRuntime {
           ...(error.firstAttemptFinishReason ? { firstAttemptFinishReason: error.firstAttemptFinishReason } : {}) } : {}) });
       scopeFailureOutcome = cause instanceof ModelRequestGuardError && cause.code === "quota_denied" ? "quota_refusal" : "guard_failure";
     });
-    if (!assessment || assessment.scope === "unclear" || assessment.scope === "out_of_scope" || assessment.risk === "policy_override" || assessment.risk === "unauthorized_data" || assessment.risk === "unknown") {
+    // ADR 0106 (issue 11): an unclear turn the pack answers from its task state (a sent stay's stage reply) runs no planner round. The pack
+    // decides; the runtime only lets the answer through. An unclear turn it does not answer keeps the fixed clarification.
+    const unclearPackAnswer = assessment?.scope === "unclear" && assessment.risk === "ordinary"
+      ? packForScope.answerValidatedTurn?.({ intents: [], slots: assessment.slots, taskState: tx.taskState })
+      : undefined;
+    if (!assessment || (assessment.scope === "unclear" && unclearPackAnswer === undefined) || assessment.scope === "out_of_scope" || assessment.risk === "policy_override" || assessment.risk === "unauthorized_data" || assessment.risk === "unknown") {
       const scopeOutcome = assessment?.scope === "out_of_scope" ? "scope_redirect" : "scope_unavailable";
       const controlOutcome = scopeFailureOutcome ?? scopeOutcome;
       // One count per turn: the outcome this turn returns (ADR 0106 telemetry, closed codes only).
