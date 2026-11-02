@@ -160,6 +160,8 @@ export interface PersistedAssistantContext {
   readonly selectedUnitId?: string;
   /** Issue 09 (ADR 0106, 0093): a different area the guest was asked about and has not answered. A field of this context, not a record. */
   readonly pendingLocation?: { readonly city: "Lagos" | "Abuja"; readonly neighbourhood?: string };
+  /** Issue 04 (ADR 0106 2 Nov 2026, ADR 0093): the candidate dates of an unconfirmed relative phrase. A field of this context, not a record. */
+  readonly pendingDate?: { readonly candidates: readonly string[] };
 }
 
 /**
@@ -172,6 +174,18 @@ function parsePendingLocation(value: unknown): PersistedAssistantContext["pendin
   if (value.neighbourhood === undefined) return { city: value.city };
   const known = typeof value.neighbourhood === "string" && SEARCH_AREAS.some((area) => area.city === value.city && area.neighbourhood === value.neighbourhood);
   return known ? { city: value.city, neighbourhood: value.neighbourhood as string } : undefined;
+}
+
+/**
+ * Issue 04 (ADR 0106, 0093): the pending date show-back, closed. One or two ISO calendar dates; anything else is dropped (fail closed), so
+ * no unconfirmed date can become a search.
+ */
+function parsePendingDate(value: unknown): PersistedAssistantContext["pendingDate"] | undefined {
+  if (!isRecord(value) || Object.keys(value).some((key) => key !== "candidates")) return undefined;
+  const candidates = value.candidates;
+  if (!Array.isArray(candidates) || candidates.length < 1 || candidates.length > 2) return undefined;
+  const valid = candidates.every((entry) => typeof entry === "string" && /^\d{4}-\d{2}-\d{2}$/.test(entry) && !Number.isNaN(Date.parse(`${entry}T00:00:00Z`)));
+  return valid ? { candidates: [...(candidates as string[])] } : undefined;
 }
 
 export function isPersistentTimelineEntry(value: unknown): value is { readonly role: "assistant" | "user" | "receipt"; readonly text: string } {
@@ -197,7 +211,7 @@ function isUnitDetail(value: unknown): value is { readonly unitId: string; reado
 
 function parseAssistantContext(value: unknown): PersistedAssistantContext | null {
   if (!isRecord(value) || (value.city !== "Lagos" && value.city !== "Abuja")) return null;
-  const allowed = new Set(["city", "neighbourhood", "checkIn", "isDemoDate", "checkOut", "nights", "partySize", "bedrooms", "maxBudgetKobo", "maxBudgetPer", "requiredAmenities", "selectedUnitId", "pendingLocation"]);
+  const allowed = new Set(["city", "neighbourhood", "checkIn", "isDemoDate", "checkOut", "nights", "partySize", "bedrooms", "maxBudgetKobo", "maxBudgetPer", "requiredAmenities", "selectedUnitId", "pendingLocation", "pendingDate"]);
   if (Object.keys(value).some((key) => !allowed.has(key))) return null;
   if (value.neighbourhood !== undefined && (typeof value.neighbourhood !== "string" || value.neighbourhood.length > 100)) return null;
   if (value.isDemoDate !== undefined && typeof value.isDemoDate !== "boolean") return null;
@@ -234,6 +248,10 @@ function parseAssistantContext(value: unknown): PersistedAssistantContext | null
     ...(value.pendingLocation === undefined ? {} : (() => {
       const pendingLocation = parsePendingLocation(value.pendingLocation);
       return pendingLocation === undefined ? {} : { pendingLocation };
+    })()),
+    ...(value.pendingDate === undefined ? {} : (() => {
+      const pendingDate = parsePendingDate(value.pendingDate);
+      return pendingDate === undefined ? {} : { pendingDate };
     })()),
   };
 }

@@ -3085,8 +3085,11 @@ export class LocalGuestApp {
     const selectedStay = state.selectedStayRef ? state.shortlist.find((stay) => stay.stayRef === state.selectedStayRef) : undefined;
     // Issue 09 (ADR 0093): the pending location change is a field of the existing context, persisted only with the held search.
     const pending = state.stayIntent.pendingLocation;
+    // Issue 04 (ADR 0106 2 Nov 2026, ADR 0093): the pending date show-back is a field of the same context, kept across a cold restore.
+    const pendingDate = state.stayIntent.pendingDate;
     return {
       city,
+      ...(pendingDate ? { pendingDate: { candidates: [...pendingDate.candidates] } } : {}),
       ...(pending && (pending.city === "Lagos" || pending.city === "Abuja")
         ? { pendingLocation: pending.neighbourhood === undefined ? { city: pending.city } : { city: pending.city, neighbourhood: pending.neighbourhood } }
         : {}),
@@ -3117,6 +3120,8 @@ export class LocalGuestApp {
     currentArtifact?: DiscoveryArtifactProjection,
     keepArtifactId: string | null = null,
   ): void {
+    // Issue 04 (ADR 0106, 2 Nov 2026): a pending date show-back is not a search. A restore must not rebuild results for its dates.
+    if (context.pendingDate !== undefined) return;
     const budgetTotal = persistedBudgetTotal(context);
     const filters = {
       location: context.city,
@@ -3264,6 +3269,7 @@ export class LocalGuestApp {
         ...(context.maxBudgetKobo === undefined || context.maxBudgetPer === undefined ? {} : { maxBudgetKobo: context.maxBudgetKobo, maxBudgetPer: context.maxBudgetPer }),
         ...(context.requiredAmenities ? { requiredAmenities: context.requiredAmenities } : {}),
         ...(context.pendingLocation ? { pendingLocation: context.pendingLocation } : {}),
+        ...(context.pendingDate ? { pendingDate: { candidates: [...context.pendingDate.candidates] } } : {}),
       },
       shortlist,
       ...(selected ? { selectedStayRef: selected.stayRef } : {}),

@@ -1072,6 +1072,9 @@ export class AssistantRuntime {
 
     // 3. User message turn
     const originalUserText = text;
+    // Issue 04 (ADR 0106, 2 Nov 2026): a pending date show-back is settled by this turn before it is classified. Only the guest's
+    // explicit yes confirms it; any other turn closes it. The candidate state is committed only at a commit site.
+    candidatePack().settlePendingGuestFacts?.(text, tx.taskState, this.#environment.clock());
     const packForScope = candidatePack();
     const safeUserText = redactSensitiveData(text) as string;
     let scopeFailureOutcome: "quota_refusal" | "guard_failure" | undefined;

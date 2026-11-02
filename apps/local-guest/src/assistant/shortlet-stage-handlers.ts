@@ -49,7 +49,8 @@ const discoveryHandler: AssistantStageHandler = {
   supersedes: [DISCOVERY_STAGE, UNIT_STAGE],
   project({ toolName, execution }, turn: StageTurnContext) {
     // Issue 09: a held location change runs no search, so the current results and their surface stay as they are.
-    if (toolName !== "search_stays" || execution.result.locationChangePending === true) return undefined;
+    // Issue 04: a pending date show-back runs no search either (ADR 0106, 2 Nov 2026).
+    if (toolName !== "search_stays" || execution.result.locationChangePending === true || execution.result.dateConfirmationPending === true) return undefined;
     const { tx } = turn;
     if (!pendingProposalAuthorised(turn.pack, tx.taskState) && replacePendingProposal(tx.taskState, "search_changed")) {
       tx.supersede(PENDING_ACTION_STAGE);

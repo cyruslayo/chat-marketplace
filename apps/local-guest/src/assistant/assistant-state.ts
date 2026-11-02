@@ -43,11 +43,21 @@ export interface AssistantPendingLocation {
   readonly neighbourhood?: string;
 }
 
+/**
+ * Issue 04 (ADR 0106, 2 Nov 2026): the candidate check-in dates of a relative phrase the guest has not confirmed. One candidate is a
+ * show-back (the guest's yes confirms it); two or more are a choice (a tap on one candidate is the confirmation). Authorizes nothing.
+ */
+export interface AssistantPendingDate {
+  readonly candidates: readonly string[];
+}
+
 export interface AssistantStayIntent {
   location?: string;
   neighbourhood?: string;
   /** Issue 09: the area the held search would move to, while the conflict question is open. */
   pendingLocation?: AssistantPendingLocation;
+  /** Issue 04: the dates a relative phrase gave, awaiting the guest's confirmation. Never a check-in until confirmed. */
+  pendingDate?: AssistantPendingDate;
   checkIn?: string;
   isDemoDate?: boolean;
   checkOut?: string;

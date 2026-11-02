@@ -16,7 +16,7 @@
 
 import { BOOKING_HORIZON_DAYS, DEFAULT_STAY_DATE_POLICY, MAX_STAY_NIGHTS, dateKeyInLagos, isExtendedStayLength, resolveStayDatePhrases, type ExtendedStayPolicy } from "../../../domains/shortlet/src/index.js";
 import { formatNgnKobo } from "../../web-agent/src/discovery-a2ui.js";
-import { GUEST_LOCATION_CONFLICT } from "../../web-agent/src/guest-content.js";
+import { GUEST_ASSISTANT_COPY, GUEST_LOCATION_CONFLICT } from "../../web-agent/src/guest-content.js";
 import { AMENITY_ALIASES, SEARCH_AREAS, STAY_LOCATION_ALIASES } from "./stay-vocabulary.js";
 import { extractBudget, type StayBudget } from "./stay-budget.js";
 
@@ -616,7 +616,8 @@ function confirmedOrSearch(
     return {
       kind: "confirm",
       filters,
-      reply: `Just to check: arriving ${formatGuestDay(checkIn)} and leaving ${formatGuestDay(checkOut)} (${nights} ${nights === 1 ? "night" : "nights"}), ${partySize} ${partySize === 1 ? "guest" : "guests"} in ${place}. Shall I search these dates? Reply "yes", or tell me different dates.`,
+      // Issue 04 (ADR 0077, 0080): the show-back sentence is the shared copy, also used by the assistant path.
+      reply: GUEST_ASSISTANT_COPY.dateShowBack(formatGuestDay(checkIn), formatGuestDay(checkOut), nights, partySize, place),
     };
   }
   return { kind: "search", filters };

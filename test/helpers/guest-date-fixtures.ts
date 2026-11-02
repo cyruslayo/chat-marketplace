@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { LocalGuestEnvironment } from "../../apps/local-guest/src/fixture.js";
-import { LocalGuestApp, type CardCheckoutFailedEvent, type GuestTurnResult } from "../../apps/local-guest/src/shortlet-app.js";
+import { LocalGuestApp, type CardCheckoutFailedEvent, type GuestTurnResult, type GuestTurnSuccess } from "../../apps/local-guest/src/shortlet-app.js";
 import { AssistantRuntime, type AssistantDiagnosticEvent } from "../../apps/local-guest/src/assistant/assistant-runtime.js";
 import { ShortletAssistantRuntime } from "./assistant-runtime-host.js";
 import { BudgetedModelClient, ModelCallBudget } from "../../apps/local-guest/src/assistant/model-call-budget.js";
@@ -207,4 +207,20 @@ export function firstButtonAction(surface: { readonly surfaceId: string; readonl
   walk(surface.a2uiMessages);
   if (found === undefined) throw new Error(`surface ${surface.surfaceId} has no Button action`);
   return { ...found, surfaceId: surface.surfaceId, sourceComponentId: "journey-test", timestamp: new Date().toISOString() };
+}
+
+/**
+ * One guest turn after a cold restore, returning the restored runtime too, so a test can read the task state the turn
+ * committed (ADR 0106: every event is a new application over the same store).
+ */
+export async function coldRun(f: DatedFixture, threadId: string, text: string, model: AssistantModelClient): Promise<{ readonly result: GuestTurnResult; readonly runtime: AssistantRuntime }> {
+  const restored = restartedDatedApp(f, model);
+  restored.app.getState(threadId);
+  return { result: await restored.app.handleTurn(threadId, text), runtime: restored.runtime };
+}
+
+/** The guest-visible message and chips of a turn that must succeed. */
+export function successfulTurn(result: GuestTurnResult, label: string): GuestTurnSuccess {
+  if (!result.ok) throw new Error(`${label}: expected success, saw ${result.code}: ${result.message}`);
+  return result;
 }

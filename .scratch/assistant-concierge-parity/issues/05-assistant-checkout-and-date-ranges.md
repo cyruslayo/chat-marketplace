@@ -75,3 +75,47 @@ f. **Nights mismatch copy.** AC2's `tool_denial` should use the existing dates c
 - Order: 04 first, then 05a and 05b in one agent (both change `search_stays` and `resolveCheckInDate`, and 04's phrase helper is reused). Running 05a in parallel with 04 would conflict in the same functions.
 
 - Owner decision (2 Nov 2026): moved to ready-for-agent. Order: 04+05 (one agent), 11, 13a, then 13b and 16.
+
+### ADR table (agent, before code; 2 Nov 2026)
+
+Scope of this run: 05a only (literal checkout). 05b (`checkOutPhrase`) needs the 04 show-back for a second date and is NOT done here; the issue stays open for it.
+
+| ADR | Constraint | Acceptance criterion or code path |
+|---|---|---|
+| 0106 (27 Oct) | A literal date is authorized by the guest's text; a model date that the text does not state is refused with a `tool_denial` | AC1 (`checkOut` is guest-authored literal), AC2, AC3 |
+| 0106 (27 Oct) | Structured dates and nights: the server derives the checkout by `checkOutForNights`, validated by `StayDateRange` (ADR 0023 length, ADR 0055 horizon) | AC1 (nights derived, not from the model), AC3 |
+| 0023, 0092, 0055 | Stay length (1 to 29 Short, 30 to 180 Extended), 90-day horizon on check-in | AC3 (checkout before or equal to check-in, or beyond the limits, is refused) |
+| 0080 | Same filters on both paths | AC4 (parity test on the derived dates; see the Comments for what is compared) |
+| 0106 (cold restore) | State survives a cold restore | AC5 |
+
+Owner questions a (pair rule) and b (typed pair authority) are not answered by the ADR. Resolution used here: a checkout counts only through the classifier's `checkOut` slot bound to guest text (`currentTurnDateRoles`), as the existing code already does, and each literal day of a pair is authorized on its own text. No new pair rule is added. This is flagged for the owner.
+
+### Implementation record (agent, 2 Nov 2026): 05a only
+
+Changed: `apps/local-guest/src/assistant/shortlet-assistant-pack.ts` (schema `checkOut`; `guestDateWords` checks a checkout is in the guest's text; `nightsBetween`; the search derives the nights from the checkout, refuses a contradicting model nights, a checkout on or before the check-in, and a missing check-in), `test/assistant-checkout-dates.test.ts` (new, 5 tests). The 04 work in the same run is recorded in issue 04.
+
+Not done: 05b, `checkOutPhrase` ("until next Monday"). It needs a second date in the show-back, and that wording is not settled. This issue therefore stays open.
+
+Deviations and open points:
+- AC4 (parity with the deterministic path) is not covered by a test. The deterministic path and the assistant path both derive the same checkout for this input, but no test compares the two result sets. Owner or the batch-16 parity suite should add it.
+- Owner questions a and b (pair rule) are answered in the ADR table above: a checkout counts only through the classifier's `checkOut` slot bound to guest text, and each literal day of a pair authorizes on its own text.
+- AC3 "existing limit copy": a stay over the limit gets the stay clarification, and a checkout the guest did not write gets the dates clarification. Both are existing copies.
+
+Test record (commands run with `env -u LLM_API_KEY`):
+
+| Command | Result |
+|---|---|
+| `npx tsx --test test/assistant-checkout-dates.test.ts` | 5 of 5 pass |
+| affected set (see issue 04 Comments, 60 files) | 528 of 528 pass |
+| `npm run check` (final) | exit 0 |
+
+Definition of Done (checked, 2 Nov 2026, for 05a)
+1. Named tests: AC1, AC2, AC3 (two tests: checkout before check-in, and beyond the limits), AC5 each have a named test. AC4 has none (see above).
+2. Failure paths: AC2 and AC3 assert `tool_denial`-style refusals with no search.
+3. ADRs: listed above.
+4. Injected dependencies: none added.
+5. No invented policy: stay length and horizon come from the existing StayDateRange and extended-stay policy.
+6. No credential or identity in logs: none added.
+7. `npm run check` passes. `npm test` is not claimed here (batch gate).
+
+Status is left `ready-for-agent`. Not resolvable: 05b is not built, and AC4 has no test.

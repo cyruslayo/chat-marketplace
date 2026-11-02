@@ -34,6 +34,14 @@ export const GUEST_ASSISTANT_COPY = Object.freeze({
   datesClarification: "I need your check-in and checkout dates before I can search. Please write them with the day, month and year, for example 20 November 2026 to 23 November 2026.",
   // ADR 0015: a Unit's all-in price is quoted for the stay's dates, so opening one without dates asks for them.
   unitDatesClarification: "Add your check-in and checkout dates to see this apartment's price for your stay. Please write them with the day, month and year, for example 20 November 2026 to 23 November 2026.",
+  // Issue 04 (ADR 0106 2 Nov 2026, ADR 0080, ADR 0077): the show-back of a relative date the guest must confirm. The deterministic
+  // path says the same sentence (concierge.ts), so both paths show the same dates before a search.
+  dateShowBack: (arriving: string, leaving: string, nights: number, guests: number, place: string) =>
+    `Just to check: arriving ${arriving} and leaving ${leaving} (${nights} ${nights === 1 ? "night" : "nights"}), ${guests} ${guests === 1 ? "guest" : "guests"} in ${place}. Shall I search these dates? Reply "yes", or tell me different dates.`,
+  // Issue 04: an ambiguous phrase names its candidate days; one chip per day, and a tap chooses it.
+  dateChoice: (days: readonly string[]) => `Which day do you mean: ${days.join(" or ")}?`,
+  dateConfirmChip: "Yes",
+  dateChangeChip: "Change dates",
   safeClarification: "I can help you find and compare stays, explain pricing, or check a booking status. What would you like to do?",
   // Shown when a turn is slower than a normal one; the guest is not told the request failed.
   stillWorking: "Still working on your request. A stay search can take a little longer, so please keep this page open.",

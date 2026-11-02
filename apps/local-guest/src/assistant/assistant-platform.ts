@@ -84,7 +84,7 @@ export interface AssistantReplyPlan {
  * Issue 10 (ADR 0099): which clarification the runtime is about to return. `stay_details` and `dates` are rejected tool calls,
  * `area` is an unknown area refused by the pack, and `plan` is a typed `clarify_stay` reply.
  */
-export type AssistantClarificationKind = "stay_details" | "dates" | "area" | "plan" | "location";
+export type AssistantClarificationKind = "stay_details" | "dates" | "area" | "plan" | "location" | "date";
 
 /** One task's place in the shell task rail: a domain label plus its current step. */
 export interface AssistantTaskSummary {
@@ -139,6 +139,11 @@ export interface AssistantDomainPack {
    */
   replyClarificationKind?(results: readonly AssistantToolResult[]): AssistantClarificationKind | undefined;
   executeTool(name: string, args: Record<string, unknown>, context: AssistantToolContext): AssistantToolExecutionResult;
+  /**
+   * Issue 04 (ADR 0106, 2 Nov 2026, ADR 0099): settles the pack's pending guest-date show-back on the candidate task state, before the
+   * turn is classified. Pure over that state; the runtime calls it once per guest turn.
+   */
+  settlePendingGuestFacts?(text: string, taskState: AssistantTaskState, now: Date): void;
   /** Pack-owned minimal facts for model history. Raw execution results remain local to the platform. */
   projectToolResult?(name: string, result: Record<string, unknown>, limits: { readonly maxItems: number }): Record<string, unknown>;
   /** Canonical bounded facts used when older operation pairs leave retained history. */

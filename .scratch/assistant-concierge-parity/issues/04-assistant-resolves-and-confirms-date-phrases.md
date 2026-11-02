@@ -104,3 +104,58 @@ i. **Staging clock.** The 27 Oct clock makes "next Friday" ambiguous, so every p
 - Suggested split, if the owner approves it: 04a is the day show-back with Yes and Change chips, the planner's `checkInPhrase`, the cold restore and AC2, AC3, AC6, AC7 and AC8. 04b is `ambiguous` chips and `range` handling (AC4, AC5). Both touch `search_stays` and `resolveCheckInDate`, so one agent should do both, in order.
 
 - Owner decision (2 Nov 2026): moved to ready-for-agent. Order: 04+05 (one agent), 11, 13a, then 13b and 16.
+
+### ADR table (agent, before code; 2 Nov 2026)
+
+Read in full: ADR 0106 (all amendments, incl. 2 Nov), 0092 (horizon and extended stays, first part), 0093 (minimal projection: the pending show-back is one field of the existing context). Read for the rules: 0080, 0077, 0074, 0078, 0099 (domain logic stays in the pack). Shortlet `CONTEXT.md` terms: Date phrase, Show-back.
+
+| ADR | Constraint | Acceptance criterion or code path |
+|---|---|---|
+| 0106 (2 Nov) | A relative date phrase is guest-authored only after the guest confirms its show-back; "next <weekday>" is ambiguous (Mon to Sat) and authorizes neither candidate until a tap; "next week" and "next month" are ranges, never a day; the planner's date must equal the confirmed date; no fast path | AC1 (two chips on the 27 Oct clock), AC2, AC4, AC5 |
+| 0106 (27 Oct) | A planner date needs guest text or a confirmed chip; a rejected call is a `tool_denial` with the dates clarification, `ok: true`, no task state committed | AC6, AC3 (`pack.executeTool` throws `AssistantDateProvenanceError`) |
+| 0106 (2 Nov, cold restore) | The confirmation is guest input, recorded in task state, and persists across a cold restore | AC7 (pending show-back is a field of the persisted context) |
+| 0080 | Same answer on both paths; the agent makes no state transition from a date | Copy from `guest-content.ts`; the deterministic show-back wording is moved there, unchanged |
+| 0093 | Minimal projection: one field of the existing context, no record | `PersistedAssistantContext.pendingDate` |
+| 0074 | A pending confirmation that a later turn supersedes loses its authority | AC7 failure path (a superseded show-back does not confirm) |
+| 0078 | Chips are 44px targets | Chip labels reuse the existing chip styling (no CSS change) |
+| 0055, 0092 | Booking Horizon (90 days) and stay length | Resolver refusals (`unresolved`) and `StayDateRange` on the confirmed stay |
+
+Owner questions from the triage note (a to g) are answered by the rules above, or left as flagged deviations in the Comments below: (b) a tap on a candidate is the confirmation and leads to a search through the planner; (c) a typed "yes" uses the closed set `isExplicitConfirmation` (the same set pending actions use), with no classifier call before the confirmation; (d) one context field; (e) the newest confirmed date replaces a held one; (f) `day` from a relative phrase shows back with Yes and Change dates; a `range` asks for a day in the dates clarification (no week day chips; a deviation).
+
+### Implementation record (agent, 2 Nov 2026)
+
+Changed: `apps/local-guest/src/assistant/date-phrases.ts` (new: guest-authorship check and the reading of one phrase), `shortlet-assistant-pack.ts` (schema `checkInPhrase`, `guestDateWords`, the show-back branch in the search tool, `settlePendingStayDate`, chips and copy for `date`), `assistant-state.ts` (`AssistantPendingDate`), `assistant-runtime.ts` (one settle call before classification), `assistant-platform.ts` (hook and kind), `shortlet-stage-handlers.ts` (a show-back is not a search surface), `guest-projection.ts` and `shortlet-app.ts` (the pending date is a field of the persisted context; the cold-restore rebuild skips a context with a pending date), `apps/web-agent/src/guest-content.ts` (show-back, choice and chip copy), `concierge.ts` (the deterministic show-back sentence now comes from the shared copy, same wording). Tests: `test/assistant-date-phrases.test.ts` (new, 9 tests, AC1 to AC8), `test/shortlet-assistant-evals.test.ts` (instruction test replaced; Eval 18 renamed and kept for the no-stay-details case), `test/helpers/guest-date-fixtures.ts` (`coldRun`, `successfulTurn`).
+
+Defect found and fixed during the run: on cold restore the shell rebuilt discovery results from the persisted context, so a pending show-back ran a search with no dates. The rebuild now skips a context that holds a pending date.
+
+Deviations from the issue text (for the owner):
+1. AC1 wording. On the 27 Oct clock "next Friday" is ambiguous (30 Oct or 6 Nov), so the reply is two date chips with nothing searched, as ADR 0106 (2 Nov) requires. It is not "a show-back with concrete dates".
+2. AC7 (forged or stale confirm id returns STALE_SURFACE). The chips are text (quick replies), so there is no confirm surface id to persist or forge. Confirmation is server-owned pending state: a superseded show-back does not confirm, and a cold restore keeps it. The id requirement is not implemented. Owner to confirm that replaces it, or ask for a surface-backed confirm.
+3. A range ("next week", "next month") gets the plain-word dates clarification. It does not get day chips for a week or a date chip opened at the earliest day. Owner decision (triage 4f).
+4. Weekend phrases ("this weekend") are also ranges and get the clarification, not a show-back. Owner decision (triage 4f).
+5. A typed "yes" uses the closed confirmation set (`isExplicitConfirmation`), as pending actions do, with no classifier call before it. The planner (not the server) then issues the search after the confirmation. A candidate tap is a literal date the guest typed, so it authorizes itself and the planner searches it.
+6. Any turn other than an explicit yes closes the pending show-back, including "Change dates".
+
+Test record (commands run with `env -u LLM_API_KEY`):
+
+| Command | Result |
+|---|---|
+| `npm run check` before any change (baseline) | exit 0 |
+| `npx tsx --test test/assistant-date-phrases.test.ts` (new file, first run) | 2 of 9 pass; 7 failed for the expected reasons |
+| same, after implementation and the restore fix | 9 of 9 pass |
+| `npx tsx --test test/shortlet-assistant-evals.test.ts test/assistant-cold-journey.test.ts test/assistant-date-clarification-copy.test.ts test/assistant-date-literal-authority.test.ts test/assistant-turn-date-context.test.ts test/guest-real-dates.test.ts test/stay-date-phrases.test.ts test/assistant-date-literals.test.ts` | 97 of 98 pass; the one failure was the instruction test, since replaced |
+| Affected set: all `test/assistant-*.test.ts` except the real-Chrome file, plus `guest-real-dates`, `guest-draft-revision`, `guest-must-fix-ux`, `conversational-discovery`, `guest-budget`, `shortlet-assistant-evals`, `stay-date-phrases` (60 files) | 528 of 528 pass |
+| `npm run check` after the change (final) | exit 0, zero errors |
+
+Not run: `npm test` (full) and `npm run test:workers` (pre-merge gate, once per batch). The real-Chrome files were not run: no screen changed.
+
+Definition of Done (checked, 2 Nov 2026)
+1. Named tests: AC1 to AC8 each have a named `test()` in `test/assistant-date-phrases.test.ts`. AC7 has two tests (cold restore keeps it; a superseded show-back does not confirm). The STALE_SURFACE half of AC7 is not implemented (deviation 2).
+2. Failure paths: AC2 (no confirmation without yes), AC3 (unrelated reply), AC5 (span), AC6 (phrase not in text), AC7 (superseded) each assert the refusal.
+3. ADRs: listed and read in the ADR table above.
+4. Injected dependencies: `settlePendingGuestFacts` is called by the runtime; the pack's `environment` is used for the policy.
+5. No invented policy: rule values come from `DEFAULT_STAY_DATE_POLICY`. Chip labels are the dates formatted by `formatGuestDay`. The "Yes" and "Change dates" labels and the show-back and choice sentences are in `guest-content.ts`.
+6. No credential or guest identifier in logs: the new code logs nothing.
+7. `npm run check` passes (above). `npm test` is NOT claimed; it runs at the batch gate (see Test scope).
+
+Status is left `ready-for-agent`. It moves to `resolved` only after the owner settles deviations 1 to 4 and the batch gate passes.
