@@ -1,6 +1,6 @@
 # Prove the thread lock on the Workers pool and let the guest chat retry a busy turn
 
-Status: needs-triage
+Status: ready-for-agent
 Type: task
 Blocked by: 06
 Requested: 28 Oct 2026 (follow-up written by issue 06)
@@ -55,3 +55,7 @@ store. Two gaps remain, and the owner's decision on issue 06 assumed both:
   that runtime is resident (`guest-server.ts`, `runtimeForSession`; the Durable Object caches its handler, `shortlet-pilot-do.ts`).
   Eviction, restart or redeploy rebuilds the runtime from the store, and only then does the restore run. The owner should correct
   that sentence (documentation only; this issue does not edit AGENTS.md).
+
+## Triage (2 Nov 2026)
+
+ready-for-agent. Two parts that can ship separately: (a) browser retry on THREAD_BUSY (guest-visible, do first); (b) the Workers-pool interleave test. Integrate origin/main first. The AGENTS.md cold-restore sentence stays the owner's edit.

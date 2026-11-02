@@ -1,6 +1,6 @@
 # Move the Shortlet public API and `validatedCheckOutForNights` out of the assistant runtime
 
-Status: needs-triage
+Status: ready-for-agent
 Type: task
 Blocked by: 04
 Requested: 28 Oct 2026
@@ -56,3 +56,7 @@ The boundary test (`test/assistant-runtime-boundary.test.ts`) records each as a 
 - Any `shortlet-app.ts` caller changed by this issue: the test that drives it.
 
 ## Comments
+
+## Triage (2 Nov 2026)
+
+ready-for-agent, but start only after origin/main (which now carries the assistant-concierge-parity and Continuous Occupancy work, including "keep the runtime domain-neutral") is integrated: it touches the same runtime files and may already have moved some of this. Re-read the runtime boundary test on the integrated tree first. Lowest priority of 07-09; no guest-visible effect.

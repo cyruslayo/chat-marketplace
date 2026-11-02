@@ -1,6 +1,6 @@
 # Fix the Paystack checkout's email gate and its provider-failure recovery
 
-Status: needs-triage
+Status: ready-for-agent
 Type: task
 Blocked by: 06
 Requested: 28 Oct 2026 (follow-up written by issue 06, Gap M12 and the bounded provider call)
@@ -63,3 +63,7 @@ recorded here so the owner can decide the order.
 - The bounded provider call (issue 06, M13) uses the constant `PAYSTACK_CHECKOUT_PROVIDER_TIMEOUT_MS` in
   `apps/local-guest/src/shortlet-app.ts`. Its value (20 s) is an engineering setting to confirm.
 - Staging payments are real Paystack test mode. The owner pays with the published test card. Stop before card entry (AGENTS.md).
+
+## Triage (2 Nov 2026)
+
+ready-for-agent, highest priority of 07-09: defect 1 (no email on file returns "payment action rejected" instead of the email prompt) can hit a staging guest who reaches checkout without an email. Defect 2 needs a first check of whether the continue route recovers an initiated session with no checkoutUrl. Owner to confirm the 20 s PAYSTACK_CHECKOUT_PROVIDER_TIMEOUT_MS. Integrate origin/main first.
