@@ -30,7 +30,7 @@ Owner decisions: 01. (17 resolved: path retired.)
 | 09 | [Location-change question and unsupported preferences](issues/09-location-change-question-and-unsupported-preferences.md) | needs-triage | 08 |
 | 10 | [Quick-reply chips on assistant clarifications](issues/10-quick-reply-chips-on-assistant-clarifications.md) | resolved | none |
 | 11 | [Honest facility answers and stage replies](issues/11-honest-facility-answers-and-stage-replies.md) | needs-triage | 08 |
-| 12 | [Explain changes after submission](issues/12-explain-changes-after-submission.md) | ready-for-agent | none |
+| 12 | [Explain changes after submission](issues/12-explain-changes-after-submission.md) | resolved | none |
 | 13 | [Revise a draft from chat on the assistant path](issues/13-revise-draft-from-chat-on-assistant-path.md) | needs-triage | 01, 04, 05 |
 | 14 | [Plain-word date clarification](issues/14-plain-word-date-clarification.md) | resolved | none |
 | 15 | [Bug: invented defaults in the request summary](issues/15-remove-invented-defaults-in-request-summary.md) | resolved | none |

@@ -215,6 +215,20 @@ export function guestOperatorName(name: string | undefined): string {
   return name?.trim() || GUEST_GLOSSARY.operatorFallback;
 }
 
+/**
+ * ADR-0005, 0060, 0080 (issue 12): why a sent stay cannot change, and what the guest can do instead. The deterministic concierge
+ * (`#changeExplanation`) and the assistant's shortlet pack read these same strings, so both paths give one reply.
+ */
+export const GUEST_CHANGE_EXPLANATION = Object.freeze({
+  request: (operatorName: string | undefined): string => {
+    const operator = guestOperatorName(operatorName);
+    return `A sent ${GUEST_GLOSSARY.bookingRequest} can't be changed while ${operator} reviews it. If ${operator} confirms, you can choose not to accept the offer at no cost and search again with new details. Nothing has been changed.`;
+  },
+  offer: (): string => `A ${GUEST_GLOSSARY.conditionalBookingOffer} can't be changed. You can choose not to accept it at no cost and search again with new details. Nothing has been changed.`,
+  payment: (): string => "An accepted offer can't be changed from this conversation. Nothing has been changed.",
+  booking: (): string => `Changes to a confirmed ${GUEST_GLOSSARY.reservation} are made as a booking amendment, which re-checks availability and price. I can't start one from this conversation yet. Nothing has been changed.`,
+});
+
 /** ADR-0006: names the contracting party only where the contract can form. */
 export function accommodationProviderLine(operatorName: string | undefined): string {
   return `Provided by ${guestOperatorName(operatorName)} (your accommodation provider)`;

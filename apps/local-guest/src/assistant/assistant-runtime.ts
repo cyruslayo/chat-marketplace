@@ -1142,7 +1142,14 @@ export class AssistantRuntime {
     };
 
     try {
-      while (round < MAX_ASSISTANT_TOOL_ROUNDS) {
+      // ADR 0099 / ADR 0106 (issue 12): the pack may answer the validated turn from its task state. No planner round runs, so no tool can.
+      const packAnswer = candidatePack().answerValidatedTurn?.({ intents: validatedTurnIntents, slots: assessment.slots, taskState: tx.taskState });
+      if (packAnswer !== undefined) {
+        finalAssistantReply = packAnswer;
+        candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
+        stopReason = "reply";
+      }
+      while (packAnswer === undefined && round < MAX_ASSISTANT_TOOL_ROUNDS) {
         // Checked before the round counter moves, so a deadline before the first planner call reports round 0.
         const plannerTimeoutMs = nextCallTimeoutMs();
         round++;

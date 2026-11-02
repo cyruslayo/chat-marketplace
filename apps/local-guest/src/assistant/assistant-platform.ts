@@ -1,6 +1,6 @@
 import type { AssistantToolDefinition, AssistantToolResult } from "./assistant-model.js";
 import type { AssistantStageHandler } from "./assistant-stage-handler.js";
-import type { ConciergeIntent } from "./scope-classifier.js";
+import type { ConciergeIntent, ScopeAssessment } from "./scope-classifier.js";
 import type { AssistantTaskState, AssistantTurnSurface } from "./assistant-state.js";
 import type { PendingAssistantAction } from "./pending-actions.js";
 import type { LocalGuestEnvironment } from "../fixture.js";
@@ -156,6 +156,13 @@ export interface AssistantDomainPack {
   renderReply?(plan: AssistantReplyPlan | undefined, results: readonly AssistantToolResult[], latestUserText: string, taskState?: AssistantTaskState): string;
   /** A control outcome the pack's current results imply for a reply (for example no current booking). Undefined keeps the runtime's outcome. */
   replyControlOutcome?(results: readonly AssistantToolResult[]): AssistantControlOutcome | undefined;
+  /**
+   * ADR 0099 / ADR 0106 (issue 12): a pack may answer a validated turn from its own task state. The runtime calls it after the scope
+   * verdict and before any planner round, so a returned reply runs no planner call and no tool. The verdict is the only input the
+   * model supplies; the stage and the copy come from the pack. Undefined leaves the turn to the planner as before. It must not
+   * change the task state.
+   */
+  answerValidatedTurn?(turn: { readonly intents: readonly ConciergeIntent[]; readonly slots: ScopeAssessment["slots"]; readonly taskState: AssistantTaskState }): string | undefined;
   /** Issue 04: the pack's stage handlers, called in order for each authoritative execution and for confirmed pending actions. */
   readonly stageHandlers?: readonly AssistantStageHandler[];
   /**

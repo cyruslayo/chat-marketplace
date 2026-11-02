@@ -55,6 +55,7 @@ import {
   guestRequestStatus,
   guestPaymentStatus,
   GUEST_FACT_LABELS,
+  GUEST_CHANGE_EXPLANATION,
   GUEST_GLOSSARY,
   GUEST_JOURNEY,
   GUEST_RECEIPTS,
@@ -1086,14 +1087,10 @@ export class LocalGuestApp {
     stage: "request" | "offer" | "payment" | "booking",
     unit: Unit | null,
   ): string {
-    const operator = guestOperatorName(unit?.operator?.name);
-    if (stage === "request")
-      return `A sent ${GUEST_GLOSSARY.bookingRequest} can't be changed while ${operator} reviews it. If ${operator} confirms, you can choose not to accept the offer at no cost and search again with new details. Nothing has been changed.`;
-    if (stage === "offer")
-      return `A ${GUEST_GLOSSARY.conditionalBookingOffer} can't be changed. You can choose not to accept it at no cost and search again with new details. Nothing has been changed.`;
-    if (stage === "payment")
-      return "An accepted offer can't be changed from this conversation. Nothing has been changed.";
-    return `Changes to a confirmed ${GUEST_GLOSSARY.reservation} are made as a booking amendment, which re-checks availability and price. I can't start one from this conversation yet. Nothing has been changed.`;
+    if (stage === "request") return GUEST_CHANGE_EXPLANATION.request(unit?.operator?.name);
+    if (stage === "offer") return GUEST_CHANGE_EXPLANATION.offer();
+    if (stage === "payment") return GUEST_CHANGE_EXPLANATION.payment();
+    return GUEST_CHANGE_EXPLANATION.booking();
   }
 
   #capabilityReply(stage: GuestStage, unit: Unit | null): string {

@@ -16,7 +16,7 @@ import { unitDetailArtifactFromProjection } from "../../../web/src/unit-detail-a
 import { requestDraftArtifactFromProjection } from "../../../web/src/request-draft-artifact.js";
 import { requestDraftArtifactToA2UI } from "../../../web-agent/src/request-draft-a2ui.js";
 import { extendedStayDraftFacts } from "../../../web-agent/src/extended-stay-presentation.js";
-import { GUEST_ASSISTANT_COPY, GUEST_AMENITY_IDS } from "../../../web-agent/src/guest-content.js";
+import { GUEST_ASSISTANT_COPY, GUEST_AMENITY_IDS, GUEST_CHANGE_EXPLANATION } from "../../../web-agent/src/guest-content.js";
 import type { LocalGuestEnvironment } from "../fixture.js";
 import type { AssistantToolDefinition } from "./assistant-model.js";
 import type {
@@ -24,6 +24,7 @@ import type {
   AssistantTaskState,
 } from "./assistant-state.js";
 import type { PendingAssistantAction } from "./pending-actions.js";
+import type { ConciergeIntent, ScopeAssessment } from "./scope-classifier.js";
 import { pendingActionToA2UI } from "./pending-action-a2ui.js";
 import { SHORTLET_STAGE_HANDLERS, proposalStillAuthorised } from "./shortlet-stage-handlers.js";
 import {
@@ -1109,6 +1110,29 @@ export function bookingTurnContext(now: Date): string {
   return `Today is ${formatDayKey(today, true)} (Africa/Lagos). The last bookable check-in is ${formatDayKey(lastCheckIn, false)}.`;
 }
 
+/**
+ * ADR 0005, 0060, 0080, 0106 (issue 12): whether a validated turn asks to change stay facts. Only the classifier's verdict decides:
+ * the `change` intent, or a stay search that carries a stay fact (nights, guests, or a check-in or checkout date). No text is read.
+ */
+function asksToChangeStay(intents: readonly ConciergeIntent[], slots: ScopeAssessment["slots"]): boolean {
+  if (intents.includes("change")) return true;
+  return intents.includes("search") && (slots.nights !== null || slots.guests !== null || slots.checkIn !== null || slots.checkOut !== null);
+}
+
+/**
+ * ADR 0005, 0060, 0080 (issue 12): the stage a sent stay is in, from the restored task state and the server's own records only. The
+ * order matches the deterministic concierge (booking, then payment, then offer, then request). Undefined before anything is sent.
+ */
+function sentStageFor(taskState: AssistantTaskState, environment: LocalGuestEnvironment): "request" | "offer" | "payment" | "booking" | undefined {
+  if (taskState.currentContractId || taskState.currentReservationId) return "booking";
+  if (taskState.currentOfferId) {
+    const offer = environment.conditionalOfferApp.getArtifact(taskState.currentOfferId, environment.guestPrincipal());
+    return offer.facts.status === "accepted" ? "payment" : "offer";
+  }
+  if (taskState.currentBookingRequestId) return "request";
+  return undefined;
+}
+
 /** The shortlet pack: prompt section, tools and surface projections for the shortlet domain. */
 export function createShortletAssistantPack(environment: LocalGuestEnvironment): AssistantDomainPack {
   return {
@@ -1129,10 +1153,26 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
       status: ["get_booking_status", "get_offer_status"],
       offer: ["get_offer_status"],
       draft: ["get_unit_details", "prepare_request_draft"],
+      // ADR 0106 (issue 12): before a request is sent, a change is a new search. Once sent, answerValidatedTurn answers it, so no tool runs.
+      change: ["search_stays"],
       // ADR 0106: booking preparation remains available when the classifier labels intent as a request.
       request: ["get_unit_details", "prepare_request_draft", "propose_request_to_book"],
       accept: ["get_offer_status", "propose_accept_offer"],
       payment: ["get_offer_status", "propose_start_payment"],
+    },
+    // ADR 0005, 0060, 0080, 0106 (issue 12): a sent Booking Request, offer, payment or Reservation answers a change with its explanation
+    // and no planner call. Before anything is sent this returns undefined and the turn goes to the planner as a search.
+    answerValidatedTurn: ({ intents, slots, taskState }) => {
+      if (!asksToChangeStay(intents, slots)) return undefined;
+      const stage = sentStageFor(taskState, environment);
+      if (stage === "request" && taskState.currentBookingRequestId !== undefined) {
+        const request = environment.bookingRequestApp.getArtifact(taskState.currentBookingRequestId, environment.guestPrincipal());
+        return GUEST_CHANGE_EXPLANATION.request(environment.unitRepository.findById(request.facts.unitId)?.operator?.name);
+      }
+      if (stage === "offer") return GUEST_CHANGE_EXPLANATION.offer();
+      if (stage === "payment") return GUEST_CHANGE_EXPLANATION.payment();
+      if (stage === "booking") return GUEST_CHANGE_EXPLANATION.booking();
+      return undefined;
     },
     toolDefinition: (name) => stayToolDefinitions(environment.extendedStayPolicy).find((tool) => tool.name === name),
     intentKeywords: ["stay", "stays", "apartment", "apartments", "book", "booking", "ikoyi", "lekki", "lagos", "abuja", "check-in", "checkin"],
