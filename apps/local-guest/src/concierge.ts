@@ -14,7 +14,7 @@
  * facts found in the latest message.
  */
 
-import { BOOKING_HORIZON_DAYS, MAX_STAY_NIGHTS, dateKeyInLagos, isExtendedStayLength, type ExtendedStayPolicy } from "../../../domains/shortlet/src/index.js";
+import { BOOKING_HORIZON_DAYS, DEFAULT_STAY_DATE_POLICY, MAX_STAY_NIGHTS, dateKeyInLagos, isExtendedStayLength, resolveStayDatePhrases, type ExtendedStayPolicy } from "../../../domains/shortlet/src/index.js";
 import { formatNgnKobo } from "../../web-agent/src/discovery-a2ui.js";
 import { AMENITY_ALIASES, SEARCH_AREAS, STAY_LOCATION_ALIASES } from "./stay-vocabulary.js";
 
@@ -214,19 +214,6 @@ const UNSUPPORTED_PREFERENCES: readonly { readonly pattern: RegExp; readonly lab
   { pattern: /\b(?:workspace|desk)\b/i, label: "workspace" },
 ];
 
-const MONTHS: Readonly<Record<string, number>> = {
-  jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4, may: 5,
-  jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8, sep: 9, sept: 9, september: 9,
-  oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
-};
-const MONTH_NAME = "jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?";
-const ORDINAL = "(?:st|nd|rd|th)?";
-const DAY_MONTH_RANGE = new RegExp(`\\b(\\d{1,2})${ORDINAL}\\s*(?:-|–|—|to|until|till)\\s*(\\d{1,2})${ORDINAL}\\s+(?:of\\s+)?(${MONTH_NAME})\\b`, "i");
-const DAY_MONTH = new RegExp(`\\b(\\d{1,2})${ORDINAL}\\s+(?:of\\s+)?(${MONTH_NAME})\\b`, "gi");
-// "May" leads too many ordinary sentences ("may 2 people stay"), so month-first dates skip it.
-const MONTH_DAY = new RegExp(`\\b(${MONTH_NAME.replace("|may|", "|")})\\.?\\s+(\\d{1,2})${ORDINAL}\\b`, "gi");
-const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const;
-const WEEKDAY_PATTERN = /\b(this\s+|next\s+|on\s+)?(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/i;
 
 function dayNumber(dateIso: string): number {
   const [year, month, day] = dateIso.split("-").map(Number);
@@ -241,10 +228,6 @@ function addCalendarDays(dateIso: string, days: number): string {
   return fromDayNumber(dayNumber(dateIso) + days);
 }
 
-function weekdayOf(dateIso: string): number {
-  return new Date(`${dateIso}T00:00:00Z`).getUTCDay();
-}
-
 /** "Fri 4 Sept 2026": every resolved date is shown back concretely (issue 01). */
 export function formatGuestDay(dateIso: string): string {
   // ADR-0077: en-NG dates across channels.
@@ -254,63 +237,33 @@ export function formatGuestDay(dateIso: string): string {
   return `${part("weekday")} ${part("day")} ${part("month")} ${part("year")}`;
 }
 
-/** The next occurrence of a day and month on or after today (Africa/Lagos). */
-function calendarDate(day: number, month: number, today: string): string | undefined {
-  const year = Number(today.slice(0, 4));
-  for (const candidateYear of [year, year + 1]) {
-    const candidate = `${candidateYear}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-    const parsed = new Date(`${candidate}T00:00:00Z`);
-    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== candidate) return undefined;
-    if (candidate >= today) return candidate;
+/**
+ * The dates the Guest's words give, read by the shared stay-date resolver (issue 02, ADR 0106). A day the Guest typed, or
+ * a stay "10-13 Nov", is given, so the search runs at once. A relative phrase is worked out from the clock and is not given,
+ * so it is shown back first. A "next <weekday>" that is ambiguous takes its following-week reading, as this path always has
+ * (the two-chip show-back belongs to the assistant, issue 04).
+ */
+function stayRequestDates(text: string, now: Date): StayRequestDates | undefined {
+  const found = resolveStayDatePhrases(text, now, DEFAULT_STAY_DATE_POLICY);
+  // Typed days in text order. A typed day that the Booking Horizon refuses still counts, so the refusal names it (ADR 0055).
+  const typed = found.flatMap((result) => {
+    if (result.kind === "day" && result.source === "literal") return [{ date: result.date, endDate: result.endDate }];
+    if (result.kind === "unresolved" && result.source === "literal" && result.date !== undefined) return [{ date: result.date, endDate: result.endDate }];
+    return [];
+  });
+  const stay = typed.find((day): day is { readonly date: string; readonly endDate: string } => day.endDate !== undefined);
+  if (stay !== undefined) return { checkIn: stay.date, checkOut: stay.endDate, given: true };
+  const [first, second] = typed;
+  if (first !== undefined) {
+    if (second !== undefined && second.date > first.date) return { checkIn: first.date, checkOut: second.date, given: true };
+    return { checkIn: first.date, given: true };
   }
-  return undefined;
-}
-
-function explicitDates(text: string, today: string): StayRequestDates | undefined {
-  const range = DAY_MONTH_RANGE.exec(text);
-  if (range) {
-    const month = MONTHS[range[3]!.toLowerCase()];
-    const checkIn = month === undefined ? undefined : calendarDate(Number(range[1]), month, today);
-    const checkOutDay = month === undefined ? undefined : calendarDate(Number(range[2]), month, checkIn ?? today);
-    if (checkIn !== undefined && checkOutDay !== undefined) return { checkIn, checkOut: checkOutDay, given: true };
-  }
-  const mentions: { readonly index: number; readonly date: string }[] = [];
-  for (const match of text.matchAll(DAY_MONTH)) {
-    const month = MONTHS[match[2]!.toLowerCase()];
-    const date = month === undefined ? undefined : calendarDate(Number(match[1]), month, today);
-    if (date !== undefined) mentions.push({ index: match.index ?? 0, date });
-  }
-  for (const match of text.matchAll(MONTH_DAY)) {
-    const month = MONTHS[match[1]!.toLowerCase()];
-    const date = month === undefined ? undefined : calendarDate(Number(match[2]), month, today);
-    if (date !== undefined) mentions.push({ index: match.index ?? 0, date });
-  }
-  mentions.sort((left, right) => left.index - right.index);
-  const [first, second] = mentions;
-  if (first === undefined) return undefined;
-  if (second !== undefined && second.date > first.date) return { checkIn: first.date, checkOut: second.date, given: true };
-  return { checkIn: first.date, given: true };
-}
-
-function relativeDates(text: string, today: string): StayRequestDates | undefined {
-  if (/\b(?:tonight|today)\b/i.test(text)) return { checkIn: today, given: false };
-  if (/\btomorrow\b/i.test(text)) return { checkIn: addCalendarDays(today, 1), given: false };
-  const weekend = /\b(this\s+|next\s+)?weekend\b/i.exec(text);
-  if (weekend) {
-    // Friday check-in, Sunday check-out, on or after the injected clock.
-    const friday = addCalendarDays(today, (5 - weekdayOf(today) + 7) % 7);
-    const checkIn = /next/i.test(weekend[1] ?? "") ? addCalendarDays(friday, 7) : friday;
-    return { checkIn, checkOut: addCalendarDays(checkIn, 2), given: false };
-  }
-  const weekday = WEEKDAY_PATTERN.exec(text);
-  if (weekday) {
-    const target = WEEKDAYS.indexOf(weekday[2]!.toLowerCase() as typeof WEEKDAYS[number]);
-    if (/next/i.test(weekday[1] ?? "")) {
-      // "next Friday" is that weekday in the following Monday-start week.
-      const nextMonday = addCalendarDays(today, 7 - ((weekdayOf(today) + 6) % 7));
-      return { checkIn: addCalendarDays(nextMonday, (target + 6) % 7), given: false };
-    }
-    return { checkIn: addCalendarDays(today, (target - weekdayOf(today) + 7) % 7), given: false };
+  // No typed day: the first relative phrase the Guest wrote. A relative date the horizon refuses is not used here.
+  for (const result of found) {
+    if (result.kind === "day" && result.source === "relative") return { checkIn: result.date, given: false };
+    if (result.kind === "range" && result.grain === "weekend") return { checkIn: result.earliest, checkOut: result.latest, given: false };
+    // The last candidate is the following-week reading, which the policy's rule gives on its own.
+    if (result.kind === "ambiguous" && result.candidates.length > 0) return { checkIn: result.candidates[result.candidates.length - 1]!, given: false };
   }
   return undefined;
 }
@@ -441,8 +394,7 @@ export function extractStayRequestFacts(text: string, options: { readonly now?: 
   const nightsMatch = NIGHTS_PATTERN.exec(normalized);
   const guestsMatch = GUESTS_PATTERN.exec(normalized);
   const bedroomsMatch = BEDROOMS_PATTERN.exec(normalized);
-  const rangeDates = options.now === undefined ? undefined : explicitDates(normalized, dateKeyInLagos(options.now, "now"));
-  const dates = rangeDates ?? (options.now === undefined ? undefined : relativeDates(normalized, dateKeyInLagos(options.now, "now")));
+  const dates = options.now === undefined ? undefined : stayRequestDates(normalized, options.now);
   // A check-out date fixes the number of nights; otherwise use the nights the Guest typed.
   const nights = dates?.checkOut !== undefined
     ? dayNumber(dates.checkOut) - dayNumber(dates.checkIn)

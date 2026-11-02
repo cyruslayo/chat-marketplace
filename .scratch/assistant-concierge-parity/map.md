@@ -14,13 +14,13 @@ PRD: [PRD.md](PRD.md). Research: [../assistant-date-understanding/RESEARCH.md](.
 04 05 07 08 09 11 12 13 ──► 16 parity suite
 ```
 
-Start now (unblocked, ready-for-agent): 02.
+02 is resolved, so 04 and 05 are no longer blocked by it (both still need triage).
 Owner decisions: none open (01 decided 2 Nov 2026). 17 resolved: path retired.
 
 | # | Issue | Status | Blocked by |
 |---|---|---|---|
 | 01 | [Amend ADR 0106 for confirmed relative dates](issues/01-amend-adr-0106-for-confirmed-guest-phrases.md) | resolved | none |
-| 02 | [Shared stay-date resolver](issues/02-shared-stay-date-resolver.md) | ready-for-agent | none |
+| 02 | [Shared stay-date resolver](issues/02-shared-stay-date-resolver.md) | resolved | none |
 | 03 | [Give the models today's date](issues/03-give-models-the-current-date.md) | resolved | none |
 | 04 | [Assistant resolves and confirms date phrases](issues/04-assistant-resolves-and-confirms-date-phrases.md) | needs-triage | 02 |
 | 05 | [Assistant checkout and date ranges](issues/05-assistant-checkout-and-date-ranges.md) | needs-triage | 02 |
@@ -45,3 +45,4 @@ Every button event (View, Compare, Request to Book, Submit, phone, email, Accept
 
 - 01: ADR 0106 amended 2 Nov 2026 (confirmed date phrases are guest-authored); CONTEXT.md gains Date phrase and Show-back.
 - 17: the older Gemini concierge path is removed; see the issue's Answer.
+- 02: shared stay-date resolver in the shortlet domain; the deterministic and assistant paths both use it. Deviations and owner questions are in the issue's Comments.
