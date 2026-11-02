@@ -176,9 +176,8 @@ test("AC6: Runs with the assistant enabled and a cold restore before every event
   } finally { environment.close(); }
 });
 
-// Fail-closed guards beyond the acceptance criteria (ADR 0106: closed checks; ADR 0015: a budget has one meaning).
-test("Fail closed: a persisted budget whose meaning is unknown or missing is dropped; the rest of the context is kept.", () => {
-  const projection = {
+function persistedProjection() {
+  return {
     version: 1,
     timeline: [],
     discoverySurfaceId: "surface",
@@ -193,12 +192,26 @@ test("Fail closed: a persisted budget whose meaning is unknown or missing is dro
     activeSurfaceId: null,
     assistantContext: { city: "Lagos", checkIn: "2026-12-14", nights: 4, partySize: 2 },
   };
+}
+
+// Fail-closed guards beyond the acceptance criteria (ADR 0106: closed checks; ADR 0015: a budget has one meaning).
+test("Legacy: a persisted budget with no meaning restores as a stay total; the rest of the context is kept.", () => {
+  const projection = persistedProjection();
+  const legacy = parseGuestProjection({ ...projection, assistantContext: { ...projection.assistantContext, maxBudgetKobo: 50_000_000 } })?.assistantContext;
+  assert.ok(legacy, "the context parses");
+  assert.equal(legacy.maxBudgetKobo, 50_000_000, "the legacy amount is kept");
+  assert.equal(legacy.maxBudgetPer, "stay", "a legacy budget means a stay total (the planner was its only writer)");
+  assert.equal(legacy.nights, 4, "the stay's nights are kept");
+});
+
+test("Fail closed: a persisted budget whose meaning is present but unknown or invalid is dropped; the rest of the context is kept.", () => {
+  const projection = persistedProjection();
   const parsed = (assistantContext: Record<string, unknown>) => parseGuestProjection({ ...projection, assistantContext })?.assistantContext;
-  assert.deepEqual(parsed({ ...projection.assistantContext, maxBudgetKobo: 50_000_000, maxBudgetPer: "night" })?.maxBudgetPer, "night", "a known meaning is kept");
-  for (const unknown of [{ maxBudgetKobo: 50_000_000, maxBudgetPer: "week" }, { maxBudgetKobo: 50_000_000 }, { maxBudgetKobo: 50_000_000, maxBudgetPer: 1 }]) {
-    const context = parsed({ ...projection.assistantContext, ...unknown });
+  assert.equal(parsed({ ...projection.assistantContext, maxBudgetKobo: 50_000_000, maxBudgetPer: "night" })?.maxBudgetPer, "night", "a known meaning is kept");
+  for (const invalid of [{ maxBudgetPer: "week" }, { maxBudgetPer: 1 }, { maxBudgetPer: null }]) {
+    const context = parsed({ ...projection.assistantContext, maxBudgetKobo: 50_000_000, ...invalid });
     assert.ok(context, "the rest of the context still parses");
-    assert.equal(context.maxBudgetKobo, undefined, `a budget with ${JSON.stringify(unknown)} is dropped, not guessed`);
+    assert.equal(context.maxBudgetKobo, undefined, `a budget with ${JSON.stringify(invalid)} is dropped, not guessed`);
     assert.equal(context.maxBudgetPer, undefined);
     assert.equal(context.nights, 4, "the stay's nights are kept");
   }

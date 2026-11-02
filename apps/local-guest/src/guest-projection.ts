@@ -196,9 +196,13 @@ function parseAssistantContext(value: unknown): PersistedAssistantContext | null
   }
   if (value.requiredAmenities !== undefined && (!Array.isArray(value.requiredAmenities) || value.requiredAmenities.length > 16 || !value.requiredAmenities.every((entry) => typeof entry === "string" && /^[A-Za-z0-9_-]{1,48}$/.test(entry)))) return null;
   if (value.selectedUnitId !== undefined && (typeof value.selectedUnitId !== "string" || value.selectedUnitId.length < 1 || value.selectedUnitId.length > 128)) return null;
-  // Issue 06: a budget keeps its amount only with a known meaning. An unknown or missing meaning drops the budget; it is never guessed.
-  const budget = typeof value.maxBudgetKobo === "number" && isAssistantBudgetPer(value.maxBudgetPer)
-    ? { maxBudgetKobo: value.maxBudgetKobo, maxBudgetPer: value.maxBudgetPer }
+  // Issue 06: a legacy budget with no meaning restores as a stay total (the planner was its only writer, and it wrote stay totals).
+  // A meaning that is present but not in the closed list drops the budget (fail closed); it is never guessed.
+  const budgetPer: AssistantBudgetPer | undefined = value.maxBudgetPer === undefined
+    ? "stay"
+    : isAssistantBudgetPer(value.maxBudgetPer) ? value.maxBudgetPer : undefined;
+  const budget = typeof value.maxBudgetKobo === "number" && budgetPer !== undefined
+    ? { maxBudgetKobo: value.maxBudgetKobo, maxBudgetPer: budgetPer }
     : {};
   return {
     city: value.city,

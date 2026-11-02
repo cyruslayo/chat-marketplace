@@ -62,9 +62,9 @@ ADRs read in full: 0106 (amendments of 26 and 27 Oct 2026), 0015. Read for conte
 - `apps/local-guest/src/assistant/assistant-state.ts`: `AssistantBudgetPer` (closed `stay` | `night`), `isAssistantBudgetPer`, `AssistantStayIntent.maxBudgetPer`.
 - `apps/local-guest/src/assistant/assistant-runtime.ts`: `recordGuestStay` takes `budget` (an amount and its meaning, or `null` to clear). A zero, non-integer or unknown-meaning budget returns false before any change. `threadBusy` still refuses.
 - `apps/local-guest/src/assistant/shortlet-assistant-pack.ts`: `search_stays` uses a model budget (a stay total, as today), else the task's chip budget converted with `stayBudgetKobo` and this search's nights. A chip budget is applied only with dates and party size.
-- `apps/local-guest/src/guest-projection.ts`: `PersistedAssistantContext.maxBudgetPer`. The closed parse keeps a budget only with a known meaning; an unknown or missing meaning drops the budget and keeps the rest of the context.
+- `apps/local-guest/src/guest-projection.ts`: `PersistedAssistantContext.maxBudgetPer`. The closed parse restores a legacy budget with no meaning as a stay total (the planner was its only writer). A meaning that is present but not in the closed list drops the budget and keeps the rest of the context (fail closed).
 - `apps/local-guest/src/shortlet-app.ts`: the budget chip and its clear are recorded (`#recordAssistantStayChip`); undo records the previous budget or none (`#handleCriteriaUndo`); `#assistantContextFromState`, `#assistantContextSearch` (via `persistedBudgetTotal`) and `#restoreAssistantFromGuestThread` keep the real meaning.
-- `test/assistant-budget-chip.test.ts` (new): one test per AC, plus two fail-closed guards.
+- `test/assistant-budget-chip.test.ts` (new): one test per AC, plus a legacy-restore test, a fail-closed test for an invalid meaning, and a zero or unknown-meaning refusal test.
 - `test/helpers/assistant-chip-session.ts`: `stay()` also returns `maxBudgetKobo` and `maxBudgetPer` (shared helper, no new fixture).
 
 ### Test runs
@@ -74,8 +74,8 @@ Red before the change (`env -u LLM_API_KEY npx tsx --test test/assistant-budget-
 Green after the change:
 
 - `env -u LLM_API_KEY npm run check`: exit 0, no type errors (also after the final edit).
-- `env -u LLM_API_KEY npx tsx --test test/assistant-budget-chip.test.ts`: 8 pass / 0 fail / 8 total (AC1 to AC6, plus 2 fail-closed guards).
-- Affected existing tests, one command: `env -u LLM_API_KEY npx tsx --test test/assistant-where-chip.test.ts test/assistant-cold-journey.test.ts test/assistant-persistent-continuity.test.ts test/guest-budget.test.ts test/guest-criteria-strip.test.ts test/guest-chip-continuity.test.ts test/assistant-pending-action-restore.test.ts test/assistant-proposal-supersession.test.ts test/shortlet-assistant-evals.test.ts test/assistant-date-literal-authority.test.ts test/assistant-short-stays-29-nights.test.ts test/assistant-booking-journey.test.ts test/assistant-budget-chip.test.ts`: 149 pass / 0 fail / 149 total across 13 files.
+- `env -u LLM_API_KEY npx tsx --test test/assistant-budget-chip.test.ts`: 9 pass / 0 fail / 9 total (AC1 to AC6, a legacy-restore test, an invalid-meaning drop test, and a runtime refusal test).
+- Affected existing tests, one command: `env -u LLM_API_KEY npx tsx --test test/assistant-where-chip.test.ts test/assistant-cold-journey.test.ts test/assistant-persistent-continuity.test.ts test/guest-budget.test.ts test/guest-criteria-strip.test.ts test/guest-chip-continuity.test.ts test/assistant-pending-action-restore.test.ts test/assistant-proposal-supersession.test.ts test/shortlet-assistant-evals.test.ts test/assistant-date-literal-authority.test.ts test/assistant-short-stays-29-nights.test.ts test/assistant-booking-journey.test.ts test/assistant-budget-chip.test.ts`: 150 pass / 0 fail / 150 total across 13 files (the new file counted once).
 - Not run per issue: `npm test` and `npm run test:workers` (batch pre-merge rule, CLAUDE.md "Test scope").
 
 ### Definition of Done
@@ -86,14 +86,14 @@ Green after the change:
 4. [x] No new injected dependency.
 5. [x] No invented policy: the conversion is the existing `stayBudgetKobo`; no new constant.
 6. [x] No credential or identity material in logs or audit (no logging added).
-7. [x] `npm run check` clean. `npm test` is the batch pre-merge gate and was not run per issue.
+7. [x] `npm run check` clean (re-run after the legacy fix). `npm test` is the batch pre-merge gate and was not run per issue.
 
 ### Open questions for the owner
 
-- Legacy rows: a persisted budget saved before this change has no meaning field, so it is dropped on the next restore (fail closed). Before this change the only writer was the planner, which means a stay total. Tell me if you would rather treat those as "stay".
-- The planner's "Canonical task facts" do not include the budget. The server applies it anyway. Adding it changes the recorded journey fixtures, so it needs an owner decision on whether to re-record them.
+- Decided (owner, 2 Nov 2026): a legacy persisted budget with no meaning restores as "stay". A present but unknown meaning still drops the budget.
+- Decided (owner, 2 Nov 2026): the planner's "Canonical task facts" do not include the budget; left as is. The server applies it to `search_stays` regardless.
 
 ## Answer
 
-The budget chip now reaches the assistant. Changes are listed under Comments: the chip and its clear are recorded in the task state with their meaning (stay or per night); undo restores the previous budget; the persisted context and the cold rebuild keep the meaning, so a per-night budget stays per night; `search_stays` uses the task budget when the planner omits one, converted with the stay's nights through the deterministic `stayBudgetKobo`. Tests: `test/assistant-budget-chip.test.ts` (8 tests) and 149 affected tests green; `npm run check` clean.
+The budget chip now reaches the assistant. Changes are listed under Comments: the chip and its clear are recorded in the task state with their meaning (stay or per night); undo restores the previous budget; the persisted context and the cold rebuild keep the meaning, so a per-night budget stays per night; `search_stays` uses the task budget when the planner omits one, converted with the stay's nights through the deterministic `stayBudgetKobo`. Tests: `test/assistant-budget-chip.test.ts` (9 tests) and 150 affected tests green; `npm run check` clean. A legacy budget with no meaning restores as a stay total; a present but invalid meaning drops it.
 
