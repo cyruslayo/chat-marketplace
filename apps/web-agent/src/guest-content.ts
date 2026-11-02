@@ -218,6 +218,14 @@ export function guestOperatorName(name: string | undefined): string {
 }
 
 /**
+ * Issue 09 (ADR 0080, 0077): the question asked before a search moves to a different area. The deterministic concierge
+ * (`mergeStayRequestContext`) and the assistant's shortlet pack read this one sentence, so both paths ask the same question.
+ */
+export const GUEST_LOCATION_CONFLICT = Object.freeze({
+  question: (wanted: string, incumbent: string): string => `Do you want ${wanted}, or should I keep searching in ${incumbent}?`,
+});
+
+/**
  * ADR-0005, 0060, 0080 (issue 12): why a sent stay cannot change, and what the guest can do instead. The deterministic concierge
  * (`#changeExplanation`) and the assistant's shortlet pack read these same strings, so both paths give one reply.
  */

@@ -1,6 +1,7 @@
 import type { DiscoveryArtifactProjection } from "../../../apps/web-agent/src/index.js";
 import { parseDiscoverySearchContext, type DiscoverySearchContext } from "./concierge.js";
 import { isAssistantBudgetPer, type AssistantBudgetPer } from "./assistant/assistant-state.js";
+import { SEARCH_AREAS } from "./stay-vocabulary.js";
 import type { PendingAssistantAction } from "./assistant/pending-actions.js";
 import type { ReplacedPendingAction } from "./assistant/assistant-state.js";
 
@@ -157,6 +158,20 @@ export interface PersistedAssistantContext {
   readonly maxBudgetPer?: AssistantBudgetPer;
   readonly requiredAmenities?: readonly string[];
   readonly selectedUnitId?: string;
+  /** Issue 09 (ADR 0106, 0093): a different area the guest was asked about and has not answered. A field of this context, not a record. */
+  readonly pendingLocation?: { readonly city: "Lagos" | "Abuja"; readonly neighbourhood?: string };
+}
+
+/**
+ * Issue 09 (ADR 0106, 0093): the pending location change, closed. A city and, when given, one neighbourhood from the closed area list of
+ * that city. Anything else is not a pending change: it is dropped (fail closed), so no search can run on a guessed area.
+ */
+function parsePendingLocation(value: unknown): PersistedAssistantContext["pendingLocation"] | undefined {
+  if (!isRecord(value) || (value.city !== "Lagos" && value.city !== "Abuja")) return undefined;
+  if (Object.keys(value).some((key) => key !== "city" && key !== "neighbourhood")) return undefined;
+  if (value.neighbourhood === undefined) return { city: value.city };
+  const known = typeof value.neighbourhood === "string" && SEARCH_AREAS.some((area) => area.city === value.city && area.neighbourhood === value.neighbourhood);
+  return known ? { city: value.city, neighbourhood: value.neighbourhood as string } : undefined;
 }
 
 export function isPersistentTimelineEntry(value: unknown): value is { readonly role: "assistant" | "user" | "receipt"; readonly text: string } {
@@ -182,7 +197,7 @@ function isUnitDetail(value: unknown): value is { readonly unitId: string; reado
 
 function parseAssistantContext(value: unknown): PersistedAssistantContext | null {
   if (!isRecord(value) || (value.city !== "Lagos" && value.city !== "Abuja")) return null;
-  const allowed = new Set(["city", "neighbourhood", "checkIn", "isDemoDate", "checkOut", "nights", "partySize", "bedrooms", "maxBudgetKobo", "maxBudgetPer", "requiredAmenities", "selectedUnitId"]);
+  const allowed = new Set(["city", "neighbourhood", "checkIn", "isDemoDate", "checkOut", "nights", "partySize", "bedrooms", "maxBudgetKobo", "maxBudgetPer", "requiredAmenities", "selectedUnitId", "pendingLocation"]);
   if (Object.keys(value).some((key) => !allowed.has(key))) return null;
   if (value.neighbourhood !== undefined && (typeof value.neighbourhood !== "string" || value.neighbourhood.length > 100)) return null;
   if (value.isDemoDate !== undefined && typeof value.isDemoDate !== "boolean") return null;
@@ -216,6 +231,10 @@ function parseAssistantContext(value: unknown): PersistedAssistantContext | null
     ...budget,
     ...(Array.isArray(value.requiredAmenities) ? { requiredAmenities: [...value.requiredAmenities] as string[] } : {}),
     ...(typeof value.selectedUnitId === "string" ? { selectedUnitId: value.selectedUnitId } : {}),
+    ...(value.pendingLocation === undefined ? {} : (() => {
+      const pendingLocation = parsePendingLocation(value.pendingLocation);
+      return pendingLocation === undefined ? {} : { pendingLocation };
+    })()),
   };
 }
 

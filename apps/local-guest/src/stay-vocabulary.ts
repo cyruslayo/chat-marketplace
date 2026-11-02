@@ -16,6 +16,8 @@ export interface AmenityAlias {
   readonly label: string;
   /** Catalogue ids, most specific first. Empty when the catalogue never lists the amenity (gym, kitchen, balcony). */
   readonly ids: readonly string[];
+  /** Issue 09: the label the deterministic concierge's unsupported-preference note uses (concierge.ts UNSUPPORTED_PREFERENCES). */
+  readonly unsupportedLabel?: string;
 }
 
 // Questions about a Unit's facilities, answered only from `unit.amenities`
@@ -29,9 +31,9 @@ export const AMENITY_ALIASES: readonly AmenityAlias[] = [
   { pattern: /\b(?:security|guards?)\b/i, label: "On-site security", ids: ["security_guard"] },
   { pattern: /\b(?:air[- ]?con(?:ditioning)?|a\/c|ac)\b/i, label: "Air conditioning", ids: ["air_conditioning"] },
   { pattern: /\b(?:workspace|desk)\b/i, label: "A workspace", ids: ["workspace"] },
-  { pattern: /\bgym\b/i, label: "A gym", ids: [] },
-  { pattern: /\bkitchen\b/i, label: "A kitchen", ids: [] },
-  { pattern: /\bbalcony\b/i, label: "A balcony", ids: [] },
+  { pattern: /\bgym\b/i, label: "A gym", ids: [], unsupportedLabel: "gym" },
+  { pattern: /\bkitchen\b/i, label: "A kitchen", ids: [], unsupportedLabel: "kitchen" },
+  { pattern: /\bbalcony\b/i, label: "A balcony", ids: [], unsupportedLabel: "balcony" },
 ];
 
 /** The closed amenity catalogue (ADR 0106): the only ids a search filter may name. */
@@ -52,6 +54,19 @@ export function searchAmenityIdsFor(word: string): readonly string[] | undefined
     return primary === "" ? [] : [primary!];
   }
   return AMENITY_CATALOGUE_IDS.includes(value) ? [value] : undefined;
+}
+
+/**
+ * Issue 09 (ADR 0080): the note label for a guest's word the catalogue never lists (gym, kitchen, balcony), or `undefined` when the word
+ * is listed, unknown or ambiguous. Used on the model's own argument values, never on guest text.
+ */
+export function unsupportedAmenityLabelFor(word: string): string | undefined {
+  const value = word.trim();
+  if (value === "") return undefined;
+  const matches = AMENITY_ALIASES.filter((alias) => alias.pattern.test(value));
+  if (matches.length !== 1) return undefined;
+  const [only] = matches;
+  return only!.ids.length === 0 ? only!.unsupportedLabel : undefined;
 }
 
 /**

@@ -32,6 +32,8 @@ export interface AssistantToolContext {
   readonly threadId: string;
   readonly taskId: string;
   readonly userTextHistory: readonly string[];
+  /** Issue 09 (ADR 0099): the arguments as the model sent them, before the pack's normalization. The pack reads its own closed words from them. */
+  readonly requestedArguments?: Readonly<Record<string, unknown>>;
   readonly currentTurnDates?: { readonly checkIn?: string; readonly checkOut?: string };
   readonly now: Date;
   readonly demoCheckIn: string;
@@ -82,7 +84,7 @@ export interface AssistantReplyPlan {
  * Issue 10 (ADR 0099): which clarification the runtime is about to return. `stay_details` and `dates` are rejected tool calls,
  * `area` is an unknown area refused by the pack, and `plan` is a typed `clarify_stay` reply.
  */
-export type AssistantClarificationKind = "stay_details" | "dates" | "area" | "plan";
+export type AssistantClarificationKind = "stay_details" | "dates" | "area" | "plan" | "location";
 
 /** One task's place in the shell task rail: a domain label plus its current step. */
 export interface AssistantTaskSummary {
@@ -131,6 +133,11 @@ export interface AssistantDomainPack {
    * on: it never adds chips to a scope, support or redirect reply. Undefined adds no chips.
    */
   clarificationQuickReplies?(taskState: AssistantTaskState, kind: AssistantClarificationKind): readonly string[] | undefined;
+  /**
+   * Issue 09 (ADR 0099): the clarification a turn's successful results ask for, when the pack's own result says so (for example a
+   * location question held as pending). The runtime then offers that clarification's chips. Undefined keeps the plan's own chips.
+   */
+  replyClarificationKind?(results: readonly AssistantToolResult[]): AssistantClarificationKind | undefined;
   executeTool(name: string, args: Record<string, unknown>, context: AssistantToolContext): AssistantToolExecutionResult;
   /** Pack-owned minimal facts for model history. Raw execution results remain local to the platform. */
   projectToolResult?(name: string, result: Record<string, unknown>, limits: { readonly maxItems: number }): Record<string, unknown>;

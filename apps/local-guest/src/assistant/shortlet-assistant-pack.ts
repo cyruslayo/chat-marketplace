@@ -1,9 +1,9 @@
 import { generatePlatformId } from "../../../../packages/platform-core/src/index.js";
 import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantGuestRefusalError, AssistantStayDetailsError, containsGuestDate } from "./date-tokens.js";
 import { ContinuousOccupancyError, StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, MAX_STAY_NIGHTS, BOOKING_HORIZON_DAYS, dateKeyInLagos, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
-import { SEARCH_AREAS, quickRepliesFor, resolveLocationMention, stayBudgetKobo, stayCriteriaGap } from "../concierge.js";
+import { SEARCH_AREAS, locationConflictQuestion, quickRepliesFor, resolveLocationMention, stayBudgetKobo, stayCriteriaGap, unsupportedPreferenceNote, type PendingLocationChange } from "../concierge.js";
 import { extractBudget, type StayBudget } from "../stay-budget.js";
-import { normalizeRequiredAmenities } from "../stay-vocabulary.js";
+import { normalizeRequiredAmenities, unsupportedAmenityLabelFor } from "../stay-vocabulary.js";
 import {
   discoveryArtifactToA2UI,
   bookingRequestArtifactToA2UI,
@@ -327,10 +327,51 @@ export function resolveSearchNeighbourhood(raw: string, city: "Lagos" | "Abuja")
  */
 export function clarificationChipsFor(taskState: AssistantTaskState, kind: AssistantClarificationKind): readonly string[] | undefined {
   if (kind === "area") return quickRepliesFor("where");
+  if (kind === "location") {
+    // Issue 09: the held area and the pending area, as the closed area labels (ADR 0080, 0077). Guest text is never read here.
+    const { location, neighbourhood, pendingLocation } = taskState.stayIntent;
+    if (location === undefined || pendingLocation === undefined) return undefined;
+    const held = SEARCH_AREAS.find((area) => area.city === location && area.neighbourhood === neighbourhood);
+    const next = SEARCH_AREAS.find((area) => area.city === pendingLocation.city && area.neighbourhood === pendingLocation.neighbourhood);
+    return held && next ? [held.label, next.label] : undefined;
+  }
   const { location, partySize, checkIn, nights } = taskState.stayIntent;
   const gap = stayCriteriaGap({ city: location, partySize, checkIn, nights });
   if (!("next" in gap) || gap.next === "when") return undefined;
   return quickRepliesFor(gap.next);
+}
+
+/**
+ * Issue 09 (ADR 0099): the question a held location change asks, from the committed task state. Undefined when no change is pending.
+ * It is the deterministic concierge's own sentence (locationConflictQuestion), so both paths ask the same question (ADR 0080).
+ */
+function locationQuestionFor(state: AssistantTaskState): string | undefined {
+  const { location, neighbourhood, pendingLocation } = state.stayIntent;
+  if (location === undefined || pendingLocation === undefined) return undefined;
+  const pending: PendingLocationChange = {
+    city: pendingLocation.city,
+    label: pendingLocation.neighbourhood ?? pendingLocation.city,
+    ...(pendingLocation.neighbourhood === undefined ? {} : { neighbourhood: pendingLocation.neighbourhood }),
+  };
+  return locationConflictQuestion(pending, { city: location, ...(neighbourhood === undefined ? {} : { neighbourhood }) });
+}
+
+/** Issue 09 (ADR 0099): a successful search result that held a location change names the clarification the runtime offers chips for. */
+function locationChangeReplyKind(results: readonly AssistantToolResult[]): AssistantClarificationKind | undefined {
+  return results.some((result) => result.name === "search_stays" && result.isError !== true && result.result.locationChangePending === true) ? "location" : undefined;
+}
+
+/**
+ * Issue 09 (ADR 0080, 0106): the labels of the guest's catalogue-less amenity words in the model's own search arguments, for the
+ * deterministic note. They come from the closed alias table (stay-vocabulary), never from a regex over guest text.
+ */
+function unsupportedAmenityLabelsFor(args: Readonly<Record<string, unknown>>): string[] {
+  const words: readonly unknown[] = Array.isArray(args.requiredAmenities) ? args.requiredAmenities : [];
+  const labels = words.flatMap((word) => {
+    const label = typeof word === "string" ? unsupportedAmenityLabelFor(word) : undefined;
+    return label === undefined ? [] : [label];
+  });
+  return [...new Set(labels)];
 }
 
 /**
@@ -478,9 +519,38 @@ export function executeAssistantTool(
       if (typeof requestedNeighbourhood === "string" && resolvedNeighbourhood === undefined) {
         throw new AssistantGuestRefusalError(GUEST_ASSISTANT_COPY.areaClarification(NEIGHBOURHOOD_NAMES.join(", ")), "area");
       }
-      const neighbourhood = typeof requestedNeighbourhood === "string"
-        ? resolvedNeighbourhood ?? undefined
-        : taskState.stayIntent.neighbourhood;
+      // Issue 09 (ADR 0106, 0080): the area this search asks for. An area the planner does not name keeps the held area in the same city,
+      // and a different city keeps none.
+      const held = taskState.stayIntent;
+      const requestedArea = {
+        city,
+        neighbourhood: typeof requestedNeighbourhood === "string"
+          ? resolvedNeighbourhood ?? undefined
+          : city === held.location ? held.neighbourhood : undefined,
+      };
+      const pending = held.pendingLocation;
+      // The guest answers the open question with the pending area: the search runs there and the question is cleared.
+      const answersPending = pending !== undefined && pending.city === requestedArea.city && pending.neighbourhood === requestedArea.neighbourhood;
+      // A different CITY is asked about and never searched (owner decision, 2 Nov 2026; matches mergeStayRequestContext). A neighbourhood
+      // change within the held city switches at once, as the deterministic path does.
+      const movesArea = held.location !== undefined && !answersPending && requestedArea.city !== held.location;
+      const unsupportedPreferences = unsupportedAmenityLabelsFor(context.requestedArguments ?? args);
+      if (movesArea) {
+        // The held results and criteria stay. The change is pending in the task state until the guest answers, so it survives a restore.
+        const { pendingLocation: _previousPending, ...keptIntent } = held;
+        taskState.stayIntent = {
+          ...keptIntent,
+          pendingLocation: requestedArea.neighbourhood === undefined ? { city } : { city, neighbourhood: requestedArea.neighbourhood },
+        };
+        return {
+          result: { locationChangePending: true, ...(unsupportedPreferences.length === 0 ? {} : { unsupportedPreferences }) },
+          updatedTaskState: taskState,
+        };
+      }
+      const neighbourhood = requestedArea.neighbourhood;
+      // A guest's explicit choice of the held area also answers the question; an inherited area does not.
+      const choseHeldArea = typeof requestedNeighbourhood === "string" && requestedArea.city === held.location && requestedArea.neighbourhood === held.neighbourhood;
+      const clearsPending = answersPending || choseHeldArea;
       // ADR 0015: unknown stay details cannot become an invented quote or party size.
       const nights = args.nights == null ? taskState.stayIntent.nights : Number(args.nights);
       const guests = args.guests == null ? taskState.stayIntent.partySize : Number(args.guests);
@@ -581,8 +651,10 @@ export function executeAssistantTool(
       });
 
       taskState.goal = "find_stay";
+      const { pendingLocation: previousPending, ...keptIntent } = taskState.stayIntent;
       taskState.stayIntent = {
-        ...taskState.stayIntent,
+        ...keptIntent,
+        ...(clearsPending || previousPending === undefined ? {} : { pendingLocation: previousPending }),
         location: city,
         neighbourhood,
         ...(checkIn ? { checkIn } : {}),
@@ -622,6 +694,7 @@ export function executeAssistantTool(
           partySize: guests ?? null,
           isDemoDate: dateContext?.isDemoDate ?? false,
           stays: publicSummaries,
+          ...(unsupportedPreferences.length === 0 ? {} : { unsupportedPreferences }),
         },
         updatedTaskState: taskState,
         discoveryArtifact,
@@ -1031,10 +1104,23 @@ function shortletTaskSummary(taskState: AssistantTaskState): AssistantTaskSummar
 }
 
 function renderShortletReply(plan: AssistantReplyPlan | undefined, results: readonly AssistantToolResult[], userText: string, now: Date, taskState?: AssistantTaskState): string {
+  const reply = renderShortletReplyBody(plan, results, userText, now, taskState);
+  // Issue 09 (AC4): a search wish the catalogue cannot filter by is acknowledged on the reply, as the deterministic path does.
+  const labels = results.find((result) => result.name === "search_stays" && result.isError !== true)?.result.unsupportedPreferences;
+  const note = unsupportedPreferenceNote(Array.isArray(labels) ? labels.filter((label): label is string => typeof label === "string") : undefined);
+  return note === undefined ? reply : `${reply} ${note}`;
+}
+
+function renderShortletReplyBody(plan: AssistantReplyPlan | undefined, results: readonly AssistantToolResult[], userText: string, now: Date, taskState?: AssistantTaskState): string {
   if (plan?.kind === "support_guidance") {
     return /active stay|locked out|access|safety|emergency/i.test(userText)
       ? GUEST_ASSISTANT_COPY.activeStayEmergencySupport
       : GUEST_ASSISTANT_COPY.generalSupport;
+  }
+  // Issue 09: a held location change is answered with its question, whatever the planner's plan says.
+  if (taskState && results.some((result) => result.name === "search_stays" && result.isError !== true && result.result.locationChangePending === true)) {
+    const question = locationQuestionFor(taskState);
+    if (question !== undefined) return question;
   }
   const successfulResults = results.filter((result) => !result.isError);
   const kindForTool: Readonly<Record<string, string>> = {
@@ -1142,8 +1228,9 @@ export function bookingTurnContext(now: Date): string {
  */
 function asksToChangeStay(intents: readonly ConciergeIntent[], slots: ScopeAssessment["slots"]): boolean {
   if (intents.includes("change")) return true;
+  // Issue 09 (AC7): a place word in a search verdict is a location change too, so a sent stay never runs a search for it.
   const onlySearch = intents.length === 1 && intents[0] === "search";
-  return onlySearch && (slots.nights !== null || slots.guests !== null || slots.checkIn !== null || slots.checkOut !== null);
+  return onlySearch && (slots.nights !== null || slots.guests !== null || slots.checkIn !== null || slots.checkOut !== null || slots.city !== null || slots.neighbourhood !== null);
 }
 
 /**
@@ -1208,9 +1295,10 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     validateToolCall: (name, args, taskState) => validateAssistantToolCall(name, args, taskState, environment.extendedStayPolicy),
     normalizeToolArguments,
     clarificationQuickReplies: clarificationChipsFor,
+    replyClarificationKind: locationChangeReplyKind,
     executeTool: executeAssistantTool,
     projectToolResult: (_name, result, limits) => {
-      const keys = new Set(["stayRef", "city", "capacity", "bedrooms", "resultCount", "checkIn", "checkOut", "nights", "partySize", "isDemoDate", "nightlyKobo", "mandatoryFeesKobo", "allInStayTotalKobo", "refundableSecurityDepositKobo", "amountDueNowKobo", "totalAmountDueNowKobo", "currency", "inspectionStatus", "managementAuthorityStatus", "status", "expiresAt", "expiresAtIso", "hasOffer", "hasBooking", "draftCreated", "created", "availabilityChecked", "inventoryReserved", "operation", "available", "stays", "compared", "result", "hasRequest", "requestStatus"]);
+      const keys = new Set(["locationChangePending", "stayRef", "city", "capacity", "bedrooms", "resultCount", "checkIn", "checkOut", "nights", "partySize", "isDemoDate", "nightlyKobo", "mandatoryFeesKobo", "allInStayTotalKobo", "refundableSecurityDepositKobo", "amountDueNowKobo", "totalAmountDueNowKobo", "currency", "inspectionStatus", "managementAuthorityStatus", "status", "expiresAt", "expiresAtIso", "hasOffer", "hasBooking", "draftCreated", "created", "availabilityChecked", "inventoryReserved", "operation", "available", "stays", "compared", "result", "hasRequest", "requestStatus"]);
       const closedStatuses = new Set(["passed", "failed", "expired", "verified", "unverified", "none", "request_draft", "request_submitted", "request_disclosed", "offer_issued", "issued", "accepted", "payment_pending", "paid", "cancelled", "rejected", "stale", "revoked", "confirmed", "no_active_booking", "unknown"]);
       const project = (value: unknown): unknown => {
         if (Array.isArray(value)) return value.slice(0, limits.maxItems).map(project).filter((entry) => entry !== undefined);
@@ -1224,7 +1312,7 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
             if (nested !== undefined) projected[key] = nested;
           } else if (["capacity", "bedrooms", "resultCount", "nights", "partySize", "nightlyKobo", "mandatoryFeesKobo", "allInStayTotalKobo", "refundableSecurityDepositKobo", "amountDueNowKobo", "totalAmountDueNowKobo"].includes(key)
             && typeof item === "number" && Number.isFinite(item)) projected[key] = item;
-          else if (["isDemoDate", "hasOffer", "hasBooking", "draftCreated", "created", "availabilityChecked", "inventoryReserved", "available", "hasRequest"].includes(key) && typeof item === "boolean") projected[key] = item;
+          else if (["isDemoDate", "hasOffer", "hasBooking", "draftCreated", "created", "availabilityChecked", "inventoryReserved", "available", "hasRequest", "locationChangePending"].includes(key) && typeof item === "boolean") projected[key] = item;
           else if (key === "operation" && item === "request_draft.create") projected[key] = item;
           else if (key === "stayRef" && typeof item === "string" && /^stay-[1-9]\d{0,3}$/.test(item)) projected[key] = item;
           else if (key === "city" && (item === "Lagos" || item === "Abuja")) projected[key] = item;

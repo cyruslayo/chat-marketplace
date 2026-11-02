@@ -3083,8 +3083,13 @@ export class LocalGuestApp {
     // Issue 08: the closed amenity catalogue (ADR 0106) is the only source of persisted amenity ids.
     const requiredAmenities = state.stayIntent.requiredAmenities?.filter((amenity) => AMENITY_CATALOGUE_IDS.includes(amenity)).slice(0, 16);
     const selectedStay = state.selectedStayRef ? state.shortlist.find((stay) => stay.stayRef === state.selectedStayRef) : undefined;
+    // Issue 09 (ADR 0093): the pending location change is a field of the existing context, persisted only with the held search.
+    const pending = state.stayIntent.pendingLocation;
     return {
       city,
+      ...(pending && (pending.city === "Lagos" || pending.city === "Abuja")
+        ? { pendingLocation: pending.neighbourhood === undefined ? { city: pending.city } : { city: pending.city, neighbourhood: pending.neighbourhood } }
+        : {}),
       ...(neighbourhood && knownNeighbourhoods.has(neighbourhood) ? { neighbourhood } : {}),
       ...(state.stayIntent.checkIn && /^\d{4}-\d{2}-\d{2}$/.test(state.stayIntent.checkIn) ? { checkIn: state.stayIntent.checkIn } : {}),
       ...(typeof state.stayIntent.isDemoDate === "boolean" ? { isDemoDate: state.stayIntent.isDemoDate } : {}),
@@ -3258,6 +3263,7 @@ export class LocalGuestApp {
         ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
         ...(context.maxBudgetKobo === undefined || context.maxBudgetPer === undefined ? {} : { maxBudgetKobo: context.maxBudgetKobo, maxBudgetPer: context.maxBudgetPer }),
         ...(context.requiredAmenities ? { requiredAmenities: context.requiredAmenities } : {}),
+        ...(context.pendingLocation ? { pendingLocation: context.pendingLocation } : {}),
       },
       shortlist,
       ...(selected ? { selectedStayRef: selected.stayRef } : {}),

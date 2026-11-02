@@ -1189,7 +1189,7 @@ export class AssistantRuntime {
           controlOutcome = this.#replyControlOutcome(latestResults) ?? controlOutcome;
           finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "", tx.taskState)
             ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
-          finalQuickReplies = plan?.kind === "clarify_stay" ? candidatePack().clarificationQuickReplies?.(tx.taskState, "plan") : undefined;
+          finalQuickReplies = quickRepliesForReply(candidatePack(), plan, latestResults, tx.taskState);
           candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
           stopReason = "reply";
           break;
@@ -1288,6 +1288,7 @@ export class AssistantRuntime {
             threadId,
             taskId: tx.activeTaskId,
             userTextHistory,
+            requestedArguments: modelCall.args,
             // ADR 0106: classifier date slots bind to roles only through server-side checks; ambiguous ones carry no check-in authority.
             currentTurnDates: currentTurnDateRoles(originalUserText, assessment.slots, this.#environment.clock()),
             now: this.#environment.clock(),
@@ -1394,7 +1395,7 @@ export class AssistantRuntime {
         const plan = typeof parsedFinalPlan === "string" ? undefined : parsedFinalPlan;
         finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "", tx.taskState)
           ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
-        finalQuickReplies = plan?.kind === "clarify_stay" ? candidatePack().clarificationQuickReplies?.(tx.taskState, "plan") : undefined;
+        finalQuickReplies = quickRepliesForReply(candidatePack(), plan, latestResults, tx.taskState);
         candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
       }
 
@@ -1778,6 +1779,20 @@ export class AssistantRuntime {
     const thread = this.#threads.get(threadId);
     if (thread) tx.commit(thread, { state: true, tasks: false, discovery: false, lastSurfaces: tx.lastSurfaces });
   }
+}
+
+/**
+ * ADR 0099 / ADR 0106 (issues 10, 09): the chips for a reply. The pack names a clarification its own results carry (a held location
+ * question); otherwise a typed `clarify_stay` reply gets the plan chips. Anything else gets none.
+ */
+function quickRepliesForReply(
+  pack: AssistantDomainPack,
+  plan: AssistantReplyPlan | undefined,
+  results: readonly AssistantToolResult[],
+  taskState: AssistantTaskState,
+): readonly string[] | undefined {
+  const kind: AssistantClarificationKind | undefined = pack.replyClarificationKind?.(results) ?? (plan?.kind === "clarify_stay" ? "plan" : undefined);
+  return kind === undefined ? undefined : pack.clarificationQuickReplies?.(taskState, kind);
 }
 
 function getSafeResultCount(result: unknown): number | undefined {

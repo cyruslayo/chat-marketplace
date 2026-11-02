@@ -27,7 +27,7 @@ Owner decisions: none open (01 decided 2 Nov 2026). 17 resolved: path retired.
 | 06 | [Bug: budget chip never reaches the assistant](issues/06-sync-budget-chip-into-assistant.md) | resolved | none |
 | 07 | [Assistant budget from guest words](issues/07-assistant-budget-from-guest-words.md) | resolved | 06 |
 | 08 | [Closed lists for amenities and areas](issues/08-closed-lists-for-amenities-and-areas.md) | resolved | none |
-| 09 | [Location-change question and unsupported preferences](issues/09-location-change-question-and-unsupported-preferences.md) | needs-triage | 08 |
+| 09 | [Location-change question and unsupported preferences](issues/09-location-change-question-and-unsupported-preferences.md) | resolved | 08 |
 | 10 | [Quick-reply chips on assistant clarifications](issues/10-quick-reply-chips-on-assistant-clarifications.md) | resolved | none |
 | 11 | [Honest facility answers and stage replies](issues/11-honest-facility-answers-and-stage-replies.md) | needs-triage | 08 |
 | 12 | [Explain changes after submission](issues/12-explain-changes-after-submission.md) | resolved | none |

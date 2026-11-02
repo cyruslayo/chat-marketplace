@@ -16,6 +16,7 @@
 
 import { BOOKING_HORIZON_DAYS, DEFAULT_STAY_DATE_POLICY, MAX_STAY_NIGHTS, dateKeyInLagos, isExtendedStayLength, resolveStayDatePhrases, type ExtendedStayPolicy } from "../../../domains/shortlet/src/index.js";
 import { formatNgnKobo } from "../../web-agent/src/discovery-a2ui.js";
+import { GUEST_LOCATION_CONFLICT } from "../../web-agent/src/guest-content.js";
 import { AMENITY_ALIASES, SEARCH_AREAS, STAY_LOCATION_ALIASES } from "./stay-vocabulary.js";
 import { extractBudget, type StayBudget } from "./stay-budget.js";
 
@@ -425,10 +426,14 @@ function withPending(context: DiscoverySearchContext, pending: PendingLocationCh
   return buildContext({ ...scalarParts(context), pendingLocationChange: pending });
 }
 
-function locationConflictQuestion(pending: PendingLocationChange, context: DiscoverySearchContext): string {
+/**
+ * The conflict question for a pending location change (issue 09). Shared by the deterministic merge and the assistant's pack, so both
+ * ask the same sentence (ADR 0080); the sentence itself is in guest-content.ts (ADR 0077).
+ */
+export function locationConflictQuestion(pending: PendingLocationChange, context: DiscoverySearchContext): string {
   const wanted = pending.label.toLowerCase() === pending.city.toLowerCase() ? pending.city : `${pending.label} in ${pending.city}`;
   const incumbent = context.neighbourhood === undefined ? context.city ?? "your current search" : `${context.neighbourhood} in ${context.city ?? ""}`.trim();
-  return `Do you want ${wanted}, or should I keep searching in ${incumbent}?`;
+  return GUEST_LOCATION_CONFLICT.question(wanted, incumbent);
 }
 
 /**

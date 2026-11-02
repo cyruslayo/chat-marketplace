@@ -48,7 +48,8 @@ const discoveryHandler: AssistantStageHandler = {
   stage: DISCOVERY_STAGE,
   supersedes: [DISCOVERY_STAGE, UNIT_STAGE],
   project({ toolName, execution }, turn: StageTurnContext) {
-    if (toolName !== "search_stays") return undefined;
+    // Issue 09: a held location change runs no search, so the current results and their surface stay as they are.
+    if (toolName !== "search_stays" || execution.result.locationChangePending === true) return undefined;
     const { tx } = turn;
     if (!pendingProposalAuthorised(turn.pack, tx.taskState) && replacePendingProposal(tx.taskState, "search_changed")) {
       tx.supersede(PENDING_ACTION_STAGE);

@@ -37,9 +37,17 @@ export function isAssistantBudgetPer(value: unknown): value is AssistantBudgetPe
   return value === "stay" || value === "night";
 }
 
+/** Issue 09 (ADR 0106): a different area the guest was asked about and has not answered; no search runs for it until answered. */
+export interface AssistantPendingLocation {
+  readonly city: string;
+  readonly neighbourhood?: string;
+}
+
 export interface AssistantStayIntent {
   location?: string;
   neighbourhood?: string;
+  /** Issue 09: the area the held search would move to, while the conflict question is open. */
+  pendingLocation?: AssistantPendingLocation;
   checkIn?: string;
   isDemoDate?: boolean;
   checkOut?: string;
