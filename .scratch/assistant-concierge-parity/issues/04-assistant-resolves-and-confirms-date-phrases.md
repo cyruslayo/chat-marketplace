@@ -1,6 +1,6 @@
 # Assistant: resolve the guest's date phrase on the server and confirm it
 
-Status: needs-triage
+Status: ready-for-agent
 Type: AFK
 Blocked by: 01, 02, 03
 Requested: 1 Nov 2026
@@ -102,3 +102,5 @@ i. **Staging clock.** The 27 Oct clock makes "next Friday" ambiguous, so every p
 - Recommended status: `needs-info`. Move to `ready-for-agent` only after the owner answers a (AC1 wording), b (tap meaning), c (typed yes), d (ADR 0093 persistence) and g.2 and g.3. I have not changed the Status line.
 - Order: 04 is the first of the four, because 05 (phrase part) and 13 (AC5) depend on it.
 - Suggested split, if the owner approves it: 04a is the day show-back with Yes and Change chips, the planner's `checkInPhrase`, the cold restore and AC2, AC3, AC6, AC7 and AC8. 04b is `ambiguous` chips and `range` handling (AC4, AC5). Both touch `search_stays` and `resolveCheckInDate`, so one agent should do both, in order.
+
+- Owner decision (2 Nov 2026): moved to ready-for-agent. Order: 04+05 (one agent), 11, 13a, then 13b and 16.

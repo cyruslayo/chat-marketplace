@@ -136,3 +136,5 @@ Resolved (2 Nov 2026), pending owner decision on open question 1 before merge.
 - The newest budget wins: a typed budget replaces the chip's, and the chip replaces an earlier typed budget (both write the same task fields).
 - Changed files: `apps/local-guest/src/stay-budget.ts` (new), `apps/local-guest/src/concierge.ts` (move and re-export), `apps/local-guest/src/assistant/shortlet-assistant-pack.ts`, `apps/web-agent/src/guest-content.ts`, `test/assistant-budget-phrase.test.ts` (new), `test/shortlet-assistant-evals.test.ts`.
 - Decision needed: the held-budget rule in open question 1.
+
+- Owner decision (2 Nov 2026): keep the held-budget rule: a budget phrase not in this turn text is accepted only if it parses to the budget the task already holds (history is not persisted across a cold restore).

@@ -1,6 +1,6 @@
 # Assistant: take the guest's checkout and derive the nights on the server
 
-Status: needs-triage
+Status: ready-for-agent
 Type: AFK
 Blocked by: 02
 Requested: 1 Nov 2026
@@ -73,3 +73,5 @@ f. **Nights mismatch copy.** AC2's `tool_denial` should use the existing dates c
 - Recommended split: 05a is literal checkout (AC1 in its literal form, AC2, AC3, AC4 and AC5), which needs no relative date. 05b is `checkOutPhrase` (AC1 relative form), which needs 04.
 - Recommended status: `needs-info`. 05a can move to `ready-for-agent` once the owner answers (a) and (b). 05b waits for 04. I have not changed the Status line.
 - Order: 04 first, then 05a and 05b in one agent (both change `search_stays` and `resolveCheckInDate`, and 04's phrase helper is reused). Running 05a in parallel with 04 would conflict in the same functions.
+
+- Owner decision (2 Nov 2026): moved to ready-for-agent. Order: 04+05 (one agent), 11, 13a, then 13b and 16.

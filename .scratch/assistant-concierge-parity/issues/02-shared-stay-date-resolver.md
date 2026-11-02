@@ -122,3 +122,5 @@ The shared stay-date resolver is in the shortlet domain: `domains/shortlet/src/s
 Callers: `apps/local-guest/src/assistant/date-literals.ts` keeps its public signature and now returns only typed single days (the assistant's ADR 0106 authority is unchanged). `apps/local-guest/src/concierge.ts` replaces `calendarDate`, `explicitDates` and `relativeDates` with `stayRequestDates`, which maps the resolver's output onto the same deterministic confirm flow. The existing `guest-real-dates` tests pass unchanged. Deviations, open questions and the policy sourcing gap are in the list above.
 
 Tests: `test/stay-date-phrases.test.ts` (new; AC1 to AC7 plus a policy test).
+
+- Owner decision (2 Nov 2026): accepted the defaults not in the ADR: first week of a month = days 1 to 7, end of month = last 7 days, mid-month = days 10 to 20; "next Friday" on Friday/Saturday gives one date, and the deterministic path keeps one date for "next <weekday>".

@@ -92,3 +92,5 @@ Design decisions and deviations (please review):
 - `apps/local-guest/src/shortlet-app.ts`: `#assistantResult` passes `quickReplies` through; `#clarificationChips` used by the criteria edit and the typed clarification.
 - `test/assistant-clarification-chips.test.ts` (new, AC1 to AC4), `test/assistant-clarification-chips-chromium.test.ts` (new, AC5), `test/assistant-closed-lists.test.ts` (AC4 now asserts the chips), `test/helpers/guest-date-fixtures.ts` (`coldTurn`, `reply`, `scope`).
 - Screenshots: `screenshots/10/chips-320.png`, `screenshots/10/chips-1280.png` (not committed).
+
+- Owner decision (2 Nov 2026): deferred: the area question still shows the nights-and-guests sentence under the area chips. Fixing it needs a new "where" sentence and a re-recorded missing-information-clarification journey. Known gap, not fixed here. Real-Chrome AC5 (test/assistant-clarification-chips-chromium.test.ts) passes on 7910c40.

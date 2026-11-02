@@ -63,3 +63,5 @@ The blocker line above is out of date. Its direct blockers now stand as follows.
 Still `needs-triage`. The earlier line "04, 05, 07, 09, 11 and 13 are still needs-triage" is superseded by this update: 07 and 09 are resolved.
 
 Clock consequence: on the staging clock (Tue 27 Oct 2026), "next Friday" is ambiguous (30 Oct and 6 Nov), not a day. Every parity row that uses "next Friday" needs the chip step, and the expected values must be re-based on the same clock for both paths (see the clock note above).
+
+- Owner decision (2 Nov 2026): stays blocked by 04, 05, 11, 13 (order above).

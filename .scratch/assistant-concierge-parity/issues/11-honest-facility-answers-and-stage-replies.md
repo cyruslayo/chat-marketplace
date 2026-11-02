@@ -1,6 +1,6 @@
 # Assistant: answer facility questions from the listing, and reply for the booking stage
 
-Status: needs-triage
+Status: ready-for-agent
 Type: AFK
 Blocked by: 08
 Requested: 1 Nov 2026
@@ -109,3 +109,5 @@ h. **Facility questions with no stay selected.** AC1 says "with a stay selected"
 - Recommended status: `needs-info`. Move to `ready-for-agent` once the owner answers (a) the gym split and (b) the facility mechanism. (e) and (g) can be answered with them. I have not changed the Status line.
 - Order: after 04 and 05 if they touch the same functions. 11 changes `search_stays` argument handling only through `get_unit_details`, but it does change `renderShortletReplyBody`, which 04 also reads. Sequence 11 after 04.
 - Suggested split: 11a is facility answers (AC1, AC2, AC4 and the facility part of AC5). 11b is the stage reply and copy move (AC3 and the stage part of AC5), which depends on (e). 11b is small and could go first, if the owner decides (e) quickly.
+
+- Owner decision (2 Nov 2026): moved to ready-for-agent. Order: 04+05 (one agent), 11, 13a, then 13b and 16.

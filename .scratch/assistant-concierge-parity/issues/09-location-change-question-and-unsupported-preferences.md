@@ -164,3 +164,5 @@ Deviations, stated plainly:
 - `apps/web-agent/src/guest-content.ts`: `GUEST_LOCATION_CONFLICT`.
 - `test/assistant-location-change.test.ts` (new).
 
+
+- Owner decision (2 Nov 2026): keep the pending location question after a same-city switch (current behaviour).

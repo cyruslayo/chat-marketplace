@@ -1,6 +1,6 @@
 # Assistant: change a Request Draft from chat
 
-Status: needs-triage
+Status: ready-for-agent
 Type: AFK
 Blocked by: 01, 04, 05
 Requested: 1 Nov 2026
@@ -80,3 +80,5 @@ f. **Parity.** The deterministic path answers a draft change itself (`#proposeDr
 - Recommended status: keep `needs-triage`. Re-triage after 04 and 05 resolve, or earlier if the owner answers (a) and (b). I have not changed the Status line.
 - Order: last of the four. It depends on 04 and 05 for AC5 and on the owner's decisions (a) and (b) for the rest.
 - Suggested split: 13a is non-date revisions (nights and party on a draft: AC1 to AC4 and AC6 for those cases). 13b is relative-date revisions (AC5), which needs 04. 13a can start once (a) and (b) are answered.
+
+- Owner decision (2 Nov 2026): moved to ready-for-agent. Order: 04+05 (one agent), 11, 13a, then 13b and 16.
