@@ -36,3 +36,22 @@ The deterministic `extractBudget` (`concierge.ts`, issue 03b) reads ₦, k, m an
 | 0080 | Parity | AC5 |
 
 ## Comments
+
+### Triage note (agent, 2 Nov 2026)
+
+Blockers: 06 is resolved (commits 6bc110a and 1922086). No open blocker.
+
+What the code does today:
+- `shortlet-assistant-pack.ts:77` offers `maxBudgetKobo` (a model-computed kobo value) in the `search_stays` schema. Lines 501 to 505 use it as the stay total, or fall back to the chip budget through `stayBudgetKobo`. The model still does the naira and per-night arithmetic that AC1 and AC2 test.
+- `extractBudget` (`concierge.ts:397`) is not exported. AC5 needs it exported or moved to a shared module, as issue 08 did with `stay-vocabulary.ts`. `stayBudgetKobo` (`concierge.ts:428`) is already exported.
+- `assistant-runtime.ts:799` to 802 writes the chip budget into the task's stay facts. A typed phrase should use the same write.
+
+Missing or open:
+1. Precedence. When a budget chip is already set and the guest types a different budget, the issue does not say which wins. This is a product choice for the owner.
+2. The `budgetPhrase` argument needs the same pack hook as issue 08 (`normalizeToolArguments`, `shortlet-assistant-pack.ts:313`), which today maps only `requiredAmenities`. Name the hook in the issue, or name a separate parse step.
+3. The ADR table does not cite the 27 Oct 0106 amendment. AC4's provenance rule (the phrase must be in guest text, including prior guest text) depends on it, so add it.
+4. AC4 needs a provenance rule for a phrase repeated across turns, matching the date-literal rule.
+
+Overlap: the budget hook and any hook edit touch `shortlet-assistant-pack.ts`, the same file as issues 09 and 11. Sequence the edits or expect merge conflicts.
+
+Recommended next status: `ready-for-agent` once the owner confirms point 1 and the ADR table is updated (point 3). Points 2 and 4 are text edits. The move itself is the owner's approval.

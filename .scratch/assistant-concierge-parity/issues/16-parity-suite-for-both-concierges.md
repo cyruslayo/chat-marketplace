@@ -36,3 +36,18 @@ ADR 0080 requires deterministic parity, but no test compares the two paths. The 
 | 0075 | No guest text in logs | AC4 |
 
 ## Comments
+
+### Triage note (agent, 2 Nov 2026)
+
+Blockers: 04, 05, 07, 09, 11 and 13 are still `needs-triage`, and their own blockers (01 and 02) are open. 08 and 12 are resolved (map.md lists 12 as resolved). Six of eight blockers are open, so this issue cannot start.
+
+Notes for when it is unblocked:
+- Helpers exist and must be reused, not copied (AC5): `test/helpers/assistant-stage-journey.ts` (journeys to each sent stage, with a cold restore before every event), `test/helpers/guest-date-fixtures.ts` (`coldTurn`, `reply`, `scope`), `test/helpers/assistant-scope.ts` (`approvedTestScope`, which excludes `change`) and `test/helpers/assistant-turn-model.ts`.
+- Clock mismatch: the deterministic tests use the Thursday 3 Sept 2026 fixture (`test/guest-real-dates.test.ts`). AGENTS.md requires 2026-10-27 for assistant tests. One clock must serve both paths, so the expected values in existing tests (for example "Fri 4 Sept 2026") need re-basing. The fixture AC should say so.
+- AC2 ("show me the last one") has no assistant route. `viewResultIntent` (`concierge.ts:813`) is deterministic only and is tested in `test/guest-must-fix-ux.test.ts:63`. On the assistant path the planner decides (research section 6, row 8, not verified). The row will fail today. The owner must decide whether this is a pack hook or a planner tool.
+- AC3 (unrelated turn keeps the results): the deterministic guard is `shortlet-app.ts:1081`. On the assistant path the risk is a `search` verdict with only a place word reaching `search_stays`, the gap issue 12 left open. That row fails on a sent stay until the gap is decided.
+- The issue has no row table yet. Build it from the ACs of 04, 05, 07, 09, 11, 12 and 13. Each row names the filters and surface kind expected on both paths.
+- AC4 live script: an owner-run paid evaluation, so it needs explicit owner approval, the 1500 daily model-call cap (AGENTS.md), and the 2026-10-27 clock. Keep it out of `npm test`.
+- "Blocked by" lists 12, which is resolved. Keep it for the record or remove it.
+
+Recommended next status: keep `needs-triage`. Re-triage after 04, 05, 07, 09, 11 and 13 are resolved.
