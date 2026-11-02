@@ -29,7 +29,7 @@ import {
   type AssistantReplyPlanKind,
 } from "./assistant-platform.js";
 import { validatedCheckOutForNights } from "./shortlet-assistant-pack.js";
-import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantStayDetailsError, containsGuestDate, currentTurnDateRoles } from "./date-tokens.js";
+import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantGuestRefusalError, AssistantStayDetailsError, containsGuestDate, currentTurnDateRoles } from "./date-tokens.js";
 import { PLANNER_REQUEST_TIMEOUT_MS, SERVER_TURN_MAX_MS } from "../turn-budget.js";
 import { ModelScopeClassifier, ScopeClassificationError, assessScopeSafely, scopedMixedInput, type ScopeClassifier, type ScopeAssessment, type ConciergeIntent } from "./scope-classifier.js";
 import { RetryingScopeClassifier, ScopeClassifierRetryError, SCOPE_TOTAL_BUDGET_MS, type ScopeClassifierRetryEvent, type ScopeClassifierRetryResult } from "./scope-classifier-retry.js";
@@ -1365,7 +1365,7 @@ export class AssistantRuntime {
     } catch (error) {
       // Issue 02: the turn deadline and a rejected planner date/stay detail are stops of their own; every other failure is `error`.
       const turnDeadline = error instanceof AssistantTurnDeadlineError;
-      const toolDenial = error instanceof AssistantDateProvenanceError || error instanceof AssistantDateValidationError || error instanceof AssistantStayDetailsError;
+      const toolDenial = error instanceof AssistantDateProvenanceError || error instanceof AssistantDateValidationError || error instanceof AssistantStayDetailsError || error instanceof AssistantGuestRefusalError;
       stopReason = turnDeadline ? "turn_deadline" : toolDenial ? "tool_denial" : "error";
       if (error instanceof ModelRequestGuardError && (error.code === "quota_denied" || error.code === "quota_unavailable")) {
         controlOutcome = error.code === "quota_denied" ? "quota_refusal" : "guard_failure";
@@ -1396,9 +1396,12 @@ export class AssistantRuntime {
         recordOutcome(controlOutcome);
         candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
         this.#commitHistory(thread, candidateHistory, candidatePack(), thread.taskState);
-        const clarification = error instanceof AssistantStayDetailsError
-          ? candidatePack().stayDetailsClarification
-          : candidatePack().dateClarification;
+        // A pack's guest-facing refusal carries its own sentence (ADR 0106; no guest identifier, ADR 0075).
+        const clarification = error instanceof AssistantGuestRefusalError
+          ? error.message
+          : error instanceof AssistantStayDetailsError
+            ? candidatePack().stayDetailsClarification
+            : candidatePack().dateClarification;
         return { ok: true, messages: [clarification ?? ASSISTANT_CONTROL_COPY.unavailable], surfaces: [], modelHandled: false,
           discardUserInput: false, controlOutcome, tasks: this.getTaskRail(threadId), stopReason };
       }

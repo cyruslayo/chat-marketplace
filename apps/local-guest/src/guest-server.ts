@@ -236,11 +236,6 @@ import {
   type DiscoverySearchContext,
   type StayRequestFilters,
 } from "./concierge.js";
-import {
-  handleGeminiTurn,
-  type GeminiConciergeClient,
-} from "./gemini-concierge.js";
-import type { Content } from "@google/genai";
 import { AssistantRuntime } from "./assistant/assistant-runtime.js";
 import { createShortletAssistantPack } from "./assistant/shortlet-assistant-pack.js";
 import type { AssistantDomainPack } from "./assistant/assistant-platform.js";
@@ -2277,7 +2272,6 @@ export interface GuestRequestHandlerOptions {
   landingDemo?: boolean;
   /** ADR 0095: Node reads lazily; the Workers host injects its own binary loader. */
   landingBinaryAssets?: LandingBinaryAssetLoader;
-  geminiClient?: GeminiConciergeClient;
   modelClient?: AssistantModelClient;
   /** Metadata-only observation for local evaluation and host telemetry. */
   onAssistantDiagnostic?: (event: AssistantDiagnosticEvent) => void;
@@ -2441,7 +2435,6 @@ export function createGuestRequestHandler(
 
   let assistantRuntime: AssistantRuntime | undefined;
   let assistantModelClient: AssistantModelClient | undefined;
-  let geminiClient: GeminiConciergeClient | undefined;
   // Issue 05: the model id the turn record names. A host that injects `modelClient` supplies it; otherwise it is the environment's.
   let assistantModelName: string | undefined = options.assistantModelName;
 
@@ -2485,7 +2478,6 @@ export function createGuestRequestHandler(
     : {};
 
   const defaultApp = new LocalGuestApp(env, {
-    geminiClient,
     assistantRuntime,
     ...modelCallBudget,
     ...(options.onCardCheckoutFailed === undefined ? {} : { onCardCheckoutFailed: options.onCardCheckoutFailed }),

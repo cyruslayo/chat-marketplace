@@ -43,4 +43,14 @@ ADR 0023 says a fourteen-night cap is "not a statutory tenancy safe harbor". It 
 | 0014 | Cancellation thresholds need legal approval |
 | 0065 | Regulatory baseline is a launch gate |
 
+## Answer
+
+- 1 Nov 2026, **owner report (in chat)**: counsel approved all five items pending in ADR 0092 as drafted, with a **180-night** Extended Stay maximum. The owner set the positioning: Extended Stays are 1–6 months (30–180 nights); anything shorter is a Short Stay (1–29 nights). Recorded in ADR 0092 and ADR 0023 (amendments of 1 Nov 2026).
+- **Still to record** (status stays `ready-for-human` until these are written here):
+  - the advising firm and the dated written answer (AC1);
+  - the lawful process when a later Billing Period is unpaid (question 2, AC4);
+  - the licence-to-occupy contract wording (AC2);
+  - the receipt field list, tax lines and correction document (AC3);
+  - answers to questions 6–11 (AC5), which this approval did not cover.
+
 ## Comments

@@ -3,7 +3,8 @@ import { replacePendingProposal, type AssistantTaskState } from "./assistant-sta
 import { pendingProposalAuthorised } from "./assistant-platform.js";
 import type { PendingAssistantAction } from "./pending-actions.js";
 import { AssistantStaleProposalError, PENDING_ACTION_STAGE, retireOwnStages, type AssistantStageHandler, type StageTurnContext } from "./assistant-stage-handler.js";
-import { UnitUnavailableError } from "../../../../domains/shortlet/src/index.js";
+import { ContinuousOccupancyError, UnitUnavailableError } from "../../../../domains/shortlet/src/index.js";
+import { AssistantGuestRefusalError } from "./date-tokens.js";
 
 /**
  * Issue 04: the shortlet pack's stage handlers. Each handler owns one stage name, the stages it retires, the copy a failed
@@ -146,6 +147,8 @@ const requestToBookHandler: AssistantStageHandler = {
     } catch (error) {
       // Issue 06: a Unit or date refusal is the stale-proposal case, reported as the typed error the runtime classifies. Any other
       // failure may follow a side effect and propagates unchanged: the runtime drops the proposal and never reports it as stale.
+      // ADR 0023 as amended 1 Nov 2026: a Continuous Occupancy refusal is a guest-facing refusal of the planner's tool call (ADR 0106).
+      if (error instanceof ContinuousOccupancyError) throw new AssistantGuestRefusalError(error.message);
       if (error instanceof UnitUnavailableError) {
         throw new AssistantStaleProposalError("The unit is no longer available for those dates. Review the current options.");
       }

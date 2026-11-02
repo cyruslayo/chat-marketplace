@@ -201,6 +201,7 @@ import {
   SEARCH_AREAS,
   type CriteriaEdit,
 } from "./concierge.js";
+import { ContinuousOccupancyError } from "../../../domains/shortlet/src/index.js";
 import {
   amenityQuestions,
   extractStayRequestFacts,
@@ -213,11 +214,6 @@ import {
   type DiscoverySearchContext,
   type StayRequestFilters,
 } from "./concierge.js";
-import {
-  handleGeminiTurn,
-  type GeminiConciergeClient,
-} from "./gemini-concierge.js";
-import type { Content } from "@google/genai";
 import {
   AssistantRuntime,
   type AssistantControlOutcome,
@@ -643,7 +639,6 @@ type GuestStage =
 
 interface GuestThreadState {
   readonly threadId: string;
-  readonly geminiHistory: Content[];
   discoveryContext: DiscoverySearchContext | null;
   discoveryArtifact: DiscoveryArtifactProjection | null;
   /** ADR 0106: the id the guest's current discovery card names; a cold restore keeps it (see `#assistantContextSearch`). */
@@ -663,10 +658,6 @@ interface GuestThreadState {
   offerId: string | null;
   activeSurfaces: Map<string, string>;
   supersededSurfaces: Set<string>;
-  geminiLastSearch: {
-    readonly surfaceId: string;
-    readonly a2uiMessages: readonly A2UIServerMessage[];
-  } | null;
   timeline: GuestTimelineEntry[];
   lastSurfaces: GuestSurfacePayload[];
   /** Issue 03a: the criteria of each executed search, oldest first (for "Undo last change"). */
@@ -782,7 +773,6 @@ export function cardCheckoutFailureReason(error: unknown): CardCheckoutFailureRe
 export class LocalGuestApp {
   #environment: LocalGuestEnvironment;
   readonly #threads = new Map<string, GuestThreadState>();
-  readonly #geminiClient: GeminiConciergeClient | null;
   readonly #assistantRuntime: AssistantRuntime | null;
   readonly #modelCallBudget: ModelCallBudget | null;
   readonly #paystackCheckoutTimeoutMs: number;
@@ -791,7 +781,6 @@ export class LocalGuestApp {
   constructor(
     environment: LocalGuestEnvironment,
     options: {
-      readonly geminiClient?: GeminiConciergeClient;
       readonly assistantRuntime?: AssistantRuntime;
       /** Issue 19: once the daily cap is spent, new turns use the deterministic concierge (ADR 0080). */
       readonly modelCallBudget?: ModelCallBudget;
@@ -802,7 +791,6 @@ export class LocalGuestApp {
     } = {},
   ) {
     this.#environment = environment;
-    this.#geminiClient = options.geminiClient ?? null;
     this.#assistantRuntime = options.assistantRuntime ?? null;
     this.#modelCallBudget = options.modelCallBudget ?? null;
     const timeoutMs = options.paystackCheckoutTimeoutMs ?? PAYSTACK_CHECKOUT_PROVIDER_TIMEOUT_MS;
@@ -950,77 +938,6 @@ export class LocalGuestApp {
     if (stageReply) return { ok: true, messages: stageReply, surfaces: [] };
     const replacement = this.#proposeDraftReplacement(thread, text);
     if (replacement) return replacement;
-    if (this.#geminiClient) {
-      try {
-        const live = await handleGeminiTurn({
-          client: this.#geminiClient,
-          history: thread.geminiHistory,
-          text,
-          demoCheckIn: this.#environment.config.demoCheckIn,
-          ...(this.#environment.extendedStayPolicy ? { extendedStayPolicy: this.#environment.extendedStayPolicy } : {}),
-          now: this.#environment.clock(),
-          search: (filters) => {
-            this.#prepareDiscovery(thread);
-            const adapter = createWeaverWebAgentAdapter({
-              query: {
-                search: (query) =>
-                  this.#environment.discoveryQuery.search(query),
-              },
-              createSurfaceId: () => thread.discoverySurfaceId,
-            });
-            const result = adapter.search({ ...filters });
-            thread.discoveryArtifact = result.artifact;
-            thread.activeSurfaces.set(
-              DISCOVERY_STAGE,
-              thread.discoverySurfaceId,
-            );
-            this.#emitTransition(thread, "unit.discovery.results_produced", {
-              aggregateType: "discovery",
-              aggregateId: result.artifact.id,
-              surfaceId: thread.discoverySurfaceId,
-            });
-            thread.geminiLastSearch = result;
-            return {
-              resultCount: result.artifact.facts.results.length,
-              location: filters.location,
-              ...(filters.neighbourhood
-                ? { neighbourhood: filters.neighbourhood }
-                : {}),
-              checkIn: filters.checkIn,
-              checkOut: filters.checkOut,
-            };
-          },
-        });
-        if (live.kind === "clarify")
-          return { ok: true, messages: [live.reply], surfaces: [] };
-        const result = thread.geminiLastSearch;
-        if (!result)
-          throw new Error("Gemini search did not produce a discovery surface");
-        return {
-          ok: true,
-          messages: [live.reply],
-          surfaces: [
-            {
-              surfaceId: result.surfaceId,
-              a2uiMessages: result.a2uiMessages,
-              mode: "inline-surface",
-              summary: discoverySummary(
-                thread.discoveryArtifact?.facts.filters,
-              ),
-              conventionalRoute: conventionalSearchRoute({}),
-            },
-          ],
-        };
-      } catch {
-        return {
-          ok: false,
-          code: "CONCIERGE_UNAVAILABLE",
-          message:
-            "The concierge is temporarily unavailable. Please try again.",
-        };
-      }
-    }
-
     const previousContext = thread.discoveryContext;
     // Issue 01: dates resolve against the injected clock and are never assumed.
     const facts = extractStayRequestFacts(text, {
@@ -2725,7 +2642,6 @@ export class LocalGuestApp {
 
     const thread: GuestThreadState = {
       threadId,
-      geminiHistory: [],
       discoveryContext:
         projection.discoveryContext === null
           ? null
@@ -2744,7 +2660,6 @@ export class LocalGuestApp {
       offerId: projection.offerId,
       activeSurfaces: new Map(),
       supersededSurfaces: new Set(),
-      geminiLastSearch: null,
       timeline: projection.timeline.map(({ role, text }) => ({ role, text })),
       lastSurfaces: [],
       searchHistory: projection.searchHistory.map((context) => ({
@@ -3131,8 +3046,6 @@ export class LocalGuestApp {
       offerId: null,
       activeSurfaces: new Map(),
       supersededSurfaces: new Set(),
-      geminiHistory: [],
-      geminiLastSearch: null,
       timeline: [],
       lastSurfaces: [],
       searchHistory: [],
@@ -4331,7 +4244,9 @@ export class LocalGuestApp {
 
     const environment = this.#environment;
     const guest: CommandPrincipal = environment.guestPrincipal();
-    const draft = environment.bookingRequestApp.createDraft(
+    let draft: ReturnType<typeof environment.bookingRequestApp.createDraft>;
+    try {
+      draft = environment.bookingRequestApp.createDraft(
       {
         unitId: detail.unitId,
         primaryGuest: {
@@ -4343,7 +4258,12 @@ export class LocalGuestApp {
         ...this.#stayDatesFor(thread),
       },
       guest,
-    );
+      );
+    } catch (error) {
+      // ADR 0023 as amended 1 Nov 2026: a Continuous Occupancy refusal is an ordinary guest-facing refusal with the server's sentence.
+      if (error instanceof ContinuousOccupancyError) return { ok: false, code: "CONTINUOUS_OCCUPANCY_REFUSED", message: error.message };
+      throw error;
+    }
     thread.draftId = draft.draftId;
     const requestSurfaceId = `thread-${thread.threadId}:request:draft:${draft.draftId}`;
     this.#supersede(thread, UNIT_STAGE);
@@ -4413,6 +4333,7 @@ export class LocalGuestApp {
       checkOut: draft.checkOut,
       partySize: draft.occupants.length || 1,
       ...(this.#environment.extendedStayPolicy ? { extendedStayPolicy: this.#environment.extendedStayPolicy } : {}),
+      demoTerms: this.#environment.config.demo === true,
       clock: this.#environment.clock,
     });
     return requestDraftArtifactFromProjection(
@@ -4511,7 +4432,7 @@ export class LocalGuestApp {
         surfaces: [],
       };
     }
-    // The 14-night and 90-day refusals are the discovery ones, unchanged.
+    // The 29-night Short Stay and 90-day refusals are the discovery ones, unchanged (ADR 0023 as amended 1 Nov 2026).
     if (resolution.kind !== "search")
       return {
         ok: true,
@@ -4582,6 +4503,7 @@ export class LocalGuestApp {
       checkOut: stay.checkOut,
       partySize: stay.partySize,
       ...(environment.extendedStayPolicy ? { extendedStayPolicy: environment.extendedStayPolicy } : {}),
+      demoTerms: environment.config.demo === true,
       clock: environment.clock,
     });
     return {
@@ -4924,11 +4846,18 @@ export class LocalGuestApp {
         aggregateId: thread.draftId,
         surfaceId: event.surfaceId,
       });
-      const disclosed = this.#environment.bookingRequestApp.disclose(
-        thread.draftId,
-        this.#environment.guestPrincipal(),
-        this.#environment.config.autoDeliverRequests !== false,
-      );
+      let disclosed;
+      try {
+        disclosed = this.#environment.bookingRequestApp.disclose(
+          thread.draftId,
+          this.#environment.guestPrincipal(),
+          this.#environment.config.autoDeliverRequests !== false,
+        );
+      } catch (error) {
+        // ADR 0023 as amended 1 Nov 2026: refused at submission before any hold, with the server's sentence.
+        if (error instanceof ContinuousOccupancyError) return { ok: false, code: "CONTINUOUS_OCCUPANCY_REFUSED", message: error.message };
+        throw error;
+      }
       thread.requestId = disclosed.requestId;
       this.#supersede(thread, REQUEST_STAGE);
       const surface = this.#requestSurface(thread, disclosed.requestId);

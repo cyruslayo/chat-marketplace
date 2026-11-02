@@ -997,6 +997,20 @@ export class SqliteGuestInteractionStore {
   }
 
   /**
+   * The Booking Requests of one Primary Guest in one tenant (ADR 0023 Continuous Occupancy). The tenant is required:
+   * a missing tenant reads nothing, so no caller can read another tenant's stays by omitting it.
+   */
+  findBookingRequestsForPrimaryGuest(primaryGuestId: string, tenantId: string): DurableBookingRequest[] {
+    if (!primaryGuestId || !tenantId) return [];
+    const rows = this.#database
+      .prepare(`SELECT * FROM guest_booking_requests
+        WHERE primary_guest_id = $primaryGuestId AND tenant_id = $tenantId
+        ORDER BY disclosed_at, request_id`)
+      .all({ $primaryGuestId: primaryGuestId, $tenantId: tenantId }) as unknown as BookingRequestRow[];
+    return rows.map(bookingRequestFromRow);
+  }
+
+  /**
    * The Booking Requests recorded with exactly this contact email in one tenant (ADR 0093). It reads the immutable snapshot
    * only, never the mutable guest contact, so a request without a snapshot can never match.
    */
@@ -1035,6 +1049,18 @@ export class SqliteGuestInteractionStore {
       .get({ $requestId: requestId }) as ConditionalOfferRow | undefined;
     if (!row) return null;
     return this.findConditionalOffer(row.offer_id);
+  }
+
+  /**
+   * Every Conditional Offer issued for one Booking Request, in offer-id order (ADR 0023 Continuous Occupancy: a
+   * re-issued offer must not hide an open one). Read-only; an unknown request reads nothing.
+   */
+  listConditionalOffersByRequestId(requestId: string): readonly DurableConditionalOffer[] {
+    if (!requestId) return Object.freeze([]);
+    const rows = this.#database
+      .prepare("SELECT offer_id FROM guest_conditional_offers WHERE request_id = $requestId ORDER BY offer_id")
+      .all({ $requestId: requestId });
+    return Object.freeze(rows.map((row) => this.findConditionalOffer(storedText(row.offer_id))).filter((offer): offer is DurableConditionalOffer => offer !== null));
   }
 
   saveConditionalOffer(offer: DurableConditionalOffer): void {

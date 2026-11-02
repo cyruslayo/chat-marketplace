@@ -13,6 +13,8 @@ import {
 } from "./guest-verification.js";
 import type { GuestContactSource } from "../../../packages/platform-core/src/accounts/contact.js";
 import type { ExtendedStayPolicy } from "./extended-stay.js";
+import { ContinuousOccupancyLedger, assertContinuousOccupancy, type CountableBookingRequest } from "./continuous-occupancy.js";
+import type { BookingContract, Reservation } from "./card-payment.js";
 
 /** ADR 0043: Delivery Pending lasts at most five minutes (the Technical Delivery Window). */
 export const TECHNICAL_DELIVERY_WINDOW_MINUTES = 5;
@@ -104,6 +106,8 @@ export class BookingRequestManager {
   readonly #requestStore: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
   readonly #guestContacts?: GuestContactSource;
   readonly #extendedStayPolicy?: ExtendedStayPolicy;
+  readonly #demoTerms: boolean;
+  readonly #occupancy: ContinuousOccupancyLedger;
 
   constructor({
     repository = null,
@@ -112,15 +116,20 @@ export class BookingRequestManager {
     guestVerification,
     store = null,
     guestContacts,
-    extendedStayPolicy
+    extendedStayPolicy,
+    demoTerms = false,
+    bookingState = null
   }: {
     repository?: any;
+    /** Authoritative confirmed Reservations and contracts, read for Continuous Occupancy (ADR 0023). */
+    bookingState?: { findContractById(contractId: string): BookingContract | null; findReservationById(reservationId: string): Reservation | null } | null;
     audit?: any;
     calendar?: any;
     guestVerification?: GuestVerificationService;
     store?: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
     guestContacts?: GuestContactSource;
     extendedStayPolicy?: ExtendedStayPolicy;
+    demoTerms?: boolean;
   } = {}) {
     this.#repository = repository;
     this.#audit = audit;
@@ -130,14 +139,62 @@ export class BookingRequestManager {
     this.#requestStore = store;
     this.#guestContacts = guestContacts;
     this.#extendedStayPolicy = extendedStayPolicy;
+    this.#demoTerms = demoTerms;
+    this.#occupancy = new ContinuousOccupancyLedger({
+      store,
+      bookingState,
+      unitPropertyId: (unitId: string) => this.#unitPropertyId(unitId),
+      listBookingRequests: (input) => this.#countableRequests(input),
+      extendedStayPolicy,
+    });
+  }
+
+  #unitPropertyId(unitId: string): string | undefined {
+    const unit = this.#repository
+      ? (this.#repository.findById
+        ? this.#repository.findById(unitId)
+        : this.#repository.findAll().find((candidate: { readonly id?: string }) => candidate.id === unitId))
+      : null;
+    return typeof unit?.propertyId === "string" && unit.propertyId !== "" ? unit.propertyId : undefined;
+  }
+
+  /** The Primary Guest's Booking Requests with status projected at `now` (ADR 0041, 0043), read from the store when there is one. */
+  #countableRequests({ tenantId, primaryGuestId, now }: { tenantId: string; primaryGuestId: string; now: Date }): CountableBookingRequest[] {
+    const project = (record: { requestId: string; tenantId: string; primaryGuestId: string; unitId: string; checkIn: string; checkOut: string; status: string; delivered: boolean; deliveryDeadlineAt: string; operatorResponseDeadlineAt: string }): CountableBookingRequest => ({
+      requestId: record.requestId,
+      tenantId: record.tenantId,
+      primaryGuestId: record.primaryGuestId,
+      unitId: record.unitId,
+      checkIn: record.checkIn,
+      checkOut: record.checkOut,
+      status: projectBookingRequestStatus(record, now),
+    });
+    if (this.#requestStore) {
+      return this.#requestStore.findBookingRequestsForPrimaryGuest(primaryGuestId, tenantId).map(project);
+    }
+    return [...this.#requests.values()]
+      .filter((request) => request.tenantId === tenantId && request.primaryGuest?.id === primaryGuestId)
+      .map((request) => project({
+        requestId: request.requestId,
+        tenantId: request.tenantId,
+        primaryGuestId: request.primaryGuest.id,
+        unitId: request.unitId,
+        checkIn: request.checkIn,
+        checkOut: request.checkOut,
+        status: request.status,
+        delivered: request.delivered,
+        deliveryDeadlineAt: request.deliveryDeadlineAt,
+        operatorResponseDeadlineAt: request.operatorResponseDeadlineAt,
+      }));
   }
 
   createDraft(
     input: PlatformCommandEnvelope<CreateDraftOptions> | CreateDraftOptions,
-    { clock = () => new Date() }: { clock?: () => Date } = {}
+    { clock = () => new Date(), tenantId: callerTenantId }: { clock?: () => Date; tenantId?: string } = {}
   ) {
     let payload: CreateDraftOptions;
     let envelopeId: string | undefined;
+    let tenantId = callerTenantId;
 
     if ("commandName" in input && "payload" in input) {
       if (input.commandName !== "booking_request.create_draft") {
@@ -145,6 +202,7 @@ export class BookingRequestManager {
       }
       payload = input.payload;
       envelopeId = input.commandId;
+      tenantId = input.principal?.tenantId ?? callerTenantId;
     } else {
       payload = input;
     }
@@ -166,6 +224,17 @@ export class BookingRequestManager {
     if (!checkIn || !checkOut) throw new Error("checkIn and checkOut dates are required");
     const draftRange = new StayDateRange(checkIn, checkOut, clock(), this.#extendedStayPolicy);
     if (draftRange.nights > MAX_STAY_NIGHTS) this.#assertExtendedStayEligible(unitId, draftRange, clock());
+    // ADR 0023 as amended 1 Nov 2026: Continuous Occupancy is refused at draft creation, before any hold or payment.
+    assertContinuousOccupancy({
+      ledger: this.#occupancy,
+      tenantId,
+      primaryGuestId: primaryGuest.id,
+      unitId,
+      checkIn: draftRange.checkIn,
+      checkOut: draftRange.checkOut,
+      now: clock(),
+      policy: this.#extendedStayPolicy,
+    });
 
     const canonicalPrimaryGuest: PrimaryGuest = {
       id: primaryGuest.id,
@@ -383,7 +452,7 @@ export class BookingRequestManager {
     const now = clock();
     const watNow = getWatTime(now);
 
-    // ADR 0105: the staging demo supplies its own scoped Extended Stay policy.
+    // ADR 0092 as amended 1 Nov 2026: the Extended Stay policy applies in every deployment.
     let dateRange: StayDateRange;
     try {
       dateRange = new StayDateRange(draft.checkIn, draft.checkOut, now, this.#extendedStayPolicy);
@@ -419,6 +488,17 @@ export class BookingRequestManager {
 
     // ADR 0055 / 0056 / 0057 / 0065: an Extended Stay is rechecked at disclosure through checkout.
     if (dateRange.nights > MAX_STAY_NIGHTS) this.#assertExtendedStayEligible(draft.unitId, dateRange, now);
+    // ADR 0023 as amended 1 Nov 2026: re-checked at submission, before the quote, the inventory hold or any payment.
+    assertContinuousOccupancy({
+      ledger: this.#occupancy,
+      tenantId,
+      primaryGuestId: draft.primaryGuest.id,
+      unitId: draft.unitId,
+      checkIn: dateRange.checkIn,
+      checkOut: dateRange.checkOut,
+      now,
+      policy: this.#extendedStayPolicy,
+    });
 
     // 4. Quote Validation
     let unit = null;
@@ -436,6 +516,7 @@ export class BookingRequestManager {
       partySize: draft.occupants.length || 1,
       selectedOptionalServices: draft.selectedOptionalServices,
       extendedStayPolicy: this.#extendedStayPolicy,
+      demoTerms: this.#demoTerms,
       clock
     });
 

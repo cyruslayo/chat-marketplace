@@ -160,7 +160,8 @@ const LOCATION_PATTERNS: readonly {
   { pattern: /\b(lagos)\b/i, city: "Lagos" },
 ];
 
-const NIGHTS_PATTERN = /\b(\d{1,2})\s*(?:nights?|nitesc?|nts?)\b/i;
+// Up to three digits: Extended Stays run to 180 nights (ADR 0092, amended 1 Nov 2026), so two digits cannot read them.
+const NIGHTS_PATTERN = /\b(\d{1,3})\s*(?:nights?|nitesc?|nts?)\b/i;
 const GUESTS_PATTERN = /\b(\d{1,2})\s*(?:people|persons?|guests?|adults?|pax)\b/i;
 const BEDROOMS_PATTERN = /\b(\d{1,2}|one|two|three|four)\s*[- ]?bedrooms?\b/i;
 const BEDROOM_WORDS: Readonly<Record<string, number>> = { one: 1, two: 2, three: 3, four: 4 };
@@ -609,8 +610,13 @@ function clarifyReply(context: DiscoverySearchContext, missing: readonly string[
  */
 /** Refuses dates outside launch limits with a plain statement of the limit. */
 function dateLimitRefusal(checkIn: string, nights: number, today: string, policy?: ExtendedStayPolicy): string | undefined {
-  // ADR-0023: one through fourteen nights.
+  // ADR-0023 as amended 1 Nov 2026: Short Stays are one through MAX_STAY_NIGHTS (29) nights. A policy (ADR 0092) adds its own range.
   if (nights > MAX_STAY_NIGHTS && !isExtendedStayLength(nights, policy)) {
+    if (policy && policy.minimumNights === MAX_STAY_NIGHTS + 1) {
+      // Contiguous ranges (29 Short, 30 onward Extended): the existing no-policy sentence, with the policy's maximum.
+      // WORDING TO CONFIRM WITH THE OWNER (issue 02): this reuses the no-policy template; see Comments.
+      return `Stays can be at most ${policy.maximumNights} nights. Please choose ${policy.maximumNights} nights or fewer.`;
+    }
     return policy
       ? `This demo supports stays up to ${MAX_STAY_NIGHTS} nights, or ${policy.minimumNights} to ${policy.maximumNights} nights.`
       : `Stays can be at most ${MAX_STAY_NIGHTS} nights. Please choose ${MAX_STAY_NIGHTS} nights or fewer.`;
