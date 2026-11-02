@@ -1179,7 +1179,16 @@ export class AssistantRuntime {
         const acceptedCalls: AssistantToolCall[] = [];
         const roundRawResults: AssistantToolResult[] = [];
 
-        for (const call of modelResponse.toolCalls) {
+        for (const modelCall of modelResponse.toolCalls) {
+          // ADR 0099 / ADR 0106 (issue 08): an authorised pack tool may have the guest's words mapped to closed values before the exact
+          // schema check. Task tools and unauthorised calls are never normalised.
+          const normalizingPack = candidatePack();
+          const call = normalizingPack.normalizeToolArguments !== undefined
+            && normalizingPack.id === validatedDomainId
+            && validatedTurnToolNames.has(modelCall.name)
+            && !this.#isPlatformTaskTool(modelCall.name)
+            ? { ...modelCall, args: normalizingPack.normalizeToolArguments(modelCall.name, modelCall.args) }
+            : modelCall;
           activeStage = "tool_execution";
           activeToolName = safeAssistantToolName(call.name, this.#packs);
           const offeredTool = taskTools().find((tool) => tool.name === call.name);

@@ -115,6 +115,11 @@ export interface AssistantDomainPack {
   readonly platformActionNames?: readonly string[];
   toolsForState(taskState: AssistantTaskState): readonly AssistantToolDefinition[];
   validateToolCall(name: string, args: Record<string, unknown>, taskState: AssistantTaskState): AssistantToolPreconditionFailure | undefined;
+  /**
+   * ADR 0099 / ADR 0106 (issue 08): maps a guest's own words in an offered tool's arguments to the pack's closed values, before the
+   * exact-schema check. Undefined means no mapping. It never grants access and never widens the schema.
+   */
+  normalizeToolArguments?(name: string, args: Record<string, unknown>): Record<string, unknown>;
   executeTool(name: string, args: Record<string, unknown>, context: AssistantToolContext): AssistantToolExecutionResult;
   /** Pack-owned minimal facts for model history. Raw execution results remain local to the platform. */
   projectToolResult?(name: string, result: Record<string, unknown>, limits: { readonly maxItems: number }): Record<string, unknown>;

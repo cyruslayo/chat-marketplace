@@ -26,6 +26,8 @@ export const GUEST_GLOSSARY = Object.freeze({
 /** Server-authored concierge copy for replies whose facts come from current pack projections. */
 export const GUEST_ASSISTANT_COPY = Object.freeze({
   stayClarification: "How many nights will you be staying, and for how many guests?",
+  // Issue 08 (ADR 0106): an area the server does not know is refused with the closed list of areas it can search.
+  areaClarification: (examples: string) => `I couldn't find that area. Which area should I search? For example: ${examples}.`,
   // ADR 0106: a planner date that the guest's text does not state is rejected and the guest is asked for dates in a form the server reads.
   datesClarification: "I need your check-in and checkout dates before I can search. Please write them with the day, month and year, for example 20 November 2026 to 23 November 2026.",
   // ADR 0015: a Unit's all-in price is quoted for the stay's dates, so opening one without dates asks for them.
@@ -281,6 +283,12 @@ const AMENITY_LABELS: Readonly<Record<string, string>> = {
   wifi: "Wi-Fi",
   workspace: "Dedicated workspace",
 };
+
+/**
+ * The closed amenity catalogue (issue 08): the identifiers the guest product labels. The assistant's amenity schema and the
+ * concierge's alias table both read this list, so no second catalogue exists.
+ */
+export const GUEST_AMENITY_IDS: readonly string[] = Object.freeze(Object.keys(AMENITY_LABELS));
 
 export function guestAmenityLabel(identifier: string): string {
   const acceptedLabel = AMENITY_LABELS[identifier];

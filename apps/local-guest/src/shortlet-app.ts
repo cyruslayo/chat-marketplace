@@ -203,6 +203,7 @@ import {
   type CriteriaEdit,
   type StayBudget,
 } from "./concierge.js";
+import { AMENITY_CATALOGUE_IDS } from "./stay-vocabulary.js";
 import { ContinuousOccupancyError } from "../../../domains/shortlet/src/index.js";
 import {
   amenityQuestions,
@@ -525,6 +526,7 @@ function criteriaKey(context: DiscoverySearchContext | null): string {
     context?.pendingLocationChange?.label ?? null,
     context?.budget?.kobo ?? null,
     context?.budget?.per ?? null,
+    context?.requiredAmenities?.join(",") ?? null,
   ]);
 }
 
@@ -3077,8 +3079,8 @@ export class LocalGuestApp {
     if (city !== "Lagos" && city !== "Abuja") return null;
     const knownNeighbourhoods = new Set(this.#environment.unitRepository.findAll().map((unit) => unit.location.neighbourhood));
     const neighbourhood = state.stayIntent.neighbourhood;
-    const amenityIds = new Set(this.#environment.unitRepository.findAll().flatMap((unit) => unit.amenities));
-    const requiredAmenities = state.stayIntent.requiredAmenities?.filter((amenity) => amenityIds.has(amenity) && /^[A-Za-z0-9_-]{1,48}$/.test(amenity)).slice(0, 16);
+    // Issue 08: the closed amenity catalogue (ADR 0106) is the only source of persisted amenity ids.
+    const requiredAmenities = state.stayIntent.requiredAmenities?.filter((amenity) => AMENITY_CATALOGUE_IDS.includes(amenity)).slice(0, 16);
     const selectedStay = state.selectedStayRef ? state.shortlist.find((stay) => stay.stayRef === state.selectedStayRef) : undefined;
     return {
       city,
@@ -3146,6 +3148,8 @@ export class LocalGuestApp {
         ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
         ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
         ...(context.maxBudgetKobo === undefined || context.maxBudgetPer === undefined ? {} : { budget: { kobo: context.maxBudgetKobo, per: context.maxBudgetPer } }),
+        // Issue 08 AC5: the deterministic fallback searches with the amenities the assistant searched with.
+        ...(context.requiredAmenities?.length ? { requiredAmenities: context.requiredAmenities } : {}),
       };
       thread.searchHistory = [thread.discoveryContext];
       // ADR 0106: the detail's artifact is the unit-detail artifact the detail card's Request to Book names, never the discovery artifact.

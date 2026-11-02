@@ -16,6 +16,9 @@
 
 import { BOOKING_HORIZON_DAYS, MAX_STAY_NIGHTS, dateKeyInLagos, isExtendedStayLength, type ExtendedStayPolicy } from "../../../domains/shortlet/src/index.js";
 import { formatNgnKobo } from "../../web-agent/src/discovery-a2ui.js";
+import { AMENITY_ALIASES, SEARCH_AREAS, STAY_LOCATION_ALIASES } from "./stay-vocabulary.js";
+
+export { SEARCH_AREAS };
 
 /**
  * Issue 03b / ADR-0015: a budget is compared with the All-In Stay Total and
@@ -37,6 +40,8 @@ export interface StayRequestFilters {
   readonly bedrooms?: number;
   /** Issue 03b: the budget as an All-In Stay Total for these dates (ADR-0015). */
   readonly maxPriceKobo?: number;
+  /** Issue 08: catalogue amenity ids the Unit must list (the fallback keeps what the assistant searched with). */
+  readonly requiredAmenities?: readonly string[];
 }
 
 export type StayRequestInterpretation = StayRequestResolution;
@@ -83,6 +88,8 @@ export interface DiscoverySearchContext {
   /** False while a resolved relative phrase ("this weekend") awaits the Guest's yes. */
   readonly datesConfirmed?: boolean;
   readonly budget?: StayBudget;
+  /** Issue 08: catalogue amenity ids the guest needs (the assistant's closed list, kept for the deterministic fallback). */
+  readonly requiredAmenities?: readonly string[];
 }
 
 /**
@@ -144,21 +151,6 @@ export type StayRequestResolution =
   /** Dates outside launch limits (ADR-0023, ADR-0055), explained with the limit. */
   | { readonly kind: "refuse"; readonly reply: string };
 
-const LOCATION_PATTERNS: readonly {
-  readonly pattern: RegExp;
-  readonly city: string;
-  readonly neighbourhood?: string;
-}[] = [
-  { pattern: /\b(wuse\s*2|wuse\s*ii|wuse\s+two)\b/i, city: "Abuja", neighbourhood: "Wuse 2" },
-  // Abuja/Wuse knowledge: a bare "Wuse" names the Abuja district even though
-  // the accepted pilot inventory only carries the Wuse 2 neighbourhood.
-  { pattern: /\bwuse\b/i, city: "Abuja" },
-  { pattern: /\babuja\b/i, city: "Abuja" },
-  { pattern: /\b(ikoyi|old ikoyi)\b/i, city: "Lagos", neighbourhood: "Old Ikoyi" },
-  { pattern: /\b(lekki|lekki phase 1)\b/i, city: "Lagos", neighbourhood: "Lekki Phase 1" },
-  { pattern: /\b(victoria island|vi)\b/i, city: "Lagos", neighbourhood: "Victoria Island" },
-  { pattern: /\b(lagos)\b/i, city: "Lagos" },
-];
 
 // Up to three digits: Extended Stays run to 180 nights (ADR 0092, amended 1 Nov 2026), so two digits cannot read them.
 const NIGHTS_PATTERN = /\b(\d{1,3})\s*(?:nights?|nitesc?|nts?)\b/i;
@@ -303,9 +295,11 @@ function buildContext(parts: {
   readonly checkIn?: string;
   readonly datesConfirmed?: boolean;
   readonly budget?: StayBudget;
+  readonly requiredAmenities?: readonly string[];
 }): DiscoverySearchContext {
   return {
     ...(parts.budget === undefined ? {} : { budget: { kobo: parts.budget.kobo, per: parts.budget.per } }),
+    ...(parts.requiredAmenities === undefined || parts.requiredAmenities.length === 0 ? {} : { requiredAmenities: [...parts.requiredAmenities] }),
     ...(parts.city === undefined ? {} : { city: parts.city }),
     ...(parts.neighbourhood === undefined ? {} : { neighbourhood: parts.neighbourhood }),
     ...(parts.nights === undefined ? {} : { nights: parts.nights }),
@@ -325,9 +319,11 @@ function scalarParts(context: DiscoverySearchContext): {
   readonly checkIn?: string;
   readonly datesConfirmed?: boolean;
   readonly budget?: StayBudget;
+  readonly requiredAmenities?: readonly string[];
 } {
   return {
     ...(context.budget === undefined ? {} : { budget: context.budget }),
+    ...(context.requiredAmenities === undefined ? {} : { requiredAmenities: context.requiredAmenities }),
     ...(context.city === undefined ? {} : { city: context.city }),
     ...(context.neighbourhood === undefined ? {} : { neighbourhood: context.neighbourhood }),
     ...(context.nights === undefined ? {} : { nights: context.nights }),
@@ -340,7 +336,7 @@ function scalarParts(context: DiscoverySearchContext): {
 /** Resolves the first accepted Lagos/Abuja location phrase in a message. */
 export function resolveLocationMention(text: string): StayRequestLocation | undefined {
   const normalized = text.trim();
-  for (const candidate of LOCATION_PATTERNS) {
+  for (const candidate of STAY_LOCATION_ALIASES) {
     const match = candidate.pattern.exec(normalized);
     if (!match) continue;
     return {
@@ -441,28 +437,13 @@ export function extractStayRequestFacts(text: string, options: { readonly now?: 
   };
 }
 
-// Questions about a Unit's facilities, answered only from `unit.amenities`
-// (issue 04a AC2). An entry without ids is never listed by the catalogue, so
-// the answer is always that it isn't listed.
-const AMENITY_QUESTIONS: readonly { readonly pattern: RegExp; readonly label: string; readonly ids: readonly string[] }[] = [
-  { pattern: /\bparking\b/i, label: "Parking", ids: ["parking"] },
-  { pattern: /\b(?:swimming\s+)?pool\b/i, label: "A pool", ids: ["swimming_pool"] },
-  { pattern: /\b(?:wi-?fi|internet)\b/i, label: "Wi-Fi", ids: ["wifi"] },
-  { pattern: /\b(?:generator|backup power|24\/7 power|light|power)\b/i, label: "Backup power", ids: ["24_7_power_generator", "generator"] },
-  { pattern: /\b(?:security|guards?)\b/i, label: "On-site security", ids: ["security_guard"] },
-  { pattern: /\b(?:air[- ]?con(?:ditioning)?|a\/c|ac)\b/i, label: "Air conditioning", ids: ["air_conditioning"] },
-  { pattern: /\b(?:workspace|desk)\b/i, label: "A workspace", ids: ["workspace"] },
-  { pattern: /\bgym\b/i, label: "A gym", ids: [] },
-  { pattern: /\bkitchen\b/i, label: "A kitchen", ids: [] },
-  { pattern: /\bbalcony\b/i, label: "A balcony", ids: [] },
-];
 const QUESTION_PATTERN = /\?|\b(?:is there|are there|does (?:it|the (?:apartment|place|flat)) have|do (?:you|they) have|has it got|what about)\b/i;
 const CHANGE_PATTERN = /\b(?:make it|change|extend|shorten|move (?:it|the dates)|add (?:a|another|one more) night|fewer nights|more nights)\b/i;
 
 /** Facility questions in a message, in the order the catalogue lists them. */
 export function amenityQuestions(text: string): readonly { readonly label: string; readonly ids: readonly string[] }[] {
   if (!QUESTION_PATTERN.test(text)) return [];
-  return AMENITY_QUESTIONS.filter((question) => question.pattern.test(text)).map(({ label, ids }) => ({ label, ids }));
+  return AMENITY_ALIASES.filter((question) => question.pattern.test(text)).map(({ label, ids }) => ({ label, ids }));
 }
 
 /** True when a message asks to change the stay (dates, nights, guests or area). */
@@ -666,6 +647,7 @@ export function resolveStayRequestContext(
     ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
     // ADR-0015: the budget filters on the All-In Stay Total for these nights.
     ...(context.budget === undefined ? {} : { maxPriceKobo: stayBudgetKobo(context)! }),
+    ...(context.requiredAmenities === undefined ? {} : { requiredAmenities: context.requiredAmenities }),
   };
   if (context.datesConfirmed !== true) {
     const place = context.neighbourhood ?? city;
@@ -678,19 +660,6 @@ export function resolveStayRequestContext(
   return { kind: "search", filters };
 }
 
-/**
- * Issue 03a: the areas a Guest can pick on the criteria strip and on the
- * conventional search form (ADR-0080). They are the locations the concierge
- * already understands in free text; no new inventory area is invented here.
- */
-export const SEARCH_AREAS: readonly { readonly id: string; readonly label: string; readonly city: string; readonly neighbourhood?: string }[] = Object.freeze([
-  { id: "abuja", label: "Abuja (all areas)", city: "Abuja" },
-  { id: "wuse-2", label: "Wuse 2, Abuja", city: "Abuja", neighbourhood: "Wuse 2" },
-  { id: "lagos", label: "Lagos (all areas)", city: "Lagos" },
-  { id: "old-ikoyi", label: "Old Ikoyi, Lagos", city: "Lagos", neighbourhood: "Old Ikoyi" },
-  { id: "lekki-phase-1", label: "Lekki Phase 1, Lagos", city: "Lagos", neighbourhood: "Lekki Phase 1" },
-  { id: "victoria-island", label: "Victoria Island, Lagos", city: "Lagos", neighbourhood: "Victoria Island" },
-]);
 
 export function searchAreaFor(context: DiscoverySearchContext): typeof SEARCH_AREAS[number] | undefined {
   if (context.city === undefined) return undefined;
@@ -752,6 +721,10 @@ export function parseDiscoverySearchContext(value: unknown): DiscoverySearchCont
   if (!optionalPositiveInteger(record.nights) || !optionalPositiveInteger(record.partySize) || !optionalPositiveInteger(record.bedrooms)) return null;
   if (record.checkIn !== undefined && (typeof record.checkIn !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(record.checkIn))) return null;
   if (record.datesConfirmed !== undefined && typeof record.datesConfirmed !== "boolean") return null;
+  // Issue 08: persisted amenity ids use the same shape the projection accepts (guest-projection.ts), at most sixteen.
+  const rawAmenities = record.requiredAmenities;
+  if (rawAmenities !== undefined && (!Array.isArray(rawAmenities) || rawAmenities.length > 16
+    || !rawAmenities.every((entry) => typeof entry === "string" && /^[A-Za-z0-9_-]{1,48}$/.test(entry)))) return null;
   const rawBudget = record.budget;
   let budget: StayBudget | undefined;
   if (rawBudget !== undefined) {
@@ -782,6 +755,7 @@ export function parseDiscoverySearchContext(value: unknown): DiscoverySearchCont
     ...(pending === undefined ? {} : { pendingLocationChange: pending }),
     ...(typeof record.checkIn === "string" ? { checkIn: record.checkIn, datesConfirmed: record.datesConfirmed === true } : {}),
     ...(budget === undefined ? {} : { budget }),
+    ...(Array.isArray(rawAmenities) ? { requiredAmenities: [...rawAmenities] as string[] } : {}),
   });
 }
 

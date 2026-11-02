@@ -26,7 +26,7 @@ Owner decisions: 01. (17 resolved: path retired.)
 | 05 | [Assistant checkout and date ranges](issues/05-assistant-checkout-and-date-ranges.md) | needs-triage | 02 |
 | 06 | [Bug: budget chip never reaches the assistant](issues/06-sync-budget-chip-into-assistant.md) | resolved | none |
 | 07 | [Assistant budget from guest words](issues/07-assistant-budget-from-guest-words.md) | needs-triage | 06 |
-| 08 | [Closed lists for amenities and areas](issues/08-closed-lists-for-amenities-and-areas.md) | ready-for-agent | none |
+| 08 | [Closed lists for amenities and areas](issues/08-closed-lists-for-amenities-and-areas.md) | resolved | none |
 | 09 | [Location-change question and unsupported preferences](issues/09-location-change-question-and-unsupported-preferences.md) | needs-triage | 08 |
 | 10 | [Quick-reply chips on assistant clarifications](issues/10-quick-reply-chips-on-assistant-clarifications.md) | ready-for-agent | none |
 | 11 | [Honest facility answers and stage replies](issues/11-honest-facility-answers-and-stage-replies.md) | needs-triage | 08 |

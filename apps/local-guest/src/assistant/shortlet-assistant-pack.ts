@@ -1,7 +1,8 @@
 import { generatePlatformId } from "../../../../packages/platform-core/src/index.js";
 import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantGuestRefusalError, AssistantStayDetailsError, containsGuestDate } from "./date-tokens.js";
 import { ContinuousOccupancyError, StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, MAX_STAY_NIGHTS, BOOKING_HORIZON_DAYS, dateKeyInLagos, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
-import { stayBudgetKobo } from "../concierge.js";
+import { SEARCH_AREAS, resolveLocationMention, stayBudgetKobo } from "../concierge.js";
+import { normalizeRequiredAmenities } from "../stay-vocabulary.js";
 import {
   discoveryArtifactToA2UI,
   bookingRequestArtifactToA2UI,
@@ -15,7 +16,7 @@ import { unitDetailArtifactFromProjection } from "../../../web/src/unit-detail-a
 import { requestDraftArtifactFromProjection } from "../../../web/src/request-draft-artifact.js";
 import { requestDraftArtifactToA2UI } from "../../../web-agent/src/request-draft-a2ui.js";
 import { extendedStayDraftFacts } from "../../../web-agent/src/extended-stay-presentation.js";
-import { GUEST_ASSISTANT_COPY } from "../../../web-agent/src/guest-content.js";
+import { GUEST_ASSISTANT_COPY, GUEST_AMENITY_IDS } from "../../../web-agent/src/guest-content.js";
 import type { LocalGuestEnvironment } from "../fixture.js";
 import type { AssistantToolDefinition } from "./assistant-model.js";
 import type {
@@ -35,6 +36,9 @@ import {
   type AssistantReplyPlan,
 } from "./assistant-platform.js";
 import type { AssistantToolResult } from "./assistant-model.js";
+
+/** The closed neighbourhood list (SEARCH_AREAS, ADR-0080): the names the tool description offers the model. */
+const NEIGHBOURHOOD_NAMES: readonly string[] = [...new Set(SEARCH_AREAS.flatMap((area) => (area.neighbourhood === undefined ? [] : [area.neighbourhood])))];
 
 /** The domain prompt section for the shortlet pack; the runtime prefixes the platform preamble. */
 export const SHORTLET_PROMPT_SECTION = `The Shortlet platform and tools are authoritative.
@@ -63,7 +67,7 @@ export const ASSISTANT_TOOL_DEFINITIONS: readonly AssistantToolDefinition[] = [
       type: "object",
       properties: {
         city: { type: "string", description: "City name, e.g. 'Lagos' or 'Abuja'" },
-        neighbourhood: { type: ["string", "null"], description: "Optional neighbourhood, e.g. 'Old Ikoyi', 'Lekki Phase 1', 'Victoria Island'" },
+        neighbourhood: { type: ["string", "null"], description: `Optional neighbourhood, or null: one of ${NEIGHBOURHOOD_NAMES.join(", ")}. Guest words for these areas are accepted; any other area is refused.` },
         checkIn: { type: ["string", "null"], description: "Explicit check-in date in YYYY-MM-DD format if provided by user, or null" },
         nights: { type: ["integer", "null"], minimum: 1, maximum: MAX_STAY_NIGHTS, description: "Guest-requested stay duration, or null when unknown. Never default to one." },
         guests: { type: ["integer", "null"], minimum: 1, description: "Guest-requested party size, or null when unknown. Never default to one." },
@@ -71,8 +75,9 @@ export const ASSISTANT_TOOL_DEFINITIONS: readonly AssistantToolDefinition[] = [
         maxBudgetKobo: { type: ["integer", "null"], description: "Optional maximum all-in budget in kobo" },
         requiredAmenities: {
           type: "array",
-          items: { type: "string" },
-          description: "Optional list of required amenities, e.g. ['wifi', '24_7_power_generator']",
+          // ADR 0106: only catalogue ids are allowed; the runtime's schema check rejects anything else as a tool_denial.
+          items: { type: "string", enum: [...GUEST_AMENITY_IDS] },
+          description: `Optional list of required amenity ids, chosen only from: ${GUEST_AMENITY_IDS.join(", ")}. Map the guest's words to these ids, e.g. 'steady light' to '24_7_power_generator'.`,
         },
       },
       required: ["city"],
@@ -272,19 +277,25 @@ export interface SearchStaysToolArgs {
   requiredAmenities?: readonly string[] | null;
 }
 
-const NEIGHBOURHOOD_MAP: Readonly<Record<string, string>> = Object.freeze({
-  "old ikoyi": "Old Ikoyi",
-  ikoyi: "Old Ikoyi",
-  lekki: "Lekki Phase 1",
-  "lekki phase 1": "Lekki Phase 1",
-  "victoria island": "Victoria Island",
-  vi: "Victoria Island",
-});
+/**
+ * The search neighbourhood for a guest's area word in the searched city (issue 08, ADR 0106). It uses the deterministic path's own
+ * aliases (resolveLocationMention), so one word gives one area on both paths. Returns null for a city-wide mention of the same city,
+ * the neighbourhood from the closed area list, or undefined when the word names no known area in that city (refused).
+ */
+export function resolveSearchNeighbourhood(raw: string, city: "Lagos" | "Abuja"): string | null | undefined {
+  const location = resolveLocationMention(raw);
+  if (location === undefined || location.city !== city) return undefined;
+  if (location.neighbourhood === undefined) return null;
+  return SEARCH_AREAS.some((area) => area.city === city && area.neighbourhood === location.neighbourhood) ? location.neighbourhood : undefined;
+}
 
-export function normalizeNeighbourhood(raw?: string | null): string | undefined {
-  if (!raw || typeof raw !== "string") return undefined;
-  const trimmed = raw.trim().toLowerCase();
-  return NEIGHBOURHOOD_MAP[trimmed] ?? raw.trim();
+/**
+ * ADR 0099 pack hook: maps the guest's own amenity words in a search to catalogue ids before the schema check, so the closed enum
+ * sees only ids. Other arguments and other tools pass through unchanged.
+ */
+export function normalizeToolArguments(name: string, args: Record<string, unknown>): Record<string, unknown> {
+  if (name !== "search_stays" || typeof args !== "object" || args === null || !Array.isArray(args.requiredAmenities)) return args;
+  return { ...args, requiredAmenities: normalizeRequiredAmenities(args.requiredAmenities) };
 }
 
 export function normalizeLaunchCity(raw: unknown): "Lagos" | "Abuja" | undefined {
@@ -414,7 +425,18 @@ export function executeAssistantTool(
       if (!city) {
         throw new TypeError("city must be 'Lagos' or 'Abuja'");
       }
-      const neighbourhood = normalizeNeighbourhood((args.neighbourhood ?? taskState.stayIntent.neighbourhood) as string | null | undefined);
+      // Issue 08 (ADR 0106): a neighbourhood the guest or planner names is a closed check. An unknown area is refused with the area
+      // clarification (a tool_denial), never searched as an inventory value. A missing one keeps the task's area.
+      const requestedNeighbourhood = args.neighbourhood;
+      const resolvedNeighbourhood = typeof requestedNeighbourhood === "string"
+        ? resolveSearchNeighbourhood(requestedNeighbourhood, city)
+        : undefined;
+      if (typeof requestedNeighbourhood === "string" && resolvedNeighbourhood === undefined) {
+        throw new AssistantGuestRefusalError(GUEST_ASSISTANT_COPY.areaClarification(NEIGHBOURHOOD_NAMES.join(", ")));
+      }
+      const neighbourhood = typeof requestedNeighbourhood === "string"
+        ? resolvedNeighbourhood ?? undefined
+        : taskState.stayIntent.neighbourhood;
       // ADR 0015: unknown stay details cannot become an invented quote or party size.
       const nights = args.nights == null ? taskState.stayIntent.nights : Number(args.nights);
       const guests = args.guests == null ? taskState.stayIntent.partySize : Number(args.guests);
@@ -472,9 +494,10 @@ export function executeAssistantTool(
           ? stayBudgetKobo({ budget: taskBudget, nights })
           : undefined;
 
+      // Issue 08: amenity ids come from the closed schema (normalized before this point). An omitted list keeps the task's amenities, as the area does.
       const requiredAmenities = Array.isArray(args.requiredAmenities)
         ? (args.requiredAmenities.filter((a): a is string => typeof a === "string" && a.trim() !== ""))
-        : undefined;
+        : taskState.stayIntent.requiredAmenities;
       const bedrooms = args.bedrooms == null ? taskState.stayIntent.bedrooms : Number(args.bedrooms);
       if (bedrooms !== undefined && (!Number.isSafeInteger(bedrooms) || bedrooms < 0)) {
         throw new RangeError("bedrooms must be a non-negative integer");
@@ -1094,6 +1117,7 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     toolNames: ASSISTANT_TOOL_DEFINITIONS.map((tool) => tool.name),
     toolsForState: (taskState) => assistantToolsForState(taskState, environment.extendedStayPolicy),
     validateToolCall: (name, args, taskState) => validateAssistantToolCall(name, args, taskState, environment.extendedStayPolicy),
+    normalizeToolArguments,
     executeTool: executeAssistantTool,
     projectToolResult: (_name, result, limits) => {
       const keys = new Set(["stayRef", "city", "capacity", "bedrooms", "resultCount", "checkIn", "checkOut", "nights", "partySize", "isDemoDate", "nightlyKobo", "mandatoryFeesKobo", "allInStayTotalKobo", "refundableSecurityDepositKobo", "amountDueNowKobo", "totalAmountDueNowKobo", "currency", "inspectionStatus", "managementAuthorityStatus", "status", "expiresAt", "expiresAtIso", "hasOffer", "hasBooking", "draftCreated", "created", "availabilityChecked", "inventoryReserved", "operation", "available", "stays", "compared", "result", "hasRequest", "requestStatus"]);
