@@ -39,3 +39,44 @@ Requested: 1 Nov 2026
 | 0106 (amended) | Date authority | AC5 |
 
 ## Comments
+
+### Triage note (agent, 2 Nov 2026)
+
+**1. Blockers.** 01 (ADR 0106 amended, commit 191a411) is resolved. 04 and 05 are still `needs-triage`. Only AC5 (relative dates) needs them. AC1 to AC4 and AC6 need no date, so they can start before 04 and 05 finish. The `Blocked by: 01, 04, 05` line is right; map.md listed only 04 and 05.
+
+**2. What is delivered, and what is missing.**
+
+Delivered (deterministic path):
+- Draft revision exists: `#proposeDraftReplacement` (`apps/local-guest/src/shortlet-app.ts:4424`), called from the free-text path at :957 after the stage reply. The re-quote helper is `#replacementTerms` (:4537). Accept and keep are in the same area (not re-checked for this note).
+- The tests: `test/guest-draft-revision.test.ts` has 10 `test(` calls, not 11 as AC6 says (`grep -c "test("`). Its names cover the nights change (:50), keep (:100), the 180-night maximum (:115), party size (:127), a tampered accept (:138), a price change (:161), relative dates (:176), a new place (:191), a date check (:200) and different dates (:217).
+
+Delivered (assistant path), what is already there:
+- `search_stays` in the pack never reads `currentDraftId`. The field is written at `apps/local-guest/src/assistant/shortlet-assistant-pack.ts:984` and read only for the journey label at :1098. So "make it 3 nights" on a draft runs a new search and leaves the draft alone. This is the gap the issue describes.
+- The change hook (`answerValidatedTurn`, pack around :1279) answers only once a request is sent (`sentStageFor` returns undefined for a draft). A text reply cannot re-quote anyway.
+- Re-quote arithmetic: `checkOutForNights` and `validatedCheckOutForNights` (pack :402 to :418) and `createStayQuote` (pack :962). These can produce the replacement terms.
+- Stage handlers exist for surfaces (`apps/local-guest/src/assistant/shortlet-stage-handlers.ts`, `REQUEST_STAGE`, and `assistant-stage-handler.ts`). A replacement surface would be filed there.
+
+Missing:
+- A replacement proposal, with its surface, accept and keep, all on the assistant path.
+- Accept through the action gate (ADR 0072). `PendingActionType` is closed to three types (`apps/local-guest/src/assistant/pending-actions.ts:10`: request_to_book, accept_offer, start_checkout). A replacement has no type.
+- Relative-date confirmation (AC5), which needs 04's show-back.
+- The eleven assistant twins (AC6), with a cold restore before each event, once the above exist.
+
+**3. Owner questions and risks.**
+
+a. **The classifier does not treat a draft as a change.** The classifier prompt says: "Use change when the guest asks to alter the stay facts (dates, nights or party size) of a stay that is already sent, offered or booked; use search for any other stay search" (`apps/local-guest/src/assistant/scope-classifier.ts:83`). So "make it 3 nights" on a draft is classified `search`, not `change`. Even with a replacement path, the verdict routes to a search. Owner: does a current draft count as "sent" for `change` (a classifier prompt change), or does the planner treat a `search` with nights and a current draft as a draft revision? This decides where AC1 is built.
+
+b. **Proposal surface.** Option 1: a fourth `PendingActionType` (`replace_draft`), which changes the ADR 0072 action list. Option 2 (closer to the existing pattern): a stage surface, owned by a stage handler, that executes the existing draft replacement only on accept. Owner to choose.
+
+c. **Draft check-in changes.** A draft's check-in is server-owned (27 Oct structured facts). Owner: can a draft's check-in change only through a confirmed date (issue 04's show-back)? Recommended: yes. Nights and party size can change without it (checkout derived from the held check-in, `checkOutForNights`).
+
+d. **AC6 count.** Change "each of the 11" to "each of the 10", or find the eleventh test. (The file has 10, as recorded above and in the issue 02 test record.)
+
+e. **Price and all-in rule.** The replacement must use the all-in quote (ADR 0015), through `createStayQuote` and `stayBudgetKobo`, not model arithmetic. The model may not state a price.
+
+f. **Parity.** The deterministic path answers a draft change itself (`#proposeDraftReplacement`) only after the assistant declines the turn (`shortlet-app.ts:957`). With the assistant on, the two paths cannot give the same answer until (a) and (b) are decided. Issue 16 (the parity suite) must include these rows.
+
+**4. Recommended status, order and split.**
+- Recommended status: keep `needs-triage`. Re-triage after 04 and 05 resolve, or earlier if the owner answers (a) and (b). I have not changed the Status line.
+- Order: last of the four. It depends on 04 and 05 for AC5 and on the owner's decisions (a) and (b) for the rest.
+- Suggested split: 13a is non-date revisions (nights and party on a draft: AC1 to AC4 and AC6 for those cases). 13b is relative-date revisions (AC5), which needs 04. 13a can start once (a) and (b) are answered.

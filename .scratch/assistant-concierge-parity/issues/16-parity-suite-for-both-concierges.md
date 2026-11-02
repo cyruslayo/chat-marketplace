@@ -51,3 +51,15 @@ Notes for when it is unblocked:
 - "Blocked by" lists 12, which is resolved. Keep it for the record or remove it.
 
 Recommended next status: keep `needs-triage`. Re-triage after 04, 05, 07, 09, 11 and 13 are resolved.
+
+#### Update (agent, 2 Nov 2026, after 07, 09 and 12 were resolved)
+
+The blocker line above is out of date. Its direct blockers now stand as follows.
+
+- Resolved: 07 (budget from guest words, commit 4723876), 08 (closed lists, commit 1d6fc34), 09 (location question, commit bc69a2b) and 12 (explanations after submission, commits a63f498 and b576455).
+- Still open (all `needs-triage`): 04, 05, 11 and 13. Their triage notes are in their own Comments.
+- 01, 02 and 03 are resolved, but they are blockers of 04 and 05, not of 16. 06 resolves a blocker of 07. 10 is resolved, but it is not a blocker of 16. Its chips are used by 04 and 11.
+
+Still `needs-triage`. The earlier line "04, 05, 07, 09, 11 and 13 are still needs-triage" is superseded by this update: 07 and 09 are resolved.
+
+Clock consequence: on the staging clock (Tue 27 Oct 2026), "next Friday" is ambiguous (30 Oct and 6 Nov), not a day. Every parity row that uses "next Friday" needs the chip step, and the expected values must be re-based on the same clock for both paths (see the clock note above).
