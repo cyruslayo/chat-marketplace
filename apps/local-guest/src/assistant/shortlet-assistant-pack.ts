@@ -76,6 +76,8 @@ export const ASSISTANT_TOOL_DEFINITIONS: readonly AssistantToolDefinition[] = [
         checkIn: { type: ["string", "null"], description: "Check-in date in YYYY-MM-DD format, only when the guest wrote that date or a day-month date such as 20 November, or null. For words such as next Friday use checkInPhrase instead." },
         // Issue 04 (ADR 0106, 2 Nov 2026): the guest's own words for a relative arrival day. The server reads them and shows the day back.
         checkInPhrase: { type: ["string", "null"], description: "The guest's own words for the arrival day, copied exactly, for example 'next Friday' or 'in two weeks', or null. Do not compute the date." },
+        // Issue 05b (ADR 0106, 2 Nov 2026): the guest's own words for a relative checkout, copied exactly. The server shows both dates back.
+        checkOutPhrase: { type: ["string", "null"], description: "The guest's own words for the checkout day, copied exactly, for example 'in two weeks' or 'next Monday', or null. Do not compute the date." },
         // Issue 05 (ADR 0106): a checkout the guest wrote. The server derives the nights from it; a model nights that disagrees is refused.
         checkOut: { type: ["string", "null"], description: "Checkout date in YYYY-MM-DD format, only when the guest wrote that date or a day-month date, or null. The server derives the nights from the check-in and this date." },
         nights: { type: ["integer", "null"], minimum: 1, maximum: MAX_STAY_NIGHTS, description: "Guest-requested stay duration, or null when unknown. Never default to one." },
@@ -360,7 +362,14 @@ function dateQuestionFor(state: AssistantTaskState): string | undefined {
   if (pendingDate === undefined) return undefined;
   if (pendingDate.candidates.length > 1) return GUEST_ASSISTANT_COPY.dateChoice(pendingDate.candidates.map(formatGuestDay));
   const [date] = pendingDate.candidates;
-  if (date === undefined || location === undefined || nights === undefined || partySize === undefined) return undefined;
+  if (date === undefined || location === undefined || partySize === undefined) return undefined;
+  // Issue 05b: a checkout show-back shows the held check-in and the candidate checkout, with the nights between them.
+  if (pendingDate.checkIn !== undefined) {
+    const stayNights = nightsBetween(pendingDate.checkIn, date);
+    if (stayNights === undefined) return undefined;
+    return GUEST_ASSISTANT_COPY.dateShowBack(formatGuestDay(pendingDate.checkIn), formatGuestDay(date), stayNights, partySize, neighbourhood ?? location);
+  }
+  if (nights === undefined) return undefined;
   const checkOut = checkOutForNights(date, nights);
   return GUEST_ASSISTANT_COPY.dateShowBack(formatGuestDay(date), formatGuestDay(checkOut), nights, partySize, neighbourhood ?? location);
 }
@@ -461,25 +470,33 @@ export function nightsBetween(checkIn: string, checkOut: string): number | undef
 interface GuestDateWords {
   readonly present: boolean;
   readonly reading?: CheckInPhraseReading;
+  /** Issue 05b: a relative checkout phrase, read on the server like the check-in phrase. */
+  readonly checkOutReading?: CheckInPhraseReading;
   readonly checkOut?: string;
 }
 
 /**
  * Issue 04 / 05 (ADR 0106, 2 Nov 2026): the planner's date words, checked against the guest's own text. A phrase or checkout the guest
- * did not write is a rejected call (tool_denial), never a date. Nothing here authorizes a date; a reading is acted on by the caller.
+ * did not write is a rejected call (tool_denial), never a date. A checkout the server already holds as confirmed (`heldCheckOut`) is
+ * accepted as server-owned, because the planner repeats it after the guest's yes. Nothing here authorizes a date by itself.
  */
-function guestDateWords(args: Readonly<Record<string, unknown>>, userTextHistory: readonly string[], now: Date): GuestDateWords {
+function guestDateWords(args: Readonly<Record<string, unknown>>, userTextHistory: readonly string[], now: Date, heldCheckOut?: string): GuestDateWords {
   const phrase = typeof args.checkInPhrase === "string" ? args.checkInPhrase : undefined;
+  const checkOutPhrase = typeof args.checkOutPhrase === "string" ? args.checkOutPhrase : undefined;
   const checkOut = typeof args.checkOut === "string" ? args.checkOut : undefined;
   if (phrase !== undefined && !phraseIsGuestAuthored(phrase, userTextHistory)) {
     throw new AssistantDateProvenanceError("The check-in phrase is not in the guest's own text.");
   }
-  if (checkOut !== undefined && !userTextHistory.some((text) => containsGuestDate(text, checkOut, now))) {
+  if (checkOutPhrase !== undefined && !phraseIsGuestAuthored(checkOutPhrase, userTextHistory)) {
+    throw new AssistantDateProvenanceError("The checkout phrase is not in the guest's own text.");
+  }
+  if (checkOut !== undefined && checkOut !== heldCheckOut && !userTextHistory.some((text) => containsGuestDate(text, checkOut, now))) {
     throw new AssistantDateProvenanceError("The checkout date is not in the guest's own text.");
   }
   return {
-    present: phrase !== undefined || checkOut !== undefined,
+    present: phrase !== undefined || checkOutPhrase !== undefined || checkOut !== undefined,
     ...(phrase === undefined ? {} : { reading: readCheckInPhrase(phrase, now) }),
+    ...(checkOutPhrase === undefined ? {} : { checkOutReading: readCheckInPhrase(checkOutPhrase, now) }),
     ...(checkOut === undefined ? {} : { checkOut }),
   };
 }
@@ -495,8 +512,19 @@ export function settlePendingStayDate(text: string, taskState: AssistantTaskStat
   if (pending === undefined) return;
   delete taskState.stayIntent.pendingDate;
   const [date] = pending.candidates;
+  if (pending.candidates.length !== 1 || date === undefined || !isExplicitConfirmation(text)) return;
+  // Issue 05b (ADR 0106, 2 Nov 2026): a checkout show-back keeps the check-in it was shown with; the yes confirms the checkout and the nights.
+  if (pending.checkIn !== undefined) {
+    const stayNights = nightsBetween(pending.checkIn, date);
+    if (stayNights === undefined || stayNights < 1) return;
+    const checkOut = validatedCheckOutForNights(pending.checkIn, stayNights, now, policy);
+    if (checkOut === null) return;
+    taskState.stayIntent.checkOut = checkOut;
+    taskState.stayIntent.nights = stayNights;
+    return;
+  }
   const nights = taskState.stayIntent.nights;
-  if (pending.candidates.length !== 1 || date === undefined || nights === undefined || !isExplicitConfirmation(text)) return;
+  if (nights === undefined) return;
   const checkOut = validatedCheckOutForNights(date, nights, now, policy);
   if (checkOut === null) return;
   taskState.stayIntent.checkIn = date;
@@ -639,7 +667,7 @@ export function executeAssistantTool(
       const guests = args.guests == null ? taskState.stayIntent.partySize : Number(args.guests);
       const nightsArg = args.nights == null ? taskState.stayIntent.nights : Number(args.nights);
       // Issue 04 / 05 (ADR 0106, 2 Nov 2026): the guest's own date words in this call are read on the server before any date authority.
-      const dateWords = guestDateWords(args, context.userTextHistory, context.now);
+      const dateWords = guestDateWords(args, context.userTextHistory, context.now, taskState.stayIntent.isDemoDate === false ? taskState.stayIntent.checkOut : undefined);
       const hasStayDetails = nightsArg !== undefined || guests !== undefined || (args.checkIn !== undefined && args.checkIn !== null) || dateWords.present;
       // A relative phrase is never a date until the guest confirms it (the show-back), so it bypasses the date authority here.
       const reading = dateWords.reading;
@@ -675,6 +703,31 @@ export function executeAssistantTool(
         nights = derived;
       }
 
+      // Issue 05b (ADR 0106, 2 Nov 2026): a relative checkout is shown back against a check-in the guest gave (typed or confirmed). It
+      // never uses the demo date, and the nights come from the two dates. A span or an unknown day is refused, as a check-in is.
+      const checkOutReading = dateWords.checkOutReading;
+      if (checkOutReading?.kind === "clarify") {
+        throw new AssistantDateProvenanceError("A checkout phrase that is a span or an unknown day needs a day in plain words.");
+      }
+      const checkOutRelative = checkOutReading?.kind === "confirm" || checkOutReading?.kind === "choose" ? checkOutReading : undefined;
+      if (checkOutRelative !== undefined) {
+        if (relativeReading !== undefined) {
+          throw new AssistantDateValidationError("A check-in phrase and a checkout phrase cannot be shown back in the same search.");
+        }
+        if (checkIn === undefined || dateContext?.isDemoDate !== false) {
+          throw new AssistantDateProvenanceError("A checkout phrase needs a check-in date the guest gave.");
+        }
+        if (checkOutRelative.kind === "confirm") {
+          const derived = nightsBetween(checkIn, checkOutRelative.date);
+          if (derived === undefined || derived < 1) throw new AssistantDateValidationError("The checkout must be after the check-in.");
+          const modelNights = args.nights == null ? undefined : Number(args.nights);
+          if (modelNights !== undefined && modelNights !== derived) {
+            throw new AssistantDateValidationError("The nights do not match the checkout the guest gave.");
+          }
+          nights = derived;
+        }
+      }
+
       // ADR 0106: a search with stay details must name both nights and party size (in this call or the task state).
       // A missing value is a rejected tool call answered with the fixed stay clarification, not an application fault.
       if (hasStayDetails && (nights === undefined || guests === undefined)) {
@@ -707,6 +760,29 @@ export function executeAssistantTool(
           nights,
           partySize: guests,
           pendingDate: { candidates },
+        };
+        return { result: { dateConfirmationPending: true }, updatedTaskState: taskState };
+      }
+      // Issue 05b: the checkout show-back. The guest-authored check-in is held now (it is the guest's own), and the checkout waits for the yes.
+      if (checkOutRelative !== undefined && checkIn !== undefined) {
+        const candidates = checkOutRelative.kind === "confirm" ? [checkOutRelative.date] : checkOutRelative.candidates;
+        for (const candidate of candidates) {
+          const stayNights = nightsBetween(checkIn, candidate);
+          if (stayNights === undefined || stayNights < 1 || validatedCheckOutForNights(checkIn, stayNights, context.now, context.environment.extendedStayPolicy) === null) {
+            throw new AssistantDateValidationError("The stay to that checkout is outside the Booking Horizon or the stay length.");
+          }
+        }
+        const { pendingLocation: previousPending, pendingDate: _previousDate, checkOut: _heldCheckOut, nights: _heldNights, ...keptIntent } = taskState.stayIntent;
+        taskState.stayIntent = {
+          ...keptIntent,
+          ...(clearsPending || previousPending === undefined ? {} : { pendingLocation: previousPending }),
+          location: city,
+          neighbourhood,
+          checkIn,
+          isDemoDate: false,
+          partySize: guests,
+          ...(checkOutRelative.kind === "confirm" && nights !== undefined ? { nights } : {}),
+          pendingDate: { candidates, checkIn },
         };
         return { result: { dateConfirmationPending: true }, updatedTaskState: taskState };
       }

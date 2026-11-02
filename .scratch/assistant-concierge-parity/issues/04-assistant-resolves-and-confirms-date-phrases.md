@@ -1,6 +1,6 @@
 # Assistant: resolve the guest's date phrase on the server and confirm it
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 Blocked by: 01, 02, 03
 Requested: 1 Nov 2026
@@ -159,3 +159,17 @@ Definition of Done (checked, 2 Nov 2026)
 7. `npm run check` passes (above). `npm test` is NOT claimed; it runs at the batch gate (see Test scope).
 
 Status is left `ready-for-agent`. It moves to `resolved` only after the owner settles deviations 1 to 4 and the batch gate passes.
+
+### Owner decisions (2 Nov 2026, recorded by the coordinator)
+
+Owner accepted deviations 1 to 4 above: (1) "next Friday" on this clock gives two date chips, nothing searched; (2) AC7 stays text-chip with server-owned pending state, no surface id (the STALE_SURFACE id part is not required); (3) ranges ("next week", "next month") get the plain-word dates clarification, no day chips; (4) a typed "yes" uses the closed confirmation set (`isExplicitConfirmation`), with no classifier call before it. Deviations 5 and 6 are not contested.
+
+### Completion record (agent, 2 Nov 2026, after the owner decisions above)
+
+Status set to `resolved` on the coordinator's instruction. DoD item 7 (full `npm test`) is left to the once-per-batch pre-merge gate, as the Test scope rule requires; it is not run per issue.
+
+Tests (env -u LLM_API_KEY): `npx tsx --test test/assistant-date-phrases.test.ts` 9 of 9 pass. Affected set (60 files, incl. this and 05): 535 of 535 pass. `npm run check`: exit 0, zero errors (before and after the commit).
+
+Two fixes found while finishing 05b, both in this issue's code path: (a) a refused turn commits nothing, so a show-back closed by a later turn could survive in the persisted state and be confirmed by a later yes; the settle step now runs on the committed state too (fail closed). (b) the cold-restore rebuild no longer searches a context with a pending date.
+
+DoD: (1) named tests for AC1 to AC8 (AC7's id part is out by owner decision); (2) failure paths asserted; (3) ADR table above, read; (4) no unused dependencies; (5) no invented policy (policy values from `DEFAULT_STAY_DATE_POLICY`); (6) no credential or guest identity in logs; (7) batch gate.

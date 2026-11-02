@@ -161,7 +161,7 @@ export interface PersistedAssistantContext {
   /** Issue 09 (ADR 0106, 0093): a different area the guest was asked about and has not answered. A field of this context, not a record. */
   readonly pendingLocation?: { readonly city: "Lagos" | "Abuja"; readonly neighbourhood?: string };
   /** Issue 04 (ADR 0106 2 Nov 2026, ADR 0093): the candidate dates of an unconfirmed relative phrase. A field of this context, not a record. */
-  readonly pendingDate?: { readonly candidates: readonly string[] };
+  readonly pendingDate?: { readonly candidates: readonly string[]; readonly checkIn?: string };
 }
 
 /**
@@ -181,11 +181,14 @@ function parsePendingLocation(value: unknown): PersistedAssistantContext["pendin
  * no unconfirmed date can become a search.
  */
 function parsePendingDate(value: unknown): PersistedAssistantContext["pendingDate"] | undefined {
-  if (!isRecord(value) || Object.keys(value).some((key) => key !== "candidates")) return undefined;
+  if (!isRecord(value) || Object.keys(value).some((key) => key !== "candidates" && key !== "checkIn")) return undefined;
   const candidates = value.candidates;
   if (!Array.isArray(candidates) || candidates.length < 1 || candidates.length > 2) return undefined;
-  const valid = candidates.every((entry) => typeof entry === "string" && /^\d{4}-\d{2}-\d{2}$/.test(entry) && !Number.isNaN(Date.parse(`${entry}T00:00:00Z`)));
-  return valid ? { candidates: [...(candidates as string[])] } : undefined;
+  const isIsoDate = (entry: unknown): entry is string => typeof entry === "string" && /^\d{4}-\d{2}-\d{2}$/.test(entry) && !Number.isNaN(Date.parse(`${entry}T00:00:00Z`));
+  if (!candidates.every(isIsoDate)) return undefined;
+  // Issue 05b: a checkout show-back carries the check-in it was shown with; an invalid one drops the whole pending date (fail closed).
+  if (value.checkIn === undefined) return { candidates: [...(candidates as string[])] };
+  return isIsoDate(value.checkIn) ? { candidates: [...(candidates as string[])], checkIn: value.checkIn } : undefined;
 }
 
 export function isPersistentTimelineEntry(value: unknown): value is { readonly role: "assistant" | "user" | "receipt"; readonly text: string } {

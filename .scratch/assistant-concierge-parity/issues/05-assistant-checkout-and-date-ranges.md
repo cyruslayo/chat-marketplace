@@ -1,6 +1,6 @@
 # Assistant: take the guest's checkout and derive the nights on the server
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 Blocked by: 02
 Requested: 1 Nov 2026
@@ -119,3 +119,38 @@ Definition of Done (checked, 2 Nov 2026, for 05a)
 7. `npm run check` passes. `npm test` is not claimed here (batch gate).
 
 Status is left `ready-for-agent`. Not resolvable: 05b is not built, and AC4 has no test.
+
+### Owner decisions (2 Nov 2026, recorded by the coordinator)
+
+Owner accepted the 04 decisions that bind this issue: a relative date (including a checkout phrase) is shown back and confirmed before any search; a typed "yes" uses the closed confirmation set; ranges get the plain-word clarification.
+
+### ADR table for 05b (agent, before code; 2 Nov 2026)
+
+| ADR | Constraint | Acceptance criterion or code path |
+|---|---|---|
+| 0106 (2 Nov) | A relative phrase is authorized only after the guest's confirmation; a `checkOutPhrase` shows back both dates and nights before any search | 05b AC1 (show-back), AC2 (Yes searches the held stay) |
+| 0106 (2 Nov, cold restore) | The pending checkout and its check-in persist and are restored, never re-minted | 05b AC4 (cold restore keeps the pending checkout) |
+| 0106 (27 Oct) | A checkout phrase with no guest-authored check-in is refused; the check-in is never the demo date | 05b AC3 failure path |
+| 0023, 0092, 0055 | Stay length and horizon on the derived stay | 05b AC3 (checkout before check-in is refused) |
+| 0080 | Same stay on both paths | AC4 parity test |
+| 0074 | A superseded pending checkout does not confirm | 05b AC4 |
+
+Scope: `checkOutPhrase` is one relative day or a choice of candidates. A range ("this weekend", "next week") as a checkout is refused with the plain-word clarification (owner decision 3).
+
+### Completion record (agent, 2 Nov 2026): 05a, 05b and the AC4 parity test
+
+Status set to `resolved`. DoD item 7 (full `npm test`) is left to the batch pre-merge gate.
+
+What was built, beyond 05a: `checkOutPhrase` (05b). A relative checkout is read on the server like a check-in phrase and must be the guest's own words. It is shown back with both dates and the nights, against a check-in the guest gave (typed or already confirmed). Yes confirms the checkout and the nights; a second checkout phrase or any other turn closes it. A checkout phrase with no guest-given check-in is refused and never uses the demo date. A span as a checkout is refused with the dates clarification (owner decision 3). The held checkout is accepted when the planner repeats it after the yes (it is server-owned, not guest text).
+
+Tests (env -u LLM_API_KEY):
+- `npx tsx --test test/assistant-checkout-dates.test.ts`: 12 of 12 pass. Before the 05b code, 6 failed as expected (05b AC1, AC2, AC3 x3 and the parity test); the superseded test passed trivially then, and it now passes for the right reason.
+- `npx tsx --test test/assistant-date-phrases.test.ts`: 9 of 9 pass.
+- Affected set (60 files): 535 of 535 pass.
+- `npm run check`: exit 0, zero errors.
+
+AC4 parity: the deterministic path and the assistant path record the same discovery filters for "Ikoyi 20 Nov to 23 Nov for 2 guests" (the recorded filters are compared, not the surfaces). Finding: the deterministic path does not read "for 2" as a party size (it asks how many guests), while the assistant does. The parity test therefore uses "2 guests" on both paths. This is a known gap in the deterministic path's party-size words, not fixed here.
+
+Fixes found while finishing: (a) a refused turn commits nothing, so a checkout show-back closed by a later turn could survive and be confirmed later; the settle step runs on the committed state too (fail closed). (b) the cold-restore rebuild does not search a context with a pending date.
+
+DoD: (1) named tests for AC1 to AC5 and the 05b criteria (AC4 parity now tested); (2) failure paths asserted; (3) ADR tables above, read; (4) no unused dependencies; (5) no invented policy; (6) no credential or identity in logs; (7) batch gate.

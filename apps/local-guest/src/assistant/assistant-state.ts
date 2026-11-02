@@ -49,6 +49,11 @@ export interface AssistantPendingLocation {
  */
 export interface AssistantPendingDate {
   readonly candidates: readonly string[];
+  /**
+   * Issue 05b (ADR 0106, 2 Nov 2026): set when the pending date is a checkout. The check-in it was shown with is guest-authored
+   * (typed or confirmed), and the confirmed checkout is the candidate after it.
+   */
+  readonly checkIn?: string;
 }
 
 export interface AssistantStayIntent {

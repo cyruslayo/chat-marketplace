@@ -3089,7 +3089,7 @@ export class LocalGuestApp {
     const pendingDate = state.stayIntent.pendingDate;
     return {
       city,
-      ...(pendingDate ? { pendingDate: { candidates: [...pendingDate.candidates] } } : {}),
+      ...(pendingDate ? { pendingDate: { candidates: [...pendingDate.candidates], ...(pendingDate.checkIn === undefined ? {} : { checkIn: pendingDate.checkIn }) } } : {}),
       ...(pending && (pending.city === "Lagos" || pending.city === "Abuja")
         ? { pendingLocation: pending.neighbourhood === undefined ? { city: pending.city } : { city: pending.city, neighbourhood: pending.neighbourhood } }
         : {}),
@@ -3269,7 +3269,7 @@ export class LocalGuestApp {
         ...(context.maxBudgetKobo === undefined || context.maxBudgetPer === undefined ? {} : { maxBudgetKobo: context.maxBudgetKobo, maxBudgetPer: context.maxBudgetPer }),
         ...(context.requiredAmenities ? { requiredAmenities: context.requiredAmenities } : {}),
         ...(context.pendingLocation ? { pendingLocation: context.pendingLocation } : {}),
-        ...(context.pendingDate ? { pendingDate: { candidates: [...context.pendingDate.candidates] } } : {}),
+        ...(context.pendingDate ? { pendingDate: { candidates: [...context.pendingDate.candidates], ...(context.pendingDate.checkIn === undefined ? {} : { checkIn: context.pendingDate.checkIn }) } } : {}),
       },
       shortlist,
       ...(selected ? { selectedStayRef: selected.stayRef } : {}),
