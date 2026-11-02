@@ -199,7 +199,9 @@ import {
   quickRepliesFor,
   searchAreaFor,
   SEARCH_AREAS,
+  stayBudgetKobo,
   type CriteriaEdit,
+  type StayBudget,
 } from "./concierge.js";
 import { ContinuousOccupancyError } from "../../../domains/shortlet/src/index.js";
 import {
@@ -222,7 +224,7 @@ import {
   type AssistantVertical,
 } from "./assistant/assistant-runtime.js";
 import { ASSISTANT_CONTROL_COPY } from "./assistant/control-copy.js";
-import type { AssistantStayReference, AssistantTaskState } from "./assistant/assistant-state.js";
+import { isAssistantBudgetPer, type AssistantStayReference, type AssistantTaskState } from "./assistant/assistant-state.js";
 import { redactSensitiveData } from "../../../packages/platform-core/src/redaction.js";
 import {
   TASK_START_EVENT,
@@ -532,6 +534,15 @@ const MAX_BUDGET_NAIRA = 1_000_000_000;
 
 function isPositiveInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
+}
+
+/**
+ * Issue 06 (ADR 0015): the All-In Stay Total a persisted budget compares with, converted with the stay's nights exactly as the
+ * deterministic concierge converts it (`stayBudgetKobo`). Undefined without a budget, or for a nightly budget without nights.
+ */
+function persistedBudgetTotal(context: PersistedAssistantContext): number | undefined {
+  if (context.maxBudgetKobo === undefined || context.maxBudgetPer === undefined) return undefined;
+  return stayBudgetKobo({ budget: { kobo: context.maxBudgetKobo, per: context.maxBudgetPer }, ...(context.nights === undefined ? {} : { nights: context.nights }) });
 }
 
 /** Reads one strip edit; anything but the exact expected shape fails closed (ADR-0072). */
@@ -3078,7 +3089,10 @@ export class LocalGuestApp {
       ...(Number.isSafeInteger(state.stayIntent.nights) && (state.stayIntent.nights ?? 0) > 0 ? { nights: state.stayIntent.nights } : {}),
       ...(Number.isSafeInteger(state.stayIntent.partySize) && (state.stayIntent.partySize ?? 0) > 0 ? { partySize: state.stayIntent.partySize } : {}),
       ...(Number.isSafeInteger(state.stayIntent.bedrooms) && (state.stayIntent.bedrooms ?? -1) >= 0 ? { bedrooms: state.stayIntent.bedrooms } : {}),
-      ...(Number.isSafeInteger(state.stayIntent.maxBudgetKobo) && (state.stayIntent.maxBudgetKobo ?? -1) >= 0 ? { maxBudgetKobo: state.stayIntent.maxBudgetKobo } : {}),
+      // Issue 06 (ADR 0015): a budget is persisted with its meaning, stay or night; without one it is not persisted.
+      ...(Number.isSafeInteger(state.stayIntent.maxBudgetKobo) && (state.stayIntent.maxBudgetKobo ?? -1) >= 0 && isAssistantBudgetPer(state.stayIntent.maxBudgetPer)
+        ? { maxBudgetKobo: state.stayIntent.maxBudgetKobo, maxBudgetPer: state.stayIntent.maxBudgetPer }
+        : {}),
       ...(requiredAmenities?.length ? { requiredAmenities } : {}),
       ...(selectedStay ? { selectedUnitId: selectedStay.unitId } : {}),
     };
@@ -3095,16 +3109,19 @@ export class LocalGuestApp {
     currentArtifact?: DiscoveryArtifactProjection,
     keepArtifactId: string | null = null,
   ): void {
+    const budgetTotal = persistedBudgetTotal(context);
     const filters = {
       location: context.city,
       ...(context.neighbourhood ? { neighbourhood: context.neighbourhood } : {}),
       ...(context.checkIn && context.checkOut ? { checkIn: context.checkIn, checkOut: context.checkOut } : {}),
       ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
       ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
-      ...(context.maxBudgetKobo === undefined ? {} : { maxPriceKobo: context.maxBudgetKobo }),
+      ...(budgetTotal === undefined ? {} : { maxPriceKobo: budgetTotal }),
       ...(context.requiredAmenities?.length ? { requiredAmenities: context.requiredAmenities } : {}),
     };
     try {
+      // ADR 0015: a nightly budget is compared only with the stay's nights. Without them it is not rebuilt as an unfiltered search.
+      if (context.maxBudgetKobo !== undefined && budgetTotal === undefined) throw new RangeError("a budget needs its stay's total");
       // ADR 0077/0080: cold start rebuilds current facts from the authorized domain query.
       const currentFilters = currentArtifact?.facts.filters;
       const matchesContext = currentArtifact !== undefined
@@ -3128,7 +3145,7 @@ export class LocalGuestApp {
         ...(context.nights === undefined ? {} : { nights: context.nights }),
         ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
         ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
-        ...(context.maxBudgetKobo === undefined ? {} : { budget: { kobo: context.maxBudgetKobo, per: "stay" as const } }),
+        ...(context.maxBudgetKobo === undefined || context.maxBudgetPer === undefined ? {} : { budget: { kobo: context.maxBudgetKobo, per: context.maxBudgetPer } }),
       };
       thread.searchHistory = [thread.discoveryContext];
       // ADR 0106: the detail's artifact is the unit-detail artifact the detail card's Request to Book names, never the discovery artifact.
@@ -3234,7 +3251,7 @@ export class LocalGuestApp {
         ...(context.nights === undefined ? {} : { nights: context.nights }),
         ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
         ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
-        ...(context.maxBudgetKobo === undefined ? {} : { maxBudgetKobo: context.maxBudgetKobo }),
+        ...(context.maxBudgetKobo === undefined || context.maxBudgetPer === undefined ? {} : { maxBudgetKobo: context.maxBudgetKobo, maxBudgetPer: context.maxBudgetPer }),
         ...(context.requiredAmenities ? { requiredAmenities: context.requiredAmenities } : {}),
       },
       shortlist,
@@ -4004,6 +4021,11 @@ export class LocalGuestApp {
       this.#recordAssistantArea(thread, next);
       return;
     }
+    // Issue 06 (ADR 0015): the budget chip, or its clear (null), is recorded with its stay or per-night meaning.
+    if (edit.field === "budget") {
+      this.#recordAssistantStayFacts(thread, { budget: edit.budget });
+      return;
+    }
     const facts =
       edit.field === "when"
         ? {
@@ -4012,17 +4034,14 @@ export class LocalGuestApp {
               : {}),
             nights: edit.nights,
           }
-        : edit.field === "guests"
-          ? { partySize: edit.partySize }
-          : null;
-    if (facts === null) return;
+        : { partySize: edit.partySize };
     this.#recordAssistantStayFacts(thread, facts);
   }
 
   /** ADR 0106: records the chip's stay facts in the assistant task state and keeps the persisted context in step. */
   #recordAssistantStayFacts(
     thread: GuestThreadState,
-    facts: { readonly checkIn?: string; readonly nights?: number; readonly partySize?: number },
+    facts: { readonly checkIn?: string; readonly nights?: number; readonly partySize?: number; readonly budget?: StayBudget | null },
   ): void {
     const runtime = this.#assistantRuntime;
     if (!runtime || !runtime.hasThread(thread.threadId)) return;
@@ -4098,6 +4117,8 @@ export class LocalGuestApp {
       ...(previous.checkIn !== undefined && previous.datesConfirmed !== false ? { checkIn: previous.checkIn } : {}),
       ...(previous.nights !== undefined ? { nights: previous.nights } : {}),
       ...(previous.partySize !== undefined ? { partySize: previous.partySize } : {}),
+      // Issue 06: the previous budget, or none (a clear), so the assistant's state matches the strip the undo restores.
+      budget: previous.budget ?? null,
     });
     this.#recordAssistantArea(thread, previous);
     const result = this.#executeDiscovery(thread, resolution.filters, {

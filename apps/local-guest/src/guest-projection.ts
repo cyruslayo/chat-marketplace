@@ -1,5 +1,6 @@
 import type { DiscoveryArtifactProjection } from "../../../apps/web-agent/src/index.js";
 import { parseDiscoverySearchContext, type DiscoverySearchContext } from "./concierge.js";
+import { isAssistantBudgetPer, type AssistantBudgetPer } from "./assistant/assistant-state.js";
 import type { PendingAssistantAction } from "./assistant/pending-actions.js";
 import type { ReplacedPendingAction } from "./assistant/assistant-state.js";
 
@@ -152,6 +153,8 @@ export interface PersistedAssistantContext {
   readonly partySize?: number;
   readonly bedrooms?: number;
   readonly maxBudgetKobo?: number;
+  /** Issue 06 (ADR 0015): whether `maxBudgetKobo` is for the stay or per night. Only present with a budget. */
+  readonly maxBudgetPer?: AssistantBudgetPer;
   readonly requiredAmenities?: readonly string[];
   readonly selectedUnitId?: string;
 }
@@ -179,7 +182,7 @@ function isUnitDetail(value: unknown): value is { readonly unitId: string; reado
 
 function parseAssistantContext(value: unknown): PersistedAssistantContext | null {
   if (!isRecord(value) || (value.city !== "Lagos" && value.city !== "Abuja")) return null;
-  const allowed = new Set(["city", "neighbourhood", "checkIn", "isDemoDate", "checkOut", "nights", "partySize", "bedrooms", "maxBudgetKobo", "requiredAmenities", "selectedUnitId"]);
+  const allowed = new Set(["city", "neighbourhood", "checkIn", "isDemoDate", "checkOut", "nights", "partySize", "bedrooms", "maxBudgetKobo", "maxBudgetPer", "requiredAmenities", "selectedUnitId"]);
   if (Object.keys(value).some((key) => !allowed.has(key))) return null;
   if (value.neighbourhood !== undefined && (typeof value.neighbourhood !== "string" || value.neighbourhood.length > 100)) return null;
   if (value.isDemoDate !== undefined && typeof value.isDemoDate !== "boolean") return null;
@@ -193,6 +196,10 @@ function parseAssistantContext(value: unknown): PersistedAssistantContext | null
   }
   if (value.requiredAmenities !== undefined && (!Array.isArray(value.requiredAmenities) || value.requiredAmenities.length > 16 || !value.requiredAmenities.every((entry) => typeof entry === "string" && /^[A-Za-z0-9_-]{1,48}$/.test(entry)))) return null;
   if (value.selectedUnitId !== undefined && (typeof value.selectedUnitId !== "string" || value.selectedUnitId.length < 1 || value.selectedUnitId.length > 128)) return null;
+  // Issue 06: a budget keeps its amount only with a known meaning. An unknown or missing meaning drops the budget; it is never guessed.
+  const budget = typeof value.maxBudgetKobo === "number" && isAssistantBudgetPer(value.maxBudgetPer)
+    ? { maxBudgetKobo: value.maxBudgetKobo, maxBudgetPer: value.maxBudgetPer }
+    : {};
   return {
     city: value.city,
     ...(typeof value.neighbourhood === "string" ? { neighbourhood: value.neighbourhood } : {}),
@@ -202,7 +209,7 @@ function parseAssistantContext(value: unknown): PersistedAssistantContext | null
     ...(typeof value.nights === "number" ? { nights: value.nights } : {}),
     ...(typeof value.partySize === "number" ? { partySize: value.partySize } : {}),
     ...(typeof value.bedrooms === "number" ? { bedrooms: value.bedrooms } : {}),
-    ...(typeof value.maxBudgetKobo === "number" ? { maxBudgetKobo: value.maxBudgetKobo } : {}),
+    ...budget,
     ...(Array.isArray(value.requiredAmenities) ? { requiredAmenities: [...value.requiredAmenities] as string[] } : {}),
     ...(typeof value.selectedUnitId === "string" ? { selectedUnitId: value.selectedUnitId } : {}),
   };

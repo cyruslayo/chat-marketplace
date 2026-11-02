@@ -26,6 +26,17 @@ export interface AssistantStayReference {
   readonly managementAuthorityStatus: string;
 }
 
+/**
+ * Issue 06 (ADR 0015): a budget is either an All-In Stay Total ("stay") or a nightly amount ("night") that is converted with the
+ * stay's nights at search time, as the deterministic concierge does (`stayBudgetKobo`). The closed list is the only accepted meaning.
+ */
+export const ASSISTANT_BUDGET_PERS = ["stay", "night"] as const;
+export type AssistantBudgetPer = (typeof ASSISTANT_BUDGET_PERS)[number];
+
+export function isAssistantBudgetPer(value: unknown): value is AssistantBudgetPer {
+  return value === "stay" || value === "night";
+}
+
 export interface AssistantStayIntent {
   location?: string;
   neighbourhood?: string;
@@ -35,7 +46,9 @@ export interface AssistantStayIntent {
   nights?: number;
   partySize?: number;
   bedrooms?: number;
+  /** The budget in kobo, with `maxBudgetPer` saying whether it is for the stay or per night (issue 06). */
   maxBudgetKobo?: number;
+  maxBudgetPer?: AssistantBudgetPer;
   requiredAmenities?: readonly string[];
 }
 

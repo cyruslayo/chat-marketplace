@@ -1,6 +1,7 @@
 import { generatePlatformId } from "../../../../packages/platform-core/src/index.js";
 import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantGuestRefusalError, AssistantStayDetailsError, containsGuestDate } from "./date-tokens.js";
 import { ContinuousOccupancyError, StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, MAX_STAY_NIGHTS, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
+import { stayBudgetKobo } from "../concierge.js";
 import {
   discoveryArtifactToA2UI,
   bookingRequestArtifactToA2UI,
@@ -449,9 +450,20 @@ export function executeAssistantTool(
         }
       }
 
-      const maxBudgetKobo = typeof args.maxBudgetKobo === "number" && args.maxBudgetKobo > 0
+      // Issue 06 (ADR 0015): a budget the model proposes is an All-In Stay Total. Without one, the task's budget (the guest's chip, or
+      // its persisted meaning) applies, converted with this search's nights as the deterministic concierge does. A chip budget is
+      // applied only once the stay can be quoted (dates and party size), so it never makes an unquotable search throw.
+      const modelBudgetKobo = typeof args.maxBudgetKobo === "number" && args.maxBudgetKobo > 0
         ? Math.floor(args.maxBudgetKobo)
         : undefined;
+      const taskBudget = taskState.stayIntent.maxBudgetKobo !== undefined && taskState.stayIntent.maxBudgetPer !== undefined
+        ? { kobo: taskState.stayIntent.maxBudgetKobo, per: taskState.stayIntent.maxBudgetPer }
+        : undefined;
+      const budgetTotal = modelBudgetKobo !== undefined
+        ? modelBudgetKobo
+        : taskBudget !== undefined && checkIn !== undefined && checkOut !== undefined && guests !== undefined && nights !== undefined
+          ? stayBudgetKobo({ budget: taskBudget, nights })
+          : undefined;
 
       const requiredAmenities = Array.isArray(args.requiredAmenities)
         ? (args.requiredAmenities.filter((a): a is string => typeof a === "string" && a.trim() !== ""))
@@ -468,7 +480,7 @@ export function executeAssistantTool(
         ...(checkIn && checkOut ? { checkIn, checkOut } : {}),
         ...(guests !== undefined ? { partySize: guests } : {}),
         ...(bedrooms !== undefined ? { bedrooms } : {}),
-        ...(maxBudgetKobo !== undefined ? { maxPriceKobo: maxBudgetKobo } : {}),
+        ...(budgetTotal !== undefined ? { maxPriceKobo: budgetTotal } : {}),
         ...(requiredAmenities?.length ? { requiredAmenities } : {}),
       };
 
@@ -508,7 +520,7 @@ export function executeAssistantTool(
         ...(nights !== undefined ? { nights } : {}),
         ...(guests !== undefined ? { partySize: guests } : {}),
         ...(bedrooms !== undefined ? { bedrooms } : {}),
-        ...(maxBudgetKobo !== undefined ? { maxBudgetKobo } : {}),
+        ...(modelBudgetKobo !== undefined ? { maxBudgetKobo: modelBudgetKobo, maxBudgetPer: "stay" as const } : {}),
         ...(requiredAmenities !== undefined ? { requiredAmenities } : {}),
       };
       taskState.shortlist = shortlist;

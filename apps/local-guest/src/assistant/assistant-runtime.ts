@@ -45,6 +45,8 @@ import {
   type AssistantTurnSurface,
   replacePendingProposal,
   type AssistantStayReference,
+  isAssistantBudgetPer,
+  type AssistantBudgetPer,
 } from "./assistant-state.js";
 import { TurnTransaction, syncActiveTask } from "./assistant-turn-transaction.js";
 import { beginThreadRun, threadRunActive, THREAD_BUSY_CODE, THREAD_BUSY_MESSAGE } from "./assistant-thread-lock.js";
@@ -749,12 +751,15 @@ export class AssistantRuntime {
    * - Nights are recorded only with a guest-authored check-in and a valid stay (ADR 0023, ADR 0055). The checkout is
    *   derived from them and checked by StayDateRange; an invalid stay records neither nights nor checkout.
    * - A party size is recorded as a positive integer. A model-proposed fact is never recorded through this path.
+   * - A budget chip (issue 06, ADR 0015) records its amount and whether it is for the stay or per night; `null` clears it.
    */
-  recordGuestStay(threadId: string, facts: { readonly checkIn?: string; readonly nights?: number; readonly partySize?: number }): boolean {
+  recordGuestStay(threadId: string, facts: { readonly checkIn?: string; readonly nights?: number; readonly partySize?: number; readonly budget?: { readonly kobo: number; readonly per: AssistantBudgetPer } | null }): boolean {
     if (this.threadBusy(threadId)) return false;
     const thread = this.#threads.get(threadId);
     if (!thread) return false;
     if (facts.checkIn !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(facts.checkIn)) return false;
+    // Issue 06 (ADR 0015): a budget is a positive whole amount in kobo with a closed meaning; anything else is refused before the state changes.
+    if (facts.budget !== undefined && facts.budget !== null && (!Number.isSafeInteger(facts.budget.kobo) || facts.budget.kobo <= 0 || !isAssistantBudgetPer(facts.budget.per))) return false;
     const stay = thread.taskState.stayIntent;
     if (facts.checkIn !== undefined) {
       stay.checkIn = facts.checkIn;
@@ -771,6 +776,14 @@ export class AssistantRuntime {
       }
     }
     if (facts.partySize !== undefined && Number.isSafeInteger(facts.partySize) && facts.partySize > 0) stay.partySize = facts.partySize;
+    // Issue 06: a chip budget (or its clear, `null`) replaces the stay's budget as a whole; the total is converted at search time.
+    if (facts.budget === null) {
+      delete stay.maxBudgetKobo;
+      delete stay.maxBudgetPer;
+    } else if (facts.budget !== undefined && isAssistantBudgetPer(facts.budget.per)) {
+      stay.maxBudgetKobo = facts.budget.kobo;
+      stay.maxBudgetPer = facts.budget.per;
+    }
     const task = thread.tasks.find((entry) => entry.taskId === thread.activeTaskId);
     if (task) task.state = thread.taskState;
     return true;
