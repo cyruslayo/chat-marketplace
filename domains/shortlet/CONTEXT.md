@@ -114,6 +114,14 @@ _Avoid_: Separate stay, booking count
 The rolling local-calendar period in which a unit accepts check-in dates, capped platform-wide at 90 days and optionally narrowed per unit.
 _Avoid_: Availability Calendar, stay length, checkout horizon
 
+**Date phrase**:
+The guest's own words for a day or a span of days, such as "20 Nov", "tomorrow", "next Friday" or "next week". Server code resolves it against the Lagos clock. It authorizes a check-in only after the guest confirms its show-back (ADR 0106, 2 Nov 2026 amendment).
+_Avoid_: Date expression, relative date, date string
+
+**Show-back**:
+The concrete reading of a date phrase or chip check-in, shown to the guest before any search runs. For example, "Arriving Fri 6 Nov 2026, leaving Mon 9 Nov 2026. Shall I search these dates?" For "next Friday" on Wed 4 Nov, it offers two chips, Fri 6 Nov 2026 and Fri 13 Nov 2026, and searches neither until the guest taps one. Only the guest's yes or chip tap makes the dates guest-authored.
+_Avoid_: Confirmation (already used for offer confirmation tokens, ADR 0086), preview, echo
+
 ## Trust
 
 **Physical Inspection**:

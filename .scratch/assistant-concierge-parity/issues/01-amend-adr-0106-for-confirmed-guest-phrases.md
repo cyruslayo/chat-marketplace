@@ -1,6 +1,6 @@
 # Amend ADR 0106 so confirmed relative dates are guest-authored
 
-Status: ready-for-human
+Status: resolved
 Type: grilling
 Blocked by: none
 Requested: 1 Nov 2026
@@ -24,9 +24,9 @@ ADR 0106 (27 Oct amendment) says "Relative words ... stay unresolved" and "A pen
 
 ## Acceptance criteria
 
-- [ ] AC1: ADR 0106 has a dated amendment recording decisions 1 to 6.
-- [ ] AC2: The amendment states that the rule values (week start, "next <weekday>" rule) are configuration passed to the resolver, not literals in code.
-- [ ] AC3: `CONTEXT.md` (shortlet) defines any new term used, for example "date phrase" and "show-back".
+- [x] AC1: ADR 0106 has a dated amendment recording decisions 1 to 6. Done: `docs/adr/0106-enforce-concierge-agent-controls.md`, section "Amendment (2 Nov 2026): confirmed date phrases are guest-authored".
+- [x] AC2: The amendment states that the rule values (week start, "next <weekday>" rule) are configuration passed to the resolver, not literals in code. Done: same ADR section, bullet "Configuration (AC2)", with the defaults listed.
+- [x] AC3: `CONTEXT.md` (shortlet) defines any new term used, for example "date phrase" and "show-back". Done: `domains/shortlet/CONTEXT.md`, after **Booking Horizon**.
 
 ## Comments
 
@@ -56,3 +56,22 @@ Grounding: `concierge.ts` `relativeDates` (about lines 272 to 300) resolves toda
   _Avoid_: confirmation (already used for offer confirmation tokens, ADR 0086), preview, echo
 
 Issues 02, 04, 05 and 13 stay blocked until the owner decides 1 to 6. Issue 01 stays `ready-for-human`; this comment changes no status.
+
+### Owner decision (2 Nov 2026)
+
+The owner accepted the recommendation above, with one correction to decision 2:
+
+1. Accepted: a confirmed relative date phrase is guest-authored. Unconfirmed resolutions authorize nothing.
+2. Accepted with correction: "next <weekday>" is ambiguous Monday to Saturday (both candidate dates offered as chips). The fixed rule (that weekday in the following Monday-start week) applies on Sunday only. This supersedes the "Wed to Sat" wording in the original decision 2.
+3. Accepted: the week starts on Monday.
+4. Accepted: "next tomorrow" is the day after tomorrow.
+5. Accepted: fixed holidays (25 and 31 December) resolve; moving holidays (Sallah, Eid, Easter) never resolve.
+6. Accepted: "next week", "next month" and "end of the month" return a range with its grain, and the guest picks the day.
+
+The rule values are configuration in one policy object, with defaults listed in the ADR (AC2).
+
+Recorded in `docs/adr/0106-enforce-concierge-agent-controls.md` (amendment of 2 Nov 2026, plus a pointer on the 27 Oct line) and `domains/shortlet/CONTEXT.md` (**Date phrase**, **Show-back**). No code changed.
+
+## Answer
+
+Issue 01 is decided and recorded. ADR 0106 has a 2 Nov 2026 amendment covering the six owner decisions, the policy-object configuration statement, and the boundaries (authority only from the guest's confirmation of the show-back; unconfirmed or ambiguous resolutions authorize nothing; the planner's date must equal the confirmed date; rejected calls stay `tool_denial`; no deterministic fast path; the confirmation is structured guest input persisted across a cold restore). CONTEXT.md gains **Date phrase** and **Show-back**. Issue 02 is now unblocked. Issues 04 and 05 are blocked by 02, and 13 by 04 and 05. Documentation only; no code, tests or status changes outside this issue and map.md.
