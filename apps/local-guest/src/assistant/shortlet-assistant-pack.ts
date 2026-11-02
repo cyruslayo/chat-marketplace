@@ -1112,11 +1112,13 @@ export function bookingTurnContext(now: Date): string {
 
 /**
  * ADR 0005, 0060, 0080, 0106 (issue 12): whether a validated turn asks to change stay facts. Only the classifier's verdict decides:
- * the `change` intent, or a stay search that carries a stay fact (nights, guests, or a check-in or checkout date). No text is read.
+ * the `change` intent, or a verdict whose only intent is `search` and that carries a stay fact (nights, guests, or a check-in or
+ * checkout date). A `search` that sits beside other intents (for example `offer` or `status`) is a query, so it keeps the planner.
  */
 function asksToChangeStay(intents: readonly ConciergeIntent[], slots: ScopeAssessment["slots"]): boolean {
   if (intents.includes("change")) return true;
-  return intents.includes("search") && (slots.nights !== null || slots.guests !== null || slots.checkIn !== null || slots.checkOut !== null);
+  const onlySearch = intents.length === 1 && intents[0] === "search";
+  return onlySearch && (slots.nights !== null || slots.guests !== null || slots.checkIn !== null || slots.checkOut !== null);
 }
 
 /**

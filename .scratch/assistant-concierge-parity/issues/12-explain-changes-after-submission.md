@@ -123,3 +123,10 @@ Design decisions and deviations (please review):
 - `test/helpers/assistant-stage-journey.ts` (new): journeys to each sent stage with a cold restore before every event.
 - `test/helpers/assistant-scope.ts`: `approvedTestScope` excludes `change`.
 - Owner decisions to veto: the closed intent `change` (ADR 0106 list), the pack hook `answerValidatedTurn` (ADR 0099 seam), and the reuse of `successful_model_handling` as the outcome.
+
+### Regression found by the batch gate, fixed (agent, 2 Nov 2026)
+
+- Symptom: `test/assistant-context-isolation.test.ts` AC4 failed at `assert.equal(operationResults.length, 8)`: 7 !== 8. It passed on origin/main and on f604178.
+- Cause: the trigger in `asksToChangeStay` treated any `search` verdict with a stay fact as a change. In AC4 the offer query (`offer`) arrives with the verdict `["search", "details", ..., "offer"]` and nights/guests slots, after a request was sent. The hook answered it with the explanation, so no planner round ran and `get_offer_status` never executed. This was a real behaviour change: a status query on a sent stay was swallowed.
+- Fix (code): a `search` verdict now counts as a change only when `search` is the sole intent. An explicit `change` keeps precedence (AC3 is unchanged). The test is not weakened; its scenario is a status query, not a change, so the planner must run.
+- Counts after the fix (`env -u LLM_API_KEY npx tsx --test <file>`): `test/assistant-context-isolation.test.ts` 7 / 0; `test/assistant-change-explanations.test.ts` 7 / 0; `test/assistant-scope-controls.test.ts` 38 / 0; `test/shortlet-assistant-evals.test.ts` 52 / 0; `test/assistant-recorded-journeys.test.ts` 5 / 0. `env -u LLM_API_KEY npm run check`: exit 0.
