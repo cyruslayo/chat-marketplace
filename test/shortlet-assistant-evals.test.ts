@@ -92,10 +92,11 @@ test("Eval 2: Clarification when essential search info is missing", async () => 
   assert.equal(res.surfaces?.length, 0);
 });
 
-test("No-date local demo instruction makes date optional while relative dates require YYYY-MM-DD", () => {
+test("No-date local demo instruction makes date optional while relative dates ask for the day and month", () => {
   assert.match(ASSISTANT_SYSTEM_INSTRUCTION, /check-in date is optional for this local demo/i);
   assert.match(ASSISTANT_SYSTEM_INSTRUCTION, /discovery-only requests, location and optional filters suffice/i);
-  assert.match(ASSISTANT_SYSTEM_INSTRUCTION, /relative date[\s\S]*YYYY-MM-DD/i);
+  assert.match(ASSISTANT_SYSTEM_INSTRUCTION, /relative date[\s\S]*day and month/i);
+  assert.doesNotMatch(ASSISTANT_SYSTEM_INSTRUCTION, /YYYY-MM-DD/, "the guest is asked in plain words, not an ISO format");
 });
 
 test("Authoritative Assistant discovery supports exact bedroom refinement and supersedes the prior result surface", async () => {
@@ -747,12 +748,14 @@ test("Date provenance fails closed when restored current criteria has unknown pr
     { checkIn: "2026-12-15" }, "2026-11-01"), { checkIn: "2026-12-15", isDemoDate: false });
 });
 
-// 18. Relative date inquiry asks for explicit YYYY-MM-DD
-test("Eval 18: Relative date 'next Friday' requests explicit date", async () => {
+// 18. Relative date inquiry asks for the check-in and checkout dates in plain words (ADR 0106)
+test("Eval 18: Relative date 'next Friday' gets the plain-word dated clarification and no search runs", async () => {
   const { runtime } = createTestRuntime();
   const res = await runtime.handleTurn("g-eval-18", "I want a flat in Ikoyi next Friday");
   assert.equal(res.ok, true);
-  assert.ok(res.messages?.[0]?.includes("YYYY-MM-DD"));
+  assert.deepEqual(res.surfaces, []);
+  assert.equal(res.messages?.[0], GUEST_ASSISTANT_COPY.datesClarification);
+  assert.doesNotMatch(res.messages?.[0] ?? "", /YYYY-MM-DD/);
 });
 
 // 19. Transactional failure rollback

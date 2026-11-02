@@ -32,7 +32,7 @@ Owner decisions: 01. (17 resolved: path retired.)
 | 11 | [Honest facility answers and stage replies](issues/11-honest-facility-answers-and-stage-replies.md) | needs-triage | 08 |
 | 12 | [Explain changes after submission](issues/12-explain-changes-after-submission.md) | ready-for-agent | none |
 | 13 | [Revise a draft from chat on the assistant path](issues/13-revise-draft-from-chat-on-assistant-path.md) | needs-triage | 01, 04, 05 |
-| 14 | [Plain-word date clarification](issues/14-plain-word-date-clarification.md) | ready-for-agent | none |
+| 14 | [Plain-word date clarification](issues/14-plain-word-date-clarification.md) | resolved | none |
 | 15 | [Bug: invented defaults in the request summary](issues/15-remove-invented-defaults-in-request-summary.md) | resolved | none |
 | 16 | [Parity suite for both concierges](issues/16-parity-suite-for-both-concierges.md) | needs-triage | 04, 05, 07, 08, 09, 11, 12, 13 |
 | 17 | [Decide the legacy Gemini concierge](issues/17-decide-the-legacy-gemini-concierge.md) | resolved | none |

@@ -26,7 +26,6 @@ export const GUEST_GLOSSARY = Object.freeze({
 /** Server-authored concierge copy for replies whose facts come from current pack projections. */
 export const GUEST_ASSISTANT_COPY = Object.freeze({
   stayClarification: "How many nights will you be staying, and for how many guests?",
-  dateClarification: "Please give me the check-in date as YYYY-MM-DD.",
   // ADR 0106: a planner date that the guest's text does not state is rejected and the guest is asked for dates in a form the server reads.
   datesClarification: "I need your check-in and checkout dates before I can search. Please write them with the day, month and year, for example 20 November 2026 to 23 November 2026.",
   // ADR 0015: a Unit's all-in price is quoted for the stay's dates, so opening one without dates asks for them.

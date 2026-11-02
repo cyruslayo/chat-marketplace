@@ -15,7 +15,7 @@ The system is designed with strict **provider neutrality**:
 
 - **Calendar Anchor**: September 2026 (ixture clock: 2026-09-03T10:00:00Z).
 - **Standard Demo Dates**: Check-in 2026-09-10, check-out 2026-09-13 (3 nights) or 2026-09-15 (5 nights).
-- **Date Provenance Rule**: The model is forbidden from inventing, hallucinating, or assuming arbitrary check-in dates. If a guest does not provide an explicit check-in date (or says relative dates such as  next Friday), the assistant either falls back to the deterministic demo window or prompts the guest for an explicit YYYY-MM-DD date. If a model attempts to execute a search with dates not authored or anchored by the user/fixture, the tool layer fails closed (CONCIERGE_UNAVAILABLE).
+- **Date Provenance Rule**: The model is forbidden from inventing, hallucinating, or assuming arbitrary check-in dates. If a guest does not provide an explicit check-in date (or says relative dates such as  next Friday), the assistant either falls back to the deterministic demo window or asks the guest for the check-in and checkout dates in plain words. If a model attempts to execute a search with dates not authored or anchored by the user/fixture, the tool layer fails closed (CONCIERGE_UNAVAILABLE).
 
 ---
 
