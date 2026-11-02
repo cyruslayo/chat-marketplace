@@ -82,3 +82,32 @@ f. **Parity.** The deterministic path answers a draft change itself (`#proposeDr
 - Suggested split: 13a is non-date revisions (nights and party on a draft: AC1 to AC4 and AC6 for those cases). 13b is relative-date revisions (AC5), which needs 04. 13a can start once (a) and (b) are answered.
 
 - Owner decision (2 Nov 2026): moved to ready-for-agent. Order: 04+05 (one agent), 11, 13a, then 13b and 16.
+
+### Run record and blocker (agent, 2 Nov 2026, 13a): stopped for owner decisions (a) and (b)
+
+Scope: 13a only (nights and party size on a draft; AC1 to AC4 and AC6 for those cases). 13b (AC5, relative dates) not started. Status stays `ready-for-agent`; not resolved.
+
+Commands and counts (worktree `C:\AI2026\chat-marketplace-parity`, HEAD 32c658e, no code changed):
+- `env -u LLM_API_KEY npm run check` (tsc on root, apps/cloudflare, its test and tooling configs, and the worker bundle guard): exit 0.
+- `grep -c "^test(" test/guest-draft-revision.test.ts`: 10 (AC6 says 11; the triage note already records this).
+- No new tests were written: AC1, AC2 and AC4 cannot be tested until the routing and surface are chosen.
+
+ADR table for 13a (read: 0106 incl. the 26 Oct, 27 Oct and 2 Nov amendments, 0092, 0093):
+
+| ADR | Constraint | Acceptance criterion / code path |
+|---|---|---|
+| 0080 | Same command and handlers on both paths; the agent makes no state transition | AC1, AC2, AC6: the replacement reuses `#proposeDraftReplacement`, `#replacementTerms`, `#handleDraftReplacementAccept/Keep` (`apps/local-guest/src/shortlet-app.ts:4428, 4541, 4662, 4773`) |
+| 0072 | Accept goes through the platform action gate; `PendingActionType` is closed (`pending-actions.ts:10`) | AC2, AC4 |
+| 0074 | Fail-closed surfaces: forged, superseded or unknown ids give `STALE_SURFACE` or `ARTIFACT_MISMATCH` | AC4 |
+| 0015 | Re-quote is all-in via `createStayQuote` and `stayBudgetKobo`; the model states no price | AC1, AC4 (price change re-proposes) |
+| 0106 (26 Oct amendment) | A rejected tool call is `tool_denial`, not `CONCIERGE_UNAVAILABLE` | AC3 (over-limit, party) |
+| 0106 (27 Oct, structured facts) | Nights and party size are guest-authored structured facts and carry no date authority | AC1, AC3 |
+| 0106 (2 Nov) | Relative dates need the guest's confirmation | AC5 (13b, not this part) |
+
+Why it stops. The routing and the surface are open in the record:
+- **(a) Routing.** `scope-classifier.ts:83` sends a stay change to `change` only when the stay is "already sent, offered or booked". A draft is not, so "make it 3 nights" on a draft is classified `search`. `search_stays` in `shortlet-assistant-pack.ts` never reads `currentDraftId` (written at :1204, read only for the journey label at :1318). Options: (i) amend the classifier prompt so a current draft counts as a change target, or (ii) keep the verdict `search` and have the planner treat a nights or party change with a current draft as a draft revision. The record does not say which was chosen.
+- **(b) Proposal surface and accept.** Option 1 adds `replace_draft` to `PendingActionType`, which changes the ADR 0072 closed list. Option 2 is a stage surface, owned by a stage handler, that runs the existing replacement only on accept. The record does not say which was chosen.
+
+The record of cb2f9d2 shows only "moved to ready-for-agent" and the order (13a before 13b). It does not record an answer to (a) or (b), although the parent instruction describes the options as approved. Owner to confirm (a) and (b) before 13a is built. Recommended by this run, for the owner to accept or veto: (a)(ii) if the classifier prompt should stay as written, and (b) option 2, since it avoids changing the ADR 0072 closed list.
+
+Open items: the 13b split (AC5) waits on 04 and 05; AC6 says 11 tests, the file has 10.
