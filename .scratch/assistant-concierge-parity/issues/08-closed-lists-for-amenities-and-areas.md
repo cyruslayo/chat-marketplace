@@ -27,7 +27,7 @@ Requested: 1 Nov 2026
 - [ ] AC1: "Ikoyi with steady light" searches with `24_7_power_generator`.
 - [ ] AC2 failure path: an amenity value outside the catalogue is rejected by schema validation as a `tool_denial`, never a zero-result search.
 - [ ] AC3: An area alias the deterministic path accepts gives the same city and neighbourhood on the assistant path.
-- [ ] AC4 failure path: an unknown area is a `tool_denial` with the area clarification and chips.
+- [x] AC4 failure path: an unknown area is a `tool_denial` with the area clarification and chips.
 - [ ] AC5: After a provider outage fallback, the deterministic search keeps the guest's amenities.
 - [ ] AC6: Parity test for the same inputs on both paths.
 
@@ -84,7 +84,7 @@ Design decisions and deviations (please review):
 - Guest words: the pack hook `normalizeToolArguments` (optional on `AssistantDomainPack`, run by the runtime only for an authorised pack tool before the schema check) maps `requiredAmenities` words via the alias table. Unknown words are left as they are, so the enum rejects them as `invalid_arguments`. A word that matches two different amenities (for example "power and wifi") is treated as unknown.
 - Search id for an alias: the first id of the alias entry, so "light", "power" and "generator" search `24_7_power_generator`.
 - AC4 deviation: the area check is a closed check at execute time, not a schema enum. An enum would reject before the pack could return the guest sentence, so the area stays out of the enum and the neighbourhood description lists the closed names. Unknown area -> `AssistantGuestRefusalError` -> tool_denial with `GUEST_ASSISTANT_COPY.areaClarification` (examples from `SEARCH_AREAS`).
-- AC4 chips: NOT added (issue 10, per the batch instruction). The AC text asks for chips; this is the one AC not fully met in this issue.
+- AC4 chips: NOT added in this commit (issue 10). Added in issue 10: see "AC4 chips delivered" in Comments.
 - Area resolution: `resolveSearchNeighbourhood` uses `resolveLocationMention`, so the assistant accepts exactly the words the deterministic path accepts. A city-level word (for example "Wuse", "Lagos") becomes no neighbourhood. A word for another city than the searched one is refused (fail closed; the deterministic path would ask a conflict question instead).
 - Inheritance: when the planner omits `requiredAmenities` (or sends null), the search keeps the task's amenities, as it already does for the area and nights. An explicit `[]` clears them.
 - Persistence: `#assistantContextFromState` now keeps persisted amenities that are in the catalogue (previously: amenities some unit lists). `parseDiscoverySearchContext` validates the same shape as the projection (at most 16 ids, matching the id pattern).
@@ -101,3 +101,17 @@ Design decisions and deviations (please review):
 - `apps/local-guest/src/assistant/assistant-tools.ts`: re-exports the renamed resolver and the hook.
 - `apps/local-guest/src/shortlet-app.ts`: `#assistantContextFromState` checks the catalogue; `#assistantContextSearch` carries `requiredAmenities` into `thread.discoveryContext` (the fallback); `criteriaKey` includes the amenities.
 - `test/assistant-closed-lists.test.ts` (new): AC1 to AC6, an extra gym test, and a schema test.
+- Issue 10 (AC4 chips): the area refusal carries `quickRepliesFor("where")` through the pack hook; the AC4 test asserts it.
+
+### Reopened (agent, 2 Nov 2026)
+
+The chips for AC4 were not delivered in commit 1d6fc34 (its Answer lists them as not added). Status set back to `claimed`; the area chips land in issue 10 (`quickRepliesFor("where")` through the clarification hook, `kind: "area"`). AC4 is checked again only when the test `AC4` in `test/assistant-closed-lists.test.ts` asserts the chips.
+
+### AC4 chips delivered (agent, 2 Nov 2026, issue 10)
+
+The chips for an unknown area are `quickRepliesFor("where")`, returned by the runtime's `tool_denial` branch through the pack hook `clarificationQuickReplies` with kind `area` (`shortlet-assistant-pack.ts`, `clarificationChipsFor`). The closed-lists test `AC4: an unknown area is a tool_denial with the area clarification and chips` (extended, not duplicated) now asserts `result.quickReplies` equals `quickRepliesFor("where")`.
+
+- `env -u LLM_API_KEY npx tsx --test test/assistant-closed-lists.test.ts`: 8 pass / 0 fail / 8 total (before the chips: 7 / 1 / 8).
+- The refusal is marked `clarification: "area"` (`AssistantGuestRefusalError`), so a Continuous Occupancy refusal gets no area chips.
+
+Status set back to `resolved` by the same commit as issue 10 (one commit for both).

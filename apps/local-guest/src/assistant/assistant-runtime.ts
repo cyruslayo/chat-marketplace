@@ -22,6 +22,7 @@ import {
   toolsForValidatedIntents,
   toolNamesForValidatedIntents,
   pendingProposalAuthorised,
+  type AssistantClarificationKind,
   type AssistantDomainPack,
   type AssistantTaskSummary,
   type AssistantToolContext,
@@ -116,6 +117,8 @@ export interface AssistantTurnOutput {
   readonly discardUserInput?: boolean;
   readonly controlOutcome?: AssistantControlOutcome;
   readonly stopReason?: AssistantStopReason;
+  /** Issue 10: one-tap replies for a clarification (never on scope, support or redirect replies). */
+  readonly quickReplies?: readonly string[];
 }
 
 /** A task's entry in the shell rail, derived from the active pack's `taskSummary`. */
@@ -475,6 +478,13 @@ export class AssistantRuntime {
    */
   #turnContext(pack: AssistantDomainPack): string | undefined {
     return pack.turnContext?.(this.#environment.clock());
+  }
+
+  /** Issue 10: the one-tap replies the active pack gives a clarification on this thread, from its committed task state. */
+  clarificationQuickReplies(threadId: string, kind: AssistantClarificationKind): readonly string[] | undefined {
+    const thread = this.#threads.get(threadId);
+    if (!thread) return undefined;
+    return this.#packForThread(threadId)?.clarificationQuickReplies?.(thread.taskState, kind);
   }
 
   /**
@@ -1108,6 +1118,8 @@ export class AssistantRuntime {
 
     let round = 0;
     let finalAssistantReply: string | undefined;
+    // Issue 10: chips for a `clarify_stay` reply, from the pack's clarification hook; never set for other reply kinds.
+    let finalQuickReplies: readonly string[] | undefined;
     let activeStage: AssistantDiagnosticStage = "provider_request";
     let activeToolName: string | undefined;
     let hasSuccessfulApplicationOperation = false;
@@ -1168,8 +1180,9 @@ export class AssistantRuntime {
             controlOutcome = "support_guidance";
           }
           controlOutcome = this.#replyControlOutcome(latestResults) ?? controlOutcome;
-          finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "")
+          finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "", tx.taskState)
             ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
+          finalQuickReplies = plan?.kind === "clarify_stay" ? candidatePack().clarificationQuickReplies?.(tx.taskState, "plan") : undefined;
           candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
           stopReason = "reply";
           break;
@@ -1372,8 +1385,9 @@ export class AssistantRuntime {
           run.diagnose({ stage: "provider_response", round, succeeded: false, failureClass: "MODEL_SELECTION_FAILURE", replyPlanRejectionReason: parsedFinalPlan });
         }
         const plan = typeof parsedFinalPlan === "string" ? undefined : parsedFinalPlan;
-        finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "")
+        finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "", tx.taskState)
           ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
+        finalQuickReplies = plan?.kind === "clarify_stay" ? candidatePack().clarificationQuickReplies?.(tx.taskState, "plan") : undefined;
         candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
       }
 
@@ -1391,6 +1405,7 @@ export class AssistantRuntime {
         discardUserInput,
         controlOutcome,
         stopReason,
+        ...(finalQuickReplies === undefined ? {} : { quickReplies: finalQuickReplies }),
       };
       // Emitted after the output is built, so nothing that could throw sits between the stop event and the return.
       emitStop();
@@ -1435,8 +1450,14 @@ export class AssistantRuntime {
           : error instanceof AssistantStayDetailsError
             ? candidatePack().stayDetailsClarification
             : candidatePack().dateClarification;
+        // Issue 10: only the closed area check and the stay/date rejections get chips. Other guest refusals (an occupancy conflict) get none.
+        const chipKind: AssistantClarificationKind | undefined = error instanceof AssistantGuestRefusalError
+          ? (error.clarification === "area" ? "area" : undefined)
+          : error instanceof AssistantStayDetailsError ? "stay_details" : "dates";
+        const quickReplies = chipKind === undefined ? undefined : candidatePack().clarificationQuickReplies?.(thread.taskState, chipKind);
         return { ok: true, messages: [clarification ?? ASSISTANT_CONTROL_COPY.unavailable], surfaces: [], modelHandled: false,
-          discardUserInput: false, controlOutcome, tasks: this.getTaskRail(threadId), stopReason };
+          discardUserInput: false, controlOutcome, tasks: this.getTaskRail(threadId), stopReason,
+          ...(quickReplies === undefined ? {} : { quickReplies }) };
       }
       recordOutcome(controlOutcome);
       // Rollback: thread is not mutated on error

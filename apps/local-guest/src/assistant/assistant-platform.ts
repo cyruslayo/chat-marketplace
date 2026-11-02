@@ -78,6 +78,12 @@ export interface AssistantReplyPlan {
   readonly references: readonly string[];
 }
 
+/**
+ * Issue 10 (ADR 0099): which clarification the runtime is about to return. `stay_details` and `dates` are rejected tool calls,
+ * `area` is an unknown area refused by the pack, and `plan` is a typed `clarify_stay` reply.
+ */
+export type AssistantClarificationKind = "stay_details" | "dates" | "area" | "plan";
+
 /** One task's place in the shell task rail: a domain label plus its current step. */
 export interface AssistantTaskSummary {
   readonly label: string;
@@ -120,6 +126,11 @@ export interface AssistantDomainPack {
    * exact-schema check. Undefined means no mapping. It never grants access and never widens the schema.
    */
   normalizeToolArguments?(name: string, args: Record<string, unknown>): Record<string, unknown>;
+  /**
+   * Issue 10 (ADR 0099, 0106): the one-tap replies for a clarification, from the committed task state. The runtime only passes them
+   * on: it never adds chips to a scope, support or redirect reply. Undefined adds no chips.
+   */
+  clarificationQuickReplies?(taskState: AssistantTaskState, kind: AssistantClarificationKind): readonly string[] | undefined;
   executeTool(name: string, args: Record<string, unknown>, context: AssistantToolContext): AssistantToolExecutionResult;
   /** Pack-owned minimal facts for model history. Raw execution results remain local to the platform. */
   projectToolResult?(name: string, result: Record<string, unknown>, limits: { readonly maxItems: number }): Record<string, unknown>;
@@ -142,7 +153,7 @@ export interface AssistantDomainPack {
   cardPaymentSurface(artifact: unknown, surfaceId: string): readonly unknown[];
   bookingContractSurface(artifact: unknown, surfaceId: string): readonly unknown[];
   /** Validates references and renders a reply from current server-owned operation data. */
-  renderReply?(plan: AssistantReplyPlan | undefined, results: readonly AssistantToolResult[], latestUserText: string): string;
+  renderReply?(plan: AssistantReplyPlan | undefined, results: readonly AssistantToolResult[], latestUserText: string, taskState?: AssistantTaskState): string;
   /** A control outcome the pack's current results imply for a reply (for example no current booking). Undefined keeps the runtime's outcome. */
   replyControlOutcome?(results: readonly AssistantToolResult[]): AssistantControlOutcome | undefined;
   /** Issue 04: the pack's stage handlers, called in order for each authoritative execution and for confirmed pending actions. */

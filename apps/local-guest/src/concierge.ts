@@ -143,6 +143,37 @@ export function quickRepliesFor(next: StayCriterion): readonly string[] {
   }
 }
 
+/** The stay facts the deterministic path needs before it can search (the criteria asked for one at a time, issue 02). */
+export interface StayCriteriaFacts {
+  readonly city?: string;
+  readonly partySize?: number;
+  readonly checkIn?: string;
+  readonly nights?: number;
+}
+
+/** Every criterion a search needs, present. */
+export interface CompleteStayCriteria {
+  readonly city: string;
+  readonly partySize: number;
+  readonly checkIn: string;
+  readonly nights: number;
+}
+
+export type StayCriteriaGap = { readonly next: StayCriterion } | { readonly complete: CompleteStayCriteria };
+
+/**
+ * Issue 10 (ADR 0080): the single rule for which criterion is missing, in the order where, who, when, how long. The deterministic
+ * resolver and the assistant's clarification chips both use it, so both paths name the same criterion for the same facts.
+ */
+export function stayCriteriaGap(criteria: StayCriteriaFacts): StayCriteriaGap {
+  const { city, partySize, checkIn, nights } = criteria;
+  if (city === undefined) return { next: "where" };
+  if (partySize === undefined) return { next: "who" };
+  if (checkIn === undefined) return { next: "when" };
+  if (nights === undefined) return { next: "nights" };
+  return { complete: { city, partySize, checkIn, nights } };
+}
+
 export type StayRequestResolution =
   | { readonly kind: "search"; readonly filters: StayRequestFilters }
   | { readonly kind: "clarify"; readonly missing: readonly string[]; readonly next: StayCriterion; readonly reply: string }
@@ -633,10 +664,16 @@ export function resolveStayRequestContext(
   if (partySize === undefined) missing.push("how many guests are staying");
   if (checkIn === undefined) missing.push("what date you arrive (for example: 10 Sept or this Friday)");
   if (nights === undefined) missing.push("how many nights you need");
-  if (city === undefined || checkIn === undefined || nights === undefined || partySize === undefined) {
-    const next: StayCriterion = city === undefined ? "where" : partySize === undefined ? "who" : checkIn === undefined ? "when" : "nights";
-    return { kind: "clarify", missing, next, reply: clarifyReply(context, missing) };
-  }
+  const gap = stayCriteriaGap({ city, partySize, checkIn, nights });
+  if ("next" in gap) return { kind: "clarify", missing, next: gap.next, reply: clarifyReply(context, missing) };
+  return confirmedOrSearch(context, gap.complete);
+}
+
+/** The resolution once every criterion is known: a search, or a confirmation of the dates (ADR 0015, ADR 0055). */
+function confirmedOrSearch(
+  context: DiscoverySearchContext,
+  { city, partySize, checkIn, nights }: CompleteStayCriteria,
+): StayRequestResolution {
   const checkOut = addCalendarDays(checkIn, nights);
   const filters: StayRequestFilters = {
     location: city,

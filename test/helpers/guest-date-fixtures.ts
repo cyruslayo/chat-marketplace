@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { LocalGuestEnvironment } from "../../apps/local-guest/src/fixture.js";
-import { LocalGuestApp, type CardCheckoutFailedEvent } from "../../apps/local-guest/src/shortlet-app.js";
+import { LocalGuestApp, type CardCheckoutFailedEvent, type GuestTurnResult } from "../../apps/local-guest/src/shortlet-app.js";
 import { AssistantRuntime, type AssistantDiagnosticEvent } from "../../apps/local-guest/src/assistant/assistant-runtime.js";
 import { ShortletAssistantRuntime } from "./assistant-runtime-host.js";
 import { BudgetedModelClient, ModelCallBudget } from "../../apps/local-guest/src/assistant/model-call-budget.js";
@@ -59,6 +59,16 @@ export function classifiedMessage(request: CapturedRequest): string {
 export function lastRoleIsTool(request: CapturedRequest): boolean {
   const messages = request.body.messages as readonly { readonly role: string }[];
   return messages.at(-1)?.role === "tool";
+}
+
+/**
+ * One guest turn on a fresh thread after a cold restore: a new application over the same store, loaded as a page load does
+ * (ADR 0106 cold-restore rule). Shared by the assistant tests that drive the typed path directly.
+ */
+export function coldTurn(f: DatedFixture, threadId: string, text: string, model: AssistantModelClient, diagnostics?: AssistantDiagnosticEvent[]): Promise<GuestTurnResult> {
+  const restored = restartedDatedApp(f, model, diagnostics);
+  restored.app.getState(threadId);
+  return restored.app.handleTurn(threadId, text);
 }
 
 export function searchToolCall(id: string, args: Record<string, unknown>) {
@@ -152,6 +162,10 @@ export interface ScriptedTurn {
   readonly intents?: readonly string[];
   readonly search?: Record<string, unknown>;
   readonly tool?: { readonly name: string; readonly args: Record<string, unknown> };
+  /** A planner reply plan with no tool call (ADR 0106 typed reply kind), for example "clarify_stay" or "support_guidance". */
+  readonly reply?: "clarify_stay" | "support_guidance";
+  /** The classifier's scope for this message. Defaults to in_scope. */
+  readonly scope?: "out_of_scope";
 }
 
 /**
@@ -162,12 +176,14 @@ export function scriptedPlanner(turns: Readonly<Record<string, ScriptedTurn>>, p
   return clientWith((request) => {
     if (isScopeRequest(request)) {
       const turn = turns[classifiedMessage(request)];
+      if (turn?.scope === "out_of_scope") return completion({ content: JSON.stringify({ ...scopeVerdict({}, []), scope: "out_of_scope", reasonCode: "outside" }) });
       return completion({ content: JSON.stringify(scopeVerdict(turn?.slots ?? {}, turn?.intents)) });
     }
     if (lastRoleIsTool(request)) return completion({ content: "Search complete." });
     const text = latestUserText(request);
     const turn = text === undefined ? undefined : turns[text];
     planner.push(request);
+    if (turn?.reply) return completion({ content: JSON.stringify({ kind: turn.reply, references: [] }) });
     if (turn?.search) return searchToolCall(`search-${text?.length ?? 0}`, turn.search);
     if (turn?.tool) return completion({ tool_calls: [{ id: `tool-${text?.length ?? 0}`, type: "function", function: { name: turn.tool.name, arguments: JSON.stringify(turn.tool.args) } }] });
     throw new Error("Unexpected offline fixture turn");

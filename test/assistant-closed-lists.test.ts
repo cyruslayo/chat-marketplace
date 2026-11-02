@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { GuestTurnResult, GuestTurnSuccess } from "../apps/local-guest/src/shortlet-app.js";
-import { resolveLocationMention } from "../apps/local-guest/src/concierge.js";
+import { quickRepliesFor, resolveLocationMention } from "../apps/local-guest/src/concierge.js";
 import type { AssistantModelClient } from "../apps/local-guest/src/assistant/assistant-model.js";
 import type { AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 import { ASSISTANT_TOOL_DEFINITIONS } from "../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
 import { GUEST_AMENITY_IDS } from "../apps/web-agent/src/guest-content.js";
 import { clientWith, completion, jsonResponse } from "./helpers/openai-compatible-client.js";
 import {
+  coldTurn,
   datedFixture,
   isScopeRequest,
   LIVE_LIKE_CLOCK,
-  restartedDatedApp,
   scopeVerdict,
   scriptedPlanner,
   type DatedFixture,
@@ -35,13 +35,6 @@ function successOf(result: GuestTurnResult, label: string): GuestTurnSuccess {
   assert.equal(result.ok, true, result.ok ? "" : `${label}: expected success, saw ${result.code}: ${result.message}`);
   if (!result.ok) throw new Error("unreachable");
   return result;
-}
-
-/** A cold restore before the turn: a new application over the same store, loaded as a page load does. */
-function coldTurn(f: DatedFixture, threadId: string, text: string, model: AssistantModelClient, diagnostics?: AssistantDiagnosticEvent[]): Promise<GuestTurnResult> {
-  const restored = restartedDatedApp(f, model, diagnostics);
-  restored.app.getState(threadId);
-  return restored.app.handleTurn(threadId, text);
 }
 
 /** Records every discovery search the application runs, with the filters it was given (wrapped on the shared environment). */
@@ -138,7 +131,7 @@ test("AC3: an area alias the deterministic path accepts gives the same city and 
   }
 });
 
-test("AC4: an unknown area is a tool_denial with the area clarification", async () => {
+test("AC4: an unknown area is a tool_denial with the area clarification and chips", async () => {
   const f = datedFixture(plannerWith({}), undefined, { clock: LIVE_LIKE_CLOCK, stagingGuest: true });
   try {
     const searches = recordSearches(f);
@@ -149,6 +142,8 @@ test("AC4: an unknown area is a tool_denial with the area clarification", async 
     assert.equal(result.assistantControlOutcome, "tool_denial");
     assert.match(result.messages.join(" "), /which area/i, "the guest is asked for an area");
     assert.match(result.messages.join(" "), /Old Ikoyi/, "the examples come from the closed area list");
+    // Issue 10 AC4: the same refusal carries the area chips (quickRepliesFor("where")), so the guest can tap an area.
+    assert.deepEqual(result.quickReplies, quickRepliesFor("where"), "the refusal offers the area chips");
     assert.equal(searches.length, 0, "no search runs for an unknown area");
   } finally { f.close(); }
 });

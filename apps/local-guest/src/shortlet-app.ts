@@ -197,6 +197,7 @@ import {
   applyCriteriaEdit,
   budgetLabel,
   quickRepliesFor,
+  type StayCriterion,
   searchAreaFor,
   SEARCH_AREAS,
   stayBudgetKobo,
@@ -867,6 +868,7 @@ export class LocalGuestApp {
     readonly surfaces?: readonly { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] }[];
     readonly tasks?: readonly AssistantTaskRailEntry[];
     readonly controlOutcome?: AssistantControlOutcome;
+    readonly quickReplies?: readonly string[];
   }): GuestTurnResult {
     return {
       ok: true,
@@ -876,6 +878,8 @@ export class LocalGuestApp {
       ...(output.controlOutcome === undefined ? {} : { assistantControlOutcome: output.controlOutcome }),
       messages: output.messages ?? (output.message ? [output.message] : []),
       surfaces: this.#assistantSurfaces(output.surfaces ?? []),
+      // Issue 10: one-tap replies for the clarification (the runtime gives them only for clarify_stay and stay/area clarifications).
+      ...(output.quickReplies === undefined ? {} : { quickReplies: output.quickReplies }),
       ...(output.tasks === undefined || output.tasks.length === 0
         ? {}
         : { tasks: output.tasks, verticals: this.#verticals() }),
@@ -981,7 +985,7 @@ export class LocalGuestApp {
         messages: [resolution.reply],
         surfaces: [],
         ...(resolution.kind === "clarify"
-          ? { quickReplies: quickRepliesFor(resolution.next) }
+          ? this.#clarificationChips(thread, resolution.next)
           : {}),
       });
     }
@@ -4000,12 +4004,28 @@ export class LocalGuestApp {
         messages: [resolution.reply],
         surfaces: [],
         ...(resolution.kind === "clarify"
-          ? { quickReplies: quickRepliesFor(resolution.next) }
+          ? this.#clarificationChips(thread, resolution.next)
           : {}),
       };
     const result = this.#executeDiscovery(thread, resolution.filters);
     this.#reconcileAssistantStay(thread);
     return result;
+  }
+
+  /**
+   * Issue 10: the one-tap replies for a clarification on this thread. A thread the assistant holds takes its chips from the active
+   * pack, so the assistant never offers relative dates it cannot resolve (ADR 0106). Other threads keep the deterministic chips.
+   */
+  #clarificationChips(
+    thread: GuestThreadState,
+    next: StayCriterion,
+  ): { readonly quickReplies?: readonly string[] } {
+    const runtime = this.#assistantRuntime;
+    if (runtime && runtime.hasThread(thread.threadId)) {
+      const replies = runtime.clarificationQuickReplies(thread.threadId, "plan");
+      return replies === undefined ? {} : { quickReplies: replies };
+    }
+    return { quickReplies: quickRepliesFor(next) };
   }
 
   /**

@@ -1,7 +1,7 @@
 import { generatePlatformId } from "../../../../packages/platform-core/src/index.js";
 import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantGuestRefusalError, AssistantStayDetailsError, containsGuestDate } from "./date-tokens.js";
 import { ContinuousOccupancyError, StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, MAX_STAY_NIGHTS, BOOKING_HORIZON_DAYS, dateKeyInLagos, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
-import { SEARCH_AREAS, resolveLocationMention, stayBudgetKobo } from "../concierge.js";
+import { SEARCH_AREAS, quickRepliesFor, resolveLocationMention, stayBudgetKobo, stayCriteriaGap } from "../concierge.js";
 import { normalizeRequiredAmenities } from "../stay-vocabulary.js";
 import {
   discoveryArtifactToA2UI,
@@ -28,6 +28,7 @@ import { pendingActionToA2UI } from "./pending-action-a2ui.js";
 import { SHORTLET_STAGE_HANDLERS, proposalStillAuthorised } from "./shortlet-stage-handlers.js";
 import {
   ASSISTANT_PLATFORM_PREAMBLE,
+  type AssistantClarificationKind,
   type AssistantDomainPack,
   type AssistantTaskSummary,
   type AssistantToolContext,
@@ -290,6 +291,20 @@ export function resolveSearchNeighbourhood(raw: string, city: "Lagos" | "Abuja")
 }
 
 /**
+ * Issue 10 (ADR 0080, 0099, 0106): the chips for a clarification, from the task state. An unknown area offers the area chips. Otherwise
+ * the next missing criterion follows the deterministic order (stayCriteriaGap, the resolver's own rule). "When" offers no chips: the deterministic
+ * "when" chips are relative dates the assistant cannot resolve until issue 04 lands, and a date the server chose would be an invented
+ * default (issue 15).
+ */
+export function clarificationChipsFor(taskState: AssistantTaskState, kind: AssistantClarificationKind): readonly string[] | undefined {
+  if (kind === "area") return quickRepliesFor("where");
+  const { location, partySize, checkIn, nights } = taskState.stayIntent;
+  const gap = stayCriteriaGap({ city: location, partySize, checkIn, nights });
+  if (!("next" in gap) || gap.next === "when") return undefined;
+  return quickRepliesFor(gap.next);
+}
+
+/**
  * ADR 0099 pack hook: maps the guest's own amenity words in a search to catalogue ids before the schema check, so the closed enum
  * sees only ids. Other arguments and other tools pass through unchanged.
  */
@@ -432,7 +447,7 @@ export function executeAssistantTool(
         ? resolveSearchNeighbourhood(requestedNeighbourhood, city)
         : undefined;
       if (typeof requestedNeighbourhood === "string" && resolvedNeighbourhood === undefined) {
-        throw new AssistantGuestRefusalError(GUEST_ASSISTANT_COPY.areaClarification(NEIGHBOURHOOD_NAMES.join(", ")));
+        throw new AssistantGuestRefusalError(GUEST_ASSISTANT_COPY.areaClarification(NEIGHBOURHOOD_NAMES.join(", ")), "area");
       }
       const neighbourhood = typeof requestedNeighbourhood === "string"
         ? resolvedNeighbourhood ?? undefined
@@ -989,7 +1004,7 @@ function shortletTaskSummary(taskState: AssistantTaskState): AssistantTaskSummar
   return { label: "Stay", status };
 }
 
-function renderShortletReply(plan: AssistantReplyPlan | undefined, results: readonly AssistantToolResult[], userText: string, now: Date): string {
+function renderShortletReply(plan: AssistantReplyPlan | undefined, results: readonly AssistantToolResult[], userText: string, now: Date, taskState?: AssistantTaskState): string {
   if (plan?.kind === "support_guidance") {
     return /active stay|locked out|access|safety|emergency/i.test(userText)
       ? GUEST_ASSISTANT_COPY.activeStayEmergencySupport
@@ -1003,9 +1018,16 @@ function renderShortletReply(plan: AssistantReplyPlan | undefined, results: read
   };
   const selected = plan ? successfulResults.find((result) => plan.references.includes(result.name) && kindForTool[result.name] === plan.kind) : undefined;
   const operation = selected ?? successfulResults[0];
-  if (!operation) return plan?.kind === "clarify_stay" || /how many|nights|\bstay\b|somewhere|\bplace\b|lagos|abuja|lekki|ikoyi/i.test(userText)
-    ? GUEST_ASSISTANT_COPY.stayClarification
-    : GUEST_ASSISTANT_COPY.safeClarification;
+  if (!operation) {
+    // Issue 10 (AC2): when the next missing criterion is the date, the reply asks for the dates; other criteria keep the stay sentence.
+    const gap = taskState
+      ? stayCriteriaGap({ city: taskState.stayIntent.location, partySize: taskState.stayIntent.partySize, checkIn: taskState.stayIntent.checkIn, nights: taskState.stayIntent.nights })
+      : undefined;
+    if (plan?.kind === "clarify_stay" && gap !== undefined && "next" in gap && gap.next === "when") return GUEST_ASSISTANT_COPY.datesClarification;
+    return plan?.kind === "clarify_stay" || /how many|nights|\bstay\b|somewhere|\bplace\b|lagos|abuja|lekki|ikoyi/i.test(userText)
+      ? GUEST_ASSISTANT_COPY.stayClarification
+      : GUEST_ASSISTANT_COPY.safeClarification;
+  }
   const data = operation.result;
   if (operation.name === "prepare_request_draft") return data.created === true && data.operation === "request_draft.create" ? GUEST_ASSISTANT_COPY.draftReady : GUEST_ASSISTANT_COPY.safeClarification;
   if (operation.name === "get_offer_status") {
@@ -1118,6 +1140,7 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     toolsForState: (taskState) => assistantToolsForState(taskState, environment.extendedStayPolicy),
     validateToolCall: (name, args, taskState) => validateAssistantToolCall(name, args, taskState, environment.extendedStayPolicy),
     normalizeToolArguments,
+    clarificationQuickReplies: clarificationChipsFor,
     executeTool: executeAssistantTool,
     projectToolResult: (_name, result, limits) => {
       const keys = new Set(["stayRef", "city", "capacity", "bedrooms", "resultCount", "checkIn", "checkOut", "nights", "partySize", "isDemoDate", "nightlyKobo", "mandatoryFeesKobo", "allInStayTotalKobo", "refundableSecurityDepositKobo", "amountDueNowKobo", "totalAmountDueNowKobo", "currency", "inspectionStatus", "managementAuthorityStatus", "status", "expiresAt", "expiresAtIso", "hasOffer", "hasBooking", "draftCreated", "created", "availabilityChecked", "inventoryReserved", "operation", "available", "stays", "compared", "result", "hasRequest", "requestStatus"]);
@@ -1149,7 +1172,7 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     },
     projectStateSummary: (state, limits) => ({ city: state.stayIntent.location === "Lagos" || state.stayIntent.location === "Abuja" ? state.stayIntent.location : null, hasShortlist: state.shortlist.length > 0, shortlistRefs: state.shortlist.slice(0, limits.maxItems).map((stay) => stay.stayRef), selectedStayRef: state.selectedStayRef ?? null, checkIn: state.stayIntent.checkIn ?? null, checkOut: state.stayIntent.checkOut ?? null, nights: state.stayIntent.nights ?? null, partySize: state.stayIntent.partySize ?? null, hasSelectedStay: Boolean(state.selectedStayRef), hasPendingAction: Boolean(state.pendingAction) }),
     taskSummary: shortletTaskSummary,
-    renderReply: (plan, results, text) => renderShortletReply(plan, results, text, environment.clock()),
+    renderReply: (plan, results, text, taskState) => renderShortletReply(plan, results, text, environment.clock(), taskState),
     // ADR 0106: a booking status with no active booking is reported as its own control outcome.
     replyControlOutcome: (results) => results.some((result) => result.name === "get_booking_status" && result.result.status === "no_active_booking")
       ? "no_current_booking"
