@@ -25,7 +25,7 @@ Owner decisions: none open (01 decided 2 Nov 2026). 17 resolved: path retired.
 | 04 | [Assistant resolves and confirms date phrases](issues/04-assistant-resolves-and-confirms-date-phrases.md) | needs-triage | 02 |
 | 05 | [Assistant checkout and date ranges](issues/05-assistant-checkout-and-date-ranges.md) | needs-triage | 02 |
 | 06 | [Bug: budget chip never reaches the assistant](issues/06-sync-budget-chip-into-assistant.md) | resolved | none |
-| 07 | [Assistant budget from guest words](issues/07-assistant-budget-from-guest-words.md) | needs-triage | 06 |
+| 07 | [Assistant budget from guest words](issues/07-assistant-budget-from-guest-words.md) | resolved | 06 |
 | 08 | [Closed lists for amenities and areas](issues/08-closed-lists-for-amenities-and-areas.md) | resolved | none |
 | 09 | [Location-change question and unsupported preferences](issues/09-location-change-question-and-unsupported-preferences.md) | needs-triage | 08 |
 | 10 | [Quick-reply chips on assistant clarifications](issues/10-quick-reply-chips-on-assistant-clarifications.md) | resolved | none |
@@ -46,3 +46,4 @@ Every button event (View, Compare, Request to Book, Submit, phone, email, Accept
 - 01: ADR 0106 amended 2 Nov 2026 (confirmed date phrases are guest-authored); CONTEXT.md gains Date phrase and Show-back.
 - 17: the older Gemini concierge path is removed; see the issue's Answer.
 - 02: shared stay-date resolver in the shortlet domain; the deterministic and assistant paths both use it. Deviations and owner questions are in the issue's Comments.
+- 07: the assistant reads the budget from the guest's own words (`budgetPhrase`) with the shared parser; open owner question on the held-budget repeat rule (issue 07 Comments).

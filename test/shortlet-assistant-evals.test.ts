@@ -868,7 +868,6 @@ test("Search artifact, assistant shortlist, and Weaver surface contain the same 
           checkIn: null,
           nights: 4,
           guests: 2,
-          maxBudgetKobo: 60_000_000,
           requiredAmenities: ["24_7_power_generator", "swimming_pool"],
         },
       }],

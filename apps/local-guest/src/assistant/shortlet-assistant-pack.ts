@@ -2,6 +2,7 @@ import { generatePlatformId } from "../../../../packages/platform-core/src/index
 import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantGuestRefusalError, AssistantStayDetailsError, containsGuestDate } from "./date-tokens.js";
 import { ContinuousOccupancyError, StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, MAX_STAY_NIGHTS, BOOKING_HORIZON_DAYS, dateKeyInLagos, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
 import { SEARCH_AREAS, quickRepliesFor, resolveLocationMention, stayBudgetKobo, stayCriteriaGap } from "../concierge.js";
+import { extractBudget, type StayBudget } from "../stay-budget.js";
 import { normalizeRequiredAmenities } from "../stay-vocabulary.js";
 import {
   discoveryArtifactToA2UI,
@@ -74,7 +75,8 @@ export const ASSISTANT_TOOL_DEFINITIONS: readonly AssistantToolDefinition[] = [
         nights: { type: ["integer", "null"], minimum: 1, maximum: MAX_STAY_NIGHTS, description: "Guest-requested stay duration, or null when unknown. Never default to one." },
         guests: { type: ["integer", "null"], minimum: 1, description: "Guest-requested party size, or null when unknown. Never default to one." },
         bedrooms: { type: ["integer", "null"], minimum: 0, description: "Guest-requested exact bedroom count, or null when unknown. Zero means an explicitly requested studio." },
-        maxBudgetKobo: { type: ["integer", "null"], description: "Optional maximum all-in budget in kobo" },
+        // Issue 07 (ADR 0106): the model copies the guest's words; the server reads the amount, so the model never converts naira or nightly prices.
+        budgetPhrase: { type: ["string", "null"], description: "The guest's own budget words, copied exactly, for example 'under ₦150k a night' or 'budget 500k total', or null when the guest gave no budget. Do not convert the amount." },
         requiredAmenities: {
           type: "array",
           // ADR 0106: only catalogue ids are allowed; the runtime's schema check rejects anything else as a tool_denial.
@@ -275,8 +277,34 @@ export interface SearchStaysToolArgs {
   nights?: number | null;
   guests?: number | null;
   bedrooms?: number | null;
-  maxBudgetKobo?: number | null;
+  budgetPhrase?: string | null;
   requiredAmenities?: readonly string[] | null;
+}
+
+/** Lowercases and collapses whitespace, so a phrase compares with the guest's text as the guest typed it (ADR 0106). */
+function normalizeGuestWords(text: string): string {
+  return text.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Issue 07 (ADR 0106, ADR 0015): the budget the guest's own words state. The phrase must occur as whole words in the guest's text (the
+ * current turn, or earlier guest text the thread still holds), as a date literal must (ADR 0106, 27 Oct 2026). The deterministic parser
+ * (`extractBudget`, shared with the deterministic concierge, ADR 0080) reads the amount. A phrase it cannot read is refused, so no search
+ * runs on a guessed number.
+ *
+ * Cold restore (ADR 0106, AGENTS.md): earlier guest text is not persisted, so after a restore only the current turn is in `userTextHistory`.
+ * A phrase that is not in this turn's text is still accepted when it reads as the budget the task already holds. That budget is guest-
+ * authored state (a chip or an earlier phrase), so repeating it changes nothing and grants the model no new amount. Any other phrase is
+ * refused. Owner decision needed: see issue 07 Comments.
+ */
+function guestStatedBudget(phrase: string, userTextHistory: readonly string[], held: StayBudget | undefined): StayBudget {
+  const wanted = normalizeGuestWords(phrase);
+  const escaped = wanted.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const authored = wanted !== "" && userTextHistory.some((text) => new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "u").test(normalizeGuestWords(text)));
+  const parsed = extractBudget(phrase);
+  const repeatsHeld = parsed !== undefined && held !== undefined && parsed.kobo === held.kobo && parsed.per === held.per;
+  if (parsed === undefined || !(authored || repeatsHeld)) throw new AssistantGuestRefusalError(GUEST_ASSISTANT_COPY.budgetClarification);
+  return parsed;
 }
 
 /**
@@ -495,20 +523,17 @@ export function executeAssistantTool(
         }
       }
 
-      // Issue 06 (ADR 0015): a budget the model proposes is an All-In Stay Total. Without one, the task's budget (the guest's chip, or
-      // its persisted meaning) applies, converted with this search's nights as the deterministic concierge does. A chip budget is
-      // applied only once the stay can be quoted (dates and party size), so it never makes an unquotable search throw.
-      const modelBudgetKobo = typeof args.maxBudgetKobo === "number" && args.maxBudgetKobo > 0
-        ? Math.floor(args.maxBudgetKobo)
-        : undefined;
-      const taskBudget = taskState.stayIntent.maxBudgetKobo !== undefined && taskState.stayIntent.maxBudgetPer !== undefined
+      // Issue 07 (ADR 0015, ADR 0106): a budget phrase in this call is the guest's newest budget and replaces the task's budget (a chip or an
+      // earlier phrase). Without one, the task's budget applies, as before. The total is converted with this search's nights as the
+      // deterministic concierge does (stayBudgetKobo), and only once the stay can be quoted (dates and party size), so it never throws.
+      const heldBudget: StayBudget | undefined = taskState.stayIntent.maxBudgetKobo !== undefined && taskState.stayIntent.maxBudgetPer !== undefined
         ? { kobo: taskState.stayIntent.maxBudgetKobo, per: taskState.stayIntent.maxBudgetPer }
         : undefined;
-      const budgetTotal = modelBudgetKobo !== undefined
-        ? modelBudgetKobo
-        : taskBudget !== undefined && checkIn !== undefined && checkOut !== undefined && guests !== undefined && nights !== undefined
-          ? stayBudgetKobo({ budget: taskBudget, nights })
-          : undefined;
+      const statedBudget = typeof args.budgetPhrase === "string" ? guestStatedBudget(args.budgetPhrase, context.userTextHistory, heldBudget) : undefined;
+      const taskBudget: StayBudget | undefined = statedBudget ?? heldBudget;
+      const budgetTotal = taskBudget !== undefined && checkIn !== undefined && checkOut !== undefined && guests !== undefined && nights !== undefined
+        ? stayBudgetKobo({ budget: taskBudget, nights })
+        : undefined;
 
       // Issue 08: amenity ids come from the closed schema (normalized before this point). An omitted list keeps the task's amenities, as the area does.
       const requiredAmenities = Array.isArray(args.requiredAmenities)
@@ -566,7 +591,7 @@ export function executeAssistantTool(
         ...(nights !== undefined ? { nights } : {}),
         ...(guests !== undefined ? { partySize: guests } : {}),
         ...(bedrooms !== undefined ? { bedrooms } : {}),
-        ...(modelBudgetKobo !== undefined ? { maxBudgetKobo: modelBudgetKobo, maxBudgetPer: "stay" as const } : {}),
+        ...(statedBudget !== undefined ? { maxBudgetKobo: statedBudget.kobo, maxBudgetPer: statedBudget.per } : {}),
         ...(requiredAmenities !== undefined ? { requiredAmenities } : {}),
       };
       taskState.shortlist = shortlist;

@@ -28,6 +28,8 @@ export const GUEST_ASSISTANT_COPY = Object.freeze({
   stayClarification: "How many nights will you be staying, and for how many guests?",
   // Issue 08 (ADR 0106): an area the server does not know is refused with the closed list of areas it can search.
   areaClarification: (examples: string) => `I couldn't find that area. Which area should I search? For example: ${examples}.`,
+  // Issue 07 (ADR 0106, ADR 0015): a budget the server cannot read from the guest's own words is refused, never searched as a guessed amount.
+  budgetClarification: "I could not read that budget. Please give an amount, for example 150k a night or 500k for the stay.",
   // ADR 0106: a planner date that the guest's text does not state is rejected and the guest is asked for dates in a form the server reads.
   datesClarification: "I need your check-in and checkout dates before I can search. Please write them with the day, month and year, for example 20 November 2026 to 23 November 2026.",
   // ADR 0015: a Unit's all-in price is quoted for the stay's dates, so opening one without dates asks for them.
