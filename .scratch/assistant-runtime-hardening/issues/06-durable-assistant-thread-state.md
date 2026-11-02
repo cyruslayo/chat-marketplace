@@ -272,3 +272,40 @@ Commands and counts:
 - Lock tests, `node --import tsx --test test/assistant-thread-lock.test.ts test/assistant-session-thread-lock.test.ts`: 31 tests, 31 pass.
 
 Still red after this pass: failure 1 (domain-boundary AC4) and failure 5 (mobile journey AC2). Both fail at the base, so neither was introduced by the hardening work, and neither was fixed here. Failure 6 is a timing sensitivity that did not reproduce against the six-spec set. The pre-merge gate stays open until the owner decides on 1 and 5.
+
+### Owner fix A (1 Nov 2026): the runtime imports the booking horizon from the domain index (pre-merge gate failure 1)
+
+**Change.** `apps/local-guest/src/assistant/date-literals.ts` imported `BOOKING_HORIZON_DAYS` and `dateKeyInLagos` from `domains/shortlet/src/browse.js`, a deep import that is not on the boundary allow-list (ADR 0099). It now imports both from `domains/shortlet/src/index.js`. `domains/shortlet/src/index.ts` already re-exports `./browse.js` (`export * from "./browse.js"`), so no change to the index was needed. No allow-list entry was added. Behaviour is unchanged (same two values).
+
+**Tests first.** `test/domain-boundary.test.ts` run before the edit: AC4 fails with `apps/local-guest/src/assistant/date-literals.ts` as the only unlisted pair (3 pass, 1 fail).
+
+**Commands and counts (after the fix).**
+- `env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow node --import tsx --test test/domain-boundary.test.ts test/assistant-runtime-boundary.test.ts test/assistant-date-literals.test.ts test/assistant-date-literal-authority.test.ts test/assistant-search-unknowns.test.ts`: 37 tests, 37 pass, 0 fail.
+- `env -u LLM_API_KEY npm run check`: exit 0 (root `tsc`, `apps/cloudflare` `tsc`, its test and tooling configs, worker bundle guard).
+
+**ADR table (fix A).** ADR 0099 (the runtime imports no domain internals; now satisfied through the façade, AC4 passes). ADR 0106 (date authority unchanged: same resolver, same horizon).
+
+### Owner fix B (1 Nov 2026): the browser turn wait can be shortened by a test hook (pre-merge gate failure 5)
+
+**Cause.** Commit `7c24e83` set the browser's `POST /api/turn` wait to `CLIENT_TURN_TIMEOUT_MS` (188 s). AC2 stubs an 11 s late response and expects Retry within 12 s, so it cannot reach Retry with the production wait. No existing client-side timeout override exists (no test-only global, query parameter or config injection in `apps/local-guest/src/client.ts`), so a minimal hook was added.
+
+**Change.**
+- `apps/local-guest/src/client.ts`: new `clientTurnTimeoutMs()`. It reads `window.__shortletTurnTimeoutMs` at send time and uses it only when it is a positive integer; otherwise it returns `CLIENT_TURN_TIMEOUT_MS`. `sendTurn` uses it. The app never sets the global.
+- `apps/local-guest/dist/client.js`: regenerated with `node apps/local-guest/scripts/build-client.mjs` (diff is the 5 added and 1 changed lines). The other dist bundles the build rewrote were restored byte-for-byte from a backup and are not staged.
+- `test/mobile-guest-journey-chromium.test.ts` AC2: sets `window.__shortletTurnTimeoutMs = 2000` before the prompt.
+- Production default unchanged (188 s derived value).
+
+**Tests first.** AC2 solo, unmodified test: `Timeout waiting for text: Retry` (fail). AC2 with the hook set in the test but before the client change: fail. After the client change and rebuild: pass.
+
+**Commands and counts (final code).**
+- `env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow node --import tsx --test --test-name-pattern="AC2: A turn that times out" test/mobile-guest-journey-chromium.test.ts`: 1 pass, 0 fail.
+- Full file, solo: `env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow node --import tsx --test test/mobile-guest-journey-chromium.test.ts`: 43 tests, 43 pass, 0 fail, 0 cancelled (about 285 s).
+- Client timeout unit test: `node --import tsx --test test/guest-turn-timeout.test.ts`: 6 pass, 0 fail.
+- Other unit tests that read the client source: `node --import tsx --test test/ci-browser-build.test.ts test/guest-copy-pass.test.ts test/guest-presentation-contract.test.ts test/guest-retired-classes.test.ts`: 19 pass, 0 fail.
+- `env -u LLM_API_KEY npm run check`: exit 0.
+
+**ADR table (fix B).** ADR 0106 (the turn deadline and the Retry copy are unchanged; the hook only affects the browser wait when set by a test). ADR 0099 not affected.
+
+**Status.** Pre-merge gate failure 5 closed in the browser file. Failure 1 closed by fix A. Batch gate still open: `npm run test:workers` and the full `npm test` run once before any merge to main (not run here, per instruction).
+
+**Owner decision (merge of 4aedb57 into merge/hardening-final).** The hook above was dropped in favour of main's f460a8d, which patches the AC2 test with an AbortSignal.timeout change. `apps/local-guest/src/client.ts`, `apps/local-guest/dist/client.js` and `test/mobile-guest-journey-chromium.test.ts` are back to their aa36f2c (main) versions, so `clientTurnTimeoutMs` and `window.__shortletTurnTimeoutMs` are not in the result.
