@@ -385,6 +385,13 @@ export function resolveCheckInDate(
 }
 
 
+/** The summary's dates, only when both are known (ADR 0015: no "undefined" dates are shown to the guest). */
+function stayDatesClause(stayIntent: AssistantTaskState["stayIntent"]): string {
+  return typeof stayIntent.checkIn === "string" && typeof stayIntent.checkOut === "string"
+    ? ` for ${stayIntent.checkIn} to ${stayIntent.checkOut}`
+    : "";
+}
+
 export function executeAssistantTool(
   name: string,
   args: Record<string, unknown>,
@@ -720,6 +727,12 @@ export function executeAssistantTool(
       if (!stay) {
         throw new Error(`Stay reference '${stayRef}' is not in the shortlist. Cannot propose request.`);
       }
+      // ADR 0015 / ADR 0106: the summary states nights and party size, so an unknown value is never shown or defaulted. A missing
+      // value is a rejected tool call (tool_denial) answered with the stay clarification. It is checked before any state changes.
+      const { nights, partySize } = taskState.stayIntent;
+      if (typeof nights !== "number" || !Number.isSafeInteger(nights) || nights < 1 || typeof partySize !== "number" || !Number.isSafeInteger(partySize) || partySize < 1) {
+        throw new AssistantStayDetailsError("nights and party size are required before a request is proposed");
+      }
       taskState.selectedStayRef = stay.stayRef;
 
       const actionId = generatePlatformId("pa");
@@ -739,7 +752,7 @@ export function executeAssistantTool(
           stayTotalKobo: stay.allInStayTotalKobo ?? undefined,
           refundableDepositKobo: stay.refundableSecurityDepositKobo,
         },
-        summary: `Request to book ${stay.title} in ${stay.neighbourhood} for ${taskState.stayIntent.checkIn} to ${taskState.stayIntent.checkOut} (${taskState.stayIntent.nights ?? 3} nights, ${taskState.stayIntent.partySize ?? 1} guests). Submitting does not charge you.`,
+        summary: `Request to book ${stay.title} in ${stay.neighbourhood}${stayDatesClause(taskState.stayIntent)} (${nights} nights, ${partySize} guests). Submitting does not charge you.`,
         createdAt: context.now.toISOString(),
         expiresAt,
         executed: false,
