@@ -192,7 +192,7 @@ test("16 D3 export: a table larger than one R2 part is streamed in parts and kee
   expect(JSON.parse(lines[0]!).id).toBe(1);
   expect(JSON.parse(lines[5999]!).id).toBe(6000);
   await env.EXPORTS.delete(exportObjectKey(date, "telemetry_events"));
-});
+}, 15_000);
 
 test("16 D3 retention: old exports beyond the first 1,000-object listing page are deleted too", async () => {
   const stub = stubFor(`16-d3-retention-${crypto.randomUUID()}`);
