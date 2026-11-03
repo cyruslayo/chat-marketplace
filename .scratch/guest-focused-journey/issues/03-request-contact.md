@@ -79,3 +79,29 @@ Chromium accessibility-tree checks do not establish actual screen-reader speech.
 5. Existing domain commands provide all rules, prices, and limits. Shared content supplies new interface copy. PASS.
 6. No credential, real contact, or restricted identity material was added to logs or records. PASS.
 7. Type checks and affected tests pass. Full `npm test` and Workers gates remain the final batch gate under AGENTS.md Test scope.
+
+### Review correction: retain invalid trip edits
+
+The reviewer identified that native edit failures returned a generic error page. The failure lost the submitted dates and guest count.
+The owned review now shows the handler's error and retains submitted values. Both editors stay open, and fields reference the error.
+Stale or forged surfaces still return the rejection response. Invalid input changes no canonical draft facts.
+
+- Red: `npx tsx --test --test-name-pattern="AC1: each editable review fact" test/guest-request-repair-chromium.test.ts` — 0 passed, 1 failed. The response contained only the INVALID_INPUT code.
+- Green: the same command — 1 passed, zero failed.
+- `npx tsx --test test/guest-kit.test.ts test/guest-request-consistency.test.ts test/assistant-cold-journey.test.ts` — 18 passed, zero failed.
+- `npx tsx --test test/guest-request-repair-chromium.test.ts` — 3 passed, zero failed after adding invalid-count retention and forged-surface assertions.
+- `npm run build` — passed after the correction.
+- `npm run check` — passed after the correction.
+
+### Full capture refresh
+
+The full sweep completed after rebuilding the browser client. It produced 264 captures across 21 screen groups.
+No screen had horizontal overflow. Eight findings concern hidden native radio inputs at 1x1 pixels; their labels meet the target size.
+The capture helper copied `capture-11.ts` and changed only its output directory. The local copy remains untracked.
+
+Exact PowerShell capture command:
+
+```powershell
+$groups = @('chat-compare','chat-home','chat-results','chat-unit','search-page','unit-page','request-draft','request-review','request-sent','request-declined','request-expired','offer-live','offer-expired','payment-choice','bank-transfer','manual-transfer','manual-waiting','no-reservation','confirmed','error-page','no-js')
+foreach ($group in $groups) { npx tsx .scratch/guest-focused-journey/capture-03.ts $group; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
+```

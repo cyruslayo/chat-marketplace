@@ -3901,7 +3901,28 @@ export function createGuestRequestHandler(
           sendPageError(req, res, 400, "INVALID_EVENT"); return;
         }
         const result = await app.conventionalDraftEdit(id, form.get("surfaceId") ?? "", { checkIn: form.get("checkIn") ?? "", checkOut: form.get("checkOut") ?? "", partySize: Number(form.get("partySize")) }, principal);
-        if (!result.ok) { sendPageError(req, res, result.code === "STALE_SURFACE" ? 409 : 400, result.code); return; }
+        if (!result.ok) {
+          // ADR 0078: invalid editable input stays on the owned review; stale authority still fails closed.
+          if (result.code === "INVALID_INPUT" && page.requestScreen?.edit) {
+            res.writeHead(400, GUEST_HTML_HEADERS);
+            res.end(renderConventionalBookingHtml({
+              ...page,
+              requestScreen: {
+                ...page.requestScreen,
+                edit: {
+                  ...page.requestScreen.edit,
+                  error: result.message,
+                  entered: {
+                    checkIn: form.get("checkIn") ?? "",
+                    checkOut: form.get("checkOut") ?? "",
+                    partySize: form.get("partySize") ?? "",
+                  },
+                },
+              },
+            }));
+          } else sendPageError(req, res, result.code === "STALE_SURFACE" ? 409 : 400, result.code);
+          return;
+        }
         destination = result.surfaces.at(-1)?.conventionalRoute;
       } else if (kind === "draft" && (action === "review" || action === "submit")) {
         let form: URLSearchParams;

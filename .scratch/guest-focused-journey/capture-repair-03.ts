@@ -33,5 +33,10 @@ await withRequestScreen("review", async (fixture, path) => {
     await tab.evaluate("document.querySelector('#phoneNumber').value='08012'; document.querySelector('#phoneNumber').form.requestSubmit()");
     await tab.waitForSelector("#phoneNumber-error", 15000);
     await capture(tab, "phone-error");
+    await tab.navigate(`${fixture.base}${path}`);
+    await tab.waitForSelector(".request-edit", 15000);
+    await tab.evaluate("document.querySelector('.request-edit [name=checkOut]').value='2026-09-09'; document.querySelector('.request-edit form').requestSubmit()");
+    await tab.waitForSelector("#request-edit-error", 15000);
+    await capture(tab, "review-editor-error");
   } finally { await browser.close(); }
 });

@@ -19,7 +19,15 @@ export interface RequestScreenContent {
   readonly guests?: string;
   readonly selfBooking?: boolean;
   readonly changeHref?: string;
-  readonly edit?: { readonly route: string; readonly checkIn: string; readonly checkOut: string; readonly partySize: number; readonly contactHref: string };
+  readonly edit?: {
+    readonly route: string;
+    readonly checkIn: string;
+    readonly checkOut: string;
+    readonly partySize: number;
+    readonly contactHref: string;
+    readonly error?: string;
+    readonly entered?: { readonly checkIn: string; readonly checkOut: string; readonly partySize: string };
+  };
   readonly deadline?: { readonly iso: string; readonly text: string };
   readonly sentAt?: string;
   readonly primary: { readonly path: string; readonly label: string; readonly surfaceId?: string };
