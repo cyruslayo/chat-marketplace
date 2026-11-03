@@ -105,3 +105,13 @@ Exact PowerShell capture command:
 $groups = @('chat-compare','chat-home','chat-results','chat-unit','search-page','unit-page','request-draft','request-review','request-sent','request-declined','request-expired','offer-live','offer-expired','payment-choice','bank-transfer','manual-transfer','manual-waiting','no-reservation','confirmed','error-page','no-js')
 foreach ($group in $groups) { npx tsx .scratch/guest-focused-journey/capture-03.ts $group; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }
 ```
+
+Correction verification finished:
+
+- `npx tsx --test test/guest-request-consistency-chromium.test.ts` — 7 passed, zero failed after the correction.
+- `npx tsx .scratch/guest-focused-journey/capture-repair-03.ts` — 40 captures passed reflow and 44px target checks.
+- The targeted captures now include invalid native date edits in both themes at all four widths.
+- The local evidence directory contains 304 PNG captures: 264 full-sweep images and 40 focused images.
+- Implementation commits: `d75532f` and review correction `32b15b4`.
+
+The issue remains claimed pending the parent's independent review signoff. No push, merge, deployment, or full batch gate ran.

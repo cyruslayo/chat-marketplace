@@ -6,7 +6,7 @@ PRD: `PRD.md`. Branch: `codex/guest-focused-journey`. Base: `1c2e0b8d714ff6d3ea0
 | --- | --- | --- | --- |
 | 01 | Entry and search continuity | none | resolved |
 | 02 | Focused phone shell | 01 | resolved |
-| 03 | Request and contact repair | 02 | ready-for-agent |
+| 03 | Request and contact repair | 02 | claimed |
 | 04 | Offer and payment clarity | 03 | ready-for-agent |
 | 05 | Confirmation hierarchy | 04 | ready-for-agent |
 
