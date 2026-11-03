@@ -1,6 +1,6 @@
 # 01 Entry and search continuity
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: none
 
