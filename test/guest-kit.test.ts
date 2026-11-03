@@ -160,7 +160,7 @@ test("Rail markup keeps the journey data-state contract", () => {
 test("AC6: pill components use --radius-pill, never --radius-round", async () => {
   const css = await readFile(FOUNDATION_CSS, "utf8");
   const kit = guestKitCss(css);
-  for (const selector of [".ui-icon-button", ".ui-fact", ".ui-result-row__thumb", ".ui-price-breakdown__condition", ".ui-steps > li::before", ".ui-segmented", ".ui-segmented > label"]) {
+  for (const selector of [".ui-icon-button", ".ui-fact", ".ui-result-row__thumb", ".ui-price-breakdown__condition", ".ui-steps__number", ".ui-segmented", ".ui-segmented > label"]) {
     const rule = new RegExp(`${selector.replace(/[.>[\]()]/g, "\$&")} \{[^}]*\}`).exec(kit)?.[0] ?? "";
     assert.ok(rule, `${selector} has a rule`);
   }

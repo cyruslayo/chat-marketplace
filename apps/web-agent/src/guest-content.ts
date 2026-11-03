@@ -523,3 +523,20 @@ export const COMMERCE_GUEST_COPY = Object.freeze({
 export function commerceSoldBy(merchantName: string, storeName?: string): string {
   return storeName === undefined ? `${COMMERCE_GUEST_COPY.soldBy} ${merchantName}` : `${COMMERCE_GUEST_COPY.soldBy} ${merchantName} · ${storeName}`;
 }
+
+/** Shared request-contact guidance (guest-focused journey issue 03). */
+export const GUEST_PHONE_COPY = {
+  help: "Required before you send a Booking Request. Enter a Nigerian mobile number, such as 0801 234 5678 or +234 801 234 5678. This is for booking coordination, not identity verification.",
+  invalid: "Enter a Nigerian mobile number, such as 0801 234 5678.",
+} as const;
+
+export const GUEST_REQUEST_EDIT_COPY = {
+  heading: "Edit your request",
+  dates: "Edit dates",
+  guests: "Edit guests",
+  guestCount: "Number of guests",
+  save: "Save and review",
+  phone: "Edit phone number",
+  invalid: "Check your dates and number of guests.",
+  stale: "Use the current Request Draft.",
+} as const;

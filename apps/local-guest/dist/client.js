@@ -9787,6 +9787,16 @@ Known schemas:
     cartPageTitle: "Shopping cart",
     pageTitleSuffix: "Shop"
   });
+  var GUEST_REQUEST_EDIT_COPY = {
+    heading: "Edit your request",
+    dates: "Edit dates",
+    guests: "Edit guests",
+    guestCount: "Number of guests",
+    save: "Save and review",
+    phone: "Edit phone number",
+    invalid: "Check your dates and number of guests.",
+    stale: "Use the current Request Draft."
+  };
 
   // apps/local-guest/src/turn-budget.ts
   var SCOPE_CLASSIFIER_BUDGET_MS = 8e3;
@@ -10014,7 +10024,7 @@ Known schemas:
     });
   }
   function stepsHtml(items) {
-    return `<ol class="ui-steps">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>`;
+    return `<ol class="ui-steps">${items.map((item, index) => `<li><span class="ui-steps__number">${index + 1}</span><span>${escapeHtml(item)}</span></li>`).join("")}</ol>`;
   }
   function confirmationScreenHtml(content, ticket, breakdown) {
     return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}<section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}</section><div class="request-actions"><a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Back to your conversation</a><a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.detailsHref)}">View booking details</a>${content.scheduleHref ? `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.scheduleHref)}">View payment schedule</a>` : ""}</div><section class="ui-panel booking-details" id="booking-details" tabindex="-1"><h2>Booking details</h2><p>${escapeHtml(content.details)}</p></section></section>`;
@@ -10029,11 +10039,13 @@ Known schemas:
   function requestScreenHtml(content, ticket, breakdown, actionTotal) {
     const form = (action, primary) => `<form method="post" action="${escapeHtml(action.path)}">${action.surfaceId === void 0 ? "" : `<input type="hidden" name="surfaceId" value="${escapeHtml(action.surfaceId)}">`}<button class="ui-button ui-button--${primary ? "primary" : "secondary"} ui-button--block" type="submit"${action.surfaceId === "" ? " disabled" : ""}>${escapeHtml(action.label)}</button></form>`;
     const who = content.guests === void 0 ? "" : `<section class="ui-panel request-guests" aria-label="Who's staying"><h2>Who's staying</h2><dl class="ui-facts ui-facts--stacked"><dt>Guests</dt><dd>${escapeHtml(content.guests)}</dd>${content.selfBooking === void 0 ? "" : `<dt>You're booking for yourself</dt><dd>${content.selfBooking ? "Yes" : "No"}</dd>`}</dl>${content.changeHref === void 0 ? "" : `<a class="ui-link" href="${escapeHtml(content.changeHref)}">Change dates or guests${icon("arrow-right")}</a>`}</section>`;
+    const edit = content.edit;
+    const editor = edit === void 0 ? "" : `<section class="ui-panel request-edit"><h2>${GUEST_REQUEST_EDIT_COPY.heading}</h2><form class="ui-field" method="post" action="${escapeHtml(edit.route)}"><input type="hidden" name="surfaceId" value="${escapeHtml(content.primary.surfaceId ?? "")}"><details><summary class="ui-button ui-button--secondary">${GUEST_REQUEST_EDIT_COPY.dates}</summary><div class="ui-field"><label for="request-check-in">${GUEST_FACT_LABELS.checkIn}</label><input id="request-check-in" type="date" name="checkIn" value="${escapeHtml(edit.checkIn)}" required></div><div class="ui-field"><label for="request-check-out">${GUEST_FACT_LABELS.checkOut}</label><input id="request-check-out" type="date" name="checkOut" value="${escapeHtml(edit.checkOut)}" required></div></details><details><summary class="ui-button ui-button--secondary">${GUEST_REQUEST_EDIT_COPY.guests}</summary><div class="ui-field"><label for="request-party-size">${GUEST_REQUEST_EDIT_COPY.guestCount}</label><input id="request-party-size" type="number" name="partySize" value="${edit.partySize}" min="1" required></div></details><button class="ui-button ui-button--secondary ui-button--block" type="submit">${GUEST_REQUEST_EDIT_COPY.save}</button></form><a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(edit.contactHref)}">${GUEST_REQUEST_EDIT_COPY.phone}</a></section>`;
     const banner = content.banner === void 0 ? "" : `<p class="ui-banner ui-banner--neutral">${icon("info")}<span>${escapeHtml(content.banner)}</span></p>`;
     const deadline = content.deadline === void 0 ? "" : `<p class="request-deadline"><time class="waiting-deadline-time" datetime="${escapeHtml(content.deadline.iso)}">${escapeHtml(content.deadline.text)}</time><span class="waiting-countdown"></span></p>`;
     const editable = content.state === "draft" || content.state === "review";
     const sum = editable && actionTotal !== void 0 ? `<p class="ui-action-bar__sum"><strong>${escapeHtml(actionTotal)}</strong><span class="ui-money-metadata">${GUEST_GLOSSARY.allInStayTotal}</span></p>` : "";
-    return `<section class="request-screen" data-request-state="${content.state}"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">${GUEST_GLOSSARY.bookingRequest}</p><h2>${escapeHtml(content.title)}</h2>${statusHtml(content.tone, content.status)}</header>${banner}<div class="request-ticket">${ticket}</div>${who}<div class="request-breakdown">${breakdown}</div>${content.schedule === void 0 ? "" : paymentScheduleHtml(content.schedule)}${content.provider === void 0 ? "" : `<p class="request-provider">${escapeHtml(content.provider)}</p>`}${content.sentAt === void 0 ? "" : `<p class="ui-field__hint">${escapeHtml(content.sentAt)}</p>`}${deadline}<section class="ui-panel request-next"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>${content.notes.length ? `<div class="request-notes">${content.notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</div>` : ""}<div class="request-actions${editable ? " ui-action-bar" : ""}">${sum}${form(content.primary, true)}${content.secondary === void 0 ? "" : form(content.secondary, false)}</div></section>`;
+    return `<section class="request-screen" data-request-state="${content.state}"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">${GUEST_GLOSSARY.bookingRequest}</p><h2>${escapeHtml(content.title)}</h2>${statusHtml(content.tone, content.status)}</header>${banner}<div class="request-ticket">${ticket}</div>${who}${editor}<div class="request-breakdown">${breakdown}</div>${content.schedule === void 0 ? "" : paymentScheduleHtml(content.schedule)}${content.provider === void 0 ? "" : `<p class="request-provider">${escapeHtml(content.provider)}</p>`}${content.sentAt === void 0 ? "" : `<p class="ui-field__hint">${escapeHtml(content.sentAt)}</p>`}${deadline}<section class="ui-panel request-next"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>${content.notes.length ? `<div class="request-notes">${content.notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</div>` : ""}<div class="request-actions${editable ? " ui-action-bar" : ""}">${sum}${form(content.primary, true)}${content.secondary === void 0 ? "" : form(content.secondary, false)}</div></section>`;
   }
   function statusHtml(tone, text) {
     return statusBadge(text, tone);

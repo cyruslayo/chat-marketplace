@@ -1,3 +1,4 @@
+import { GUEST_PHONE_COPY } from "../../web-agent/src/guest-content.js";
 import { generatePlatformId } from "../../../packages/platform-core/src/index.js";
 import {
   createServer,
@@ -1085,6 +1086,7 @@ export function renderGuestContactHtml(
     readonly phoneNumber?: string;
     readonly contactEmail?: string;
   } = {},
+  returnTo = "",
 ): string {
   const safe = escapeHtml;
   const phoneError = kind === "phone" ? error : "";
@@ -1094,11 +1096,11 @@ export function renderGuestContactHtml(
   const phoneForm =
     kind === "email"
       ? ""
-      : `<form class="ui-panel" method="post" action="/guest/contact/phone"><div class="ui-field"><label class="ui-field__label" for="phoneNumber">Phone number <span aria-hidden="true">*</span></label><p class="ui-field__hint" id="phoneNumber-help">Required before you send a Booking Request. Use a Nigerian mobile number: +234 E.164 format. Example: +234 801 234 5678 or 0801 234 5678. This is for booking coordination, not identity verification.</p><input id="phoneNumber" name="phoneNumber" type="tel" inputmode="tel" autocomplete="tel" enterkeyhint="done" maxlength="32" required aria-describedby="phoneNumber-help${phoneError ? " phoneNumber-error" : ""}"${phoneError ? ' aria-invalid="true"' : ""} value="${safe(phoneValue)}">${phoneError ? `<p id="phoneNumber-error" class="ui-field__error" role="alert">${safe(phoneError)}</p>` : ""}</div><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Save phone number</button></form>`;
+      : `<form class="ui-panel" method="post" action="/guest/contact/phone"><div class="ui-field"><label class="ui-field__label" for="phoneNumber">Phone number <span aria-hidden="true">*</span></label><p class="ui-field__hint" id="phoneNumber-help">${GUEST_PHONE_COPY.help}</p><input id="phoneNumber" name="phoneNumber" type="tel" inputmode="tel" autocomplete="tel" enterkeyhint="done" maxlength="32" required aria-describedby="phoneNumber-help${phoneError ? " phoneNumber-error" : ""}"${phoneError ? ' aria-invalid="true"' : ""} value="${safe(phoneValue)}">${phoneError ? `<p id="phoneNumber-error" class="ui-field__error" role="alert">${safe(phoneError)}</p>` : ""}</div><input type="hidden" name="returnTo" value="${safe(returnTo)}"><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Save phone number</button></form>`;
   const emailForm =
     kind === "phone"
       ? ""
-      : `<form class="ui-panel" method="post" action="/guest/contact/email"><div class="ui-field"><label class="ui-field__label" for="contactEmail">Email address <span aria-hidden="true">*</span></label><p class="ui-field__hint" id="contactEmail-help">Required to initialize hosted card checkout and send your payment receipt. This email is not your account identity.</p><input id="contactEmail" name="contactEmail" type="email" inputmode="email" autocomplete="email" enterkeyhint="done" maxlength="254" required aria-describedby="contactEmail-help${emailError ? " contactEmail-error" : ""}"${emailError ? ' aria-invalid="true"' : ""} value="${safe(emailValue)}">${emailError ? `<p id="contactEmail-error" class="ui-field__error" role="alert">${safe(emailError)}</p>` : ""}</div><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Save email address</button></form>`;
+      : `<form class="ui-panel" method="post" action="/guest/contact/email"><div class="ui-field"><label class="ui-field__label" for="contactEmail">Email address <span aria-hidden="true">*</span></label><p class="ui-field__hint" id="contactEmail-help">Required to initialize hosted card checkout and send your payment receipt. This email is not your account identity.</p><input id="contactEmail" name="contactEmail" type="email" inputmode="email" autocomplete="email" enterkeyhint="done" maxlength="254" required aria-describedby="contactEmail-help${emailError ? " contactEmail-error" : ""}"${emailError ? ' aria-invalid="true"' : ""} value="${safe(emailValue)}">${emailError ? `<p id="contactEmail-error" class="ui-field__error" role="alert">${safe(emailError)}</p>` : ""}</div><input type="hidden" name="returnTo" value="${safe(returnTo)}"><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Save email address</button></form>`;
   const generalError =
     error && kind === "both"
       ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${safe(error)}</span></p>`
@@ -3849,7 +3851,7 @@ export function createGuestRequestHandler(
     }
 
     const requestPost =
-      /^\/(booking-requests\/drafts|booking-requests)\/([^/]+)\/(review|submit|conversation|search)$/.exec(
+      /^\/(booking-requests\/drafts|booking-requests)\/([^/]+)\/(review|submit|edit|conversation|search)$/.exec(
         url.pathname,
       );
     if (req.method === "POST" && requestPost) {
@@ -3892,7 +3894,16 @@ export function createGuestRequestHandler(
       }
       const action = requestPost[3];
       let destination: string | undefined;
-      if (kind === "draft" && (action === "review" || action === "submit")) {
+      if (kind === "draft" && action === "edit") {
+        let form: URLSearchParams;
+        try { form = await readFormBody(req); } catch { sendPageError(req, res, 400, "INVALID_EVENT"); return; }
+        if ([...form.keys()].some(key => !["surfaceId", "checkIn", "checkOut", "partySize"].includes(key)) || [...new Set(form.keys())].some(key => form.getAll(key).length !== 1)) {
+          sendPageError(req, res, 400, "INVALID_EVENT"); return;
+        }
+        const result = await app.conventionalDraftEdit(id, form.get("surfaceId") ?? "", { checkIn: form.get("checkIn") ?? "", checkOut: form.get("checkOut") ?? "", partySize: Number(form.get("partySize")) }, principal);
+        if (!result.ok) { sendPageError(req, res, result.code === "STALE_SURFACE" ? 409 : 400, result.code); return; }
+        destination = result.surfaces.at(-1)?.conventionalRoute;
+      } else if (kind === "draft" && (action === "review" || action === "submit")) {
         let form: URLSearchParams;
         try {
           form = await readFormBody(req);
@@ -5235,6 +5246,14 @@ export function createGuestRequestHandler(
         role: "guest",
         tenantId: session.tenantId,
       };
+      const ownedReturn = async (value: string): Promise<string> => {
+        const match = /^\/booking-requests\/drafts\/([^/?#]+)$/.exec(value);
+        if (!match) return "";
+        let id: string;
+        try { id = decodeURIComponent(match[1]!); } catch { return ""; }
+        const page = await app.conventionalBookingPage("draft", id, contactPrincipal);
+        return page?.requestScreen?.primary.surfaceId ? value : "";
+      };
       if (req.method === "GET" && url.pathname === "/guest/contact") {
         const kind = url.searchParams.get("kind");
         const requestedKind =
@@ -5248,6 +5267,8 @@ export function createGuestRequestHandler(
             ),
             "",
             requestedKind,
+            {},
+            await ownedReturn(url.searchParams.get("returnTo") ?? ""),
           ),
         );
         return;
@@ -5259,9 +5280,13 @@ export function createGuestRequestHandler(
           return;
         }
         let submittedValue = "";
+        let returnTo = "";
         const contactKind = url.pathname.endsWith("/phone") ? "phone" : "email";
         try {
           const form = await readFormBody(req);
+          const requestedReturn = form.get("returnTo") ?? "";
+          returnTo = await ownedReturn(requestedReturn);
+          if (requestedReturn && !returnTo) { sendPageError(req, res, 409, "STALE_SURFACE"); return; }
           const expectedRevision = Number(form.get("expectedRevision"));
           if (contactKind === "phone") {
             submittedValue = form.get("phoneNumber") ?? "";
@@ -5284,7 +5309,8 @@ export function createGuestRequestHandler(
                 : {}),
             });
           }
-          res.writeHead(303, { Location: "/guest/contact" });
+          if (returnTo && contactKind === "phone") await app.conventionalResumeReview(returnTo.split("/").at(-1)!, contactPrincipal);
+          res.writeHead(303, { Location: returnTo || "/guest/contact" });
           res.end();
           return;
         } catch (error) {
@@ -5297,13 +5323,14 @@ export function createGuestRequestHandler(
               ),
               error instanceof GuestContactOwnedByAccountError
                 ? GUEST_ACCOUNT_COPY.errors.emailOwnedByAccount
-                : error instanceof Error
-                  ? error.message
-                  : "Contact could not be saved",
+                : contactKind === "phone" && error instanceof Error && /phone|Nigerian/i.test(error.message)
+                  ? GUEST_PHONE_COPY.invalid
+                  : error instanceof Error ? error.message : "Contact could not be saved",
               contactKind,
               contactKind === "phone"
                 ? { phoneNumber: submittedValue }
                 : { contactEmail: submittedValue },
+              returnTo,
             ),
           );
           return;
