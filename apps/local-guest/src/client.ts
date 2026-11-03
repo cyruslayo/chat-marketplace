@@ -2682,14 +2682,53 @@ workspaceReopen.addEventListener("click", async () => {
   showReopen();
   composerInput.focus({ preventScroll: true });
   const refreshed = await refreshServerState(true);
+  let recoveryFocus: HTMLButtonElement | undefined;
   if (!refreshed && activePayload) {
     shellState = markActiveSurfaceStatus(shellState, "stale");
     renderSurface({ ...activePayload, status: "stale" });
+    shellState = reopenFocusedSurface(shellState);
+    activeWorkspace.hidden = false;
+    composerForm.dataset.focused = "true";
+    const recovery = document.createElement("div");
+    recovery.className = "workspace-recovery ui-panel";
+    recovery.setAttribute("role", "status");
+    const message = document.createElement("p");
+    message.textContent = "Current details could not be checked. This saved view has no actions.";
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.id = "workspace-retry-status";
+    retry.className = "ui-button";
+    retry.textContent = "Retry current status";
+    retry.addEventListener("click", async () => {
+      retry.disabled = true;
+      retry.textContent = "Checking current status…";
+      if (!await refreshServerState()) {
+        retry.disabled = false;
+        retry.textContent = "Retry current status";
+        announce("Current details could not be checked. Try again or open the standard details.", true);
+      }
+    });
+    recovery.append(message, retry);
+    if (activePayload.conventionalRoute) {
+      const link = document.createElement("a");
+      link.className = "ui-button";
+      link.href = activePayload.conventionalRoute;
+      link.textContent = "Open standard details";
+      recovery.appendChild(link);
+    }
+    activeWorkspace.querySelector(".workspace-status")?.after(recovery);
+    recoveryFocus = retry;
+    syncSheetHistory();
     announce("Current details could not be checked. Review the saved details without using their actions.", true);
   }
   workspaceReopen.disabled = false;
   workspaceReopen.removeAttribute("aria-busy");
   showReopen();
+  if (recoveryFocus) {
+    recoveryFocus.focus({ preventScroll: true });
+    requestAnimationFrame(() => { workspaceRegion.scrollTop = focusedScrollTop; });
+    return;
+  }
   const current = shellState.activeSurface;
   if (!current || current.surfaceId !== previous?.surfaceId ||
     (previous.status === "active" && current.status !== "active")) {

@@ -191,3 +191,33 @@ test("AC3 regression: Return checks the server before exposing an action superse
     } finally { release?.(); await stop(); }
   } finally { await browser.close(); await fixture.close(); }
 });
+
+test("AC3 regression: one failed current-state check opens an inert task with retry and preserves the draft", async () => {
+  const fixture = await restartFixture();
+  const browser = await launchRealBrowser();
+  try {
+    const tab = await browser.createTab();
+    await tab.setViewport(390, 700);
+    await tab.navigate(`${fixture.base}/`);
+    await openDetail(tab);
+    assert.equal(await tab.evaluate<boolean>("(() => { const b = document.querySelector('.workspace-ask'); if (!(b instanceof HTMLButtonElement)) return false; b.click(); return true; })()"), true);
+    await tab.insertText("Keep my question");
+    let checks = 0;
+    const stop = await tab.interceptRequests(async (url) => {
+      if (!url.includes("/api/state?") || checks++ > 0) return undefined;
+      return { status: 503, headers: [{ name: "Content-Type", value: "application/json" }], body: new TextEncoder().encode("{}") };
+    });
+    try {
+      assert.equal(await tab.clickButton("Return to"), true);
+      await tab.waitForSelector("#active-workspace:not([hidden]) .workspace-recovery", 10_000);
+      assert.equal(await tab.evaluate<string>("document.getElementById('active-workspace').dataset.status"), "stale");
+      assert.equal(await tab.evaluate<boolean>("document.querySelector('#active-workspace .weaver-mount')?.hasAttribute('inert')"), true);
+      assert.equal(await tab.evaluate<string>("document.getElementById('composer-input').value"), "Keep my question");
+      assert.equal(await tab.evaluate<string>("document.activeElement?.id"), "workspace-retry-status");
+      assert.equal(await tab.clickButton("Retry current status"), true);
+      await tab.waitForFunction("document.getElementById('active-workspace').dataset.status === 'active'", 10_000);
+      assert.equal(await tab.evaluate<boolean>("document.querySelector('#active-workspace .weaver-mount')?.hasAttribute('inert')"), false);
+      assert.equal(await tab.evaluate<string>("document.getElementById('composer-input').value"), "Keep my question");
+    } finally { await stop(); }
+  } finally { await browser.close(); await fixture.close(); }
+});
