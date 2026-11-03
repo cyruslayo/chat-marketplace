@@ -1,6 +1,6 @@
 # 03 Request and contact repair
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 02
 
@@ -115,3 +115,14 @@ Correction verification finished:
 - Implementation commits: `d75532f` and review correction `32b15b4`.
 
 The issue remains claimed pending the parent's independent review signoff. No push, merge, deployment, or full batch gate ran.
+
+
+## Answer
+
+Request review now provides direct date, guest-count, and phone edits. Valid answers survive edits, invalid input, and assistant cold restores.
+Phone failures retain the entered value and show shared Nigerian-number guidance. Corrections restore the owned review task.
+The shared step helper exposes each number once in Chromium's accessibility tree. Required request terms remain visible before submission.
+
+The independent reviewer approved `32b15b4`, including a focused passing test and ownership and unchanged-draft probes.
+The parent confirmed that signoff before resolution. Implementation: `d75532f`; review correction: `32b15b4`; verification record: `09cb9b4`.
+Full batch gates and real screen-reader speech remain outside this issue's completed checks, as recorded above.
