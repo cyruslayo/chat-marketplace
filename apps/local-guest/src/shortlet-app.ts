@@ -3104,7 +3104,23 @@ export class LocalGuestApp {
     keepArtifactId: string | null = null,
   ): void {
     // Issue 04 (ADR 0106, 2 Nov 2026): a pending date show-back is not a search. A restore must not rebuild results for its dates.
-    if (context.pendingDate !== undefined) return;
+    if (context.pendingDate !== undefined) {
+      // Issue 16 (parity): while a date show-back is open the criteria strip shows the held stay "to confirm", as the deterministic
+      // path does (its discovery context is unconfirmed). No search runs and no results change. With a Request Draft open the
+      // deterministic path keeps the draft's own criteria ("Your Request Draft is unchanged"), so nothing changes here either.
+      if (thread.draftId && !thread.requestId && !thread.offerId) return;
+      const [candidate] = context.pendingDate.candidates;
+      const pendingCheckIn = context.pendingDate.checkIn ?? (context.pendingDate.candidates.length === 1 ? candidate : undefined);
+      thread.discoveryContext = {
+        city: context.city,
+        ...(context.neighbourhood ? { neighbourhood: context.neighbourhood } : {}),
+        ...(context.nights === undefined ? {} : { nights: context.nights }),
+        ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
+        ...(pendingCheckIn === undefined ? {} : { checkIn: pendingCheckIn }),
+        datesConfirmed: false,
+      };
+      return;
+    }
     const budgetTotal = persistedBudgetTotal(context);
     const filters = {
       location: context.city,
