@@ -150,7 +150,7 @@ The approved guest design is the canvas <https://claude.ai/artifact/TKQCWTF4SWNs
 
 | Component | Class | Used for |
 | --- | --- | --- |
-| App bar, journey rail | `.ui-appbar`, `.ui-rail-nav` / `.ui-rail` | One frame on every guest screen: brand, New conversation, six-step Booking progress. |
+| App bar, journey rail | `.ui-appbar`, `.ui-rail-nav` / `.ui-rail` | The conversation and conventional pages show the brand, actions, and Booking progress. A focused phone task uses its contextual Back, current-stage label, and Ask Shortlet control instead. |
 | Stay card, result row | `.ui-stay-card`, `.ui-result-row` / `.ui-result-rows` | Discovery in chat and on the search page; compact rows on phones. |
 | Compare table | `.ui-compare` | Side-by-side stays with a View per stay. |
 | Ticket, tiles, facts | `.ui-ticket`, `.ui-tiles`, `.ui-facts` | The stay summary, unit detail facts, dates. |
@@ -163,6 +163,8 @@ The approved guest design is the canvas <https://claude.ai/artifact/TKQCWTF4SWNs
 | Empty, stale, skeleton | `.ui-empty`, `.ui-stale`, `.ui-skeleton` | Error pages, expired content, loading. |
 
 Dark mode comes from the semantic tokens only (`prefers-color-scheme: dark` and `data-theme="dark"`); the ticket takes its dark surface and border from tokens, never literals. Retired in issue 11: `.waiting-panel*`, `.stay-result` and the page-level payment style string. `.stay-card` and `.stay-grid` remain only as the client's hooks on the Weaver cards, which also carry `.ui-stay-card`.
+
+On a phone, a focused task owns one viewport and one scroll area. Its contextual bar shows Back, the current stage, and Ask Shortlet. The conversation composer appears when the guest returns to chat. A task's primary action uses the shared `.ui-action-bar`; it stays within the task scroll area. Reopening the same task preserves its scroll and unsent message. Desktop keeps the conversation and workspace columns visible together. The conventional route keeps the same server-projected facts and actions (ADRs 0074, 0077, 0078, 0080).
 
 ### Foundation implementation entry points
 

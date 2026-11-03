@@ -11031,6 +11031,7 @@ Known schemas:
   var eventInFlight = false;
   var lastActivatedControl;
   var workspaceOpener;
+  var focusedScrollTop = 0;
   var createdSurfaceIds = /* @__PURE__ */ new Set();
   function trackTelemetry(event) {
     void fetch("/api/telemetry", {
@@ -11271,6 +11272,7 @@ Known schemas:
     }
   }
   function closeWorkspace(focusTarget) {
+    focusedScrollTop = workspaceRegion.scrollTop;
     shellState = closeFocusedSurface(shellState);
     composerForm.dataset.focused = "false";
     activeWorkspace.hidden = true;
@@ -11282,13 +11284,20 @@ Known schemas:
     trackTelemetry("focused-surface-closed");
     announce("Returned to the conversation. Your stay details are still here.");
   }
+  function askShortlet() {
+    closeWorkspace(composerInput);
+    composerInput.focus({ preventScroll: true });
+    announce("Conversation ready. Your stay details are still here.");
+  }
   function renderSurface(surface, moveFocus = false) {
     stopCountdown();
     const presentation = presentationFor(surface);
+    const previousScroll = activePayload?.surfaceId === surface.surfaceId ? shellState.focusedSurfaceOpen ? workspaceRegion.scrollTop : focusedScrollTop : 0;
+    focusedScrollTop = previousScroll;
     composerForm.dataset.focused = presentation.mode === "focused-surface" ? "true" : "false";
     activePayload = surface;
     activeWorkspace.replaceChildren();
-    activeWorkspace.hidden = false;
+    activeWorkspace.hidden = presentation.mode === "focused-surface" && presentation.status === "active" && !shellState.focusedSurfaceOpen;
     activeWorkspace.tabIndex = -1;
     workspaceRegion.hidden = false;
     activeWorkspace.dataset.mode = presentation.mode;
@@ -11311,9 +11320,24 @@ Known schemas:
       arrow.setAttribute("aria-hidden", "true");
       arrow.textContent = "\u2190";
       close.appendChild(arrow);
-      close.append("Back to conversation");
+      close.append("Back");
+      const detail = document.createElement("span");
+      detail.className = "workspace-close__detail";
+      detail.textContent = " to conversation";
+      close.appendChild(detail);
+      close.setAttribute("aria-label", "Back to conversation");
       close.addEventListener("click", () => closeWorkspace(workspaceReopen));
       heading.appendChild(close);
+      const stage = document.createElement("span");
+      stage.className = "workspace-stage-label";
+      stage.textContent = guestSurfaceHeading(presentation.summary);
+      heading.appendChild(stage);
+      const ask = document.createElement("button");
+      ask.type = "button";
+      ask.className = "workspace-ask ui-button ui-button--quiet";
+      ask.textContent = "Ask Shortlet";
+      ask.addEventListener("click", askShortlet);
+      heading.appendChild(ask);
     }
     activeWorkspace.appendChild(heading);
     const statusMessage = guestSurfaceStatusMessage(presentation.status);
@@ -11341,6 +11365,7 @@ Known schemas:
       trackTelemetry("fallback-rendered");
       fallback(mount, presentation);
       showReopen();
+      syncSheetHistory();
       return;
     }
     if (createdSurfaceIds.has(surface.surfaceId)) {
@@ -11356,6 +11381,7 @@ Known schemas:
         fallback(mount, { ...presentation, status: "fallback" });
         announce("The workspace could not be displayed safely. A standard route remains available.", true);
         showReopen();
+        syncSheetHistory();
         return;
       }
     }
@@ -11370,6 +11396,7 @@ Known schemas:
       trackTelemetry("fallback-rendered");
       announce("The workspace could not be displayed safely. A standard route remains available.", true);
       showReopen();
+      syncSheetHistory();
       return;
     }
     mount.dataset.renderer = "weaver";
@@ -11388,6 +11415,7 @@ Known schemas:
       mount.appendChild(link);
     }
     showReopen();
+    workspaceRegion.scrollTop = previousScroll;
     if (moveFocus) {
       activeWorkspace.scrollIntoView({ block: "start" });
       const focusTarget = [".workspace-close", ".workspace-heading h2", ".weaver-mount h1", ".weaver-mount h2", ".weaver-mount h3", ".weaver-mount button"].map((selector) => activeWorkspace.querySelector(selector)).find((element) => element !== null);
@@ -11406,7 +11434,9 @@ Known schemas:
   function acceptSurface(surface) {
     const before = shellState.historicalSummaries.length;
     const replaced = shellState.activeSurface !== void 0 && shellState.activeSurface.surfaceId !== surface.surfaceId;
+    const keepConversationOpen = !replaced && shellState.activeSurface?.mode === "focused-surface" && !shellState.focusedSurfaceOpen;
     shellState = replaceActiveSurface(shellState, presentationFor(surface));
+    if (keepConversationOpen) shellState = closeFocusedSurface(shellState);
     if (replaced) trackTelemetry("surface-replaced");
     for (const summary of shellState.historicalSummaries.slice(before)) addHistoricalSummary(summary);
     renderSurface(surface, replaced);
@@ -11990,10 +12020,15 @@ Known schemas:
   workspaceReopen.addEventListener("click", () => {
     workspaceOpener = workspaceReopen;
     shellState = reopenFocusedSurface(shellState);
-    if (activePayload) {
-      renderSurface(activePayload, true);
-      activeWorkspace.querySelector(".workspace-close")?.focus({ preventScroll: true });
-    }
+    if (!shellState.focusedSurfaceOpen || !activePayload) return;
+    activeWorkspace.hidden = false;
+    composerForm.dataset.focused = "true";
+    showReopen();
+    syncSheetHistory();
+    activeWorkspace.querySelector(".workspace-close")?.focus({ preventScroll: true });
+    requestAnimationFrame(() => {
+      if (sheetOpen()) workspaceRegion.scrollTop = focusedScrollTop;
+    });
   });
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape" || activeWorkspace.hidden || !activeWorkspace.contains(document.activeElement)) return;
@@ -12006,9 +12041,6 @@ Known schemas:
     sheetInHistory = false;
     closeWorkspace(workspaceReopen);
   });
-  new ResizeObserver(() => {
-    document.documentElement.style.setProperty("--composer-block-size", `${Math.ceil(composerForm.getBoundingClientRect().height)}px`);
-  }).observe(composerForm);
   sheetQuery.addEventListener("change", syncSheetHistory);
   for (const suggestion of document.querySelectorAll(".prompt-suggestion[data-prompt]")) {
     suggestion.addEventListener("click", () => {

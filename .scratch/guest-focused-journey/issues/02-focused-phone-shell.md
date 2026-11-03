@@ -1,6 +1,6 @@
 # 02 Focused phone shell
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: 01
 
@@ -24,3 +24,16 @@ On phones, a current booking task fills the available view with one scroll owner
 Write one named failing test per AC. Cover open/close, Back, restore, draft, focus, and scroll. Run `npm run check` and affected tests. Run one changed real-Chrome file at a time. Capture 320/390/768/1280, light/dark, and check target size and overflow. Record exact commands and counts in Comments and complete the Definition of Done.
 
 ## Comments
+
+- ADR review: 0005 retains Request to Book; 0015/0016 retain canonical total and separate deposit; 0041/0044 retain request and payment windows; 0049 retains hosted checkout. This shell changes none of those rules. 0068/0072/0073 keep A2UI actions behind validated platform commands. 0074 and 0106 require current server surfaces and fail-closed stale actions (AC3). 0075 bars sensitive content in logs (all criteria). 0077 and 0080 keep the same projected facts and conventional routes (AC4). 0078 requires 320px reflow, focus, keyboard, reduced motion, and 44px targets (AC1–3).
+- Red evidence: `npx tsx --test test/guest-focused-phone-shell-chromium.test.ts` first ran with 2 passed and 2 failed. AC1 exposed the persistent composer. AC2 exposed the missing Ask Shortlet control. A later AC2 run exposed task scroll loss on return.
+- Implementation: the focused task owns the phone viewport and scroll. Its contextual bar contains Back, a stage label, and Ask Shortlet. The existing kit action bar holds the primary action. Ask Shortlet and Back keep the task DOM and message draft. Reopen restores task scroll. Server refreshes remain authoritative, and stale or unknown surfaces cannot reopen an action. Desktop keeps the split.
+- Named acceptance tests: `test/guest-focused-phone-shell-chromium.test.ts` has one test per AC. AC1 checks 320px and 390px layout and action visibility. AC2 checks draft, scroll, task, and focus. AC3 checks visible Back, browser Back, reopen, cold restore, and unknown/stale rejection. AC4 checks the desktop split and the conventional detail route.
+- Focused checks passed: `npm run build`; `npm run check` (zero errors); `npx tsx --test test/local-guest-shell.test.ts test/conversational-shell.test.ts` (14 passed, 0 failed). The shell's unknown-thread assertion now expects the server's fail-closed 404 response.
+- Real Chrome checks passed, one file at a time: `npx tsx --test test/guest-focused-phone-shell-chromium.test.ts` (4 passed, 0 failed); `npx tsx --test test/guest-split-workspace-chromium.test.ts` (4 passed, 0 failed); `npx tsx --test --test-name-pattern='AC6|AC7|AC8|AC14|AC15|AC26|AC28|AC32' test/mobile-guest-journey-chromium.test.ts` (8 passed, 0 failed).
+- Captures passed: `npx tsx .scratch/guest-focused-journey/capture-02.ts` wrote eight screenshots and `screenshots/02/findings.txt`. Widths were 320, 390, 768, and 1280 in light and dark themes. All eight had no horizontal overflow and no visible control below 44px. Visual inspection included 320px dark and 1280px light.
+- Definition of Done review: AC1–AC4 each have a dedicated named test and the named failure paths above. The ADRs above were read. No constructor dependency, policy threshold, business rule, bearer log, or restricted identity record was added. `npm run check` and the affected tests pass. The full `npm test` and Workers suite remain the batch pre-merge gate under the project Test scope.
+
+## Answer
+
+The focused phone task now uses one scroll area and a contextual bar. Ask Shortlet preserves the draft and task position. Browser Back, visible Back, reopen, and cold restore keep the current safe task. Desktop and conventional routes retain their existing authority.

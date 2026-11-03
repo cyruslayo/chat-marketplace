@@ -395,9 +395,11 @@ export function renderGuestShellHtml(): string {
     .workspace-heading-text { min-width: 0; display: grid; gap: var(--space-1); }
     .workspace-title { margin: 0; font-size: var(--font-size-h3); line-height: var(--font-line-h3); font-weight: 650; overflow-wrap: anywhere; }
     .eyebrow { color: var(--color-action); font-size: var(--font-size-metadata); font-weight: 650; }
-    .workspace-close, #workspace-reopen, .contact-link { display: inline-flex; min-height: var(--control-min-target); align-items: center; justify-content: center; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-control); color: var(--color-text); background: var(--color-surface); text-decoration: none; cursor: pointer; }
+    .workspace-close, #workspace-reopen, .contact-link { display: inline-flex; min-block-size: var(--control-min-target); min-inline-size: var(--control-min-target); align-items: center; justify-content: center; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-control); color: var(--color-text); background: var(--color-surface); text-decoration: none; cursor: pointer; }
+    .workspace-close { gap: var(--space-1); }
     .contact-link { color: var(--color-text-secondary); font-size: var(--font-size-small); }
     .workspace-close:hover, #workspace-reopen:hover, .contact-link:hover { border-color: var(--color-action); }
+    .workspace-stage-label, .workspace-ask { display: none; }
     .workspace-status { margin: 0 0 var(--space-3); color: var(--color-text-secondary); font-size: var(--font-size-small); }
     .workspace-status[data-status="stale"], .workspace-status[data-status="expired"], .workspace-status[data-status="deleted"], .workspace-status[data-status="fallback"] { padding: var(--space-2) var(--space-3); border-inline-start: 3px dashed var(--color-warning); background: var(--color-warning-surface); color: var(--color-warning); }
     .weaver-mount { min-width: 0; max-width: 100%; overflow: visible; }
@@ -531,17 +533,23 @@ export function renderGuestShellHtml(): string {
       main:has(#active-workspace:not([hidden])) #active-workspace { max-inline-size: 35rem; }
       main:has(#active-workspace:not([hidden])) #active-workspace[data-surface-kind="discovery"] { max-inline-size: 47.5rem; }
     }
-    /*
-     * Issue 09 AC2: below 64rem a focused workspace is a full-screen sheet
-     * above the conversation. It stops at the composer, which stays usable
-     * (AC3); header Back and browser Back both close it.
-     */
+    /* Focused phone and tablet task: the task region owns scrolling. */
     @media (max-width: 63.999rem) {
-      #workspace-region:has(> #active-workspace[data-mode="focused-surface"][data-status="active"]:not([hidden])) {
-        position: fixed; inset: 0 0 var(--composer-block-size, 0px) 0; z-index: var(--layer-sticky); padding: max(var(--space-3), env(safe-area-inset-top)) var(--layout-gutter-mobile) var(--space-4); background: var(--color-canvas);
+      .app:has(#active-workspace[data-mode="focused-surface"]:not([hidden])) > .ui-appbar,
+      .app:has(#active-workspace[data-mode="focused-surface"]:not([hidden])) > .ui-rail-nav,
+      .app:has(#active-workspace[data-mode="focused-surface"]:not([hidden])) > .ui-task-rail-nav,
+      main:has(#active-workspace[data-mode="focused-surface"]:not([hidden])) > #transcript,
+      main:has(#active-workspace[data-mode="focused-surface"]:not([hidden])) > #criteria-strip,
+      main:has(#active-workspace[data-mode="focused-surface"]:not([hidden])) > form#composer { display: none; }
+      #workspace-region:has(> #active-workspace[data-mode="focused-surface"]:not([hidden])) {
+        position: fixed; inset: 0; z-index: var(--layer-sticky); padding: 0; background: var(--color-canvas); overflow-y: auto;
       }
-      #workspace-region:has(> #active-workspace[data-mode="focused-surface"][data-status="active"]:not([hidden])) .workspace-heading--focused-surface { position: sticky; top: calc(-1 * var(--space-3)); z-index: 1; margin-inline: calc(-1 * var(--space-4)); padding: var(--space-2) var(--space-4); background: var(--color-surface-elevated); }
-      form#composer { z-index: calc(var(--layer-sticky) + 1); }
+      #active-workspace[data-mode="focused-surface"] { min-height: 100%; border: 0; border-radius: 0; box-shadow: none; padding: 0 var(--layout-gutter-mobile) max(var(--space-6), env(safe-area-inset-bottom)); }
+      #active-workspace[data-mode="focused-surface"] .workspace-heading--focused-surface { position: sticky; top: 0; z-index: 1; align-items: center; justify-content: space-between; min-height: 3.5rem; margin: 0 calc(-1 * var(--layout-gutter-mobile)) var(--space-3); padding: max(var(--space-2), env(safe-area-inset-top)) var(--layout-gutter-mobile) var(--space-2); border-bottom: 1px solid var(--color-border-subtle); background: var(--color-surface); }
+      .workspace-stage-label { display: inline; color: var(--color-text-secondary); font-size: var(--font-size-small); font-weight: 650; text-align: center; overflow-wrap: anywhere; }
+      .workspace-ask { display: inline-flex; min-height: var(--control-min-target); }
+      .workspace-heading--focused-surface .workspace-close { padding-inline: var(--space-2); }
+      .workspace-close__detail { display: none; }
     }
     @media (max-height: 520px) { .ui-appbar { position: static; } #transcript { min-height: 0; } form#composer { position: sticky; } }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; } }

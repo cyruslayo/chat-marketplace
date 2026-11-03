@@ -50,9 +50,11 @@ test("Focused workspaces have no persistent focus frame and keep visible focus o
   assert.doesNotMatch(html, /outline:\s*(?:none|0)\s*!important/i);
 });
 
-test("The shell supports focused-workspace composer de-emphasis without hiding message entry", () => {
+test("The shell hides the composer while a focused phone task owns the viewport", () => {
   const html = renderGuestShellHtml();
-  assert.match(html, /form#composer\[data-focused="true"\]/);
+  assert.match(html, /main:has\(#active-workspace\[data-mode="focused-surface"\]:not\(\[hidden\]\)\) > form#composer \{ display: none; \}/);
+  assert.match(html, /workspace-stage-label/);
+  assert.match(html, /workspace-ask/);
   assert.match(html, /id="composer-input"/);
   assert.match(html, /id="composer-submit"/);
 });
@@ -147,8 +149,8 @@ test("HTTP refresh state requires the server-issued browser session and cannot e
 
     const guessed = await fetch(`${base}/api/state?threadId=g-abcdefabcdef`, { headers: { Cookie: cookie!.split(";")[0]! } });
     const guessedBody = await guessed.json() as { readonly timeline?: readonly unknown[] };
-    assert.equal(guessed.status, 200);
-    assert.equal(guessedBody.timeline?.length, 0);
+    assert.equal(guessed.status, 404);
+    assert.equal(guessedBody.timeline, undefined);
 
     const unauthenticated = await fetch(`${base}/api/state?threadId=${threadId}`);
     assert.equal(unauthenticated.status, 401);

@@ -1501,6 +1501,7 @@ let isLoading = false;
 let eventInFlight = false;
 let lastActivatedControl: HTMLElement | undefined;
 let workspaceOpener: HTMLElement | undefined;
+let focusedScrollTop = 0;
 const createdSurfaceIds = new Set<string>();
 
 type ShellTelemetryEvent =
@@ -1849,6 +1850,7 @@ function syncSheetHistory(): void {
 
 /** Closes the focused workspace (header Back, Escape or browser Back) and returns focus. */
 function closeWorkspace(focusTarget: HTMLElement): void {
+  focusedScrollTop = workspaceRegion.scrollTop;
   shellState = closeFocusedSurface(shellState);
   composerForm.dataset.focused = "false";
   activeWorkspace.hidden = true;
@@ -1861,13 +1863,23 @@ function closeWorkspace(focusTarget: HTMLElement): void {
   announce("Returned to the conversation. Your stay details are still here.");
 }
 
+function askShortlet(): void {
+  closeWorkspace(composerInput);
+  composerInput.focus({ preventScroll: true });
+  announce("Conversation ready. Your stay details are still here.");
+}
+
 function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
   stopCountdown();
   const presentation = presentationFor(surface);
+  const previousScroll = activePayload?.surfaceId === surface.surfaceId
+    ? shellState.focusedSurfaceOpen ? workspaceRegion.scrollTop : focusedScrollTop
+    : 0;
+  focusedScrollTop = previousScroll;
   composerForm.dataset.focused = presentation.mode === "focused-surface" ? "true" : "false";
   activePayload = surface;
   activeWorkspace.replaceChildren();
-  activeWorkspace.hidden = false;
+  activeWorkspace.hidden = presentation.mode === "focused-surface" && presentation.status === "active" && !shellState.focusedSurfaceOpen;
   activeWorkspace.tabIndex = -1;
   workspaceRegion.hidden = false;
   activeWorkspace.dataset.mode = presentation.mode;
@@ -1896,9 +1908,24 @@ function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
     arrow.setAttribute("aria-hidden", "true");
     arrow.textContent = "←";
     close.appendChild(arrow);
-    close.append("Back to conversation");
+    close.append("Back");
+    const detail = document.createElement("span");
+    detail.className = "workspace-close__detail";
+    detail.textContent = " to conversation";
+    close.appendChild(detail);
+    close.setAttribute("aria-label", "Back to conversation");
     close.addEventListener("click", () => closeWorkspace(workspaceReopen));
     heading.appendChild(close);
+    const stage = document.createElement("span");
+    stage.className = "workspace-stage-label";
+    stage.textContent = guestSurfaceHeading(presentation.summary);
+    heading.appendChild(stage);
+    const ask = document.createElement("button");
+    ask.type = "button";
+    ask.className = "workspace-ask ui-button ui-button--quiet";
+    ask.textContent = "Ask Shortlet";
+    ask.addEventListener("click", askShortlet);
+    heading.appendChild(ask);
   }
   activeWorkspace.appendChild(heading);
 
@@ -1935,7 +1962,7 @@ if (
     mount.setAttribute("inert", "");
     mount.setAttribute("aria-disabled", "true");
   }
-  if (presentation.status === "fallback") { trackTelemetry("fallback-rendered"); fallback(mount, presentation); showReopen(); return; }
+  if (presentation.status === "fallback") { trackTelemetry("fallback-rendered"); fallback(mount, presentation); showReopen(); syncSheetHistory(); return; }
 
   if (createdSurfaceIds.has(surface.surfaceId)) {
     // ADR-0074: a refreshed server projection re-creates a surface this page
@@ -1953,6 +1980,7 @@ if (
       fallback(mount, { ...presentation, status: "fallback" });
       announce("The workspace could not be displayed safely. A standard route remains available.", true);
       showReopen();
+      syncSheetHistory();
       return;
     }
   }
@@ -1967,6 +1995,7 @@ if (
     trackTelemetry("fallback-rendered");
     announce("The workspace could not be displayed safely. A standard route remains available.", true);
     showReopen();
+    syncSheetHistory();
     return;
   }
   mount.dataset.renderer = "weaver";
@@ -1986,6 +2015,7 @@ if (
     mount.appendChild(link);
   }
   showReopen();
+  workspaceRegion.scrollTop = previousScroll;
   if (moveFocus) {
     activeWorkspace.scrollIntoView({ block: "start" });
     // Priority order, not document order: the heading precedes the close control in the DOM.
@@ -2008,7 +2038,9 @@ if (
 function acceptSurface(surface: GuestSurfacePayload): void {
   const before = shellState.historicalSummaries.length;
   const replaced = shellState.activeSurface !== undefined && shellState.activeSurface.surfaceId !== surface.surfaceId;
+  const keepConversationOpen = !replaced && shellState.activeSurface?.mode === "focused-surface" && !shellState.focusedSurfaceOpen;
   shellState = replaceActiveSurface(shellState, presentationFor(surface));
+  if (keepConversationOpen) shellState = closeFocusedSurface(shellState);
   if (replaced) trackTelemetry("surface-replaced");
   for (const summary of shellState.historicalSummaries.slice(before)) addHistoricalSummary(summary);
   renderSurface(surface, replaced);
@@ -2638,10 +2670,16 @@ try {
 workspaceReopen.addEventListener("click", () => {
   workspaceOpener = workspaceReopen;
   shellState = reopenFocusedSurface(shellState);
-  if (activePayload) {
-    renderSurface(activePayload, true);
-    activeWorkspace.querySelector<HTMLElement>(".workspace-close")?.focus({ preventScroll: true });
-  }
+  if (!shellState.focusedSurfaceOpen || !activePayload) return;
+  // ADR-0074: only the active server projection can reopen an actionable task.
+  activeWorkspace.hidden = false;
+  composerForm.dataset.focused = "true";
+  showReopen();
+  syncSheetHistory();
+  activeWorkspace.querySelector<HTMLElement>(".workspace-close")?.focus({ preventScroll: true });
+  requestAnimationFrame(() => {
+    if (sheetOpen()) workspaceRegion.scrollTop = focusedScrollTop;
+  });
 });
 
 // ADR-0078: focused workspaces are keyboard-dismissible and restore focus to
@@ -2660,10 +2698,6 @@ window.addEventListener("popstate", () => {
   closeWorkspace(workspaceReopen);
 });
 
-// The sheet stops at the composer, so its height is shared with the CSS.
-new ResizeObserver(() => {
-  document.documentElement.style.setProperty("--composer-block-size", `${Math.ceil(composerForm.getBoundingClientRect().height)}px`);
-}).observe(composerForm);
 sheetQuery.addEventListener("change", syncSheetHistory);
 
 for (const suggestion of document.querySelectorAll<HTMLButtonElement>(".prompt-suggestion[data-prompt]")) {
