@@ -3680,6 +3680,7 @@ export class LocalGuestApp {
     // ADR 0015: the all-in price needs the stay dates. Without them the guest is asked for dates; no detail opens and no
     // selection is recorded, so the thread stays usable.
     const filters = artifact.facts.filters;
+    const threadRoute = `${route}${route.includes("?") ? "&" : "?"}threadId=${encodeURIComponent(thread.threadId)}`;
     if (typeof filters?.checkIn !== "string" || typeof filters.checkOut !== "string") {
       return { ok: true, messages: [GUEST_ASSISTANT_COPY.unitDatesClarification], surfaces: [] };
     }
@@ -3718,7 +3719,7 @@ export class LocalGuestApp {
           surfaceId,
           mode: "focused-surface",
           summary: `${unit.title} details`,
-          conventionalRoute: route,
+          conventionalRoute: threadRoute,
           textFallback: `${unit.title}. ${unit.location.neighbourhood}, ${unit.location.city}. Entire Place; capacity ${unit.capacity} guests. ${GUEST_GLOSSARY.allInStayTotal}: ${unit.price.allInStayTotalKobo === null ? "not yet quoted" : formatNgnKobo(unit.price.allInStayTotalKobo)}. ${GUEST_GLOSSARY.refundableSecurityDeposit}: ${formatNgnKobo(unit.price.refundableSecurityDepositKobo)}. Inspection: ${unit.trust.inspection.status}; Management Authority: ${unit.trust.managementAuthority.status}.`,
           a2uiMessages: unitDetailArtifactToA2UI({
             artifact: unitDetailArtifact,

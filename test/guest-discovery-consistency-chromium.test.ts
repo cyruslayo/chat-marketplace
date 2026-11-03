@@ -35,7 +35,11 @@ test("AC1: the search page and the chat workspace render each stay with the same
       return { chat: parts(document.querySelector("#active-workspace .ui-stay-card")), page: parts(page) };
     })()`);
     assert.ok(both.page.total && both.page.where, "the page card is complete");
-    assert.deepEqual(both.chat, both.page);
+    const normalizeDestination = (card: Record<string, unknown>) => ({
+      ...card,
+      title: String(card.title).replace(/href="[^"]+"/, 'href=""'),
+    });
+    assert.deepEqual(normalizeDestination(both.chat), normalizeDestination(both.page));
     // The chat's extras (fit reason, Compare) sit inside the same card without changing its parts.
     assert.equal(await tab.evaluate<boolean>("Boolean(document.querySelector('#active-workspace .ui-stay-card .stay-card__fit'))"), true);
     // AC3 in the workspace: the money figure and its label precede the deposit, and there is no rating, badge or map.

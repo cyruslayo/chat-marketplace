@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { restartFixture } from "./helpers/guest-restart.js";
 import { renderConventionalSearchHtml } from "../apps/local-guest/src/guest-server.js";
+import { formatNgnKobo } from "../apps/web-agent/src/index.js";
 
 async function get(url: string, cookie?: string): Promise<{ status: number; body: string }> {
   const response = await fetch(url, { headers: { accept: "text/html", ...(cookie ? { cookie } : {}) } });
@@ -49,7 +50,7 @@ test("AC1 (search part): /stays/search built by the guest app returns 200 with t
     const page = await get(`${fixture.base}${route}`);
     assert.equal(page.status, 200);
     for (const unitId of expected) assert.match(page.body, new RegExp(`data-unit-id="${unitId}"`));
-    assert.match(page.body, new RegExp(`href="/stays/${expected[0]}"`));
+    assert.match(page.body, new RegExp(`href="/stays/${expected[0]}\\?`));
     assert.equal((page.body.match(/data-unit-id=/g) ?? []).length, expected.length);
 
     // Failure paths: criteria the guest app never builds fail closed with 400.
@@ -58,6 +59,79 @@ test("AC1 (search part): /stays/search built by the guest app returns 200 with t
       assert.equal(rejected.status, 400, invalid);
       assert.match(rejected.body, /data-error-code="SEARCH_INVALID"/, invalid);
     }
+  } finally { await fixture.close(); }
+});
+
+test("AC2: opening a result keeps its current criteria and authoritative quote on the conventional detail route", async () => {
+  const fixture = await restartFixture();
+  try {
+    const discovery = await fixture.advance("discovery");
+    const route = discovery.surfaces[0]!.conventionalRoute!;
+    const artifact = fixture.environment.discoveryQuery.search(searchFilters(route));
+    const first = artifact.facts.results[0]!;
+    const searchPage = await get(`${fixture.base}${route}`);
+    const detailRoute = new RegExp(`href="([^\"]*\/stays\/${first.id}[^\"]*)"`).exec(searchPage.body)?.[1];
+    assert.ok(detailRoute, "the selected result has a conventional detail route");
+    assert.match(detailRoute!, /checkIn=/, "the result route carries the selected dates");
+    assert.match(detailRoute!, /partySize=/, "the result route carries the guest count");
+    const detail = await get(`${fixture.base}${detailRoute!.replace(/&amp;/g, "&")}`);
+    assert.equal(detail.status, 200);
+    assert.match(detail.body, /All-In Stay Total/);
+    assert.match(detail.body, /2 guests/);
+    assert.ok(detail.body.includes(formatNgnKobo(first.price.allInStayTotalKobo!)), "the detail total matches the selected result quote");
+    assert.match(detail.body, /Refundable Security Deposit/);
+    const incomplete = await get(`${fixture.base}/stays/${first.id}?threadId=${fixture.threadId}`);
+    assert.equal(incomplete.status, 400, "missing quote criteria fail closed");
+    const stale = await get(`${fixture.base}/stays/${first.id}?location=Abuja&checkIn=2026-09-10&checkOut=2026-09-13&partySize=2`);
+    assert.equal(stale.status, 409, "criteria that no longer include the selected unit fail closed");
+  } finally { await fixture.close(); }
+});
+
+test("AC3: zero results preserve the search criteria, offer direct repair, and show no result action", async () => {
+  const fixture = await restartFixture();
+  try {
+    const discovery = await fixture.advance("discovery");
+    const route = discovery.surfaces[0]!.conventionalRoute!;
+    const zeroRoute = `${route}&budget=1`;
+    const page = await get(`${fixture.base}${zeroRoute}`);
+    assert.equal(page.status, 200);
+    assert.match(page.body, /No stays match/);
+    assert.match(page.body, /aria-label="Change your search"/);
+    assert.match(page.body, /id="search-area"[^>]*>[\s\S]*selected/);
+    assert.doesNotMatch(page.body, /data-unit-id=|View apartment|Request to Book/);
+  } finally { await fixture.close(); }
+});
+
+test("AC4: Back from Unit detail returns to the current search results and keeps its criteria", async () => {
+  const fixture = await restartFixture();
+  try {
+    const discovery = await fixture.advance("discovery");
+    const searchRoute = `${discovery.surfaces[0]!.conventionalRoute!}&threadId=${fixture.threadId}`;
+    const searchPage = await get(`${fixture.base}${searchRoute}`, fixture.cookie);
+    const unitId = /data-unit-id="([^"]+)"/.exec(searchPage.body)?.[1];
+    assert.ok(unitId);
+    const detailRoute = new RegExp(`href="([^\"]*\\/stays\\/${unitId}[^\"]*)"`).exec(searchPage.body)?.[1];
+    assert.ok(detailRoute);
+    const detailPage = await get(`${fixture.base}${detailRoute!.replace(/&amp;/g, "&")}`, fixture.cookie);
+    assert.match(detailPage.body, /Back to search results/);
+    const backRoute = /href="([^\"]+)"[^>]*>Back to search results/.exec(detailPage.body)?.[1]?.replace(/&amp;/g, "&");
+    assert.ok(backRoute?.startsWith("/stays/search?"));
+    assert.ok(backRoute!.includes(`threadId=${fixture.threadId}`), "Back preserves the current thread identity");
+    const returned = await get(`${fixture.base}${backRoute}`, fixture.cookie);
+    assert.equal(returned.status, 200);
+    assert.match(returned.body, new RegExp(`data-unit-id="${unitId}"`));
+    assert.match(returned.body, /value="2026-09-10"/);
+    assert.match(returned.body, /value="2026-09-13"/);
+    assert.match(returned.body, /value="2"/);
+    const conversationRoute = /href="([^\"]+)"[^>]*>Back to your conversation/.exec(returned.body)?.[1];
+    assert.equal(conversationRoute, `/?threadId=${fixture.threadId}`);
+    const conversation = await get(`${fixture.base}${conversationRoute}`, fixture.cookie);
+    assert.equal(conversation.status, 200);
+    const state = await get(`${fixture.base}/api/state?threadId=${fixture.threadId}`, fixture.cookie);
+    assert.equal(state.status, 200);
+    assert.match(state.body, new RegExp(fixture.threadId));
+    const forged = await get(`${fixture.base}/api/state?threadId=g-00000000-0000-4000-8000-000000000000`, fixture.cookie);
+    assert.doesNotMatch(forged.body, /g-00000000-0000-4000-8000-000000000000/, "an unknown thread id receives no thread projection");
   } finally { await fixture.close(); }
 });
 
@@ -104,7 +178,7 @@ test("AC1 (search part): restored discovery and unit surfaces emit routes that r
     assert.equal(restored.ok, true); if (!restored.ok) return;
     const route = restored.surfaces[0]!.conventionalRoute!;
     // Failure path: the restored unit surface previously pointed at an empty /booking-requests/ route.
-    assert.match(route, /^\/stays\/[^/?]+$/);
+    assert.match(route, /^\/stays\/[^/?]+\?/);
     assert.equal((await get(`${inspection.base}${route}`)).status, 200);
   } finally { await inspection.close(); }
 });
