@@ -110,3 +110,21 @@ Not done (the issue stays ready-for-agent):
 - Rows 05 (checkout phrase), 11 (facility answer and stage reply), 12 (explanation after submission): not written. 12 needs the sent-stay setup.
 - Item 4, the re-base of the deterministic files to 27 Oct 2026: NOT done, on purpose. The date expectations are in `test/guest-real-dates.test.ts` (21 lines matching Sept or 2026-09), `test/guest-draft-revision.test.ts` (18), `test/guest-must-fix-ux.test.ts` (9) and `test/guest-discovery-reasons-chromium.test.ts` (1, a real-Chrome file, not run). Re-basing them changes about 49 lines whose expected values depend on the weekday of the fixture clock (for example "Fri 4 Sept 2026"), so each one needs its weekday and nights recomputed. That is risky to do by search and replace, so it is for the owner to decide. The parity suite already runs both paths on 27 Oct 2026, so it does not need the re-base.
 - The full `npm test` and `npm run test:workers` are left to the batch gate.
+
+### Owner decisions (3 Nov 2026, second message)
+
+- Re-base of the four deterministic files to 27 Oct 2026: SKIPPED by the owner. They stay on 3 Sept 2026. The parity fixture runs both paths on 27 Oct 2026.
+- AC2 seam: a larger runtime change is approved, through a deterministic pack hook. The pack names a server-chosen call, and the runtime runs it outside the model loop.
+
+### AC2 (agent, 3 Nov 2026, step 1 of 4)
+
+- Seam: `serverToolTurn` (pack hook, `assistant-platform.ts`) and `#runServerTool` (runtime). The runtime runs the call through the same checks as a planner call: the pack's `validateToolCall`, the offered schema (`findToolArgumentViolation`), `executeTool`, and the stage handlers that file the surface (`projectWithHandlers`). Any refusal returns undefined, so the turn falls through to the pack's text answer or the planner (fail closed). No planner round runs when the call is served.
+- Gate (no fast path around the model): the hook runs only when the classifier validated exactly the `details` intent, and only for the last position (`viewResultIntent`, the deterministic parser, reads the guest's words). "Open the first one" and "I want to book the first one" keep the planner (the recorded journeys and the booking tests depend on it).
+- Row: "AC2: show me the last one opens the last result". Red first (the planner answered a clarification, so the seam is the only way to get a unit surface). Green after the seam.
+
+Commands and counts (`env -u LLM_API_KEY`):
+- `npm run check`: exit 0.
+- `test/assistant-parity.test.ts`: 9 of 9 pass.
+- Wider assistant batch (16 files, 95 tests): 93 pass, 2 fail. The two failures (switch_task with a numeric taskId; start_task without a domain) also fail on the HEAD before this change (run on a detached worktree of HEAD), so they are pre-existing and not part of this step.
+
+Incident (agent, 3 Nov 2026): while checking the batch on a detached HEAD worktree, I removed that worktree with `git worktree remove --force`. My node_modules junction pointed at this worktree's node_modules, so the removal deleted that folder's contents. The owner's files were not touched. I restored the dependencies with `npm ci` (from the lockfile, which is unchanged), then ran `npm run check` (exit 0) and the parity suite (9 of 9). Going forward I will not use forced worktree removal on a tree with a junction.

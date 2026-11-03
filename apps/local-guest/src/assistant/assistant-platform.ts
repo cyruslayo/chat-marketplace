@@ -187,6 +187,11 @@ export interface AssistantDomainPack {
    * change the task state.
    */
   answerValidatedTurn?(turn: { readonly intents: readonly ConciergeIntent[]; readonly slots: ScopeAssessment["slots"]; readonly taskState: AssistantTaskState }): string | undefined;
+  /**
+   * Issue 16 AC2 (ADR 0099, ADR 0106): one server-chosen tool call for a validated turn, with no planner round. The runtime runs it
+   * through the same checks as a planner call (preconditions, the offered schema, the stage handlers). Undefined means no call.
+   */
+  serverToolTurn?(turn: { readonly intents: readonly ConciergeIntent[]; readonly text: string; readonly taskState: AssistantTaskState }): { readonly name: string; readonly args: Record<string, unknown> } | undefined;
   /** Issue 04: the pack's stage handlers, called in order for each authoritative execution and for confirmed pending actions. */
   readonly stageHandlers?: readonly AssistantStageHandler[];
   /**

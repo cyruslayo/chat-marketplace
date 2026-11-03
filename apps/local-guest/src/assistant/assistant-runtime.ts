@@ -1153,7 +1153,16 @@ export class AssistantRuntime {
 
     try {
       // ADR 0099 / ADR 0106 (issue 12): the pack may answer the validated turn from its task state. No planner round runs, so no tool can.
-      const packAnswer = candidatePack().answerValidatedTurn?.({ intents: validatedTurnIntents, slots: assessment.slots, taskState: tx.taskState });
+      // Issue 16 AC2 (ADR 0099, ADR 0106): a pack's server-chosen call answers the turn when it passes the same checks as a planner call.
+      // A refused call returns undefined, so the turn falls through to the pack's text answer or the planner (fail closed).
+      const serverCall = candidatePack().serverToolTurn?.({ intents: validatedTurnIntents, text: originalUserText, taskState: tx.taskState });
+      const serverMessage = serverCall === undefined
+        ? undefined
+        : this.#runServerTool(threadId, tx, candidatePack(), serverCall, {
+          userTextHistory,
+          currentTurnDates: currentTurnDateRoles(originalUserText, assessment.slots, this.#environment.clock()),
+        });
+      const packAnswer = serverMessage ?? candidatePack().answerValidatedTurn?.({ intents: validatedTurnIntents, slots: assessment.slots, taskState: tx.taskState });
       if (packAnswer !== undefined) {
         finalAssistantReply = packAnswer;
         candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
@@ -1782,6 +1791,49 @@ export class AssistantRuntime {
     // failure without committing, so without this the thread would keep the proposal the handler had just removed.
     if (!outcome.ok && tx.taskState.pendingAction === null) this.#commitDroppedProposal(threadId, tx);
     return outcome;
+  }
+
+  /**
+   * Issue 16 AC2 (ADR 0099, ADR 0106): runs the one server-chosen tool a pack asks for, with the checks a planner call gets: the pack's
+   * precondition, the offered schema, the stage handlers that file the surface. It returns the reply copy the surface carries, or
+   * undefined when any check refuses (no surface is filed then). Read-only tools only reach here (the pack names them).
+   */
+  #runServerTool(
+    threadId: string,
+    tx: TurnTransaction,
+    pack: AssistantDomainPack,
+    call: { readonly name: string; readonly args: Record<string, unknown> },
+    context: Pick<AssistantToolContext, "userTextHistory" | "currentTurnDates">,
+  ): string | undefined {
+    if (pack.validateToolCall(call.name, call.args, tx.taskState)) return undefined;
+    const schemaTool = pack.toolDefinition?.(call.name);
+    if (!schemaTool || findToolArgumentViolation(schemaTool.parametersSchema, call.args)) return undefined;
+    try {
+      const toolContext: AssistantToolContext = {
+        environment: this.#environment,
+        taskState: tx.taskState,
+        threadId,
+        taskId: tx.activeTaskId,
+        requestedArguments: call.args,
+        now: this.#environment.clock(),
+        demoCheckIn: this.#environment.config.demoCheckIn,
+        ...context,
+      };
+      const execution = pack.executeTool(call.name, call.args, toolContext);
+      const claim = projectWithHandlers(pack.stageHandlers ?? [], { toolName: call.name, args: call.args, execution }, {
+        threadId,
+        tx,
+        pack,
+        environment: this.#environment,
+        setStage: () => undefined,
+      });
+      if (!claim?.surface) return undefined;
+      tx.addSurface(claim.surface, claim.fallbackMessage);
+      return claim.fallbackMessage ?? "";
+    } catch {
+      // The read-only tools a pack names do not change state before they can fail, so a refusal leaves nothing to undo.
+      return undefined;
+    }
   }
 
   /** Commits a dropped proposal to the thread, so a later Yes cannot retry it. */

@@ -2,7 +2,7 @@ import { draftRevisionRequest } from "./shortlet-draft-revision.js";
 import { generatePlatformId } from "../../../../packages/platform-core/src/index.js";
 import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantGuestRefusalError, AssistantStayDetailsError, containsGuestDate } from "./date-tokens.js";
 import { ContinuousOccupancyError, StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, MAX_STAY_NIGHTS, BOOKING_HORIZON_DAYS, dateKeyInLagos, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
-import { SEARCH_AREAS, formatGuestDay, locationConflictQuestion, quickRepliesFor, resolveLocationMention, stayBudgetKobo, stayCriteriaGap, unsupportedPreferenceNote, type PendingLocationChange } from "../concierge.js";
+import { SEARCH_AREAS, formatGuestDay, locationConflictQuestion, quickRepliesFor, resolveLocationMention, stayBudgetKobo, stayCriteriaGap, unsupportedPreferenceNote, viewResultIntent, type PendingLocationChange } from "../concierge.js";
 import { phraseIsGuestAuthored, readCheckInPhrase, type CheckInPhraseReading } from "./date-phrases.js";
 import { isExplicitConfirmation } from "./pending-actions.js";
 import { extractBudget, type StayBudget } from "../stay-budget.js";
@@ -1544,6 +1544,18 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     // and no planner call. Before anything is sent this returns undefined and the turn goes to the planner as a search.
     // Issue 11 (ADR 0106, 0080): a vague turn (no intents, which the classifier returns only as unclear) after a stay is sent gets the
     // stage reply, with no planner call. Before anything is sent it returns undefined and the fixed clarification stands.
+    // Issue 16 AC2 (ADR 0106, ADR 0080): "show me the last one" opens the last result. It runs only when the classifier validated the
+    // details intent; the closed view parser (the deterministic path's viewResultIntent) then reads the guest's words for the position.
+    // The call is get_unit_details for that stay, so the unit surface is the same one the deterministic path opens.
+    serverToolTurn: ({ intents, text, taskState }) => {
+      // Only the details intent alone: a turn that also asks to book, compare or change is not a view (the planner answers it).
+      if (intents.length !== 1 || intents[0] !== "details") return undefined;
+      const view = viewResultIntent(text);
+      // AC2 is "show me the last one". Other positions ("open the first one") stay with the planner, as the recorded journeys expect.
+      if (view === undefined || view.position !== "last") return undefined;
+      const stay = taskState.shortlist.at(-1);
+      return stay === undefined ? undefined : { name: "get_unit_details", args: { stayRef: stay.stayRef } };
+    },
     answerValidatedTurn: ({ intents, slots, taskState }) => {
       if (intents.length === 0) return sentStageReply(taskState, environment);
       if (!asksToChangeStay(intents, slots)) return undefined;

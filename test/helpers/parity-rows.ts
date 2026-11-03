@@ -62,6 +62,13 @@ export const ROWS: readonly ParityRow[] = [
       "make it from tomorrow": { slots: { nights: 2 }, search: { city: "Lagos", checkInPhrase: "tomorrow", nights: 2, guests: 2 } },
     },
   },
+  // Issue 16 AC2: "show me the last one" opens the last result on both paths (the deterministic viewResultIntent; on the assistant path a
+  // deterministic pack hook, gated on the validated details intent, runs the same unit detail with no planner round).
+  {
+    name: "AC2: show me the last one opens the last result",
+    turns: [{ text: SEARCH_TEXT }, { text: "show me the last one" }],
+    script: { [SEARCH_TEXT]: SEARCH_SCRIPT, "show me the last one": { slots: {}, intents: ["details"], reply: "clarify_stay" } },
+  },
   // Issue 16 row for the unchecked behaviour "an unrelated turn keeps the current results" (shortlet-app.ts:1081). The results stay.
   {
     name: "an unrelated turn keeps the current results",
