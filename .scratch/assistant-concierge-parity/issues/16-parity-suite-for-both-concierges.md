@@ -92,3 +92,21 @@ Open (not done in this run; the issue stays `ready-for-agent`):
 - Clock: existing deterministic test files (`guest-real-dates`, `guest-draft-revision`, `guest-must-fix-ux`, `guest-discovery-reasons-chromium`) still use their own 3 Sept 2026 fixture. They were not re-based because the parity suite gets its own environment and nothing forces it. If owner decision 3 needs those files re-based, it is a separate change and is not made here.
 - AC4 live script: not written. It needs the staging model client wired for k = 5 runs and a closed-outcome report; it stays owner-run.
 - The full `npm test` and `npm run test:workers` are left to the batch gate.
+
+### Run record 2 (agent, 3 Nov 2026): item 5 done, items 1 to 4 not finished; status stays ready-for-agent
+
+Done in this run:
+- AC4 (item 5): `scripts/parity-live.ts` (owner-run, paid) and `scripts/parity-live-report.ts` (pure formatting). The live script is blocked unless `RUN_PARITY_LIVE=1` and `LLM_API_KEY` are set. It runs each row k = 5 times through the staging model (`openai/gpt-6-luna` at OpenRouter, AGENTS.md) and compares the assistant path with the deterministic one. It prints only row labels and counts (no guest text, no filters, no replies; errors are counted, never printed). It was never run (no paid run). Its formatting and the no-guest-text rule are unit-tested offline (`test/parity-live-report.test.ts`, 3 tests).
+- Shared rows: the rows moved to `test/helpers/parity-rows.ts`, shared by the offline suite and the live script (AC5). The fixture takes an optional live model.
+- Gap in AC4 still open: pass^k is computed from the row comparison, not from the closed `assistant.control.outcome.v1` outcomes. Wiring that needs the runtime's telemetry capture in the fixture.
+
+Commands and counts (`env -u LLM_API_KEY`):
+- `npm run check`: exit 0 (this includes `scripts/` in the root tsconfig).
+- `test/assistant-parity.test.ts` and `test/parity-live-report.test.ts`: 11 pass, 0 fail.
+
+Not done (the issue stays ready-for-agent):
+- AC2 ("show me the last one"): the seam is not built. `answerValidatedTurn` returns text only. A server-chosen `get_unit_details` with no planner round needs a runtime path that runs the tool and its stage handler outside the model loop, which is a larger change. Not attempted in this run.
+- AC3 (place-only search on a sent stay): not fixed, no row yet. Needs the contact-step fixture (the staging guest has no phone; the placeholder is +234 801 234 5678) and the sent-stay setup.
+- Rows 05 (checkout phrase), 11 (facility answer and stage reply), 12 (explanation after submission): not written. 12 needs the sent-stay setup.
+- Item 4, the re-base of the deterministic files to 27 Oct 2026: NOT done, on purpose. The date expectations are in `test/guest-real-dates.test.ts` (21 lines matching Sept or 2026-09), `test/guest-draft-revision.test.ts` (18), `test/guest-must-fix-ux.test.ts` (9) and `test/guest-discovery-reasons-chromium.test.ts` (1, a real-Chrome file, not run). Re-basing them changes about 49 lines whose expected values depend on the weekday of the fixture clock (for example "Fri 4 Sept 2026"), so each one needs its weekday and nights recomputed. That is risky to do by search and replace, so it is for the owner to decide. The parity suite already runs both paths on 27 Oct 2026, so it does not need the re-base.
+- The full `npm test` and `npm run test:workers` are left to the batch gate.

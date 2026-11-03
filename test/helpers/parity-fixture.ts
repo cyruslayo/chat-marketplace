@@ -1,4 +1,5 @@
 import { LocalGuestApp, type GuestTurnResult } from "../../apps/local-guest/src/shortlet-app.js";
+import type { AssistantModelClient } from "../../apps/local-guest/src/assistant/assistant-model.js";
 import { datedFixture, firstButtonAction, LIVE_LIKE_CLOCK, restartedDatedApp, scriptedPlanner, type DatedFixture, type ScriptedTurn } from "./guest-date-fixtures.js";
 
 /**
@@ -46,8 +47,9 @@ function filtersOf(state: { readonly criteria?: unknown } | undefined): Record<s
 }
 
 /** Runs a row's turns on one path and returns the observed step after each turn. */
-export async function runParityPath(path: ParityPath, turns: readonly ParityTurn[], script: Readonly<Record<string, ScriptedTurn>>, threadId: string): Promise<ParityStep[]> {
-  const model = scriptedPlanner(script).client;
+export async function runParityPath(path: ParityPath, turns: readonly ParityTurn[], script: Readonly<Record<string, ScriptedTurn>>, threadId: string, liveModel?: AssistantModelClient): Promise<ParityStep[]> {
+  // The scripted planner answers offline; the owner-run live script passes its staging client instead.
+  const model = liveModel ?? scriptedPlanner(script).client;
   const fixture: DatedFixture = datedFixture(model, undefined, { clock: LIVE_LIKE_CLOCK, stagingGuest: true });
   // Every event is a new application over the same store (cold restore). The deterministic path has no assistant runtime.
   const appFor = (): LocalGuestApp => (path === "assistant" ? restartedDatedApp(fixture, model).app : new LocalGuestApp(fixture.environment));
