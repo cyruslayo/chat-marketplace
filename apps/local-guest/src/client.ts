@@ -2702,11 +2702,17 @@ workspaceReopen.addEventListener("click", async () => {
     retry.addEventListener("click", async () => {
       retry.disabled = true;
       retry.textContent = "Checking current status…";
-      if (!await refreshServerState()) {
-        retry.disabled = false;
-        retry.textContent = "Retry current status";
-        announce("Current details could not be checked. Try again or open the standard details.", true);
+      if (await refreshServerState()) {
+        // ADR-0078: a successful refresh removes Retry, so focus its replacement task control.
+        const taskBack = shellState.activeSurface?.mode === "focused-surface" && !activeWorkspace.hidden
+          ? activeWorkspace.querySelector<HTMLElement>(".workspace-close")
+          : null;
+        (taskBack ?? composerInput).focus({ preventScroll: true });
+        return;
       }
+      retry.disabled = false;
+      retry.textContent = "Retry current status";
+      announce("Current details could not be checked. Try again or open the standard details.", true);
     });
     recovery.append(message, retry);
     if (activePayload.conventionalRoute) {

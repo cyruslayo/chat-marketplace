@@ -12051,11 +12051,14 @@ Known schemas:
       retry.addEventListener("click", async () => {
         retry.disabled = true;
         retry.textContent = "Checking current status\u2026";
-        if (!await refreshServerState()) {
-          retry.disabled = false;
-          retry.textContent = "Retry current status";
-          announce("Current details could not be checked. Try again or open the standard details.", true);
+        if (await refreshServerState()) {
+          const taskBack = shellState.activeSurface?.mode === "focused-surface" && !activeWorkspace.hidden ? activeWorkspace.querySelector(".workspace-close") : null;
+          (taskBack ?? composerInput).focus({ preventScroll: true });
+          return;
         }
+        retry.disabled = false;
+        retry.textContent = "Retry current status";
+        announce("Current details could not be checked. Try again or open the standard details.", true);
       });
       recovery.append(message, retry);
       if (activePayload.conventionalRoute) {

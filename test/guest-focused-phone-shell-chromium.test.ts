@@ -218,6 +218,7 @@ test("AC3 regression: one failed current-state check opens an inert task with re
       await tab.waitForFunction("document.getElementById('active-workspace').dataset.status === 'active'", 10_000);
       assert.equal(await tab.evaluate<boolean>("document.querySelector('#active-workspace .weaver-mount')?.hasAttribute('inert')"), false);
       assert.equal(await tab.evaluate<string>("document.getElementById('composer-input').value"), "Keep my question");
+      assert.equal(await tab.evaluate<boolean>("document.activeElement?.classList.contains('workspace-close')"), true);
     } finally { await stop(); }
   } finally { await browser.close(); await fixture.close(); }
 });
