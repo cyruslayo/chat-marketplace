@@ -46,6 +46,19 @@ function filtersOf(state: { readonly criteria?: unknown } | undefined): Record<s
   return { where: criteria.where ?? null, when: criteria.when ?? null, guests: criteria.guests ?? null, budget: criteria.budget ?? null };
 }
 
+/**
+ * What the guest's screen did after each turn. A step that sends no new surface, or that sends the same surfaces the step before showed,
+ * leaves the screen as it was; both paths are compared on that, so a path that re-sends the open surface and a path that sends nothing
+ * are equal (issue 16, AC3 and the screen rows). A change of surface kind is never hidden by this.
+ */
+function screenChanges(steps: readonly ParityStep[]): ParityStep[] {
+  return steps.map((step, index) => {
+    const previous = index === 0 ? undefined : steps[index - 1]!.kinds;
+    const same = previous !== undefined && previous.length === step.kinds.length && previous.every((kind, i) => kind === step.kinds[i]);
+    return step.kinds.length === 0 || same ? { ...step, kinds: ["unchanged"] } : step;
+  });
+}
+
 /** Runs a row's turns on one path and returns the observed step after each turn. */
 export async function runParityPath(path: ParityPath, turns: readonly ParityTurn[], script: Readonly<Record<string, ScriptedTurn>>, threadId: string, liveModel?: AssistantModelClient): Promise<ParityStep[]> {
   // The scripted planner answers offline; the owner-run live script passes its staging client instead.
@@ -72,7 +85,7 @@ export async function runParityPath(path: ParityPath, turns: readonly ParityTurn
       lastSurface = result;
       steps.push({ kinds: kindsOf(result), filters: filtersOf(appFor().getState(threadId)) });
     }
-    return steps;
+    return screenChanges(steps);
   } finally {
     fixture.close();
   }

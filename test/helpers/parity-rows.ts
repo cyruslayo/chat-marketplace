@@ -65,6 +65,43 @@ export const ROWS: readonly ParityRow[] = [
       "make it from tomorrow": { slots: { nights: 2 }, search: { city: "Lagos", checkInPhrase: "tomorrow", nights: 2, guests: 2 } },
     },
   },
+  // Issue 05 (ADR 0106): a checkout the guest wrote gives the nights; the stay is the same as the check-in and nights form.
+  {
+    name: "issue 05: a checkout date the guest wrote gives the stay",
+    turns: [{ text: "Apartment in Lekki for 2 guests from 14 December 2026 to 17 December 2026" }],
+    script: {
+      "Apartment in Lekki for 2 guests from 14 December 2026 to 17 December 2026": {
+        slots: { ...LEKKI, checkIn: "2026-12-14", checkOut: "2026-12-17", guests: 2 },
+        search: { ...LEKKI, checkIn: "2026-12-14", checkOut: "2026-12-17", guests: 2 },
+      },
+    },
+  },
+  // Issue 11 (ADR 0106, ADR 0080): a facility question on an open stay is answered from the stay's own listing, on the same unit surface.
+  {
+    name: "issue 11: a facility question on an open stay",
+    turns: [{ text: SEARCH_TEXT }, { tap: true }, { text: "Does it have a gym?" }],
+    script: {
+      [SEARCH_TEXT]: SEARCH_SCRIPT,
+      "Does it have a gym?": { slots: {}, intents: ["details"], tool: { name: "get_unit_details", args: { stayRef: "stay-1", facility: "gym" } } },
+    },
+  },
+  // Issue 12 (ADR 0005, 0106): a change asked once a Booking Request is sent is explained, and nothing is searched or changed.
+  {
+    name: "issue 12: a change asked after the request is sent is explained",
+    turns: [
+      { text: SEARCH_TEXT },
+      { tap: true },
+      { tap: true },
+      { tap: true },
+      { tap: true, context: { contactValue: PHONE } },
+      { tap: true },
+      { text: "Can I change the dates?" },
+    ],
+    script: {
+      [SEARCH_TEXT]: SEARCH_SCRIPT,
+      "Can I change the dates?": { slots: {}, intents: ["change"] },
+    },
+  },
   // Issue 16 AC3 (ADR 0106, ADR 0074): a sent Booking Request is not changed by a search that names only a place. The current results stay.
   {
     name: "AC3: a place-only search on a sent stay keeps the current results",

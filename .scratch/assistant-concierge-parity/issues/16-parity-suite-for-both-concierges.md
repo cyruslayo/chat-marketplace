@@ -137,3 +137,12 @@ Incident (agent, 3 Nov 2026): while checking the batch on a detached HEAD worktr
 - Re-check of the deterministic side: after "Lekki" it re-presents the current request surface; the assistant sends nothing. Both keep the results, so the row compares the discovery surface and the criteria, not the raw kinds of the last turn.
 
 Commands and counts (`env -u LLM_API_KEY`): `npm run check` exit 0; `test/assistant-parity.test.ts` 10 of 10 pass.
+
+### Rows 05, 11, 12 and the screen comparison (agent, 3 Nov 2026, step 3 of 4)
+
+- Row 05: a checkout the guest wrote gives the stay (passes; the literal-checkout path already worked).
+- Row 11: a facility question on an open stay. The assistant re-sends the open unit surface, and the deterministic path sends text only.
+- Row 12: a change asked after the request is sent is explained. The deterministic path re-sends the open request; the assistant sends nothing.
+- Comparison change (fixture, `screenChanges`): a step that sends no new surface, or the same surfaces as the step before, is compared as "unchanged" on both paths. This is what the guest's screen does. A change of surface kind is never hidden. Without it rows 11 and 12 differ only in re-sending an open surface. The AC2 row still differs (the unit surface versus no change), so it is not vacuous.
+
+Commands and counts (`env -u LLM_API_KEY`): `npm run check` exit 0; `test/assistant-parity.test.ts` 13 of 13 pass.
