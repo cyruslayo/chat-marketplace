@@ -58,10 +58,10 @@ function executedToolCount(diagnostics: readonly AssistantDiagnosticEvent[]): nu
 /**
  * ADR 0074 (commit 0ea551f): a task state may omit `replacedPendingAction` (the initial state) or carry it as null (every
  * committed clone). Both mean "no replaced proposal", so the snapshot writes the key as null and the two compare equal.
- * Only that representation is normalised; every other field is compared as before.
+ * Issue 13a adds `pendingDraftReplacement` with the same absent-or-null meaning. Only those representations are normalised; every other field is compared as before.
  */
 function withNoticeKey(state: AssistantTaskState): AssistantTaskState {
-  return { ...state, replacedPendingAction: state.replacedPendingAction ?? null };
+  return { ...state, replacedPendingAction: state.replacedPendingAction ?? null, pendingDraftReplacement: state.pendingDraftReplacement ?? null };
 }
 
 function threadSnapshot(thread: AssistantThreadState): string {
