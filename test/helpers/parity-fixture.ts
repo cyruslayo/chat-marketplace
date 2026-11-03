@@ -15,6 +15,16 @@ export type ParityTurn = { readonly text: string } | { readonly tap: true; reado
 export interface ParityStep {
   readonly kinds: readonly string[];
   readonly filters: Record<string, unknown>;
+  /** The closed assistant.control.outcome.v1 codes this turn recorded (assistant path only; ADR 0075: codes, never text). */
+  readonly outcomes: readonly string[];
+}
+
+/** The closed control outcomes recorded so far in this environment, oldest first. */
+function controlOutcomesSoFar(environment: DatedFixture["environment"]): string[] {
+  return environment.telemetry.events().flatMap((event) => {
+    const record: Record<string, unknown> = { ...event };
+    return record.type === "assistant.control.outcome.v1" && typeof record.outcome === "string" ? [record.outcome] : [];
+  });
 }
 
 export type ParityPath = "deterministic" | "assistant";
@@ -70,6 +80,7 @@ export async function runParityPath(path: ParityPath, turns: readonly ParityTurn
   let lastSurface: GuestTurnResult | undefined;
   try {
     for (const turn of turns) {
+      const before = controlOutcomesSoFar(fixture.environment).length;
       const app = appFor();
       app.getState(threadId);
       let result: GuestTurnResult;
@@ -83,7 +94,8 @@ export async function runParityPath(path: ParityPath, turns: readonly ParityTurn
         result = await app.handleEventAsync(threadId, "context" in turn && turn.context !== undefined ? { ...action, context: { ...action.context, ...turn.context } } : action);
       }
       lastSurface = result;
-      steps.push({ kinds: kindsOf(result), filters: filtersOf(appFor().getState(threadId)) });
+      const outcomes = controlOutcomesSoFar(fixture.environment).slice(before);
+      steps.push({ kinds: kindsOf(result), filters: filtersOf(appFor().getState(threadId)), outcomes });
     }
     return screenChanges(steps);
   } finally {

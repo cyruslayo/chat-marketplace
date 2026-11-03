@@ -17,7 +17,7 @@ export interface ParityRow {
   readonly script: Readonly<Record<string, ScriptedTurn>>;
 }
 
-export const ROWS: readonly ParityRow[] = [
+const ROW_TABLE: readonly ParityRow[] = [
   // Issues 04, 05: a stay with a check-in and nights.
   { name: "issues 04 and 05: a search with a check-in and nights", turns: [{ text: SEARCH_TEXT }], script: { [SEARCH_TEXT]: SEARCH_SCRIPT } },
   // Issue 07: a budget the guest words in naira.
@@ -123,15 +123,31 @@ export const ROWS: readonly ParityRow[] = [
   // Issue 16 AC2: "show me the last one" opens the last result on both paths (the deterministic viewResultIntent; on the assistant path a
   // deterministic pack hook, gated on the validated details intent, runs the same unit detail with no planner round).
   {
-    name: "AC2: show me the last one opens the last result",
+    name: "AC2: the last result opens on both paths",
     turns: [{ text: SEARCH_TEXT }, { text: "show me the last one" }],
     script: { [SEARCH_TEXT]: SEARCH_SCRIPT, "show me the last one": { slots: {}, intents: ["details"], reply: "clarify_stay" } },
   },
   // Issue 16 row for the unchecked behaviour "an unrelated turn keeps the current results" (shortlet-app.ts:1081). The results stay.
   {
     name: "an unrelated turn keeps the current results",
-    turns: [{ text: SEARCH_TEXT }, { text: "Thanks, that helps" }],
-    script: { [SEARCH_TEXT]: SEARCH_SCRIPT, "Thanks, that helps": { slots: {}, intents: [], scope: "unclear" } },
+    turns: [{ text: SEARCH_TEXT }, { text: "Tell me a joke, please" }],
+    script: { [SEARCH_TEXT]: SEARCH_SCRIPT, "Tell me a joke, please": { slots: {}, intents: [], scope: "out_of_scope" } },
   },
 ];
 
+
+/**
+ * A planner that calls a tool must also answer after the tool with a valid reply plan (ADR 0106): a prose answer is a rejected plan.
+ * The scripted turns that call a tool therefore name the plan the planner returns after it. Turns with no tool are left as they are.
+ */
+function answered(turn: ScriptedTurn): ScriptedTurn {
+  if (turn.replyAfterTool !== undefined || turn.reply !== undefined || turn.scope !== undefined) return turn;
+  if (turn.tool !== undefined) return { ...turn, replyAfterTool: { kind: turn.tool.name === "get_unit_details" ? "show_details" : "show_results", references: [turn.tool.name] } };
+  if (turn.search !== undefined) return { ...turn, replyAfterTool: { kind: "show_results", references: ["search_stays"] } };
+  return turn;
+}
+
+export const ROWS: readonly ParityRow[] = ROW_TABLE.map((row) => ({
+  ...row,
+  script: Object.fromEntries(Object.entries(row.script).map(([text, turn]) => [text, answered(turn)])),
+}));

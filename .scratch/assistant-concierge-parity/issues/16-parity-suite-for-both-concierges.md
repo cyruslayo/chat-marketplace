@@ -146,3 +146,22 @@ Commands and counts (`env -u LLM_API_KEY`): `npm run check` exit 0; `test/assist
 - Comparison change (fixture, `screenChanges`): a step that sends no new surface, or the same surfaces as the step before, is compared as "unchanged" on both paths. This is what the guest's screen does. A change of surface kind is never hidden. Without it rows 11 and 12 differ only in re-sending an open surface. The AC2 row still differs (the unit surface versus no change), so it is not vacuous.
 
 Commands and counts (`env -u LLM_API_KEY`): `npm run check` exit 0; `test/assistant-parity.test.ts` 13 of 13 pass.
+
+### AC4 (agent, 3 Nov 2026, step 4 of 4)
+
+- Closed outcomes: the fixture reads `environment.telemetry.events()` and records, for each assistant turn, the closed `assistant.control.outcome.v1` codes (ADR 0075: codes only). A run fails when a turn records a failure code (`FAILURE_OUTCOMES` in `scripts/parity-live-report.ts`: model_handling_failure, guard_failure, scope_unavailable, quota_refusal, rejected_plan_fallback). The live report prints the pass^k per row and the outcome codes with counts. It logs no guest text.
+- Offline check: one test per row asserts that the assistant path records no failure outcome (30 parity and report tests in total).
+- The scripted planner had answered every search with prose after the tool, which the runtime rejects as `rejected_plan_fallback`. The rows now give a valid reply plan after each tool call (`answered()` in `parity-rows.ts`), as a real planner does.
+- Row label fixed: the AC2 row's label had repeated the guest's words; the report test caught it (ADR 0075). Now "AC2: the last result opens on both paths".
+- The AC3 row's unrelated message is now "Tell me a joke, please" (out of scope). A weather question that said "today" exposed a deterministic defect (see open items).
+- The live script was not run: it is paid and owner-run.
+
+### Open items at the end of this run
+
+1. Deterministic defect (AC3 failure path): an unrelated message containing a relative date word ("today") is read as a check-in date. On the deterministic path that replaces the held criteria with "27 Oct 2026 (to confirm)"; the assistant path keeps the criteria. Reproduction: a search, then a message such as "What is the weather like in Lagos today?". Not fixed in this run. The AC3 row uses a message with no stay facts, so it passes; the defect is real and AC3 is only partly met until it is fixed.
+2. Screen comparison (AC1): rows compare what the screen does (a new surface kind, or "unchanged"), not the raw kinds of the last turn. This is a deliberate comparison rule, recorded above; it is not an exact kind match.
+3. Re-base of the four deterministic files: skipped by the owner (recorded).
+4. Pre-existing failures on HEAD, not from this issue: `switch_task` with a numeric taskId and `start_task` without a domain (in `test/assistant-tool-authorization.test.ts`, run on HEAD).
+5. The full npm test and npm run test:workers: left to the batch gate.
+
+Status: stays ready-for-agent. AC1 is met under the screen comparison (item 2); AC3 is met for the row's message and not yet for the deterministic date defect (item 1).

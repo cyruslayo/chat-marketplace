@@ -26,3 +26,14 @@ ROWS.forEach((row, index) => {
     assert.deepEqual(assistant.map((step) => step.filters), deterministic.map((step) => step.filters), "filters");
   });
 });
+
+// Issue 16 (AC4, offline): the assistant path records no failure outcome for any row. The owner-run live script applies the same rule
+// to the staging model (scripts/parity-live.ts).
+import { runHasFailureOutcome } from "../scripts/parity-live-report.js";
+ROWS.forEach((row, index) => {
+  test(`parity outcomes: ${row.name} records no failure outcome on the assistant path`, async () => {
+    const threadId = `g-16${(index + 101).toString(16).padStart(6, "0")}`;
+    const assistant = await runParityPath("assistant", row.turns, row.script, threadId);
+    assert.equal(runHasFailureOutcome(assistant.flatMap((step) => step.outcomes)), false, JSON.stringify(assistant.map((step) => step.outcomes)));
+  });
+});
