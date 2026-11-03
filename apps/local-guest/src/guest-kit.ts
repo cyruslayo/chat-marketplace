@@ -9,6 +9,7 @@ import {
   GUEST_DEMO_COPY,
   GUEST_FACT_LABELS,
   GUEST_REQUEST_EDIT_COPY,
+  GUEST_PAYMENT_COPY,
   GUEST_GLOSSARY,
   GUEST_JOURNEY,
   GUEST_TASK_RAIL,
@@ -40,7 +41,7 @@ import { guestStatusTone } from "./conversational-shell.js";
 import type { RequestScreenContent } from "../../web-agent/src/request-presentation.js";
 import type { ConfirmationContent } from "../../web-agent/src/confirmation-presentation.js";
 import type { OfferScreenContent } from "../../web-agent/src/offer-presentation.js";
-import type { PaymentScreenContent } from "../../web-agent/src/payment-presentation.js";
+import type { PaymentScreenContent, PaymentMethodChoice } from "../../web-agent/src/payment-presentation.js";
 import type { CommerceOfferPresentation } from "../../web-agent/src/commerce-presentation.js";
 
 /** The absolute deadline in Africa/Lagos time (ADR 0078), without the "Pay by" prefix. */
@@ -258,10 +259,10 @@ export function offerScreenHtml(
       ? `<p class="ui-banner ui-banner--neutral offer-deadline">${icon("clock")}<span>The deadline was <time datetime="${escapeHtml(content.deadlineIso)}">${escapeHtml(formatWAT(content.deadlineIso))}</time><br>${escapeHtml(content.consequence)}</span></p>`
       : "";
   const policies = live
-    ? `<section class="ui-panel offer-policies" aria-label="Before you pay"><h2>Before you pay</h2><p>${escapeHtml(content.provider)}</p>${content.policies.map((text) => `<p>${escapeHtml(text)}</p>`).join("")}${content.notes.map((text) => `<p>${escapeHtml(text)}</p>`).join("")}</section>`
+    ? `<section class="ui-panel offer-policies" aria-label="Before you pay"><h2>Before you pay</h2><p>${escapeHtml(content.provider)}</p>${content.policies.map((section) => `<section><h3>${escapeHtml(section.heading)}</h3><ul>${section.items.map(text => `<li>${escapeHtml(text)}</li>`).join("")}</ul></section>`).join("")}${content.notes.map((text) => `<p>${escapeHtml(text)}</p>`).join("")}</section>`
     : "";
   const actions = content.accept
-    ? `<div class="ui-action-bar offer-actions"><div><strong>${escapeHtml(content.amount)}</strong><span class="ui-price-breakdown__label">${GUEST_FACT_LABELS.amountDueNow}</span></div>${form(content.accept.path, "Accept and pay", true, content.accept.surfaceId)}</div>`
+    ? `<div class="ui-action-bar offer-actions"><div><strong>${escapeHtml(content.amount)}</strong><span class="ui-price-breakdown__label">${GUEST_FACT_LABELS.amountDueNow}</span></div>${form(content.accept.path, GUEST_PAYMENT_COPY.accept, true, content.accept.surfaceId)}</div>`
     : `<div class="offer-actions request-actions">${form(content.conversationPath, "Back to your conversation", true)}${content.searchPath ? form(content.searchPath, "Find other stays", false) : ""}</div>`;
   return `<section class="offer-screen" data-offer-state="${content.state}" data-server-now="${escapeHtml(content.serverNow)}"><header class="request-head offer-head" data-page="booking-record"><p class="ui-eyebrow">Conditional Booking Offer</p><h1>${escapeHtml(content.title)}</h1><span class="ui-status ui-status--${live ? "success" : content.state === "expired" || content.state === "closed" ? "danger" : "warning"}">${escapeHtml(content.status)}</span></header>${banner}${ticket}${live ? breakdown : ""}${policies}${content.steps.length ? `<section class="ui-panel"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>` : ""}${actions}</section>`;
 }
@@ -321,35 +322,23 @@ export function paymentScreenHtml(
     breakdown,
     sections: [
       `<p class="payment-explanation">${escapeHtml(content.explanation)}</p>`,
+      ...(content.choice ? [paymentChoiceHtml(content.choice)] : slots.sections === undefined ? [] : [slots.sections]),
       ...(content.steps.length
         ? [
             `<section class="ui-panel payment-steps"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>`,
           ]
         : []),
-      ...(slots.sections === undefined ? [] : [slots.sections]),
     ],
-    actions: `${slots.actions ?? ""}${content.choosePath === undefined ? "" : `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.choosePath)}">Choose another way to pay</a>`}`,
+    actions: content.choice ? "" : slots.actions ?? "",
     serverNow: content.serverNow,
   });
 }
 
-/** How to pay: a native radio group and one submit (works without JavaScript, ADR 0080), then the manual option. */
-export function paymentChoiceHtml(input: {
-  readonly action: string;
-  readonly manualAction?: string;
-  readonly providerTransfer: boolean;
-  readonly amount: string;
-  readonly switching: string;
-  readonly manualCopy: string;
-}): string {
-  const methods = input.providerTransfer
-    ? `<fieldset class="ui-segmented"><legend class="ui-sr-only">Payment method</legend><label><input type="radio" name="method" value="card" checked>${icon("card")}Card</label><label><input type="radio" name="method" value="bank_transfer">${icon("bank")}Bank transfer</label></fieldset>`
-    : `<input type="hidden" name="method" value="card">`;
-  const manual =
-    input.manualAction === undefined
-      ? ""
-      : `<form method="post" action="${escapeHtml(input.manualAction)}" class="payment-manual"><section class="ui-panel"><button class="ui-button ui-button--secondary ui-button--block" type="submit">${icon("upload")}Pay by manual bank transfer</button><p class="ui-field__hint">${escapeHtml(input.manualCopy)}</p></section></form>`;
-  return `<form method="post" action="${escapeHtml(input.action)}" class="payment-choice-form"><section class="ui-panel payment-choice" aria-label="Choose how to pay"><h2>How would you like to pay?</h2><p class="ui-field__hint">${escapeHtml(input.switching)}</p>${methods}</section><div class="payment-actions ui-action-bar"><button class="ui-button ui-button--primary ui-button--block" type="submit">Continue · ${escapeHtml(input.amount)}</button></div></form>${manual}`;
+/** All available payment methods use one native radio group and command dispatch (ADR 0080). */
+export function paymentChoiceHtml(input: PaymentMethodChoice): string {
+  const method = (value: string, label: string, help: string, checked = false) => `<label><input type="radio" name="method" value="${value}"${checked ? " checked" : ""} aria-labelledby="method-${value}-label" aria-describedby="method-${value}-help"><span class="ui-field"><strong id="method-${value}-label">${escapeHtml(label)}</strong><span id="method-${value}-help" class="ui-field__hint">${escapeHtml(help)}</span></span></label>`;
+  const methods = `<fieldset class="ui-segmented payment-choice-methods"><legend class="ui-sr-only">Payment method</legend>${method("card", GUEST_PAYMENT_COPY.card, GUEST_PAYMENT_COPY.cardHelp, true)}${input.providerTransfer ? method("bank_transfer", GUEST_PAYMENT_COPY.transfer, GUEST_PAYMENT_COPY.transferHelp) : ""}${input.manualAction ? method("manual_transfer", GUEST_PAYMENT_COPY.manual, GUEST_PAYMENT_COPY.manualHelp) : ""}</fieldset>`;
+  return `<form method="post" action="${escapeHtml(input.action)}" class="payment-choice-form"><section class="ui-panel payment-choice" aria-label="Choose how to pay"><h2>How would you like to pay?</h2>${methods}</section><div class="payment-actions ui-action-bar"><button class="ui-button ui-button--primary ui-button--block" type="submit">Continue to stay payment · ${escapeHtml(input.amount)}</button></div></form>`;
 }
 
 /** The bank-transfer details in one card (account number with its copy button, exact amount, booking-only note). */

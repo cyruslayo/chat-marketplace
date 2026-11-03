@@ -42,7 +42,7 @@ test("AC1: the live offer renders the same banner, ticket, breakdown, policies c
             true,
           );
         }
-        assert.equal(await tab.clickButton("Accept and pay"), true);
+        assert.equal(await tab.clickButton("Accept and choose payment"), true);
         await tab.waitForText("Payment required", 10_000);
       } finally {
         await browser.close();
@@ -67,7 +67,7 @@ test("AC2: the conventional offer countdown updates and reloads authoritative ex
           '.offer-screen[data-offer-state="expired"]',
           10_000,
         );
-        assert.equal(await tab.clickButton("Accept and pay"), false);
+        assert.equal(await tab.clickButton("Accept and choose payment"), false);
       } finally {
         await browser.close();
       }
@@ -112,7 +112,7 @@ test("AC2: chat deadline expiry disables acceptance during a failed authoritativ
           15_000,
         );
         assert.ok(failures >= 2, "failed refresh is retried");
-        assert.equal(await tab.clickButton("Accept and pay"), false);
+        assert.equal(await tab.clickButton("Accept and choose payment"), false);
         await restore();
       } finally {
         await browser.close();
@@ -191,7 +191,7 @@ test("AC5: without JavaScript the offer accept form works and the expired page r
             assert.equal(await tab.clickButton("Find other stays"), true);
             await tab.waitForText("Update search", 10_000);
           } else {
-            assert.equal(await tab.clickButton("Accept and pay"), true);
+            assert.equal(await tab.clickButton("Accept and choose payment"), true);
             await tab.waitForText("Payment required", 10_000);
             assert.match(await tab.getContent(), /How would you like to pay\?/);
           }

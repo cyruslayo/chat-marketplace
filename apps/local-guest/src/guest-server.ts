@@ -1,4 +1,4 @@
-import { GUEST_PHONE_COPY } from "../../web-agent/src/guest-content.js";
+import { GUEST_PHONE_COPY, GUEST_PAYMENT_COPY } from "../../web-agent/src/guest-content.js";
 import { generatePlatformId } from "../../../packages/platform-core/src/index.js";
 import {
   createServer,
@@ -1325,7 +1325,7 @@ export function renderManualTransferPageHtml(input: {
     );
   }
   if (transfer.status === "rejected" || transfer.status === "expired") {
-    // ADR 0090/0045: no Reservation; any money received for this attempt is refunded in full.
+    // ADR 0090/0045: no Reservation; recorded refund debt does not establish completed repayment.
     const rejected = transfer.status === "rejected";
     return screen(
       "closed",
@@ -1344,7 +1344,7 @@ export function renderManualTransferPageHtml(input: {
               { label: "Expired at", iso: transfer.paymentDeadlineAt },
             ),
         sections: [
-          `<p>Any money we received for this booking is refunded in full.</p>`,
+          `<p>${escapeHtml(GUEST_PAYMENT_COPY.lateReview)}</p>`,
         ],
         actions: paymentRecoveryActionsHtml(conversation),
       },
@@ -1555,7 +1555,7 @@ export function renderTransferPageHtml(input: {
     );
   }
   if (!payable) {
-    // ADR 0045/0047: the account stopped at the deadline; money sent afterwards is refunded in full and never books.
+    // ADR 0045/0047: expiry removes booking authority; a refund record does not establish repayment.
     return screen(
       "closed",
       "This transfer account has expired",
@@ -1567,7 +1567,7 @@ export function renderTransferPageHtml(input: {
           `No ${GUEST_GLOSSARY.reservation} was made.`,
           { label: "The transfer account expired at", iso: transfer.expiresAt },
         ),
-        sections: [`<p>Money sent after the deadline is refunded in full.</p>`],
+        sections: [`<p>${escapeHtml(GUEST_PAYMENT_COPY.lateReview)}</p>`],
         actions: paymentRecoveryActionsHtml(conversation),
       },
     );
@@ -4152,14 +4152,25 @@ export function createGuestRequestHandler(
         (await readRawBody(req)).toString("utf8"),
       ).getAll("method");
       const method = methods.length === 1 ? methods[0] : undefined;
-      if (method !== "card" && method !== "bank_transfer") {
+      if (method !== "card" && method !== "bank_transfer" && method !== "manual_transfer") {
         sendPageError(req, res, 400, "PAYMENT_METHOD_INVALID");
         return;
       }
+      try {
+        const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
+        const artifact = app.environment.cardPaymentApp.getArtifact(offerId, principal);
+        // ADR 0044/0046/0090: dispatch only currently available methods, before any payment attempt starts.
+        if (artifact.facts.status !== "ready" || !artifact.actions.some(action => action.type === "initialize_checkout") ||
+          app.environment.livePaymentAttempts.current(offerId, app.environment.clock()) ||
+          (method === "bank_transfer" && !app.environment.bankTransferApp) ||
+          (method === "manual_transfer" && !app.environment.manualTransfers?.isOffered(offerId, app.environment.clock()))) {
+          sendPageError(req, res, 409, "ACTION_NOT_AUTHORIZED"); return;
+        }
+      } catch { sendPageError(req, res, 409, "ACTION_NOT_AUTHORIZED"); return; }
       const base = `/payments/offers/${encodeURIComponent(offerId)}`;
       // 307 keeps the POST, so bank transfer reaches its existing initialization route unchanged.
       res.writeHead(method === "card" ? 303 : 307, {
-        Location: method === "card" ? `${base}/continue` : `${base}/transfer`,
+        Location: method === "card" ? `${base}/continue` : method === "manual_transfer" ? `${base}/manual-transfer` : `${base}/transfer`,
       });
       res.end();
       return;
@@ -4247,6 +4258,7 @@ export function createGuestRequestHandler(
                 : "Continue to hosted card checkout";
         const canContinue =
           artifact.actions.length > 0 &&
+          (!processing || threadId !== null) &&
           (artifact.facts.status !== "ready" ||
             contactEmailMissing ||
             !processing);
@@ -4257,7 +4269,6 @@ export function createGuestRequestHandler(
             app.environment.clock(),
           ) === true;
         const offerTransferChoice =
-          (app.environment.bankTransferApp !== null || manualOffered) &&
           artifact.facts.status === "ready" &&
           !contactEmailMissing &&
           !processing;
@@ -4318,12 +4329,7 @@ export function createGuestRequestHandler(
               amount: formatNgnKobo(
                 componentAmount ?? artifact.facts.amountDueNowKobo,
               ),
-              switching:
-                app.environment.bankTransferApp !== null
-                  ? `If you choose bank transfer, you can't switch to card until the transfer account expires.${manualOffered ? " The same applies to manual bank transfer." : ""}`
-                  : "If you choose manual bank transfer, you can't switch to card until it expires or is declined.",
-              manualCopy:
-                "Manual bank transfer: pay our business account and upload your receipt. Your booking confirms only after we check the money has arrived.",
+
             })
           : undefined;
         res.writeHead(200, GUEST_HTML_HEADERS);

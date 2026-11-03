@@ -23,7 +23,7 @@ test("AC1 — Choosing manual transfer shows the account, the exact amount, a un
   const g = await withManual();
   try {
     const choice = visibleText(await (await g.get(g.paymentPage)).text());
-    assert.match(choice, /Pay by manual bank transfer/);
+    assert.match(choice, /Manual bank transfer/);
     assert.match(choice, /Your booking confirms only after we check the money has arrived/);
     assert.equal((await g.post(manualPage(g))).status, 303);
     const transfer = g.env.manualTransfers!.current(g.offerId, g.now())!;

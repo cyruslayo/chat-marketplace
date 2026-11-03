@@ -9797,6 +9797,20 @@ Known schemas:
     invalid: "Check your dates and number of guests.",
     stale: "Use the current Request Draft."
   };
+  var GUEST_PAYMENT_COPY = {
+    accept: "Accept and choose payment",
+    accepted: "Choose how to pay. Your booking confirms only after payment is verified.",
+    cancellation: "Cancellation",
+    conduct: "Guest conduct",
+    otherTerms: "Other booking terms",
+    card: "Card",
+    cardHelp: "Hosted card checkout. Do not start another payment while this attempt is pending.",
+    transfer: "Bank transfer",
+    transferHelp: "If you choose bank transfer, you can't switch to card until the transfer account expires.",
+    manual: "Manual bank transfer",
+    manualHelp: "Pay our business account and upload your receipt. Your booking confirms only after we check the money has arrived. You can't switch until this attempt expires or is declined.",
+    lateReview: "A late payment needs review and does not confirm your booking. Contact Shortlet if you sent money after the deadline."
+  };
 
   // apps/local-guest/src/turn-budget.ts
   var SCOPE_CLASSIFIER_BUDGET_MS = 8e3;
@@ -9988,8 +10002,8 @@ Known schemas:
       countdown: true,
       consequence: content.consequence
     }) : content.state === "expired" ? `<p class="ui-banner ui-banner--neutral offer-deadline">${icon("clock")}<span>The deadline was <time datetime="${escapeHtml(content.deadlineIso)}">${escapeHtml(formatWAT(content.deadlineIso))}</time><br>${escapeHtml(content.consequence)}</span></p>` : "";
-    const policies = live ? `<section class="ui-panel offer-policies" aria-label="Before you pay"><h2>Before you pay</h2><p>${escapeHtml(content.provider)}</p>${content.policies.map((text) => `<p>${escapeHtml(text)}</p>`).join("")}${content.notes.map((text) => `<p>${escapeHtml(text)}</p>`).join("")}</section>` : "";
-    const actions = content.accept ? `<div class="ui-action-bar offer-actions"><div><strong>${escapeHtml(content.amount)}</strong><span class="ui-price-breakdown__label">${GUEST_FACT_LABELS.amountDueNow}</span></div>${form(content.accept.path, "Accept and pay", true, content.accept.surfaceId)}</div>` : `<div class="offer-actions request-actions">${form(content.conversationPath, "Back to your conversation", true)}${content.searchPath ? form(content.searchPath, "Find other stays", false) : ""}</div>`;
+    const policies = live ? `<section class="ui-panel offer-policies" aria-label="Before you pay"><h2>Before you pay</h2><p>${escapeHtml(content.provider)}</p>${content.policies.map((section) => `<section><h3>${escapeHtml(section.heading)}</h3><ul>${section.items.map((text) => `<li>${escapeHtml(text)}</li>`).join("")}</ul></section>`).join("")}${content.notes.map((text) => `<p>${escapeHtml(text)}</p>`).join("")}</section>` : "";
+    const actions = content.accept ? `<div class="ui-action-bar offer-actions"><div><strong>${escapeHtml(content.amount)}</strong><span class="ui-price-breakdown__label">${GUEST_FACT_LABELS.amountDueNow}</span></div>${form(content.accept.path, GUEST_PAYMENT_COPY.accept, true, content.accept.surfaceId)}</div>` : `<div class="offer-actions request-actions">${form(content.conversationPath, "Back to your conversation", true)}${content.searchPath ? form(content.searchPath, "Find other stays", false) : ""}</div>`;
     return `<section class="offer-screen" data-offer-state="${content.state}" data-server-now="${escapeHtml(content.serverNow)}"><header class="request-head offer-head" data-page="booking-record"><p class="ui-eyebrow">Conditional Booking Offer</p><h1>${escapeHtml(content.title)}</h1><span class="ui-status ui-status--${live ? "success" : content.state === "expired" || content.state === "closed" ? "danger" : "warning"}">${escapeHtml(content.status)}</span></header>${banner}${ticket}${live ? breakdown : ""}${policies}${content.steps.length ? `<section class="ui-panel"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>` : ""}${actions}</section>`;
   }
   function paymentLayoutHtml(input) {
@@ -10014,14 +10028,19 @@ Known schemas:
       breakdown,
       sections: [
         `<p class="payment-explanation">${escapeHtml(content.explanation)}</p>`,
+        ...content.choice ? [paymentChoiceHtml(content.choice)] : slots.sections === void 0 ? [] : [slots.sections],
         ...content.steps.length ? [
           `<section class="ui-panel payment-steps"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>`
-        ] : [],
-        ...slots.sections === void 0 ? [] : [slots.sections]
+        ] : []
       ],
-      actions: `${slots.actions ?? ""}${content.choosePath === void 0 ? "" : `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.choosePath)}">Choose another way to pay</a>`}`,
+      actions: content.choice ? "" : slots.actions ?? "",
       serverNow: content.serverNow
     });
+  }
+  function paymentChoiceHtml(input) {
+    const method = (value, label, help, checked = false) => `<label><input type="radio" name="method" value="${value}"${checked ? " checked" : ""} aria-labelledby="method-${value}-label" aria-describedby="method-${value}-help"><span class="ui-field"><strong id="method-${value}-label">${escapeHtml(label)}</strong><span id="method-${value}-help" class="ui-field__hint">${escapeHtml(help)}</span></span></label>`;
+    const methods = `<fieldset class="ui-segmented payment-choice-methods"><legend class="ui-sr-only">Payment method</legend>${method("card", GUEST_PAYMENT_COPY.card, GUEST_PAYMENT_COPY.cardHelp, true)}${input.providerTransfer ? method("bank_transfer", GUEST_PAYMENT_COPY.transfer, GUEST_PAYMENT_COPY.transferHelp) : ""}${input.manualAction ? method("manual_transfer", GUEST_PAYMENT_COPY.manual, GUEST_PAYMENT_COPY.manualHelp) : ""}</fieldset>`;
+    return `<form method="post" action="${escapeHtml(input.action)}" class="payment-choice-form"><section class="ui-panel payment-choice" aria-label="Choose how to pay"><h2>How would you like to pay?</h2>${methods}</section><div class="payment-actions ui-action-bar"><button class="ui-button ui-button--primary ui-button--block" type="submit">Continue to stay payment \xB7 ${escapeHtml(input.amount)}</button></div></form>`;
   }
   function stepsHtml(items) {
     return `<ol class="ui-steps">${items.map((item, index) => `<li><span class="ui-steps__number">${index + 1}</span><span>${escapeHtml(item)}</span></li>`).join("")}</ol>`;
@@ -10499,7 +10518,19 @@ Known schemas:
     );
     const slot = template.content.querySelector("[data-payment-action-slot]");
     if (slot && actions) slot.replaceWith(actions);
-    root.replaceChildren(template.content);
+    if (content.choice && actions) {
+      const original = actions.querySelector("button");
+      const form = template.content.querySelector(".payment-choice-form");
+      form?.addEventListener("submit", (event) => {
+        if (new FormData(form).get("method") !== "card") return;
+        event.preventDefault();
+        if (original && !original.disabled) original.click();
+      });
+      const binding = document.createElement("div");
+      binding.hidden = true;
+      binding.append(actions);
+      root.replaceChildren(template.content, binding);
+    } else root.replaceChildren(template.content);
     const countdown = root.querySelector(".waiting-countdown");
     if (countdown && activePayload?.waiting?.kind === "payment-window")
       startCountdown(activePayload.waiting, countdown, true);
@@ -10937,14 +10968,14 @@ Known schemas:
   function isOfferScreen(value) {
     if (!isRecord3(value) || !["live", "expired", "accepted", "closed"].includes(String(value.state)) || ["title", "status", "provider", "consequence", "amount"].some(
       (key3) => typeof value[key3] !== "string"
-    ) || typeof value.deadlineIso !== "string" || !Number.isFinite(Date.parse(value.deadlineIso)) || typeof value.serverNow !== "string" || !Number.isFinite(Date.parse(value.serverNow)) || !isStringList(value.steps) || !isStringList(value.notes) || !isStringList(value.policies) || !isSafeInternalRoute(value.conversationPath) || value.searchPath !== void 0 && !isSafeInternalRoute(value.searchPath))
+    ) || typeof value.deadlineIso !== "string" || !Number.isFinite(Date.parse(value.deadlineIso)) || typeof value.serverNow !== "string" || !Number.isFinite(Date.parse(value.serverNow)) || !isStringList(value.steps) || !isStringList(value.notes) || !Array.isArray(value.policies) || !value.policies.every((section) => isRecord3(section) && typeof section.heading === "string" && isStringList(section.items)) || !isSafeInternalRoute(value.conversationPath) || value.searchPath !== void 0 && !isSafeInternalRoute(value.searchPath))
       return false;
     return value.accept === void 0 || value.state === "live" && isRecord3(value.accept) && isSafeInternalRoute(value.accept.path) && typeof value.accept.surfaceId === "string" && value.accept.surfaceId !== "";
   }
   function isPaymentScreen(value) {
     return isRecord3(value) && ["ready", "handoff"].includes(String(value.state)) && ["success", "warning", "danger", "neutral"].includes(String(value.tone)) && ["title", "status", "explanation"].every(
       (key3) => typeof value[key3] === "string"
-    ) && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow)) && (value.deadlineIso === void 0 || typeof value.deadlineIso === "string" && Number.isFinite(Date.parse(value.deadlineIso))) && isStringList(value.steps) && (value.choosePath === void 0 || isSafeInternalRoute(value.choosePath));
+    ) && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow)) && (value.deadlineIso === void 0 || typeof value.deadlineIso === "string" && Number.isFinite(Date.parse(value.deadlineIso))) && isStringList(value.steps) && (value.choice === void 0 || value.state === "ready" && isRecord3(value.choice) && isSafeInternalRoute(value.choice.action) && typeof value.choice.providerTransfer === "boolean" && typeof value.choice.amount === "string" && (value.choice.manualAction === void 0 || isSafeInternalRoute(value.choice.manualAction)));
   }
   function isSurfacePayload(value) {
     if (!isRecord3(value) || typeof value.surfaceId !== "string" || value.surfaceId.trim() === "" || !Array.isArray(value.a2uiMessages))

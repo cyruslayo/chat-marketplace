@@ -28,7 +28,7 @@ test("AC2: the offer deadline shows absolute WAT and remaining minutes from its 
         html = await readPage(fixture, path);
         assert.match(html, /data-offer-state="expired"/);
         assert.match(html, /The deadline was.*WAT/);
-        assert.doesNotMatch(html, /Accept and pay/);
+        assert.doesNotMatch(html, /Accept and choose payment/);
       }
     },
   );
@@ -51,7 +51,7 @@ test("AC3: an expired offer has a failed rail step, no accept action and both na
       assert.match(html, /data-offer-state="expired"/);
       assert.match(html, /Back to your conversation/);
       assert.match(html, /Find other stays/);
-      assert.doesNotMatch(html, /Accept and pay/);
+      assert.doesNotMatch(html, /Accept and choose payment/);
       const response = await fetch(`${fixture.base}${path}/accept`, {
         method: "POST",
         headers: {

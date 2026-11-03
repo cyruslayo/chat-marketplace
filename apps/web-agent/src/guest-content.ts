@@ -198,7 +198,7 @@ export function guestWaitingCopy(kind: GuestWaitingKind, operatorName: string | 
   const outcomes = [
     "If payment is verified before the deadline, you'll get your booking confirmation.",
     "If the deadline passes, the Payment Window expires and the dates are released.",
-    "A payment that completes after the deadline is refunded and doesn't confirm the booking.",
+    GUEST_PAYMENT_COPY.lateReview,
   ];
   if (kind === "offer-payment-window") {
     return {
@@ -269,6 +269,12 @@ const GUEST_DISCLOSURE_WORDING: ReadonlyArray<{ readonly domain: RegExp; readonl
 ];
 
 export function guestDisclosure(text: string): string {
+  // ADR 0044/0077: the deadline banner already carries the one authoritative WAT timestamp.
+  const window = /^Payment must be completed within the (\d+)-minute Payment Window expiring at \S+\.$/.exec(text.trim());
+  if (window) return `Complete payment within the ${window[1]}-minute Payment Window shown above.`;
+  // ADR 0085: pilot identity verification controls access, not offer acceptance or payment.
+  if (text.trim() === "Primary guest identity verification and stay occupancy rules apply strictly to this booking offer.")
+    return "Guest identity verification is required before access. The Primary Guest must follow the disclosed occupancy rules.";
   return GUEST_DISCLOSURE_WORDING.find((entry) => entry.domain.test(text.trim()))?.guest ?? text;
 }
 
@@ -539,4 +545,20 @@ export const GUEST_REQUEST_EDIT_COPY = {
   phone: "Edit phone number",
   invalid: "Check your dates and number of guests.",
   stale: "Use the current Request Draft.",
+} as const;
+
+/** Guest-focused issue 04: wording is separate from payment/refund authority. */
+export const GUEST_PAYMENT_COPY = {
+  accept: "Accept and choose payment",
+  accepted: "Choose how to pay. Your booking confirms only after payment is verified.",
+  cancellation: "Cancellation",
+  conduct: "Guest conduct",
+  otherTerms: "Other booking terms",
+  card: "Card",
+  cardHelp: "Hosted card checkout. Do not start another payment while this attempt is pending.",
+  transfer: "Bank transfer",
+  transferHelp: "If you choose bank transfer, you can't switch to card until the transfer account expires.",
+  manual: "Manual bank transfer",
+  manualHelp: "Pay our business account and upload your receipt. Your booking confirms only after we check the money has arrived. You can't switch until this attempt expires or is declined.",
+  lateReview: "A late payment needs review and does not confirm your booking. Contact Shortlet if you sent money after the deadline.",
 } as const;

@@ -1,4 +1,4 @@
-import { GUEST_PHONE_COPY, GUEST_REQUEST_EDIT_COPY } from "../../web-agent/src/guest-content.js";
+import { GUEST_PHONE_COPY, GUEST_REQUEST_EDIT_COPY, GUEST_PAYMENT_COPY } from "../../web-agent/src/guest-content.js";
 import {
   createServer,
   type IncomingMessage,
@@ -2300,16 +2300,27 @@ export class LocalGuestApp {
       return undefined;
     try {
       const environment = this.#environment;
+      const artifact = environment.cardPaymentApp.getArtifact(thread.offerId, environment.guestPrincipal());
       const content = paymentScreenContent(
-        environment.cardPaymentApp.getArtifact(
-          thread.offerId,
-          environment.guestPrincipal(),
-        ),
+        artifact,
         environment.clock(),
         `/payments/offers/${encodeURIComponent(thread.offerId)}`,
         this.#currentUnit(thread)?.operator?.name,
       );
-      return content.state === "closed" ? undefined : content;
+      if (content.state === "closed") return undefined;
+      // ADR 0046/0077/0090: expose only methods that the current authoritative payment state permits.
+      if (artifact.facts.status === "ready" && artifact.actions.some(action => action.type === "initialize_checkout") &&
+          !environment.livePaymentAttempts.current(thread.offerId, environment.clock()) &&
+          environment.guestContactApp.get(environment.guestPrincipal())?.contactEmail) {
+        const manual = environment.manualTransfers?.isOffered(thread.offerId, environment.clock()) === true;
+        return { ...content, choice: {
+          action: `/payments/offers/${encodeURIComponent(thread.offerId)}`,
+          providerTransfer: environment.bankTransferApp !== null,
+          ...(manual ? { manualAction: `/payments/offers/${encodeURIComponent(thread.offerId)}/manual-transfer` } : {}),
+          amount: formatNgnKobo(artifact.facts.currentComponentAmountKobo ?? artifact.facts.allInStayTotalKobo ?? artifact.facts.amountDueNowKobo),
+        } };
+      }
+      return content;
     } catch {
       return undefined;
     }
@@ -5655,7 +5666,7 @@ export class LocalGuestApp {
     );
     return {
       ok: true,
-      messages: ["Complete the secure card payment to confirm your booking."],
+      messages: [GUEST_PAYMENT_COPY.accepted],
       receipts: [GUEST_RECEIPTS.offerAccepted],
       surfaces: [
         this.#paymentSurface(

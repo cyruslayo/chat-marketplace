@@ -673,7 +673,20 @@ function organizePaymentScreen(
   );
   const slot = template.content.querySelector("[data-payment-action-slot]");
   if (slot && actions) slot.replaceWith(actions);
-  root.replaceChildren(template.content);
+  if (content.choice && actions) {
+    const original = actions.querySelector<HTMLButtonElement>("button");
+    const form = template.content.querySelector<HTMLFormElement>(".payment-choice-form");
+    form?.addEventListener("submit", event => {
+      if (new FormData(form).get("method") !== "card") return;
+      // ADR 0072: card retains Weaver's server-bound event; the other methods post to their conventional commands.
+      event.preventDefault();
+      if (original && !original.disabled) original.click();
+    });
+    const binding = document.createElement("div");
+    binding.hidden = true;
+    binding.append(actions);
+    root.replaceChildren(template.content, binding);
+  } else root.replaceChildren(template.content);
   const countdown = root.querySelector<HTMLElement>(".waiting-countdown");
   if (countdown && activePayload?.waiting?.kind === "payment-window")
     startCountdown(activePayload.waiting, countdown, true);
@@ -1272,7 +1285,8 @@ function isOfferScreen(value: unknown): value is OfferScreenContent {
     !Number.isFinite(Date.parse(value.serverNow)) ||
     !isStringList(value.steps) ||
     !isStringList(value.notes) ||
-    !isStringList(value.policies) ||
+    !Array.isArray(value.policies) ||
+    !value.policies.every(section => isRecord(section) && typeof section.heading === "string" && isStringList(section.items)) ||
     !isSafeInternalRoute(value.conversationPath) ||
     (value.searchPath !== undefined && !isSafeInternalRoute(value.searchPath))
   )
@@ -1301,7 +1315,10 @@ function isPaymentScreen(value: unknown): value is PaymentScreenContent {
       (typeof value.deadlineIso === "string" &&
         Number.isFinite(Date.parse(value.deadlineIso)))) &&
     isStringList(value.steps) &&
-    (value.choosePath === undefined || isSafeInternalRoute(value.choosePath))
+    (value.choice === undefined || (value.state === "ready" && isRecord(value.choice) &&
+      isSafeInternalRoute(value.choice.action) && typeof value.choice.providerTransfer === "boolean" &&
+      typeof value.choice.amount === "string" &&
+      (value.choice.manualAction === undefined || isSafeInternalRoute(value.choice.manualAction))))
   );
 }
 

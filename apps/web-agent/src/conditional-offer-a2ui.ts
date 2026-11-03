@@ -2,7 +2,7 @@ import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage 
 import { CONDITIONAL_OFFER_ACCEPT_EVENT } from "../../web/src/conditional-offer-actions.js";
 import type { ConditionalOfferArtifact } from "../../web/src/conditional-offer-artifact.js";
 import { bookingProgressText, formatBookingDeadline, formatBookingMoney, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";
-import { GUEST_FACT_LABELS, GUEST_GLOSSARY, accommodationProviderLine, guestDisclosure, guestFact, guestReservationStatus } from "./guest-content.js";
+import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_PAYMENT_COPY, accommodationProviderLine, guestDisclosure, guestFact, guestReservationStatus } from "./guest-content.js";
 
 export function conditionalOfferArtifactToA2UI({ artifact, surfaceId }: { readonly artifact: ConditionalOfferArtifact; readonly surfaceId: string }): readonly A2UIServerMessage[] {
   const { facts } = artifact;
@@ -26,13 +26,13 @@ export function conditionalOfferArtifactToA2UI({ artifact, surfaceId }: { readon
     { id: "conditional-offer-due", component: "Text", text: guestFact(GUEST_FACT_LABELS.amountDueNow, formatBookingMoney(facts.totalAmountDueNowKobo)) },
     { id: "conditional-offer-progress", component: "Text", text: bookingProgressText("offer") },
     { id: "conditional-offer-consequence", component: "Text", text: guestReservationStatus(facts.status === "issued" ? "offer-issued" : facts.status === "accepted" ? "offer-accepted" : "offer-closed") },
-    { id: "conditional-offer-cancellation", component: "Text", text: `Cancellation: ${facts.cancellationPolicy.summary} (${facts.cancellationPolicy.version})` },
+    { id: "conditional-offer-cancellation", component: "Text", text: `Cancellation: ${facts.cancellationPolicy.summary}` },
     { id: "conditional-offer-conduct", component: "Text", text: `Guest conduct: ${facts.guestConductRules.join("; ")}` },
     { id: "conditional-offer-disclosures", component: "Text", text: `Disclosures: ${artifact.disclosures.map(guestDisclosure).join("; ")}` },
     { id: "conditional-offer-actions", component: "Row", children: action ? ["conditional-offer-accept-button"] : [] },
     ...(action ? [
-      { id: "conditional-offer-accept-button", component: "Button" as const, child: "conditional-offer-accept-label", variant: "primary" as const, action: { event: { name: CONDITIONAL_OFFER_ACCEPT_EVENT, context: { artifactId: action.artifactId, offerId: action.offerId, expectedStatus: action.expectedStatus, offerVersion: action.offerVersion, projectionVersion: action.projectionVersion, confirmationToken: action.confirmationToken } } }, accessibility: { label: "Accept Conditional Booking Offer" } },
-      { id: "conditional-offer-accept-label", component: "Text" as const, text: "Accept Offer" },
+      { id: "conditional-offer-accept-button", component: "Button" as const, child: "conditional-offer-accept-label", variant: "primary" as const, action: { event: { name: CONDITIONAL_OFFER_ACCEPT_EVENT, context: { artifactId: action.artifactId, offerId: action.offerId, expectedStatus: action.expectedStatus, offerVersion: action.offerVersion, projectionVersion: action.projectionVersion, confirmationToken: action.confirmationToken } } }, accessibility: { label: GUEST_PAYMENT_COPY.accept } },
+      { id: "conditional-offer-accept-label", component: "Text" as const, text: GUEST_PAYMENT_COPY.accept },
     ] : []),
   ];
   return [
