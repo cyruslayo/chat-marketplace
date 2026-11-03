@@ -1,6 +1,6 @@
 # 04 Offer and payment clarity
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 03
 
@@ -119,3 +119,18 @@ Final focused capture command: `npx tsx .scratch/guest-focused-journey/capture-0
 
 Chromium accessibility-tree checks do not establish actual screen-reader speech. Provider sandbox certification, live payment, and real-phone checks did not run.
 The issue remains claimed for independent review. No push, merge, deployment, remote setting, or refund command ran.
+
+
+### Independent review signoff
+
+The independent reviewer approved `c523342..eb70378`. The reviewer ran 22 focused tests; all passed.
+The parent confirmed that signoff before resolution.
+
+## Answer
+
+Offer terms now have visible reading groups, canonical prices, separate deposits, and one absolute WAT deadline.
+Acceptance clearly continues to payment choice. Available methods share one accessible group across chat and conventional pages.
+Current payment state controls every displayed action. Pending attempts offer no conflicting switch.
+Late-payment wording describes verified review authority without promising automatic repayment or booking revival.
+
+Implementation and verification: `eb70378`. Independent review passed 22/22 tests. Final batch gates remain deferred as recorded above.
