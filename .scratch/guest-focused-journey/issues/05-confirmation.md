@@ -1,6 +1,6 @@
 # 05 Confirmation hierarchy
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 04
 
@@ -80,5 +80,20 @@ No shared CSS or shell layout changed, so the full unrelated screen sweep was no
 7. Type checks and affected tests pass. Full `npm test` and Worker tests remain the final batch gate under AGENTS.md Test scope.
 
 Accessibility-tree and CSS-scale checks do not establish screen-reader speech or actual browser zoom behavior.
-No real-phone, provider, or live-payment check ran. Independent review remains required; the issue stays claimed.
+No real-phone, provider, or live-payment check ran.
 No push, merge, deployment, or remote mutation ran.
+
+### Independent review signoff
+
+The independent reviewer approved `c1e2da6` with no findings.
+The reviewer passed 25/25 focused tests and inspected the captures.
+The parent confirmed the signoff before resolution.
+
+## Answer
+
+Confirmation now presents the Reservation, Unit, dates, party, verified amounts, and reference in the same order across both channels.
+Arrival guidance and conversation support precede accessible contract details without repeating the receipt.
+Projected access availability remains authoritative, and confirmation never grants physical access.
+
+Implementation: `c1e2da6`. Independent review passed 25/25 focused tests with no findings.
+Full batch gates remain pending under AGENTS.md Test scope.
