@@ -808,12 +808,7 @@ export function renderConventionalBookingHtml(
 ): string {
   const stay = page.stay;
   const ticket = stay
-    ? stayTicketHtml({
-        ...stay,
-        ...(page.confirmation
-          ? { bookingReference: page.confirmation.bookingReference }
-          : {}),
-      })
+    ? stayTicketHtml(stay)
     : "";
   const breakdown = stay
     ? priceBreakdownHtml({

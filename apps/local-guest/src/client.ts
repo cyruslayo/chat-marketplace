@@ -566,11 +566,7 @@ function organizeBookingTicket(mount: HTMLElement): void {
         title: title.textContent?.trim() ?? "",
         checkIn: { day: checkInDay, date: checkIn.value },
         checkOut: { day: checkOutDay, date: checkOut.value },
-        foot:
-          stay.value +
-          (activePayload?.confirmation
-            ? ` · Booking reference ${activePayload.confirmation.bookingReference}`
-            : ""),
+        foot: stay.value,
       }),
       [title, checkIn.element, checkOut.element, stay.element],
     );
@@ -638,10 +634,10 @@ function organizeConfirmation(
   );
   root.replaceChildren(template.content);
   root
-    .querySelector<HTMLAnchorElement>(".request-actions a")
+    .querySelector<HTMLAnchorElement>(".request-next a")
     ?.addEventListener("click", (event) => {
       event.preventDefault();
-      closeWorkspace(workspaceReopen);
+      askShortlet();
     });
 }
 

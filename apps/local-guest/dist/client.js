@@ -10046,7 +10046,7 @@ Known schemas:
     return `<ol class="ui-steps">${items.map((item, index) => `<li><span class="ui-steps__number">${index + 1}</span><span>${escapeHtml(item)}</span></li>`).join("")}</ol>`;
   }
   function confirmationScreenHtml(content, ticket, breakdown) {
-    return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}<section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}</section><div class="request-actions"><a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Back to your conversation</a><a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.detailsHref)}">View booking details</a>${content.scheduleHref ? `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.scheduleHref)}">View payment schedule</a>` : ""}</div><section class="ui-panel booking-details" id="booking-details" tabindex="-1"><h2>Booking details</h2><p>${escapeHtml(content.details)}</p></section></section>`;
+    return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}<div class="confirmation-reference"><dl class="ui-facts ui-facts--stacked"><dt>Booking reference</dt><dd>${escapeHtml(content.bookingReference)}</dd></dl></div><section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}<a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Ask about arrival</a></section><div class="request-actions">${content.scheduleHref ? `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.scheduleHref)}">View payment schedule</a>` : ""}</div><details class="ui-panel booking-details" id="booking-details"><summary class="ui-button ui-button--secondary ui-button--block">Full contract terms</summary><p>${escapeHtml(content.details)}</p></details></section>`;
   }
   function signInOfferHtml(content) {
     return `<section class="ui-panel" data-sign-in-offer aria-labelledby="sign-in-offer-title"><h2 id="sign-in-offer-title">${escapeHtml(GUEST_ACCOUNT_COPY.offerTitle)}</h2><p>${escapeHtml(GUEST_ACCOUNT_COPY.offerIntro)}</p><form method="post" action="/account/sign-in"><div class="ui-field"><label class="ui-field__label" for="sign-in-offer-email">${escapeHtml(GUEST_ACCOUNT_COPY.emailLabel)}</label><input id="sign-in-offer-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" maxlength="254" required value="${escapeHtml(content.email)}"></div><input type="hidden" name="return" value="${escapeHtml(content.returnPath)}"><button class="ui-button ui-button--secondary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.offerButton)}</button></form></section>`;
@@ -10431,7 +10431,7 @@ Known schemas:
           title: title.textContent?.trim() ?? "",
           checkIn: { day: checkInDay, date: checkIn.value },
           checkOut: { day: checkOutDay, date: checkOut.value },
-          foot: stay.value + (activePayload?.confirmation ? ` \xB7 Booking reference ${activePayload.confirmation.bookingReference}` : "")
+          foot: stay.value
         }),
         [title, checkIn.element, checkOut.element, stay.element]
       );
@@ -10489,9 +10489,9 @@ Known schemas:
       breakdown.outerHTML
     );
     root.replaceChildren(template.content);
-    root.querySelector(".request-actions a")?.addEventListener("click", (event) => {
+    root.querySelector(".request-next a")?.addEventListener("click", (event) => {
       event.preventDefault();
-      closeWorkspace(workspaceReopen);
+      askShortlet();
     });
   }
   function organizePaymentScreen(mount, content) {
