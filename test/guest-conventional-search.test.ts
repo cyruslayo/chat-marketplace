@@ -80,10 +80,50 @@ test("AC2: opening a result keeps its current criteria and authoritative quote o
     assert.match(detail.body, /2 guests/);
     assert.ok(detail.body.includes(formatNgnKobo(first.price.allInStayTotalKobo!)), "the detail total matches the selected result quote");
     assert.match(detail.body, /Refundable Security Deposit/);
-    const incomplete = await get(`${fixture.base}/stays/${first.id}?threadId=${fixture.threadId}`);
+    const incomplete = await get(`${fixture.base}/stays/${first.id}?threadId=${fixture.threadId}&checkIn=2026-09-10`);
     assert.equal(incomplete.status, 400, "missing quote criteria fail closed");
     const stale = await get(`${fixture.base}/stays/${first.id}?location=Abuja&checkIn=2026-09-10&checkOut=2026-09-13&partySize=2`);
     assert.equal(stale.status, 409, "criteria that no longer include the selected unit fail closed");
+  } finally { await fixture.close(); }
+});
+
+test("Unfiltered results keep a valid thread route and show an indicative rate without inventing a quote", async () => {
+  const fixture = await restartFixture();
+  try {
+    const artifact = fixture.environment.discoveryQuery.search({});
+    const html = renderConventionalSearchHtml(artifact, undefined, false, fixture.threadId);
+    const route = new RegExp(`href="([^\"]*\\/stays\\/${artifact.facts.results[0]!.id}[^\"]*)"`).exec(html)?.[1];
+    assert.ok(route);
+    assert.match(route!, new RegExp(`\\?threadId=${fixture.threadId}$`));
+    const detail = await get(`${fixture.base}${route!.replace(/&amp;/g, "&")}`, fixture.cookie);
+    assert.equal(detail.status, 200);
+    assert.match(detail.body, /Price per night \(indicative\)/);
+    assert.doesNotMatch(detail.body, /All-In Stay Total/);
+    assert.match(detail.body, new RegExp(`href="\\/\\?threadId=${fixture.threadId}"`));
+  } finally { await fixture.close(); }
+});
+
+test("Required amenity arrays round-trip through a selected-result detail route", async () => {
+  const fixture = await restartFixture();
+  try {
+    const unit = fixture.environment.unitRepository.findAll().find((candidate) => candidate.capacity >= 2 && candidate.amenities.length >= 2);
+    assert.ok(unit, "the fixture has a unit with two amenities");
+    const requiredAmenities = unit.amenities.slice(0, 2);
+    const filters = { location: unit.location.city, neighbourhood: unit.location.neighbourhood, checkIn: "2026-09-10", checkOut: "2026-09-13", partySize: 2, requiredAmenities };
+    const artifact = fixture.environment.discoveryQuery.search(filters);
+    const selected = artifact.facts.results.find((result) => result.id === unit.id);
+    assert.ok(selected, "the unit matches both selected amenities");
+    const route = artifact.actions.find((action) => action.unitId === unit.id)?.conventionalRoute;
+    assert.ok(route);
+    const params = new URL(route!, fixture.base).searchParams;
+    assert.deepEqual(params.getAll("requiredAmenities"), requiredAmenities);
+    const detail = await get(`${fixture.base}${route}`);
+    assert.equal(detail.status, 200);
+    assert.ok(detail.body.includes(formatNgnKobo(selected.price.allInStayTotalKobo!)));
+    assert.match(detail.body, /All-In Stay Total/);
+    const backRoute = /href="([^\"]+)"[^>]*>Back to search results/.exec(detail.body)?.[1]?.replace(/&amp;/g, "&");
+    assert.ok(backRoute);
+    assert.deepEqual(new URL(backRoute!, fixture.base).searchParams.getAll("requiredAmenities"), requiredAmenities);
   } finally { await fixture.close(); }
 });
 

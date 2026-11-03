@@ -859,12 +859,20 @@ const SEARCH_COUNT_KEYS = ["partySize", "bedrooms"] as const;
 
 export function parseConventionalSearchQuery(
   params: URLSearchParams,
-): Readonly<Record<string, string | number>> | null {
-  const filters: Record<string, string | number> = {};
+): Readonly<Record<string, string | number | readonly string[]>> | null {
+  const filters: Record<string, string | number | readonly string[]> = {};
   for (const [key, value] of params) {
     if (key === "threadId") {
       if (!/^g-[a-f0-9-]+$/.test(value) || params.getAll(key).length !== 1)
         return null;
+      continue;
+    }
+    if (key === "requiredAmenities") {
+      if (Object.hasOwn(filters, key)) continue;
+      const values = params.getAll(key);
+      if (values.some((item) => !/^[A-Za-z0-9_-]{1,48}$/.test(item)))
+        return null;
+      filters.requiredAmenities = values;
       continue;
     }
     // Issue 03b: the form's budget (whole naira) is optional, so an empty one means none.
@@ -943,7 +951,7 @@ export function renderConventionalSearchHtml(
           (action) => action.type === "view-unit" && action.unitId === unit.id,
         )?.conventionalRoute ?? `/stays/${encodeURIComponent(unit.id)}`;
       const route = threadId
-        ? `${selectedRoute}&threadId=${encodeURIComponent(threadId)}`
+        ? `${selectedRoute}${selectedRoute.includes("?") ? "&" : "?"}threadId=${encodeURIComponent(threadId)}`
         : selectedRoute;
       const photo = unit.photoUrls[0];
       return `<li data-unit-id="${escapeHtml(unit.id)}">${stayCardHtml({ href: route, title: unit.title, neighbourhood: unit.location.neighbourhood, city: unit.location.city, allInStayTotalKobo: unit.price.allInStayTotalKobo, refundableSecurityDepositKobo: unit.price.refundableSecurityDepositKobo, nightlyKobo: unit.price.nightlyKobo, bedrooms: unit.bedrooms ?? null, bathrooms: unit.bathrooms, capacity: unit.capacity, ...(nights === undefined ? {} : { nights }), ...(demo ? { demoListing: true } : {}), ...(photo === undefined ? {} : { photoSrc: photoUrl ? photoUrl(photo) : photo, photoCount: unit.photoUrls.length }) })}</li>`;
@@ -3786,18 +3794,42 @@ export function createGuestRequestHandler(
         }
         searchParams.delete("threadId");
         const filters = parseConventionalSearchQuery(searchParams);
-        if (!filters || typeof filters.checkIn !== "string" || typeof filters.checkOut !== "string" || typeof filters.partySize !== "number") {
+        if (!filters) {
           sendPageError(req, res, 400, "SEARCH_INVALID");
           return;
         }
         try {
+          const hasAnyQuoteCriterion =
+            filters.checkIn !== undefined ||
+            filters.checkOut !== undefined ||
+            filters.partySize !== undefined;
+          if (
+            hasAnyQuoteCriterion &&
+            (typeof filters.checkIn !== "string" ||
+              typeof filters.checkOut !== "string" ||
+              typeof filters.partySize !== "number")
+          ) {
+            sendPageError(req, res, 400, "SEARCH_INVALID");
+            return;
+          }
           const current = app.environment.discoveryQuery.search(filters).facts.results.find((result) => result.id === unitId);
-          if (!current || typeof current.price.allInStayTotalKobo !== "number") {
+          if (!current || (hasAnyQuoteCriterion && typeof current.price.allInStayTotalKobo !== "number")) {
             sendPageError(req, res, 409, "SEARCH_INVALID");
             return;
           }
-          quote = { checkIn: filters.checkIn, checkOut: filters.checkOut, partySize: filters.partySize, allInStayTotalKobo: current.price.allInStayTotalKobo, refundableSecurityDepositKobo: current.price.refundableSecurityDepositKobo };
-          returnRoute = `${conventionalSearchRoute(filters)}${threadId ? `&threadId=${encodeURIComponent(threadId)}` : ""}`;
+          if (hasAnyQuoteCriterion) {
+            quote = {
+              checkIn: filters.checkIn as string,
+              checkOut: filters.checkOut as string,
+              partySize: filters.partySize as number,
+              allInStayTotalKobo: current.price.allInStayTotalKobo!,
+              refundableSecurityDepositKobo: current.price.refundableSecurityDepositKobo,
+            };
+          }
+          const searchRoute = conventionalSearchRoute(filters);
+          returnRoute = searchRoute === "/stays/search"
+            ? threadId ? `/?threadId=${encodeURIComponent(threadId)}` : "/"
+            : `${searchRoute}${threadId ? `&threadId=${encodeURIComponent(threadId)}` : ""}`;
         } catch {
           sendPageError(req, res, 400, "SEARCH_INVALID");
           return;

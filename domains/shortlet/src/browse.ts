@@ -393,9 +393,15 @@ export function toDiscoveryProjection(unit: Unit, dateRange: StayDateRange | nul
 export const INDICATIVE_RATES_DISCLOSURE = "Rates without dates and party size are indicative; dated results show the All-In Stay Total.";
 
 function createInteractionArtifact({ id, filters, results, quoted }: { id: string; filters: any; results: any[]; quoted: boolean }) {
-  const searchQuery = new URLSearchParams(
-    Object.entries(filters).filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)]),
-  ).toString();
+  const searchParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (Array.isArray(value)) {
+      for (const item of value) searchParams.append(key, String(item));
+    } else if (value !== undefined) {
+      searchParams.set(key, String(value));
+    }
+  }
+  const searchQuery = searchParams.toString();
   return deepFreeze({
     id, kind: "shortlet.discovery-results", schemaVersion: "shortlet.discovery/v1", projectionVersion: 1,
     domainReferences: results.map((unit: any) => ({ type: "Unit", id: unit.id })),
