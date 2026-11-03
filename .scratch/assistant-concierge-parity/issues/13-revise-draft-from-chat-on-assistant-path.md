@@ -1,6 +1,6 @@
 # Assistant: change a Request Draft from chat
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 Blocked by: 01, 04, 05
 Requested: 1 Nov 2026
@@ -21,12 +21,12 @@ Requested: 1 Nov 2026
 
 ## Acceptance criteria
 
-- [ ] AC1: "make it 3 nights" on a draft shows the re-quoted replacement with accept and keep.
-- [ ] AC2: Accept replaces the draft; keep changes nothing.
-- [ ] AC3 failure path: a stay over the limit, or a party the apartment can't take, is refused and the draft is unchanged.
-- [ ] AC4 failure path: a tampered or stale accept returns `STALE_SURFACE`; a price change before accepting re-proposes.
-- [ ] AC5: Relative dates are confirmed before the replacement is proposed.
-- [ ] AC6: Each of the 11 deterministic draft-revision tests has an assistant twin with a cold restore before every event.
+- [x] AC1: "make it 3 nights" on a draft shows the re-quoted replacement with accept and keep.
+- [x] AC2: Accept replaces the draft; keep changes nothing.
+- [x] AC3 failure path: a stay over the limit, or a party the apartment can't take, is refused and the draft is unchanged.
+- [x] AC4 failure path: a forged or superseded accept (surface id) returns `STALE_SURFACE`; a tampered accept context returns `INVALID_CONTEXT`; a price change before accepting re-proposes. (Wording amended 3 Nov 2026 to match the code, owner decision.)
+- [x] AC5: Relative dates are confirmed before the replacement is proposed.
+- [x] AC6: Each of the 11 deterministic draft-revision tests has an assistant twin with a cold restore before every event.
 
 ## ADR compliance
 
@@ -161,3 +161,47 @@ Open items for the owner:
 - Reload: after a cold restore the replacement's accept and keep work, but a page reload does not re-render the replacement surface (the restore keeps the id, not the screen). Same gap exists for the deterministic path.
 - Accept is the existing shell handler, not an ADR 0072 pending action (owner b). The guard is the `basedOn` and surface id, as on the deterministic path.
 - A date in the planner call (checkIn, checkOut or a phrase) is not a draft revision here; it runs an ordinary search as before. That is 13b.
+
+### Owner decisions (3 Nov 2026, recorded by the coordinator)
+
+1. AC4 wording amended to match the code: a forged or superseded surface id returns `STALE_SURFACE`; a tampered accept context returns `INVALID_CONTEXT`. The handler is kept (no code change).
+2. A later text turn that does not search keeps the open replacement: intended. Accept still works after such a turn.
+
+### 13b completion record (agent, 3 Nov 2026)
+
+Scope: AC5 (relative dates are confirmed before a replacement is proposed) and the three date twins in `test/guest-draft-revision.test.ts`: :176 (confirmed before the replacement), :200 (an unconfirmed date check is dropped, the next change builds on the draft) and :217 (a different date answers the check). Every twin runs on a cold restore before every event, on a fresh thread, with the assistant enabled, the 27 Oct 2026 clock and a staging-like guest.
+
+How it works:
+- A planner call with a date (a relative phrase, or a literal the guest wrote) is read by the existing issue 04/05 show-back and resolver. A relative phrase is only shown back; nothing is quoted until the guest says yes (ADR 0106, 2 Nov 2026: authority comes from the guest's confirmation).
+- With a Request Draft open, the check-in, nights and party size are resolved first, then compared with the draft (`draftRevisionRequest`, now after the date resolution). A changed check-in is a draft revision. A check-in the guest did not give keeps the draft's own date, so an unconfirmed day is never used.
+- The show-back sentence for an open draft is `draftDateShowBack` (`apps/web-agent/src/guest-content.ts`), the same sentence the deterministic path shows ("Shall I show your Request Draft with these dates?"). Without a draft, the search wording is unchanged.
+- Date authority is unchanged: a model-only date still throws (`AssistantDateProvenanceError`); a literal that resolves beyond the 90-day Booking Horizon is refused by the existing rules.
+
+ADR table additions (read: 0106 amendments of 27 Oct and 2 Nov 2026, 0092, 0093, 0055, 0080):
+- 0106 (2 Nov): confirmed date phrases are guest-authored; ambiguous phrases are not authorised until chosen; "next <weekday>" is handled by the existing resolver. Met by reusing the 04/05 settle step (`settlePendingStayDate`).
+- 0106 (27 Oct): a rejected date is a tool_denial; no new outcome code.
+- 0080: the same replacement handlers accept and keep the change on both paths.
+
+Commands and counts (worktree `C:AI2026chat-marketplace-parity`, all `env -u LLM_API_KEY`):
+- Red run before the code: `npx tsx --test test/assistant-draft-revision.test.ts` gave 9 pass, 2 fail (AC5 and "answering a date check with different dates"); the "date check not confirmed" twin passed already, because a non-date change on the draft was already a revision.
+- `npm run check`: exit 0 (after the code and after the ScriptedTurn typing of the test script).
+- `test/assistant-draft-revision.test.ts`: 11 pass, 0 fail (8 from 13a, 3 from 13b).
+- Date-focused: assistant-date-phrases, assistant-checkout-dates, assistant-date-literal-authority, assistant-date-literals, assistant-date-clarification-copy, assistant-turn-date-context, assistant-cold-journey, assistant-stage-handlers, guest-draft-revision, assistant-recorded-journeys, stay-date-phrases, guest-real-dates: 90 pass, 0 fail.
+- Affected, first half: guest-draft-revision, assistant-cold-journey, assistant-persistent-continuity, assistant-continuous-occupancy, assistant-pending-action-restore, assistant-proposal-replacement, assistant-proposal-supersession, assistant-shortlet-stage-behaviour, assistant-stage-handlers (plus the 13a/13b file): 78 pass, 0 fail.
+- Affected, second half: assistant-turn-stop-cold-restore, assistant-context-isolation, assistant-search-unknowns, assistant-location-change, assistant-discovery-view, assistant-task-rail, assistant-recorded-journeys, assistant-booking-journey, guest-process-restart, guest-chip-continuity, assistant-where-chip, assistant-budget-chip, assistant-short-stays-29-nights, assistant-tool-authorization, guest-booking-journey, local-guest-shell: 122 pass, 0 fail.
+- Not run: full `npm test` and `npm run test:workers`: left to the batch gate. No real-Chrome file: the show-back and replacement use existing surfaces and the existing copy pattern, and no screen changed.
+
+Definition of Done (13a and 13b):
+1. Named tests per criterion: AC1, AC2 (accept and keep), AC3 (two failure paths), AC4 (two tests), AC5 and the AC3 date twins. AC6 covers all ten deterministic tests: seven in 13a, three in 13b. The criterion text says "11"; the file has 10 (already recorded in the triage note). The count in the text was not changed.
+2. Failure paths asserted: 181 nights, 9 guests, a forged surface, a tampered context, a newer proposal, a price change, a stale review after a new place, an unconfirmed date, a different date.
+3. ADRs listed and read: tables in the 13a and 13b records.
+4. No unused injected dependency: `draftRevisionRequest` reads every input. `proposeDraftRevision` reads its threadId, taskState and now.
+5. No invented policy: the date rules are the existing resolver's; the one new sentence is the deterministic sentence moved to the shared copy file.
+6. No credential or identity in logs: no new log line.
+7. `npm run check` passes. `npm test`: left to the batch gate.
+
+Open items:
+- The full `npm test` and `npm run test:workers` run once per batch before the merge to main (batch gate).
+- A reload does not re-render an open replacement (the id survives a cold restore, the screen does not). Same gap as the deterministic path.
+- The deterministic show-back sentence in `concierge.ts` is still inline; it is the same wording as `draftDateShowBack`. Moving it to the shared copy is a follow-up, not a behaviour change.
+- The assistant's show-back for a draft does not repeat "Your Request Draft is unchanged." as a second message (the deterministic path does). The draft is unchanged in every case; the sentence is one message.

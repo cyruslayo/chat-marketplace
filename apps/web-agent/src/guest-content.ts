@@ -39,6 +39,9 @@ export const GUEST_ASSISTANT_COPY = Object.freeze({
   dateShowBack: (arriving: string, leaving: string, nights: number, guests: number, place: string) =>
     `Just to check: arriving ${arriving} and leaving ${leaving} (${nights} ${nights === 1 ? "night" : "nights"}), ${guests} ${guests === 1 ? "guest" : "guests"} in ${place}. Shall I search these dates? Reply "yes", or tell me different dates.`,
   // Issue 04: an ambiguous phrase names its candidate days; one chip per day, and a tap chooses it.
+  // Issue 13b (ADR 0106, 2 Nov 2026; ADR 0080): the same date check while a Request Draft is open. "yes" updates the draft; nothing is searched.
+  draftDateShowBack: (arriving: string, leaving: string, nights: number, guests: number) =>
+    `Just to check: arriving ${arriving} and leaving ${leaving} (${nights} ${nights === 1 ? "night" : "nights"}), ${guests} ${guests === 1 ? "guest" : "guests"}. Shall I show your Request Draft with these dates? Reply "yes", or tell me different dates.`,
   dateChoice: (days: readonly string[]) => `Which day do you mean: ${days.join(" or ")}?`,
   dateConfirmChip: "Yes",
   dateChangeChip: "Change dates",

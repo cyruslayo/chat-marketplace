@@ -27,16 +27,18 @@ function nightsOf(checkIn: string, checkOut: string): number | undefined {
  */
 export function draftRevisionRequest(input: {
   readonly environment: LocalGuestEnvironment;
-  readonly args: Record<string, unknown>;
   readonly taskState: AssistantTaskState;
   readonly city: string;
   readonly neighbourhood: string | undefined;
+  /** The check-in the guest's own words or confirmed show-back give (ADR 0106, 2 Nov 2026). Undefined keeps the draft's own check-in. */
+  readonly checkIn: string | undefined;
+  readonly nights: number;
+  readonly partySize: number;
 }): DraftRevisionRequest | undefined {
-  const { environment, args, taskState, city, neighbourhood } = input;
+  const { environment, taskState, city, neighbourhood } = input;
   const draftId = taskState.currentDraftId;
   if (!draftId || taskState.currentBookingRequestId || taskState.currentOfferId || taskState.stayIntent.pendingLocation) return undefined;
   if (city !== taskState.stayIntent.location || neighbourhood !== taskState.stayIntent.neighbourhood) return undefined;
-  if (["checkIn", "checkOut", "checkInPhrase", "checkOutPhrase"].some((key) => args[key] !== undefined && args[key] !== null)) return undefined;
   let draft;
   try {
     draft = environment.bookingRequestApp.getDraft(draftId);
@@ -47,12 +49,12 @@ export function draftRevisionRequest(input: {
   const draftNights = nightsOf(draft.checkIn, draft.checkOut);
   const draftGuests = draft.occupants.length;
   if (draftNights === undefined) return undefined;
-  const nights = args.nights == null ? draftNights : Number(args.nights);
-  const partySize = args.guests == null ? draftGuests : Number(args.guests);
-  if (nights === draftNights && partySize === draftGuests) return undefined;
+  const checkIn = input.checkIn ?? draft.checkIn;
+  const { nights, partySize } = input;
+  if (checkIn === draft.checkIn && nights === draftNights && partySize === draftGuests) return undefined;
   return {
     draftId,
-    checkIn: draft.checkIn,
+    checkIn,
     nights,
     partySize,
     city,

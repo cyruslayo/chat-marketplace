@@ -359,6 +359,14 @@ export function clarificationChipsFor(taskState: AssistantTaskState, kind: Assis
   return quickRepliesFor(gap.next);
 }
 
+/** Issue 13b: the show-back sentence. With a Request Draft open, the same check updates the draft and nothing is searched. */
+function dateShowBackFor(state: AssistantTaskState, arriving: string, leaving: string, nights: number, guests: number, place: string): string {
+  const draftOpen = state.currentDraftId !== undefined && state.currentBookingRequestId === undefined && state.currentOfferId === undefined;
+  return draftOpen
+    ? GUEST_ASSISTANT_COPY.draftDateShowBack(arriving, leaving, nights, guests)
+    : GUEST_ASSISTANT_COPY.dateShowBack(arriving, leaving, nights, guests, place);
+}
+
 /** Issue 04 (ADR 0106, 2 Nov 2026): the question a pending date show-back asks, from the committed task state. */
 function dateQuestionFor(state: AssistantTaskState): string | undefined {
   const { location, neighbourhood, nights, partySize, pendingDate } = state.stayIntent;
@@ -370,11 +378,11 @@ function dateQuestionFor(state: AssistantTaskState): string | undefined {
   if (pendingDate.checkIn !== undefined) {
     const stayNights = nightsBetween(pendingDate.checkIn, date);
     if (stayNights === undefined) return undefined;
-    return GUEST_ASSISTANT_COPY.dateShowBack(formatGuestDay(pendingDate.checkIn), formatGuestDay(date), stayNights, partySize, neighbourhood ?? location);
+    return dateShowBackFor(state, formatGuestDay(pendingDate.checkIn), formatGuestDay(date), stayNights, partySize, neighbourhood ?? location);
   }
   if (nights === undefined) return undefined;
   const checkOut = checkOutForNights(date, nights);
-  return GUEST_ASSISTANT_COPY.dateShowBack(formatGuestDay(date), formatGuestDay(checkOut), nights, partySize, neighbourhood ?? location);
+  return dateShowBackFor(state, formatGuestDay(date), formatGuestDay(checkOut), nights, partySize, neighbourhood ?? location);
 }
 
 /** Issue 04 (ADR 0099): a successful search that holds a relative date for confirmation names the date clarification. */
@@ -643,10 +651,6 @@ export function executeAssistantTool(
           ? resolvedNeighbourhood ?? undefined
           : city === held.location ? held.neighbourhood : undefined,
       };
-      // Issue 13a (ADR 0106, 2 Nov 2026 classifier decision; ADR 0080): a nights or party change while a Request Draft is open is a
-      // draft revision, not a search. The draft stage quotes it through the shared replacement and no search runs.
-      const draftChange = draftRevisionRequest({ environment: context.environment, args, taskState, city, neighbourhood: requestedArea.neighbourhood });
-      if (draftChange) return { result: { draftRevisionPending: true }, updatedTaskState: taskState, draftRevision: draftChange };
       const pending = held.pendingLocation;
       // The guest answers the open question with the pending area: the search runs there and the question is cleared.
       const answersPending = pending !== undefined && pending.city === requestedArea.city && pending.neighbourhood === requestedArea.neighbourhood;
@@ -793,6 +797,16 @@ export function executeAssistantTool(
         };
         return { result: { dateConfirmationPending: true }, updatedTaskState: taskState };
       }
+      // Issue 13a/13b (ADR 0106, 2 Nov 2026; ADR 0080): with a Request Draft open, a change of check-in, nights or party size is a draft
+      // revision, not a search. The check-in is the guest's own (typed, or confirmed by the show-back); otherwise the draft keeps its own.
+      // The stage quotes the change through the shared replacement, and no search runs.
+      const revisionCheckIn = dateWords.present || (args.checkIn !== undefined && args.checkIn !== null)
+        ? checkIn
+        : taskState.stayIntent.isDemoDate === false ? taskState.stayIntent.checkIn : undefined;
+      const draftChange = nights !== undefined && guests !== undefined
+        ? draftRevisionRequest({ environment: context.environment, taskState, city, neighbourhood, checkIn: revisionCheckIn, nights, partySize: guests })
+        : undefined;
+      if (draftChange) return { result: { draftRevisionPending: true }, updatedTaskState: taskState, draftRevision: draftChange };
       let checkOut: string | undefined;
       if (checkIn && nights !== undefined) {
         if (Number.isNaN(new Date(`${checkIn}T00:00:00Z`).getTime())) throw new AssistantDateValidationError("invalid checkIn date");

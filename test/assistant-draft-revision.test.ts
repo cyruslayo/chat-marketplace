@@ -3,7 +3,7 @@ import test from "node:test";
 import type { GuestTurnResult, GuestTurnSuccess } from "../apps/local-guest/src/shortlet-app.js";
 import type { AssistantModelClient } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { DRAFT_REPLACEMENT_ACCEPT_EVENT, DRAFT_REPLACEMENT_KEEP_EVENT, REQUEST_DRAFT_REVIEW_EVENT } from "../apps/web-agent/src/index.js";
-import { datedFixture, coldTurn, firstButtonAction, LIVE_LIKE_CLOCK, restartedDatedApp, scriptedPlanner, successfulTurn, type DatedFixture } from "./helpers/guest-date-fixtures.js";
+import { datedFixture, coldTurn, firstButtonAction, LIVE_LIKE_CLOCK, restartedDatedApp, scriptedPlanner, successfulTurn, type DatedFixture, type ScriptedTurn } from "./helpers/guest-date-fixtures.js";
 import { repricedByOwner } from "./helpers/owner-terms.js";
 import type { Unit } from "../domains/shortlet/src/index.js";
 
@@ -13,12 +13,17 @@ import type { Unit } from "../domains/shortlet/src/index.js";
 
 const TWO_NIGHT_TEXT = "Apartment in Lekki for 2 guests, 2 nights from 14 December 2026";
 const SEARCH_TWO = { city: "Lagos", neighbourhood: "Lekki Phase 1", checkIn: "2026-12-14", nights: 2, guests: 2 };
-const SCRIPT = {
+const SCRIPT: Record<string, ScriptedTurn> = {
   [TWO_NIGHT_TEXT]: { slots: { city: "Lagos", neighbourhood: "Lekki Phase 1", checkIn: "2026-12-14", nights: 2, guests: 2 }, search: SEARCH_TWO },
   "make it 3 nights": { slots: { nights: 3 }, search: { city: "Lagos", nights: 3, guests: 2 } },
   "make it 4 nights": { slots: { nights: 4 }, search: { city: "Lagos", nights: 4, guests: 2 } },
   "make it 181 nights": { slots: { nights: 181 }, search: { city: "Lagos", nights: 181, guests: 2 } },
   "make it 9 guests": { slots: { guests: 9 }, search: { city: "Lagos", nights: 2, guests: 9 } },
+  // Issue 13b (ADR 0106, 2 Nov 2026): a relative date is shown back and confirmed before any replacement is quoted.
+  "make it from tomorrow": { slots: {}, search: { city: "Lagos", checkInPhrase: "tomorrow", nights: 2, guests: 2 } },
+  yes: { slots: {}, search: { city: "Lagos", checkIn: "2026-10-28", nights: 2, guests: 2 } },
+  no: { slots: {}, intents: [], scope: "unclear" },
+  "from 3 November": { slots: { checkIn: "2026-11-03" }, search: { city: "Lagos", checkIn: "2026-11-03", nights: 2, guests: 2 } },
   "Actually, show me Ikoyi instead": { slots: { neighbourhood: "Ikoyi" }, search: { city: "Lagos", neighbourhood: "Ikoyi", checkIn: "2026-12-14", nights: 2, guests: 2 } },
 };
 
@@ -202,5 +207,41 @@ test("AC6: a new place still searches, and the old draft's actions go stale", as
     const searched = success(await changeDraft(j, "Actually, show me Ikoyi instead"), "new place");
     assert.match(searched.surfaces[0]?.surfaceId ?? "", /:discovery:/);
     rejected(await event(j, { ...firstButtonAction(j.draftSurface), name: REQUEST_DRAFT_REVIEW_EVENT }), "STALE_SURFACE");
+  } finally { j.f.close(); }
+});
+
+test("AC5: relative dates are confirmed before the replacement is proposed", async () => {
+  const j = await draftJourney("ac5");
+  try {
+    const asked = success(await changeDraft(j, "make it from tomorrow"), "make it from tomorrow");
+    assert.equal(asked.surfaces.length, 0, "no replacement is proposed before the guest confirms");
+    assert.match(asked.messages.join(" "), /Just to check: arriving .+ and leaving .+ \(2 nights\), 2 guests\. Shall I show your Request Draft with these dates\?/);
+    assert.equal(j.f.environment.bookingRequestApp.getDraft(j.draftId).checkIn, "2026-12-14", "the draft is unchanged");
+    const confirmed = replacementSurface(success(await changeDraft(j, "yes"), "yes"));
+    assert.ok(confirmed.surfaceId.endsWith(j.draftId));
+  } finally { j.f.close(); }
+});
+
+test("AC3 failure path: a date check the Guest doesn't confirm is dropped, so the next change builds on the draft", async () => {
+  const j = await draftJourney("ac3d");
+  try {
+    success(await changeDraft(j, "make it from tomorrow"), "make it from tomorrow");
+    success(await changeDraft(j, "no"), "no");
+    const proposal = replacementSurface(success(await changeDraft(j, "make it 4 nights"), "make it 4 nights"));
+    const accepted = success(await event(j, actionNamed(proposal, DRAFT_REPLACEMENT_ACCEPT_EVENT)), "accept");
+    const replacement = j.f.environment.bookingRequestApp.getDraft(accepted.surfaces[0]!.surfaceId.split(":").at(-1)!);
+    assert.equal(replacement.checkIn, "2026-12-14", "the unconfirmed day is not used");
+    assert.equal(replacement.checkOut, "2026-12-18");
+    assert.notEqual(replacement.draftId, j.draftId);
+  } finally { j.f.close(); }
+});
+
+test("AC3 failure path: answering a date check with different dates uses those dates", async () => {
+  const j = await draftJourney("ac3e");
+  try {
+    success(await changeDraft(j, "make it from tomorrow"), "make it from tomorrow");
+    const proposal = replacementSurface(success(await changeDraft(j, "from 3 November"), "from 3 November"));
+    const accepted = success(await event(j, actionNamed(proposal, DRAFT_REPLACEMENT_ACCEPT_EVENT)), "accept");
+    assert.equal(j.f.environment.bookingRequestApp.getDraft(accepted.surfaces[0]!.surfaceId.split(":").at(-1)!).checkIn, "2026-11-03");
   } finally { j.f.close(); }
 });
