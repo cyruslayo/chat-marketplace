@@ -34,7 +34,7 @@ Owner decisions: none open (01 decided 2 Nov 2026). 17 resolved: path retired.
 | 13 | [Revise a draft from chat on the assistant path](issues/13-revise-draft-from-chat-on-assistant-path.md) | needs-triage | 01 (resolved), 04, 05 |
 | 14 | [Plain-word date clarification](issues/14-plain-word-date-clarification.md) | resolved | none |
 | 15 | [Bug: invented defaults in the request summary](issues/15-remove-invented-defaults-in-request-summary.md) | resolved | none |
-| 16 | [Parity suite for both concierges](issues/16-parity-suite-for-both-concierges.md) | needs-triage | 04, 05, 11, 13 open; 07, 08, 09, 12 resolved |
+| 16 | [Parity suite for both concierges](issues/16-parity-suite-for-both-concierges.md) | resolved | gap filed as 18 |
 | 17 | [Decide the legacy Gemini concierge](issues/17-decide-the-legacy-gemini-concierge.md) | resolved | none |
 
 ## Already connected (no issue needed)

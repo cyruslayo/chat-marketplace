@@ -1,6 +1,6 @@
 # One parity suite that runs the same guest text through both concierges
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 Blocked by: 04, 05, 07, 08, 09, 11, 12, 13
 Requested: 1 Nov 2026
@@ -165,3 +165,5 @@ Commands and counts (`env -u LLM_API_KEY`): `npm run check` exit 0; `test/assist
 5. The full npm test and npm run test:workers: left to the batch gate.
 
 Status: stays ready-for-agent. AC1 is met under the screen comparison (item 2); AC3 is met for the row's message and not yet for the deterministic date defect (item 1).
+
+- Owner decisions (3 Nov 2026): AC1 accepted under the screen-change comparison (not exact kind match). The deterministic "today" defect found by the AC3 row is filed as issue 18, not fixed here; AC3's row uses a message with no stay facts. Re-base of the four deterministic files skipped. Status set to resolved; the full npm test and test:workers run at the batch gate. The live script (scripts/parity-live.ts) was never run: AC4 pass^k against the staging model is owner-run and unverified.
