@@ -9861,7 +9861,7 @@ Known schemas:
     return { ...state, focusedSurfaceOpen: false };
   }
   function reopenFocusedSurface(state) {
-    if (state.activeSurface?.mode !== "focused-surface" || state.activeSurface.status !== "active") return state;
+    if (state.activeSurface?.mode !== "focused-surface" || state.activeSurface.status === "deleted" || state.activeSurface.status === "superseded") return state;
     return { ...state, focusedSurfaceOpen: true };
   }
   function markActiveSurfaceStatus(state, status) {
@@ -11124,8 +11124,13 @@ Known schemas:
     mountGuestSurfaceOrFallback({ attemptMount: () => ({ ok: false }), mount, surface, onConventionalRouteFallback: () => trackTelemetry("conventional-route-fallback") });
   }
   function showReopen() {
+    if (workspaceReopen.disabled) {
+      workspaceReopen.hidden = false;
+      workspaceReopen.textContent = "Checking current details\u2026";
+      return;
+    }
     const current = shellState.activeSurface;
-    const canReopen = current?.mode === "focused-surface" && current.status === "active" && activePayload !== void 0;
+    const canReopen = current?.mode === "focused-surface" && current.status !== "deleted" && current.status !== "superseded" && activePayload !== void 0;
     workspaceReopen.hidden = !canReopen || shellState.focusedSurfaceOpen;
     if (canReopen)
       workspaceReopen.textContent = `Return to ${guestSurfaceHeading(current.summary).toLocaleLowerCase()}`;
@@ -11297,7 +11302,7 @@ Known schemas:
     composerForm.dataset.focused = presentation.mode === "focused-surface" ? "true" : "false";
     activePayload = surface;
     activeWorkspace.replaceChildren();
-    activeWorkspace.hidden = presentation.mode === "focused-surface" && presentation.status === "active" && !shellState.focusedSurfaceOpen;
+    activeWorkspace.hidden = presentation.mode === "focused-surface" && !shellState.focusedSurfaceOpen;
     activeWorkspace.tabIndex = -1;
     workspaceRegion.hidden = false;
     activeWorkspace.dataset.mode = presentation.mode;
@@ -11431,18 +11436,18 @@ Known schemas:
     if (moveFocus) announce(`${guestSurfaceHeading(presentation.summary)} is ready.`);
     syncSheetHistory();
   }
-  function acceptSurface(surface) {
+  function acceptSurface(surface, preserveConversation = false) {
     const before = shellState.historicalSummaries.length;
     const replaced = shellState.activeSurface !== void 0 && shellState.activeSurface.surfaceId !== surface.surfaceId;
-    const keepConversationOpen = !replaced && shellState.activeSurface?.mode === "focused-surface" && !shellState.focusedSurfaceOpen;
+    const keepConversationOpen = preserveConversation || !replaced && shellState.activeSurface?.mode === "focused-surface" && !shellState.focusedSurfaceOpen;
     shellState = replaceActiveSurface(shellState, presentationFor(surface));
     if (keepConversationOpen) shellState = closeFocusedSurface(shellState);
     if (replaced) trackTelemetry("surface-replaced");
     for (const summary of shellState.historicalSummaries.slice(before)) addHistoricalSummary(summary);
-    renderSurface(surface, replaced);
+    renderSurface(surface, replaced && !preserveConversation);
     syncSheetHistory();
   }
-  function renderSurfaces(surfaces) {
+  function renderSurfaces(surfaces, preserveConversation = false) {
     for (const historical of surfaces.slice(0, -1)) {
       const presentation = presentationFor(historical);
       addHistoricalSummary({
@@ -11452,7 +11457,7 @@ Known schemas:
       });
     }
     const current = surfaces.at(-1);
-    if (current) acceptSurface(current);
+    if (current) acceptSurface(current, preserveConversation);
   }
   function renderJourney(journey) {
     if (!journey) return;
@@ -11895,7 +11900,7 @@ Known schemas:
     for (const receipt of response.receipts ?? []) addReceipt(receipt);
     return true;
   }
-  async function refreshServerState() {
+  async function refreshServerState(preserveConversation = shellState.activeSurface?.mode === "focused-surface" && !shellState.focusedSurfaceOpen) {
     try {
       const response = await postJson(
         `/api/state?threadId=${encodeURIComponent(threadId)}`
@@ -11907,7 +11912,7 @@ Known schemas:
         renderVerticalStarters(response.verticals);
       }
       if (response.ok && response.surfaces && response.surfaces.length > 0) {
-        renderSurfaces(response.surfaces);
+        renderSurfaces(response.surfaces, preserveConversation);
         return true;
       }
     } catch {
@@ -12017,8 +12022,28 @@ Known schemas:
     announce("The interface runtime could not start. Please reload the page.", true);
     throw new Error("Unable to create the Weaver web runtime");
   }
-  workspaceReopen.addEventListener("click", () => {
+  workspaceReopen.addEventListener("click", async () => {
+    if (workspaceReopen.disabled) return;
+    const previous = shellState.activeSurface;
     workspaceOpener = workspaceReopen;
+    workspaceReopen.disabled = true;
+    workspaceReopen.setAttribute("aria-busy", "true");
+    showReopen();
+    composerInput.focus({ preventScroll: true });
+    const refreshed = await refreshServerState(true);
+    if (!refreshed && activePayload) {
+      shellState = markActiveSurfaceStatus(shellState, "stale");
+      renderSurface({ ...activePayload, status: "stale" });
+      announce("Current details could not be checked. Review the saved details without using their actions.", true);
+    }
+    workspaceReopen.disabled = false;
+    workspaceReopen.removeAttribute("aria-busy");
+    showReopen();
+    const current = shellState.activeSurface;
+    if (!current || current.surfaceId !== previous?.surfaceId || previous.status === "active" && current.status !== "active") {
+      composerInput.focus({ preventScroll: true });
+      return;
+    }
     shellState = reopenFocusedSurface(shellState);
     if (!shellState.focusedSurfaceOpen || !activePayload) return;
     activeWorkspace.hidden = false;

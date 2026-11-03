@@ -1639,10 +1639,15 @@ function fallback(mount: HTMLElement, surface: SurfacePresentation): void {
 }
 
 function showReopen(): void {
+  if (workspaceReopen.disabled) {
+    workspaceReopen.hidden = false;
+    workspaceReopen.textContent = "Checking current details…";
+    return;
+  }
   const current = shellState.activeSurface;
   const canReopen =
     current?.mode === "focused-surface" &&
-    current.status === "active" &&
+    current.status !== "deleted" && current.status !== "superseded" &&
     activePayload !== undefined;
   workspaceReopen.hidden = !canReopen || shellState.focusedSurfaceOpen;
   if (canReopen)
@@ -1879,7 +1884,7 @@ function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
   composerForm.dataset.focused = presentation.mode === "focused-surface" ? "true" : "false";
   activePayload = surface;
   activeWorkspace.replaceChildren();
-  activeWorkspace.hidden = presentation.mode === "focused-surface" && presentation.status === "active" && !shellState.focusedSurfaceOpen;
+  activeWorkspace.hidden = presentation.mode === "focused-surface" && !shellState.focusedSurfaceOpen;
   activeWorkspace.tabIndex = -1;
   workspaceRegion.hidden = false;
   activeWorkspace.dataset.mode = presentation.mode;
@@ -2035,19 +2040,19 @@ if (
   syncSheetHistory();
 }
 
-function acceptSurface(surface: GuestSurfacePayload): void {
+function acceptSurface(surface: GuestSurfacePayload, preserveConversation = false): void {
   const before = shellState.historicalSummaries.length;
   const replaced = shellState.activeSurface !== undefined && shellState.activeSurface.surfaceId !== surface.surfaceId;
-  const keepConversationOpen = !replaced && shellState.activeSurface?.mode === "focused-surface" && !shellState.focusedSurfaceOpen;
+  const keepConversationOpen = preserveConversation || (!replaced && shellState.activeSurface?.mode === "focused-surface" && !shellState.focusedSurfaceOpen);
   shellState = replaceActiveSurface(shellState, presentationFor(surface));
   if (keepConversationOpen) shellState = closeFocusedSurface(shellState);
   if (replaced) trackTelemetry("surface-replaced");
   for (const summary of shellState.historicalSummaries.slice(before)) addHistoricalSummary(summary);
-  renderSurface(surface, replaced);
+  renderSurface(surface, replaced && !preserveConversation);
   syncSheetHistory();
 }
 
-function renderSurfaces(surfaces: readonly GuestSurfacePayload[]): void {
+function renderSurfaces(surfaces: readonly GuestSurfacePayload[], preserveConversation = false): void {
   for (const historical of surfaces.slice(0, -1)) {
     const presentation = presentationFor(historical);
     addHistoricalSummary({
@@ -2057,7 +2062,7 @@ function renderSurfaces(surfaces: readonly GuestSurfacePayload[]): void {
     });
   }
   const current = surfaces.at(-1);
-  if (current) acceptSurface(current);
+  if (current) acceptSurface(current, preserveConversation);
 }
 
 /**
@@ -2537,7 +2542,7 @@ function renderResponse(response: GuestResponse): boolean {
 return true;
 }
 
-async function refreshServerState(): Promise<boolean> {
+async function refreshServerState(preserveConversation = shellState.activeSurface?.mode === "focused-surface" && !shellState.focusedSurfaceOpen): Promise<boolean> {
   try {
     const response = (await postJson(
       `/api/state?threadId=${encodeURIComponent(threadId)}`,
@@ -2549,7 +2554,7 @@ async function refreshServerState(): Promise<boolean> {
       renderVerticalStarters(response.verticals);
     }
     if (response.ok && response.surfaces && response.surfaces.length > 0) {
-      renderSurfaces(response.surfaces);
+      renderSurfaces(response.surfaces, preserveConversation);
       return true;
     }
   } catch {
@@ -2667,11 +2672,32 @@ try {
   throw new Error("Unable to create the Weaver web runtime");
 }
 
-workspaceReopen.addEventListener("click", () => {
+workspaceReopen.addEventListener("click", async () => {
+  if (workspaceReopen.disabled) return;
+  const previous = shellState.activeSurface;
   workspaceOpener = workspaceReopen;
+  // ADR-0074: a retained task never regains action authority before a server projection arrives.
+  workspaceReopen.disabled = true;
+  workspaceReopen.setAttribute("aria-busy", "true");
+  showReopen();
+  composerInput.focus({ preventScroll: true });
+  const refreshed = await refreshServerState(true);
+  if (!refreshed && activePayload) {
+    shellState = markActiveSurfaceStatus(shellState, "stale");
+    renderSurface({ ...activePayload, status: "stale" });
+    announce("Current details could not be checked. Review the saved details without using their actions.", true);
+  }
+  workspaceReopen.disabled = false;
+  workspaceReopen.removeAttribute("aria-busy");
+  showReopen();
+  const current = shellState.activeSurface;
+  if (!current || current.surfaceId !== previous?.surfaceId ||
+    (previous.status === "active" && current.status !== "active")) {
+    composerInput.focus({ preventScroll: true });
+    return;
+  }
   shellState = reopenFocusedSurface(shellState);
   if (!shellState.focusedSurfaceOpen || !activePayload) return;
-  // ADR-0074: only the active server projection can reopen an actionable task.
   activeWorkspace.hidden = false;
   composerForm.dataset.focused = "true";
   showReopen();

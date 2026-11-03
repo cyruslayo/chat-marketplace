@@ -34,6 +34,8 @@ Write one named failing test per AC. Cover open/close, Back, restore, draft, foc
 - Captures passed: `npx tsx .scratch/guest-focused-journey/capture-02.ts` wrote eight screenshots and `screenshots/02/findings.txt`. Widths were 320, 390, 768, and 1280 in light and dark themes. All eight had no horizontal overflow and no visible control below 44px. Visual inspection included 320px dark and 1280px light.
 - Definition of Done review: AC1–AC4 each have a dedicated named test and the named failure paths above. The ADRs above were read. No constructor dependency, policy threshold, business rule, bearer log, or restricted identity record was added. `npm run check` and the affected tests pass. The full `npm test` and Workers suite remain the batch pre-merge gate under the project Test scope.
 - Implementation commit: `b36b0dd`.
+- Reviewer correction: two AC3 Chrome regressions first failed. A stale or expired same-surface refresh exposed a closed task; Return also exposed retained actions before checking another tab's superseding server state. The task now stays hidden while chat owns focus. Return checks the server with a disabled, busy control before any action becomes visible. A stale or expired task can reopen only as an inert view. A failed check marks the retained view stale. The message draft and task scroll remain in memory.
+- Correction checks passed: `npm run build`; `npm run check` (zero errors); `npx tsx --test test/local-guest-shell.test.ts test/conversational-shell.test.ts` (15 passed, 0 failed); `npx tsx --test test/guest-focused-phone-shell-chromium.test.ts` (6 passed, 0 failed); `npx tsx --test test/guest-split-workspace-chromium.test.ts` (4 passed, 0 failed). The two real-Chrome files ran one at a time.
 
 ## Answer
 

@@ -138,6 +138,7 @@ test("AC3: Asking from a focused phone task returns to that task after the messa
     await phone.waitForText("lists Secure parking", 10_000);
     assert.equal(await phone.evaluate<boolean>("document.getElementById('active-workspace').hidden"), true);
     assert.equal(await phone.clickButton("Return to"), true);
+    await phone.waitForFunction("!document.getElementById('active-workspace').hidden && history.state?.shortletSheet === true", 10_000);
     assert.equal(await phone.evaluate<boolean>("document.getElementById('active-workspace').hidden"), false);
     assert.equal(await phone.evaluate<string>("getComputedStyle(document.getElementById('workspace-region')).position"), "fixed");
     assert.equal(await phone.evaluate<boolean>("history.state?.shortletSheet === true"), true);

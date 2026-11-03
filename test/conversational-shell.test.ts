@@ -61,6 +61,16 @@ test("focused surfaces close and reopen within the same conversation context", (
   assert.equal(reopened.focusedSurfaceOpen, true);
 });
 
+test("stale and expired focused surfaces can reopen only as non-actionable views", () => {
+  for (const status of ["stale", "expired"] as const) {
+    const state = replaceActiveSurface(createConversationShellState(), surface({ mode: "focused-surface", status }));
+    const reopened = reopenFocusedSurface(state);
+    assert.equal(reopened.focusedSurfaceOpen, true);
+    assert.equal(canUseSurfaceActions(reopened.activeSurface!.status), false);
+  }
+  assert.equal(reopenFocusedSurface(createConversationShellState()).focusedSurfaceOpen, false);
+});
+
 test("fallback preserves a safe textual meaning", () => {
   const fallback = surface({
     status: "fallback",

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { launchRealBrowser, type RealBrowserTab } from "./helpers/chrome-devtools.js";
 import { restartFixture } from "./helpers/guest-restart.js";
-import { createConversationShellState, replaceActiveSurface, reopenFocusedSurface } from "../apps/local-guest/src/conversational-shell.js";
+import { canUseSurfaceActions, createConversationShellState, replaceActiveSurface, reopenFocusedSurface } from "../apps/local-guest/src/conversational-shell.js";
 
 const SEARCH = "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people";
 
@@ -63,7 +63,8 @@ test("AC3: Browser Back, visible Back, reopen, and cold restore return to the sa
   const stale = reopenFocusedSurface(replaceActiveSurface(createConversationShellState(), {
     surfaceId: "unknown-surface", mode: "focused-surface", status: "stale", summary: "Old details",
   }));
-  assert.equal(stale.focusedSurfaceOpen, false);
+  assert.equal(stale.focusedSurfaceOpen, true);
+  assert.equal(canUseSurfaceActions(stale.activeSurface!.status), false);
   const fixture = await restartFixture();
   const browser = await launchRealBrowser();
   try {
@@ -73,11 +74,14 @@ test("AC3: Browser Back, visible Back, reopen, and cold restore return to the sa
     await openDetail(tab);
     const id = await tab.evaluate<string>("document.getElementById('active-workspace').querySelector('.weaver-mount')?.dataset.surfaceId");
     assert.equal(await tab.clickButton("Back to conversation"), true);
+    await tab.waitForFunction("document.getElementById('active-workspace').hidden && history.state?.shortletSheet !== true", 5_000);
     assert.equal(await tab.clickButton("Return to"), true);
+    await tab.waitForFunction("!document.getElementById('active-workspace').hidden && history.state?.shortletSheet === true", 10_000);
     assert.equal(await tab.evaluate<string>("document.querySelector('.weaver-mount')?.dataset.surfaceId"), id);
     await tab.evaluate("history.back()");
-    await tab.waitForFunction("document.getElementById('active-workspace').hidden", 5_000);
+    await tab.waitForFunction("document.getElementById('active-workspace').hidden && history.state?.shortletSheet !== true", 5_000);
     assert.equal(await tab.clickButton("Return to"), true);
+    await tab.waitForFunction("!document.getElementById('active-workspace').hidden && history.state?.shortletSheet === true", 10_000);
     await tab.evaluate("location.reload()");
     await tab.waitForSelector("#active-workspace[data-mode=\"focused-surface\"]:not([hidden])", 10_000);
     assert.equal(await tab.evaluate<string>("document.querySelector('.weaver-mount')?.dataset.surfaceId"), id);
@@ -103,5 +107,87 @@ test("AC4: Desktop keeps the conversation and workspace split, and conventional 
     await conventional.waitForSelector(".unit-detail-page h1", 10_000);
     assert.equal(await conventional.evaluate<string>("document.querySelector('.unit-detail-page h1')?.textContent?.trim() ?? ''"), title);
     assert.equal(await conventional.evaluate<boolean>("!!document.querySelector('.unit-detail-page .ui-action-bar a')"), true);
+  } finally { await browser.close(); await fixture.close(); }
+});
+
+test("AC3 regression: a stale or expired refresh keeps chat focused and offers only a safe task view", async () => {
+  for (const status of ["stale", "expired"] as const) {
+    const fixture = await restartFixture();
+    const browser = await launchRealBrowser();
+    try {
+      const tab = await browser.createTab();
+      await tab.setViewport(390, 700);
+      await tab.navigate(`${fixture.base}/`);
+      await openDetail(tab);
+      assert.equal(await tab.evaluate<boolean>("(() => { const b = document.querySelector('.workspace-ask'); if (!(b instanceof HTMLButtonElement)) return false; b.click(); return true; })()"), true);
+      await tab.insertText("Keep this draft");
+      const body = await tab.evaluate<string>(`(async () => {
+        const id = sessionStorage.getItem('shortlet-concierge-thread');
+        const response = await fetch('/api/state?threadId=' + encodeURIComponent(id));
+        const state = await response.json();
+        state.surfaces.at(-1).status = ${JSON.stringify(status)};
+        return JSON.stringify(state);
+      })()`);
+      const stop = await tab.interceptRequests(async (url) => url.includes("/api/state?")
+        ? { status: 200, headers: [{ name: "Content-Type", value: "application/json" }], body: new TextEncoder().encode(body) }
+        : undefined);
+      try {
+        assert.equal(await tab.clickButton("Return to"), true);
+        await tab.waitForFunction(`document.getElementById('active-workspace').dataset.status === ${JSON.stringify(status)}`, 5_000);
+        assert.equal(await tab.evaluate<boolean>("document.getElementById('active-workspace').hidden"), true);
+        assert.equal(await tab.evaluate<string>("document.activeElement?.id"), "composer-input");
+        assert.equal(await tab.evaluate<string>("document.getElementById('composer-input').value"), "Keep this draft");
+        assert.equal(await tab.evaluate<boolean>("document.getElementById('workspace-reopen').hidden"), false);
+        assert.equal(await tab.clickButton("Return to"), true);
+        await tab.waitForFunction("document.getElementById('active-workspace').hidden === false", 5_000);
+        assert.equal(await tab.evaluate<boolean>("document.querySelector('#active-workspace .weaver-mount')?.hasAttribute('inert')"), true);
+        assert.equal(await tab.evaluate<boolean>("!!document.querySelector('#active-workspace .weaver-mount button:not([disabled])')"), true, "read-only view retains recognizable controls under inert");
+      } finally { await stop(); }
+    } finally { await browser.close(); await fixture.close(); }
+  }
+});
+
+test("AC3 regression: Return checks the server before exposing an action superseded in another tab", async () => {
+  const fixture = await restartFixture();
+  const browser = await launchRealBrowser();
+  try {
+    const first = await browser.createTab();
+    await first.setViewport(390, 700);
+    await first.navigate(`${fixture.base}/`);
+    await openDetail(first);
+    const oldId = await first.evaluate<string>("document.querySelector('#active-workspace .weaver-mount')?.dataset.surfaceId ?? ''");
+    assert.equal(await first.evaluate<boolean>("(() => { const b = document.querySelector('.workspace-ask'); if (!(b instanceof HTMLButtonElement)) return false; b.click(); return true; })()"), true);
+    await first.insertText("Unsent question");
+    const threadId = await first.evaluate<string>("sessionStorage.getItem('shortlet-concierge-thread') ?? ''");
+
+    const second = await browser.createTab();
+    await second.setViewport(1280, 800);
+    await second.navigate(`${fixture.base}/?threadId=${threadId}`);
+    await second.waitForSelector("#active-workspace .unit-detail-root", 10_000);
+    await second.focus("#composer-input");
+    await second.insertText("actually make it 3 guests");
+    await second.pressKey("Enter");
+    await second.waitForFunction(`document.querySelector('.weaver-mount')?.dataset.surfaceId !== ${JSON.stringify(oldId)}`, 10_000);
+
+    let release: (() => void) | undefined;
+    let markPaused: (() => void) | undefined;
+    const paused = new Promise<void>((resolve) => { markPaused = resolve; });
+    const stop = await first.interceptRequests(async (url) => {
+      if (!url.includes("/api/state?")) return undefined;
+      await new Promise<void>((resolve) => { release = resolve; markPaused?.(); });
+      return undefined;
+    });
+    try {
+      assert.equal(await first.clickButton("Return to"), true);
+      await Promise.race([paused, new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Return did not request current state")), 5_000))]);
+      await first.waitForFunction("document.getElementById('workspace-reopen').getAttribute('aria-busy') === 'true'", 5_000);
+      assert.equal(await first.evaluate<boolean>("document.getElementById('active-workspace').hidden"), true);
+      release?.();
+      await first.waitForFunction("document.getElementById('workspace-reopen').getAttribute('aria-busy') !== 'true'", 10_000);
+      assert.equal(await first.evaluate<boolean>("document.querySelector('.weaver-mount')?.dataset.surfaceId !== '' && document.querySelector('.weaver-mount')?.dataset.surfaceId !== null"), true);
+      assert.equal(await first.evaluate<boolean>(`document.querySelector('.weaver-mount')?.dataset.surfaceId === ${JSON.stringify(oldId)}`), false);
+      assert.equal(await first.evaluate<boolean>("!![...document.querySelectorAll('#active-workspace button')].find((button) => button.textContent?.includes('Request to Book') && !button.disabled)"), false);
+      assert.equal(await first.evaluate<string>("document.getElementById('composer-input').value"), "Unsent question");
+    } finally { release?.(); await stop(); }
   } finally { await browser.close(); await fixture.close(); }
 });
