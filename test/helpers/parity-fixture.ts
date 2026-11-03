@@ -9,7 +9,7 @@ import { datedFixture, firstButtonAction, LIVE_LIKE_CLOCK, restartedDatedApp, sc
  */
 
 /** One guest turn: typed text, or a tap on the first button of the last surface the guest was shown. */
-export type ParityTurn = { readonly text: string } | { readonly tap: true };
+export type ParityTurn = { readonly text: string } | { readonly tap: true; readonly context?: Readonly<Record<string, unknown>> };
 
 /** What a row must give on each path after a turn: the filters the guest sees, and the kinds of surface or reply shown. */
 export interface ParityStep {
@@ -65,7 +65,9 @@ export async function runParityPath(path: ParityPath, turns: readonly ParityTurn
       } else {
         const surface = lastSurface?.ok ? lastSurface.surfaces.at(-1) : undefined;
         if (surface === undefined) throw new Error("a tap needs a surface the guest was shown");
-        result = await app.handleEventAsync(threadId, firstButtonAction(surface));
+        // A contact step's Save carries the value the guest typed (the placeholder number on the staging guest).
+        const action = firstButtonAction(surface);
+        result = await app.handleEventAsync(threadId, "context" in turn && turn.context !== undefined ? { ...action, context: { ...action.context, ...turn.context } } : action);
       }
       lastSurface = result;
       steps.push({ kinds: kindsOf(result), filters: filtersOf(appFor().getState(threadId)) });

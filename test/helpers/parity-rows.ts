@@ -1,5 +1,6 @@
 import type { ScriptedTurn } from "./guest-date-fixtures.js";
 import type { ParityTurn } from "./parity-fixture.js";
+import { PHONE } from "./assistant-stage-journey.js";
 
 // Issue 16: the parity rows, shared by the offline suite (test/assistant-parity.test.ts) and the owner-run live script
 // (scripts/parity-live.ts). A row never names a path; each row is compared on both paths.
@@ -10,6 +11,8 @@ export const SEARCH_SCRIPT: ScriptedTurn = { slots: { ...LEKKI, checkIn: "2026-1
 
 export interface ParityRow {
   readonly name: string;
+  /** The last turn keeps the current results: no discovery surface, and the criteria stay as they were (issue 16 AC3). */
+  readonly keepsResults?: true;
   readonly turns: readonly ParityTurn[];
   readonly script: Readonly<Record<string, ScriptedTurn>>;
 }
@@ -60,6 +63,24 @@ export const ROWS: readonly ParityRow[] = [
     script: {
       "Apartment in Lekki for 2 guests, 2 nights from 14 December 2026": { slots: { ...LEKKI, checkIn: "2026-12-14", nights: 2, guests: 2 }, search: { ...LEKKI, checkIn: "2026-12-14", nights: 2, guests: 2 } },
       "make it from tomorrow": { slots: { nights: 2 }, search: { city: "Lagos", checkInPhrase: "tomorrow", nights: 2, guests: 2 } },
+    },
+  },
+  // Issue 16 AC3 (ADR 0106, ADR 0074): a sent Booking Request is not changed by a search that names only a place. The current results stay.
+  {
+    name: "AC3: a place-only search on a sent stay keeps the current results",
+    keepsResults: true,
+    turns: [
+      { text: SEARCH_TEXT },
+      { tap: true },
+      { tap: true },
+      { tap: true },
+      { tap: true, context: { contactValue: PHONE } },
+      { tap: true },
+      { text: "Lekki" },
+    ],
+    script: {
+      [SEARCH_TEXT]: SEARCH_SCRIPT,
+      Lekki: { slots: { ...LEKKI }, intents: ["search"], search: { city: "Lagos", neighbourhood: "Lekki Phase 1" } },
     },
   },
   // Issue 16 AC2: "show me the last one" opens the last result on both paths (the deterministic viewResultIntent; on the assistant path a

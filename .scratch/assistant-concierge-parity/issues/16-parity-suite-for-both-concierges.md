@@ -128,3 +128,12 @@ Commands and counts (`env -u LLM_API_KEY`):
 - Wider assistant batch (16 files, 95 tests): 93 pass, 2 fail. The two failures (switch_task with a numeric taskId; start_task without a domain) also fail on the HEAD before this change (run on a detached worktree of HEAD), so they are pre-existing and not part of this step.
 
 Incident (agent, 3 Nov 2026): while checking the batch on a detached HEAD worktree, I removed that worktree with `git worktree remove --force`. My node_modules junction pointed at this worktree's node_modules, so the removal deleted that folder's contents. The owner's files were not touched. I restored the dependencies with `npm ci` (from the lockfile, which is unchanged), then ran `npm run check` (exit 0) and the parity suite (9 of 9). Going forward I will not use forced worktree removal on a tree with a junction.
+
+### AC3 (agent, 3 Nov 2026, step 2 of 4)
+
+- Sent-stay setup in the shared fixture: a tap can carry the contact value typed on the contact step (`ParityTurn.context`). The placeholder phone (`PHONE`, +234 801 234 5678) comes from `test/helpers/assistant-stage-journey.ts`. The row walks search, View, Request to Book, Review, save phone, Send, then "Lekki".
+- Row: "AC3: a place-only search on a sent stay keeps the current results" (`keepsResults`). The check: no discovery surface on either path, criteria unchanged by the turn, and the earlier steps match.
+- Red-first did not hold: the row passed on the first run. The gap the issue describes is already closed by issue 09 (AC7): `asksToChangeStay` (`shortlet-assistant-pack.ts`) treats a `search` verdict that carries a place or date slot as a change once a request is sent, and `answerValidatedTurn` answers it without a search. So no fix was needed here. The row guards it on both paths.
+- Re-check of the deterministic side: after "Lekki" it re-presents the current request surface; the assistant sends nothing. Both keep the results, so the row compares the discovery surface and the criteria, not the raw kinds of the last turn.
+
+Commands and counts (`env -u LLM_API_KEY`): `npm run check` exit 0; `test/assistant-parity.test.ts` 10 of 10 pass.
