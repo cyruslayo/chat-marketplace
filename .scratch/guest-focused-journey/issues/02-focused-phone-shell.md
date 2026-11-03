@@ -1,6 +1,6 @@
 # 02 Focused phone shell
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 01
 
@@ -33,6 +33,7 @@ Write one named failing test per AC. Cover open/close, Back, restore, draft, foc
 - Real Chrome checks passed, one file at a time: `npx tsx --test test/guest-focused-phone-shell-chromium.test.ts` (4 passed, 0 failed); `npx tsx --test test/guest-split-workspace-chromium.test.ts` (4 passed, 0 failed); `npx tsx --test --test-name-pattern='AC6|AC7|AC8|AC14|AC15|AC26|AC28|AC32' test/mobile-guest-journey-chromium.test.ts` (8 passed, 0 failed).
 - Captures passed: `npx tsx .scratch/guest-focused-journey/capture-02.ts` wrote eight screenshots and `screenshots/02/findings.txt`. Widths were 320, 390, 768, and 1280 in light and dark themes. All eight had no horizontal overflow and no visible control below 44px. Visual inspection included 320px dark and 1280px light.
 - Definition of Done review: AC1–AC4 each have a dedicated named test and the named failure paths above. The ADRs above were read. No constructor dependency, policy threshold, business rule, bearer log, or restricted identity record was added. `npm run check` and the affected tests pass. The full `npm test` and Workers suite remain the batch pre-merge gate under the project Test scope.
+- Implementation commit: `b36b0dd`.
 
 ## Answer
 
