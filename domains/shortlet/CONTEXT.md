@@ -79,11 +79,11 @@ An occupancy model granting one guest party exclusive use of a self-contained un
 _Avoid_: Private apartment, shared room, room category
 
 **Short Stay**:
-A reservation or aggregated continuous occupancy at one property lasting between one and fourteen consecutive nights under the launch product. Longer stays are Extended Stays (ADR 0092).
+A reservation or aggregated continuous occupancy at one property lasting between one and twenty-nine consecutive nights (ADR 0023 as amended 1 Nov 2026). Stays of 30 nights or more are Extended Stays (ADR 0092).
 _Avoid_: Extended stay, monthly stay, tenancy
 
 **Extended Stay**:
-A reservation or aggregated continuous occupancy at one property of 30 to 90 consecutive nights at a unit that has opted in, contracted at once and paid one Billing Period at a time (ADR 0092).
+A reservation or aggregated continuous occupancy at one property of 30 to 180 consecutive nights (marketed as 1 to 6 months) at a unit that has opted in, contracted at once and paid one Billing Period at a time (ADR 0092).
 _Avoid_: Tenancy, lease, monthly rental, long let
 
 **Billing Period**:
@@ -113,6 +113,14 @@ _Avoid_: Separate stay, booking count
 **Booking Horizon**:
 The rolling local-calendar period in which a unit accepts check-in dates, capped platform-wide at 90 days and optionally narrowed per unit.
 _Avoid_: Availability Calendar, stay length, checkout horizon
+
+**Date phrase**:
+The guest's own words for a day or a span of days, such as "20 Nov", "tomorrow", "next Friday" or "next week". Server code resolves it against the Lagos clock. It authorizes a check-in only after the guest confirms its show-back (ADR 0106, 2 Nov 2026 amendment).
+_Avoid_: Date expression, relative date, date string
+
+**Show-back**:
+The concrete reading of a date phrase or chip check-in, shown to the guest before any search runs. For example, "Arriving Fri 6 Nov 2026, leaving Mon 9 Nov 2026. Shall I search these dates?" For "next Friday" on Wed 4 Nov, it offers two chips, Fri 6 Nov 2026 and Fri 13 Nov 2026, and searches neither until the guest taps one. Only the guest's yes or chip tap makes the dates guest-authored.
+_Avoid_: Confirmation (already used for offer confirmation tokens, ADR 0086), preview, echo
 
 ## Trust
 

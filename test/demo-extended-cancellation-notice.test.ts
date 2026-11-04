@@ -336,11 +336,11 @@ test("AC3: A Short Stay cannot take a Notice to End", async () => {
   });
 });
 
-test("AC3: Notice to End is refused outside the staging demo policy, so production policy is unchanged", async () => {
+test("AC3: Notice to End is refused without an Extended Stay policy (ADR 0092)", async () => {
   await withConfirmedExtendedStay({ unit: journeyUnit(), checkIn: CHECK_IN, checkOut: CHECK_OUT }, (context) => {
     const contract = contractOf(context);
     const { store, manager } = noticeManager(contract, { now: "2026-10-01T09:00:00.000Z", noPolicy: true, paid: [1, 2] });
-    assert.throws(() => manager.giveNotice(contract.contractId, principalOf(contract)), /staging demo/);
+    assert.throws(() => manager.giveNotice(contract.contractId, principalOf(contract)), /needs an Extended Stay policy \(ADR 0092\)/);
     assert.equal(store.current.contractVersion, contract.contractVersion);
   });
 });
@@ -513,7 +513,8 @@ function artifactFor(contract: BookingContract) {
     contractVersion: contract.contractVersion, projectionVersion: "projection-13", addressAvailability: "locked", accessAvailability: "locked", disclosures: [],
   } as unknown as Parameters<typeof bookingContractArtifactFromView>[0];
   const viewer = { id: contract.parties.primaryGuest.id, role: "guest" as const, tenantId: contract.tenantId ?? "" };
-  return bookingContractArtifactFromView(view, contract as unknown as Parameters<typeof bookingContractArtifactFromView>[1], viewer);
+  // ADR 0105: the demo composition labels its Notice to End terms as demo terms; production does not.
+  return bookingContractArtifactFromView(view, contract as unknown as Parameters<typeof bookingContractArtifactFromView>[1], viewer, { demoTerms: true });
 }
 
 test("AC6: The guest booking contract shows the Notice to End demo terms in chat and on the confirmation page", async () => {

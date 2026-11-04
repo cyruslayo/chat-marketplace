@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { LocalGuestEnvironment } from "../../apps/local-guest/src/fixture.js";
-import { LocalGuestApp, type CardCheckoutFailedEvent } from "../../apps/local-guest/src/shortlet-app.js";
+import { LocalGuestApp, type CardCheckoutFailedEvent, type GuestTurnResult, type GuestTurnSuccess } from "../../apps/local-guest/src/shortlet-app.js";
 import { AssistantRuntime, type AssistantDiagnosticEvent } from "../../apps/local-guest/src/assistant/assistant-runtime.js";
 import { ShortletAssistantRuntime } from "./assistant-runtime-host.js";
 import { BudgetedModelClient, ModelCallBudget } from "../../apps/local-guest/src/assistant/model-call-budget.js";
@@ -61,6 +61,16 @@ export function lastRoleIsTool(request: CapturedRequest): boolean {
   return messages.at(-1)?.role === "tool";
 }
 
+/**
+ * One guest turn on a fresh thread after a cold restore: a new application over the same store, loaded as a page load does
+ * (ADR 0106 cold-restore rule). Shared by the assistant tests that drive the typed path directly.
+ */
+export function coldTurn(f: DatedFixture, threadId: string, text: string, model: AssistantModelClient, diagnostics?: AssistantDiagnosticEvent[]): Promise<GuestTurnResult> {
+  const restored = restartedDatedApp(f, model, diagnostics);
+  restored.app.getState(threadId);
+  return restored.app.handleTurn(threadId, text);
+}
+
 export function searchToolCall(id: string, args: Record<string, unknown>) {
   return completion({ tool_calls: [{ id, type: "function", function: { name: "search_stays", arguments: JSON.stringify(args) } }] });
 }
@@ -87,12 +97,13 @@ export const LIVE_LIKE_CLOCK = (): Date => new Date("2026-10-27T10:00:00Z");
  */
 export const STAGING_GUEST_CONFIG = { initialGuestPhoneNumber: null, initialGuestContactEmail: null } as const;
 
-export function datedFixture(model: AssistantModelClient, diagnostics?: AssistantDiagnosticEvent[], options: { readonly clock?: () => Date; readonly stagingGuest?: boolean; readonly paystackClient?: NonNullable<Parameters<typeof LocalGuestEnvironment.openNode>[0]>["paystackClient"] } = {}): DatedFixture {
+export function datedFixture(model: AssistantModelClient, diagnostics?: AssistantDiagnosticEvent[], options: { readonly clock?: () => Date; readonly stagingGuest?: boolean; readonly paystackClient?: NonNullable<Parameters<typeof LocalGuestEnvironment.openNode>[0]>["paystackClient"]; /** The deployment composition (ADR 0105): demo off and production by default. */ readonly composition?: { readonly demo?: boolean; readonly deployment?: "production" | "staging" } } = {}): DatedFixture {
   const directory = mkdtempSync(join(tmpdir(), "date-literal-"));
   const openConfig = {
     ...(options.clock ? { clock: options.clock } : {}),
     ...(options.paystackClient ? { paystackClient: options.paystackClient } : {}),
     ...(options.stagingGuest ? STAGING_GUEST_CONFIG : {}),
+    ...(options.composition ?? {}),
   };
   const databasePath = join(directory, "guest.sqlite");
   const environment = LocalGuestEnvironment.openNode({ databasePath, ...openConfig });
@@ -151,6 +162,12 @@ export interface ScriptedTurn {
   readonly intents?: readonly string[];
   readonly search?: Record<string, unknown>;
   readonly tool?: { readonly name: string; readonly args: Record<string, unknown> };
+  /** A planner reply plan with no tool call (ADR 0106 typed reply kind), for example "clarify_stay" or "support_guidance". */
+  readonly reply?: "clarify_stay" | "support_guidance";
+  /** The classifier's scope for this message. Defaults to in_scope. */
+  readonly scope?: "out_of_scope" | "unclear";
+  /** A planner reply plan returned after the tool result (ADR 0106 typed reply kind). Defaults to prose, which the runtime rejects. */
+  readonly replyAfterTool?: { readonly kind: string; readonly references: readonly string[] };
 }
 
 /**
@@ -161,12 +178,15 @@ export function scriptedPlanner(turns: Readonly<Record<string, ScriptedTurn>>, p
   return clientWith((request) => {
     if (isScopeRequest(request)) {
       const turn = turns[classifiedMessage(request)];
+      if (turn?.scope === "out_of_scope") return completion({ content: JSON.stringify({ ...scopeVerdict({}, []), scope: "out_of_scope", reasonCode: "outside" }) });
+      if (turn?.scope === "unclear") return completion({ content: JSON.stringify({ ...scopeVerdict({}, []), scope: "unclear", reasonCode: "unclear" }) });
       return completion({ content: JSON.stringify(scopeVerdict(turn?.slots ?? {}, turn?.intents)) });
     }
-    if (lastRoleIsTool(request)) return completion({ content: "Search complete." });
     const text = latestUserText(request);
     const turn = text === undefined ? undefined : turns[text];
+    if (lastRoleIsTool(request)) return completion({ content: turn?.replyAfterTool ? JSON.stringify(turn.replyAfterTool) : "Search complete." });
     planner.push(request);
+    if (turn?.reply) return completion({ content: JSON.stringify({ kind: turn.reply, references: [] }) });
     if (turn?.search) return searchToolCall(`search-${text?.length ?? 0}`, turn.search);
     if (turn?.tool) return completion({ tool_calls: [{ id: `tool-${text?.length ?? 0}`, type: "function", function: { name: turn.tool.name, arguments: JSON.stringify(turn.tool.args) } }] });
     throw new Error("Unexpected offline fixture turn");
@@ -190,4 +210,20 @@ export function firstButtonAction(surface: { readonly surfaceId: string; readonl
   walk(surface.a2uiMessages);
   if (found === undefined) throw new Error(`surface ${surface.surfaceId} has no Button action`);
   return { ...found, surfaceId: surface.surfaceId, sourceComponentId: "journey-test", timestamp: new Date().toISOString() };
+}
+
+/**
+ * One guest turn after a cold restore, returning the restored runtime too, so a test can read the task state the turn
+ * committed (ADR 0106: every event is a new application over the same store).
+ */
+export async function coldRun(f: DatedFixture, threadId: string, text: string, model: AssistantModelClient): Promise<{ readonly result: GuestTurnResult; readonly runtime: AssistantRuntime }> {
+  const restored = restartedDatedApp(f, model);
+  restored.app.getState(threadId);
+  return { result: await restored.app.handleTurn(threadId, text), runtime: restored.runtime };
+}
+
+/** The guest-visible message and chips of a turn that must succeed. */
+export function successfulTurn(result: GuestTurnResult, label: string): GuestTurnSuccess {
+  if (!result.ok) throw new Error(`${label}: expected success, saw ${result.code}: ${result.message}`);
+  return result;
 }

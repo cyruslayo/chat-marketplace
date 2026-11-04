@@ -26,11 +26,25 @@ export const GUEST_GLOSSARY = Object.freeze({
 /** Server-authored concierge copy for replies whose facts come from current pack projections. */
 export const GUEST_ASSISTANT_COPY = Object.freeze({
   stayClarification: "How many nights will you be staying, and for how many guests?",
-  dateClarification: "Please give me the check-in date as YYYY-MM-DD.",
+  // Issue 08 (ADR 0106): an area the server does not know is refused with the closed list of areas it can search.
+  areaClarification: (examples: string) => `I couldn't find that area. Which area should I search? For example: ${examples}.`,
+  // Issue 07 (ADR 0106, ADR 0015): a budget the server cannot read from the guest's own words is refused, never searched as a guessed amount.
+  budgetClarification: "I could not read that budget. Please give an amount, for example 150k a night or 500k for the stay.",
   // ADR 0106: a planner date that the guest's text does not state is rejected and the guest is asked for dates in a form the server reads.
   datesClarification: "I need your check-in and checkout dates before I can search. Please write them with the day, month and year, for example 20 November 2026 to 23 November 2026.",
   // ADR 0015: a Unit's all-in price is quoted for the stay's dates, so opening one without dates asks for them.
   unitDatesClarification: "Add your check-in and checkout dates to see this apartment's price for your stay. Please write them with the day, month and year, for example 20 November 2026 to 23 November 2026.",
+  // Issue 04 (ADR 0106 2 Nov 2026, ADR 0080, ADR 0077): the show-back of a relative date the guest must confirm. The deterministic
+  // path says the same sentence (concierge.ts), so both paths show the same dates before a search.
+  dateShowBack: (arriving: string, leaving: string, nights: number, guests: number, place: string) =>
+    `Just to check: arriving ${arriving} and leaving ${leaving} (${nights} ${nights === 1 ? "night" : "nights"}), ${guests} ${guests === 1 ? "guest" : "guests"} in ${place}. Shall I search these dates? Reply "yes", or tell me different dates.`,
+  // Issue 04: an ambiguous phrase names its candidate days; one chip per day, and a tap chooses it.
+  // Issue 13b (ADR 0106, 2 Nov 2026; ADR 0080): the same date check while a Request Draft is open. "yes" updates the draft; nothing is searched.
+  draftDateShowBack: (arriving: string, leaving: string, nights: number, guests: number) =>
+    `Just to check: arriving ${arriving} and leaving ${leaving} (${nights} ${nights === 1 ? "night" : "nights"}), ${guests} ${guests === 1 ? "guest" : "guests"}. Shall I show your Request Draft with these dates? Reply "yes", or tell me different dates.`,
+  dateChoice: (days: readonly string[]) => `Which day do you mean: ${days.join(" or ")}?`,
+  dateConfirmChip: "Yes",
+  dateChangeChip: "Change dates",
   safeClarification: "I can help you find and compare stays, explain pricing, or check a booking status. What would you like to do?",
   // Shown when a turn is slower than a normal one; the guest is not told the request failed.
   stillWorking: "Still working on your request. A stay search can take a little longer, so please keep this page open.",
@@ -214,6 +228,58 @@ export function guestOperatorName(name: string | undefined): string {
   return name?.trim() || GUEST_GLOSSARY.operatorFallback;
 }
 
+/**
+ * Issue 09 (ADR 0080, 0077): the question asked before a search moves to a different area. The deterministic concierge
+ * (`mergeStayRequestContext`) and the assistant's shortlet pack read this one sentence, so both paths ask the same question.
+ */
+export const GUEST_LOCATION_CONFLICT = Object.freeze({
+  question: (wanted: string, incumbent: string): string => `Do you want ${wanted}, or should I keep searching in ${incumbent}?`,
+});
+
+/**
+ * ADR-0005, 0060, 0080 (issue 12): why a sent stay cannot change, and what the guest can do instead. The deterministic concierge
+ * (`#changeExplanation`) and the assistant's shortlet pack read these same strings, so both paths give one reply.
+ */
+export const GUEST_CHANGE_EXPLANATION = Object.freeze({
+  request: (operatorName: string | undefined): string => {
+    const operator = guestOperatorName(operatorName);
+    return `A sent ${GUEST_GLOSSARY.bookingRequest} can't be changed while ${operator} reviews it. If ${operator} confirms, you can choose not to accept the offer at no cost and search again with new details. Nothing has been changed.`;
+  },
+  offer: (): string => `A ${GUEST_GLOSSARY.conditionalBookingOffer} can't be changed. You can choose not to accept it at no cost and search again with new details. Nothing has been changed.`,
+  payment: (): string => "An accepted offer can't be changed from this conversation. Nothing has been changed.",
+  booking: (): string => `Changes to a confirmed ${GUEST_GLOSSARY.reservation} are made as a booking amendment, which re-checks availability and price. I can't start one from this conversation yet. Nothing has been changed.`,
+});
+
+/**
+ * Issue 11 (ADR 0080, 0075, 0077): the answer to a facility question on the selected stay. Both the deterministic concierge
+ * (`#stageReply`) and the assistant's shortlet pack read these sentences. The amenity name and the stay title come from the
+ * server's own records, never from guest text (ADR 0075).
+ */
+export const GUEST_FACILITY_COPY = Object.freeze({
+  listed: (title: string, amenityLabel: string): string => `Yes: ${title} lists ${amenityLabel}.`,
+  notListed: (title: string, facilityLabel: string): string => `${facilityLabel} isn't listed for ${title}, so I can't confirm it.`,
+});
+
+/** Issue 11: the stages a sent stay can be in, for the stage reply. `current` covers every stage before a request is sent. */
+export type GuestCapabilityStage = "request" | "offer" | "payment" | "booking" | "current";
+
+/**
+ * Issue 11 (ADR 0005, 0060, 0080, 0077): what the guest can do at each stage, with the stay named when there is one. The deterministic
+ * concierge (`#capabilityReply`) and the assistant's shortlet pack read this one function, so a vague turn gets the same reply on both paths.
+ */
+export function guestCapabilityReply(stage: GuestCapabilityStage, unit?: { readonly title: string; readonly operatorName?: string | undefined }): string {
+  const about = unit === undefined ? "" : ` I can also answer questions about ${unit.title}, such as parking or Wi-Fi.`;
+  if (stage === "request")
+    return `Your ${GUEST_GLOSSARY.bookingRequest} is with ${guestOperatorName(unit?.operatorName)} for review; the details are in the workspace.${about}`;
+  if (stage === "offer")
+    return `Your ${GUEST_GLOSSARY.conditionalBookingOffer} is in the workspace. Review it and accept it there if it suits you.${about}`;
+  if (stage === "payment")
+    return `Your payment step is in the workspace.${about}`;
+  if (stage === "booking")
+    return `Your booking details are in the workspace.${about}`;
+  return `Your current details are in the workspace.${about}`;
+}
+
 /** ADR-0006: names the contracting party only where the contract can form. */
 export function accommodationProviderLine(operatorName: string | undefined): string {
   return `Provided by ${guestOperatorName(operatorName)} (your accommodation provider)`;
@@ -282,6 +348,12 @@ const AMENITY_LABELS: Readonly<Record<string, string>> = {
   wifi: "Wi-Fi",
   workspace: "Dedicated workspace",
 };
+
+/**
+ * The closed amenity catalogue (issue 08): the identifiers the guest product labels. The assistant's amenity schema and the
+ * concierge's alias table both read this list, so no second catalogue exists.
+ */
+export const GUEST_AMENITY_IDS: readonly string[] = Object.freeze(Object.keys(AMENITY_LABELS));
 
 export function guestAmenityLabel(identifier: string): string {
   const acceptedLabel = AMENITY_LABELS[identifier];

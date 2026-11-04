@@ -92,10 +92,12 @@ test("Eval 2: Clarification when essential search info is missing", async () => 
   assert.equal(res.surfaces?.length, 0);
 });
 
-test("No-date local demo instruction makes date optional while relative dates require YYYY-MM-DD", () => {
+test("No-date local demo instruction makes date optional while relative dates go to checkInPhrase, never a computed date", () => {
   assert.match(ASSISTANT_SYSTEM_INSTRUCTION, /check-in date is optional for this local demo/i);
   assert.match(ASSISTANT_SYSTEM_INSTRUCTION, /discovery-only requests, location and optional filters suffice/i);
-  assert.match(ASSISTANT_SYSTEM_INSTRUCTION, /relative date[\s\S]*YYYY-MM-DD/i);
+  // Issue 04 (ADR 0106, 2 Nov 2026): the guest's words are copied into checkInPhrase and the server shows the day back.
+  assert.match(ASSISTANT_SYSTEM_INSTRUCTION, /relative date[\s\S]*copy their words exactly into checkInPhrase/i);
+  assert.doesNotMatch(ASSISTANT_SYSTEM_INSTRUCTION, /YYYY-MM-DD/, "the prompt never asks for an ISO date");
 });
 
 test("Authoritative Assistant discovery supports exact bedroom refinement and supersedes the prior result surface", async () => {
@@ -747,12 +749,15 @@ test("Date provenance fails closed when restored current criteria has unknown pr
     { checkIn: "2026-12-15" }, "2026-11-01"), { checkIn: "2026-12-15", isDemoDate: false });
 });
 
-// 18. Relative date inquiry asks for explicit YYYY-MM-DD
-test("Eval 18: Relative date 'next Friday' requests explicit date", async () => {
+// 18. Relative date with no stay details: no search and no date is authorized (ADR 0106). The show-back itself (issue 04) is covered by
+// test/assistant-date-phrases.test.ts, with nights and party size given and the assistant runtime enabled.
+test("Eval 18: Relative date 'next Friday' without stay details gets the dated clarification and no search runs", async () => {
   const { runtime } = createTestRuntime();
   const res = await runtime.handleTurn("g-eval-18", "I want a flat in Ikoyi next Friday");
   assert.equal(res.ok, true);
-  assert.ok(res.messages?.[0]?.includes("YYYY-MM-DD"));
+  assert.deepEqual(res.surfaces, []);
+  assert.equal(res.messages?.[0], GUEST_ASSISTANT_COPY.datesClarification);
+  assert.doesNotMatch(res.messages?.[0] ?? "", /YYYY-MM-DD/);
 });
 
 // 19. Transactional failure rollback
@@ -865,7 +870,6 @@ test("Search artifact, assistant shortlist, and Weaver surface contain the same 
           checkIn: null,
           nights: 4,
           guests: 2,
-          maxBudgetKobo: 60_000_000,
           requiredAmenities: ["24_7_power_generator", "swimming_pool"],
         },
       }],

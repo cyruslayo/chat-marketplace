@@ -28,7 +28,7 @@ import {
   SqliteGuestContactRepository,
   GuestAccountContacts,
   UnitDiscoveryQuery,
-  DEMO_EXTENDED_STAY_POLICY,
+  EXTENDED_STAY_POLICY,
   UnitRepository,
   JsonUnitRepository,
   type UnitRepositoryContract,
@@ -399,10 +399,11 @@ export class LocalGuestEnvironment {
     if (this.config.demo === true && this.config.deployment === "production") {
       throw new Error("Demo booking behavior is refused in production (ADR 0105)");
     }
-    this.extendedStayPolicy = this.config.demo && this.config.deployment !== "production"
-      ? (this.config.extendedStayPolicy ?? DEMO_EXTENDED_STAY_POLICY)
-      : undefined;
+    // ADR 0092 as amended 1 Nov 2026: Extended Stays are on in every deployment, production included (owner decision).
+    this.extendedStayPolicy = this.config.extendedStayPolicy ?? EXTENDED_STAY_POLICY;
     const extendedStayPolicy = this.extendedStayPolicy;
+    // ADR 0105: only the staging demo labels Extended terms as demo terms.
+    const demoTerms = this.config.demo === true;
     if (this.config.production && !this.config.paystackClient && !this.config.payments) {
       throw new Error(
         "Production Guest composition requires Paystack configuration",
@@ -478,17 +479,21 @@ export class LocalGuestEnvironment {
         `guest-demo-${String(++this.#searchCounter).padStart(3, "0")}`,
     });
 
+    // ADR 0023 as amended 1 Nov 2026: the confirmed Reservations are read for Continuous Occupancy (the same tables as below).
+    const requestBookingState = new SqliteBookingStateRepository(sqlDatabase);
     this.bookingRequestApp = createBookingRequestApplication({
       repository: this.unitRepository,
       calendar: this.calendar,
       audit: this.audit,
       store: this.interactionStore,
+      bookingState: requestBookingState,
       // ADR-0082: operator representative authority is evaluated through the
       // real server-side grant store on every consequential operator command.
       operatorAuthority: this.grantStore,
       clock: this.clock,
       guestContacts: this.guestContactApp.repository,
       ...(extendedStayPolicy ? { extendedStayPolicy } : {}),
+      demoTerms,
     });
 
     this.conditionalOfferApp = createConditionalOfferApplication({
@@ -500,6 +505,7 @@ export class LocalGuestEnvironment {
       clock: this.clock,
       operatorAuthority: this.grantStore,
       ...(extendedStayPolicy ? { extendedStayPolicy } : {}),
+      demoTerms,
     });
 
     this.contractRepository = new LocalBookingContractRepository(
@@ -654,6 +660,7 @@ export class LocalGuestEnvironment {
     this.contractApp = createBookingContractApplication({
       repository: this.contractRepository,
       clock: this.clock,
+      demoTerms,
     });
 
     if (dependencies.seedDemoUnits === true) this.#seedUnits();

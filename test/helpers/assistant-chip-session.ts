@@ -29,7 +29,7 @@ export interface ChipDriver {
   /** The open proposal's id on the runtime, or null. */
   pendingId(): string | null;
   /** The runtime's current stay facts for the thread. */
-  stay(): { readonly location?: string; readonly neighbourhood?: string; readonly partySize?: number; readonly checkIn?: string };
+  stay(): { readonly location?: string; readonly neighbourhood?: string; readonly partySize?: number; readonly checkIn?: string; readonly maxBudgetKobo?: number; readonly maxBudgetPer?: "stay" | "night" };
 }
 
 export function openChipDriver(
@@ -79,7 +79,7 @@ export function openChipDriver(
     pendingId: () => step().runtime.getThread(threadId).taskState.pendingAction?.id ?? null,
     stay: () => {
       const intent = step().runtime.getThread(threadId).taskState.stayIntent;
-      return { location: intent.location, neighbourhood: intent.neighbourhood, partySize: intent.partySize, checkIn: intent.checkIn };
+      return { location: intent.location, neighbourhood: intent.neighbourhood, partySize: intent.partySize, checkIn: intent.checkIn, maxBudgetKobo: intent.maxBudgetKobo, maxBudgetPer: intent.maxBudgetPer };
     },
   };
 }

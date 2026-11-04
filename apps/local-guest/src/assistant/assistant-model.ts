@@ -58,6 +58,8 @@ export interface AssistantModelRequest {
   readonly systemInstruction: string;
   readonly tools: readonly AssistantToolDefinition[];
   readonly history: readonly AssistantConversationStep[];
+  /** Issue 03 (ADR 0099, ADR 0106): one per-turn context line. Each provider renders it after the cached system prefix, never inside systemInstruction or history. It grants no authority. */
+  readonly turnContext?: string;
   readonly timeoutMs?: number;
   /** Provider-neutral JSON schema request for a final typed reply plan. */
   readonly structuredOutput?: { readonly name: string; readonly schema: Readonly<Record<string, unknown>>; readonly strict?: boolean };

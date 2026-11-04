@@ -22,6 +22,7 @@ import {
   toolsForValidatedIntents,
   toolNamesForValidatedIntents,
   pendingProposalAuthorised,
+  type AssistantClarificationKind,
   type AssistantDomainPack,
   type AssistantTaskSummary,
   type AssistantToolContext,
@@ -29,7 +30,7 @@ import {
   type AssistantReplyPlanKind,
 } from "./assistant-platform.js";
 import { validatedCheckOutForNights } from "./shortlet-assistant-pack.js";
-import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantStayDetailsError, containsGuestDate, currentTurnDateRoles } from "./date-tokens.js";
+import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantGuestRefusalError, AssistantStayDetailsError, containsGuestDate, currentTurnDateRoles } from "./date-tokens.js";
 import { PLANNER_REQUEST_TIMEOUT_MS, SERVER_TURN_MAX_MS } from "../turn-budget.js";
 import { ModelScopeClassifier, ScopeClassificationError, assessScopeSafely, scopedMixedInput, type ScopeClassifier, type ScopeAssessment, type ConciergeIntent } from "./scope-classifier.js";
 import { RetryingScopeClassifier, ScopeClassifierRetryError, SCOPE_TOTAL_BUDGET_MS, type ScopeClassifierRetryEvent, type ScopeClassifierRetryResult } from "./scope-classifier-retry.js";
@@ -45,6 +46,8 @@ import {
   type AssistantTurnSurface,
   replacePendingProposal,
   type AssistantStayReference,
+  isAssistantBudgetPer,
+  type AssistantBudgetPer,
 } from "./assistant-state.js";
 import { TurnTransaction, syncActiveTask } from "./assistant-turn-transaction.js";
 import { beginThreadRun, threadRunActive, THREAD_BUSY_CODE, THREAD_BUSY_MESSAGE } from "./assistant-thread-lock.js";
@@ -114,6 +117,8 @@ export interface AssistantTurnOutput {
   readonly discardUserInput?: boolean;
   readonly controlOutcome?: AssistantControlOutcome;
   readonly stopReason?: AssistantStopReason;
+  /** Issue 10: one-tap replies for a clarification (never on scope, support or redirect replies). */
+  readonly quickReplies?: readonly string[];
 }
 
 /** A task's entry in the shell rail, derived from the active pack's `taskSummary`. */
@@ -468,6 +473,21 @@ export class AssistantRuntime {
   }
 
   /**
+   * Issue 03 (ADR 0099, ADR 0106): the pack's per-turn context line for a classifier or planner request. It travels as the request's
+   * own `turnContext` field, so it is never part of the system instruction, the history, the persisted thread or date authority.
+   */
+  #turnContext(pack: AssistantDomainPack): string | undefined {
+    return pack.turnContext?.(this.#environment.clock());
+  }
+
+  /** Issue 10: the one-tap replies the active pack gives a clarification on this thread, from its committed task state. */
+  clarificationQuickReplies(threadId: string, kind: AssistantClarificationKind): readonly string[] | undefined {
+    const thread = this.#threads.get(threadId);
+    if (!thread) return undefined;
+    return this.#packForThread(threadId)?.clarificationQuickReplies?.(thread.taskState, kind);
+  }
+
+  /**
    * The pack of the thread's active task, or undefined when that task's domain is not registered here. No other pack answers for it
    * (issue 04 follow-up, fail closed): callers refuse.
    */
@@ -749,12 +769,15 @@ export class AssistantRuntime {
    * - Nights are recorded only with a guest-authored check-in and a valid stay (ADR 0023, ADR 0055). The checkout is
    *   derived from them and checked by StayDateRange; an invalid stay records neither nights nor checkout.
    * - A party size is recorded as a positive integer. A model-proposed fact is never recorded through this path.
+   * - A budget chip (issue 06, ADR 0015) records its amount and whether it is for the stay or per night; `null` clears it.
    */
-  recordGuestStay(threadId: string, facts: { readonly checkIn?: string; readonly nights?: number; readonly partySize?: number }): boolean {
+  recordGuestStay(threadId: string, facts: { readonly checkIn?: string; readonly nights?: number; readonly partySize?: number; readonly budget?: { readonly kobo: number; readonly per: AssistantBudgetPer } | null }): boolean {
     if (this.threadBusy(threadId)) return false;
     const thread = this.#threads.get(threadId);
     if (!thread) return false;
     if (facts.checkIn !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(facts.checkIn)) return false;
+    // Issue 06 (ADR 0015): a budget is a positive whole amount in kobo with a closed meaning; anything else is refused before the state changes.
+    if (facts.budget !== undefined && facts.budget !== null && (!Number.isSafeInteger(facts.budget.kobo) || facts.budget.kobo <= 0 || !isAssistantBudgetPer(facts.budget.per))) return false;
     const stay = thread.taskState.stayIntent;
     if (facts.checkIn !== undefined) {
       stay.checkIn = facts.checkIn;
@@ -771,6 +794,14 @@ export class AssistantRuntime {
       }
     }
     if (facts.partySize !== undefined && Number.isSafeInteger(facts.partySize) && facts.partySize > 0) stay.partySize = facts.partySize;
+    // Issue 06: a chip budget (or its clear, `null`) replaces the stay's budget as a whole; the total is converted at search time.
+    if (facts.budget === null) {
+      delete stay.maxBudgetKobo;
+      delete stay.maxBudgetPer;
+    } else if (facts.budget !== undefined && isAssistantBudgetPer(facts.budget.per)) {
+      stay.maxBudgetKobo = facts.budget.kobo;
+      stay.maxBudgetPer = facts.budget.per;
+    }
     const task = thread.tasks.find((entry) => entry.taskId === thread.activeTaskId);
     if (task) task.state = thread.taskState;
     return true;
@@ -1041,12 +1072,18 @@ export class AssistantRuntime {
 
     // 3. User message turn
     const originalUserText = text;
+    // Issue 04 (ADR 0106, 2 Nov 2026): a pending date show-back is settled by this turn before it is classified. Only the guest's
+    // explicit yes confirms it; any other turn closes it. The candidate state is committed only at a commit site.
+    // The committed state is settled too, so a refused turn (which commits nothing else) still closes an open show-back (fail closed).
+    candidatePack().settlePendingGuestFacts?.(text, thread.taskState, this.#environment.clock());
+    candidatePack().settlePendingGuestFacts?.(text, tx.taskState, this.#environment.clock());
     const packForScope = candidatePack();
     const safeUserText = redactSensitiveData(text) as string;
     let scopeFailureOutcome: "quota_refusal" | "guard_failure" | undefined;
     const assessment = text.length > this.#maxInputCharacters ? undefined : await assessScopeSafely(this.#scopeClassifier, safeUserText, {
       domain: packForScope.id, description: packForScope.scopeDescription ?? packForScope.label,
       hasShortlist: tx.taskState.shortlist.length > 0, hasSelectedStay: Boolean(tx.taskState.selectedStayRef), hasOffer: Boolean(tx.taskState.currentOfferId),
+      turnContext: this.#turnContext(packForScope),
     }, this.#scopeOuterTimeoutMs, (error) => {
       // A retry failure carries the stage's decisive error; the first failure's outcome stands for refused or skipped retries (ADR 0106 amendment).
       const cause = error instanceof ScopeClassifierRetryError ? error.failure : error;
@@ -1056,7 +1093,12 @@ export class AssistantRuntime {
           ...(error.firstAttemptFinishReason ? { firstAttemptFinishReason: error.firstAttemptFinishReason } : {}) } : {}) });
       scopeFailureOutcome = cause instanceof ModelRequestGuardError && cause.code === "quota_denied" ? "quota_refusal" : "guard_failure";
     });
-    if (!assessment || assessment.scope === "unclear" || assessment.scope === "out_of_scope" || assessment.risk === "policy_override" || assessment.risk === "unauthorized_data" || assessment.risk === "unknown") {
+    // ADR 0106 (issue 11): an unclear turn the pack answers from its task state (a sent stay's stage reply) runs no planner round. The pack
+    // decides; the runtime only lets the answer through. An unclear turn it does not answer keeps the fixed clarification.
+    const unclearPackAnswer = assessment?.scope === "unclear" && assessment.risk === "ordinary"
+      ? packForScope.answerValidatedTurn?.({ intents: [], slots: assessment.slots, taskState: tx.taskState })
+      : undefined;
+    if (!assessment || (assessment.scope === "unclear" && unclearPackAnswer === undefined) || assessment.scope === "out_of_scope" || assessment.risk === "policy_override" || assessment.risk === "unauthorized_data" || assessment.risk === "unknown") {
       const scopeOutcome = assessment?.scope === "out_of_scope" ? "scope_redirect" : "scope_unavailable";
       const controlOutcome = scopeFailureOutcome ?? scopeOutcome;
       // One count per turn: the outcome this turn returns (ADR 0106 telemetry, closed codes only).
@@ -1086,6 +1128,8 @@ export class AssistantRuntime {
 
     let round = 0;
     let finalAssistantReply: string | undefined;
+    // Issue 10: chips for a `clarify_stay` reply, from the pack's clarification hook; never set for other reply kinds.
+    let finalQuickReplies: readonly string[] | undefined;
     let activeStage: AssistantDiagnosticStage = "provider_request";
     let activeToolName: string | undefined;
     let hasSuccessfulApplicationOperation = false;
@@ -1108,7 +1152,23 @@ export class AssistantRuntime {
     };
 
     try {
-      while (round < MAX_ASSISTANT_TOOL_ROUNDS) {
+      // ADR 0099 / ADR 0106 (issue 12): the pack may answer the validated turn from its task state. No planner round runs, so no tool can.
+      // Issue 16 AC2 (ADR 0099, ADR 0106): a pack's server-chosen call answers the turn when it passes the same checks as a planner call.
+      // A refused call returns undefined, so the turn falls through to the pack's text answer or the planner (fail closed).
+      const serverCall = candidatePack().serverToolTurn?.({ intents: validatedTurnIntents, text: originalUserText, taskState: tx.taskState });
+      const serverMessage = serverCall === undefined
+        ? undefined
+        : this.#runServerTool(threadId, tx, candidatePack(), serverCall, {
+          userTextHistory,
+          currentTurnDates: currentTurnDateRoles(originalUserText, assessment.slots, this.#environment.clock()),
+        });
+      const packAnswer = serverMessage ?? candidatePack().answerValidatedTurn?.({ intents: validatedTurnIntents, slots: assessment.slots, taskState: tx.taskState });
+      if (packAnswer !== undefined) {
+        finalAssistantReply = packAnswer;
+        candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
+        stopReason = "reply";
+      }
+      while (packAnswer === undefined && round < MAX_ASSISTANT_TOOL_ROUNDS) {
         // Checked before the round counter moves, so a deadline before the first planner call reports round 0.
         const plannerTimeoutMs = nextCallTimeoutMs();
         round++;
@@ -1119,6 +1179,7 @@ export class AssistantRuntime {
           systemInstruction: composeSystemInstruction(candidatePack()),
           tools: taskTools(),
           history: this.#boundedHistory(candidateHistory, candidatePack(), tx.taskState),
+          turnContext: this.#turnContext(candidatePack()),
           timeoutMs: plannerTimeoutMs,
           structuredOutput: { name: "assistant_reply_plan", schema: replyPlanSchema(successfulToolNames(turnRawResults)), strict: true },
           maxOutputTokens: this.#maxPlanningOutputTokens,
@@ -1145,8 +1206,9 @@ export class AssistantRuntime {
             controlOutcome = "support_guidance";
           }
           controlOutcome = this.#replyControlOutcome(latestResults) ?? controlOutcome;
-          finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "")
+          finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "", tx.taskState)
             ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
+          finalQuickReplies = quickRepliesForReply(candidatePack(), plan, latestResults, tx.taskState);
           candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
           stopReason = "reply";
           break;
@@ -1156,7 +1218,16 @@ export class AssistantRuntime {
         const acceptedCalls: AssistantToolCall[] = [];
         const roundRawResults: AssistantToolResult[] = [];
 
-        for (const call of modelResponse.toolCalls) {
+        for (const modelCall of modelResponse.toolCalls) {
+          // ADR 0099 / ADR 0106 (issue 08): an authorised pack tool may have the guest's words mapped to closed values before the exact
+          // schema check. Task tools and unauthorised calls are never normalised.
+          const normalizingPack = candidatePack();
+          const call = normalizingPack.normalizeToolArguments !== undefined
+            && normalizingPack.id === validatedDomainId
+            && validatedTurnToolNames.has(modelCall.name)
+            && !this.#isPlatformTaskTool(modelCall.name)
+            ? { ...modelCall, args: normalizingPack.normalizeToolArguments(modelCall.name, modelCall.args) }
+            : modelCall;
           activeStage = "tool_execution";
           activeToolName = safeAssistantToolName(call.name, this.#packs);
           const offeredTool = taskTools().find((tool) => tool.name === call.name);
@@ -1236,6 +1307,7 @@ export class AssistantRuntime {
             threadId,
             taskId: tx.activeTaskId,
             userTextHistory,
+            requestedArguments: modelCall.args,
             // ADR 0106: classifier date slots bind to roles only through server-side checks; ambiguous ones carry no check-in authority.
             currentTurnDates: currentTurnDateRoles(originalUserText, assessment.slots, this.#environment.clock()),
             now: this.#environment.clock(),
@@ -1324,6 +1396,7 @@ export class AssistantRuntime {
           systemInstruction: composeSystemInstruction(candidatePack()),
           tools: [],
           history: this.#boundedHistory(candidateHistory, candidatePack(), tx.taskState),
+          turnContext: this.#turnContext(candidatePack()),
           timeoutMs: summaryTimeoutMs,
           structuredOutput: { name: "assistant_reply_plan", schema: replyPlanSchema(successfulToolNames(turnRawResults)), strict: true },
           maxOutputTokens: this.#maxReplyOutputTokens,
@@ -1339,8 +1412,9 @@ export class AssistantRuntime {
           run.diagnose({ stage: "provider_response", round, succeeded: false, failureClass: "MODEL_SELECTION_FAILURE", replyPlanRejectionReason: parsedFinalPlan });
         }
         const plan = typeof parsedFinalPlan === "string" ? undefined : parsedFinalPlan;
-        finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "")
+        finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "", tx.taskState)
           ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
+        finalQuickReplies = quickRepliesForReply(candidatePack(), plan, latestResults, tx.taskState);
         candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
       }
 
@@ -1358,6 +1432,7 @@ export class AssistantRuntime {
         discardUserInput,
         controlOutcome,
         stopReason,
+        ...(finalQuickReplies === undefined ? {} : { quickReplies: finalQuickReplies }),
       };
       // Emitted after the output is built, so nothing that could throw sits between the stop event and the return.
       emitStop();
@@ -1365,7 +1440,7 @@ export class AssistantRuntime {
     } catch (error) {
       // Issue 02: the turn deadline and a rejected planner date/stay detail are stops of their own; every other failure is `error`.
       const turnDeadline = error instanceof AssistantTurnDeadlineError;
-      const toolDenial = error instanceof AssistantDateProvenanceError || error instanceof AssistantDateValidationError || error instanceof AssistantStayDetailsError;
+      const toolDenial = error instanceof AssistantDateProvenanceError || error instanceof AssistantDateValidationError || error instanceof AssistantStayDetailsError || error instanceof AssistantGuestRefusalError;
       stopReason = turnDeadline ? "turn_deadline" : toolDenial ? "tool_denial" : "error";
       if (error instanceof ModelRequestGuardError && (error.code === "quota_denied" || error.code === "quota_unavailable")) {
         controlOutcome = error.code === "quota_denied" ? "quota_refusal" : "guard_failure";
@@ -1396,11 +1471,20 @@ export class AssistantRuntime {
         recordOutcome(controlOutcome);
         candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
         this.#commitHistory(thread, candidateHistory, candidatePack(), thread.taskState);
-        const clarification = error instanceof AssistantStayDetailsError
-          ? candidatePack().stayDetailsClarification
-          : candidatePack().dateClarification;
+        // A pack's guest-facing refusal carries its own sentence (ADR 0106; no guest identifier, ADR 0075).
+        const clarification = error instanceof AssistantGuestRefusalError
+          ? error.message
+          : error instanceof AssistantStayDetailsError
+            ? candidatePack().stayDetailsClarification
+            : candidatePack().dateClarification;
+        // Issue 10: only the closed area check and the stay/date rejections get chips. Other guest refusals (an occupancy conflict) get none.
+        const chipKind: AssistantClarificationKind | undefined = error instanceof AssistantGuestRefusalError
+          ? (error.clarification === "area" ? "area" : undefined)
+          : error instanceof AssistantStayDetailsError ? "stay_details" : "dates";
+        const quickReplies = chipKind === undefined ? undefined : candidatePack().clarificationQuickReplies?.(thread.taskState, chipKind);
         return { ok: true, messages: [clarification ?? ASSISTANT_CONTROL_COPY.unavailable], surfaces: [], modelHandled: false,
-          discardUserInput: false, controlOutcome, tasks: this.getTaskRail(threadId), stopReason };
+          discardUserInput: false, controlOutcome, tasks: this.getTaskRail(threadId), stopReason,
+          ...(quickReplies === undefined ? {} : { quickReplies }) };
       }
       recordOutcome(controlOutcome);
       // Rollback: thread is not mutated on error
@@ -1709,11 +1793,68 @@ export class AssistantRuntime {
     return outcome;
   }
 
+  /**
+   * Issue 16 AC2 (ADR 0099, ADR 0106): runs the one server-chosen tool a pack asks for, with the checks a planner call gets: the pack's
+   * precondition, the offered schema, the stage handlers that file the surface. It returns the reply copy the surface carries, or
+   * undefined when any check refuses (no surface is filed then). Read-only tools only reach here (the pack names them).
+   */
+  #runServerTool(
+    threadId: string,
+    tx: TurnTransaction,
+    pack: AssistantDomainPack,
+    call: { readonly name: string; readonly args: Record<string, unknown> },
+    context: Pick<AssistantToolContext, "userTextHistory" | "currentTurnDates">,
+  ): string | undefined {
+    if (pack.validateToolCall(call.name, call.args, tx.taskState)) return undefined;
+    const schemaTool = pack.toolDefinition?.(call.name);
+    if (!schemaTool || findToolArgumentViolation(schemaTool.parametersSchema, call.args)) return undefined;
+    try {
+      const toolContext: AssistantToolContext = {
+        environment: this.#environment,
+        taskState: tx.taskState,
+        threadId,
+        taskId: tx.activeTaskId,
+        requestedArguments: call.args,
+        now: this.#environment.clock(),
+        demoCheckIn: this.#environment.config.demoCheckIn,
+        ...context,
+      };
+      const execution = pack.executeTool(call.name, call.args, toolContext);
+      const claim = projectWithHandlers(pack.stageHandlers ?? [], { toolName: call.name, args: call.args, execution }, {
+        threadId,
+        tx,
+        pack,
+        environment: this.#environment,
+        setStage: () => undefined,
+      });
+      if (!claim?.surface) return undefined;
+      tx.addSurface(claim.surface, claim.fallbackMessage);
+      return claim.fallbackMessage ?? "";
+    } catch {
+      // The read-only tools a pack names do not change state before they can fail, so a refusal leaves nothing to undo.
+      return undefined;
+    }
+  }
+
   /** Commits a dropped proposal to the thread, so a later Yes cannot retry it. */
   #commitDroppedProposal(threadId: string, tx: TurnTransaction): void {
     const thread = this.#threads.get(threadId);
     if (thread) tx.commit(thread, { state: true, tasks: false, discovery: false, lastSurfaces: tx.lastSurfaces });
   }
+}
+
+/**
+ * ADR 0099 / ADR 0106 (issues 10, 09): the chips for a reply. The pack names a clarification its own results carry (a held location
+ * question); otherwise a typed `clarify_stay` reply gets the plan chips. Anything else gets none.
+ */
+function quickRepliesForReply(
+  pack: AssistantDomainPack,
+  plan: AssistantReplyPlan | undefined,
+  results: readonly AssistantToolResult[],
+  taskState: AssistantTaskState,
+): readonly string[] | undefined {
+  const kind: AssistantClarificationKind | undefined = pack.replyClarificationKind?.(results) ?? (plan?.kind === "clarify_stay" ? "plan" : undefined);
+  return kind === undefined ? undefined : pack.clarificationQuickReplies?.(taskState, kind);
 }
 
 function getSafeResultCount(result: unknown): number | undefined {
