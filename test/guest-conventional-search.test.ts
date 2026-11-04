@@ -170,8 +170,10 @@ test("AC4: Back from Unit detail returns to the current search results and keeps
     const state = await get(`${fixture.base}/api/state?threadId=${fixture.threadId}`, fixture.cookie);
     assert.equal(state.status, 200);
     assert.match(state.body, new RegExp(fixture.threadId));
-    const forged = await get(`${fixture.base}/api/state?threadId=g-00000000-0000-4000-8000-000000000000`, fixture.cookie);
-    assert.doesNotMatch(forged.body, /g-00000000-0000-4000-8000-000000000000/, "an unknown thread id receives no thread projection");
+    const unknownThreadId = "g-00000000-0000-4000-8000-000000000000";
+    const forged = await get(`${fixture.base}/api/state?threadId=${unknownThreadId}`, fixture.cookie);
+    assert.equal(forged.status, 200);
+    assert.deepEqual(JSON.parse(forged.body), { ok: true, threadId: unknownThreadId, timeline: [], surfaces: [] });
   } finally { await fixture.close(); }
 });
 

@@ -703,7 +703,7 @@ export function renderConventionalUnitDetailHtml(
     title: unit.title,
     frame: appFrameHtml({ threadId: null, publicStep: "stay" }),
     style: `${LISTING_GALLERY_STYLE}.unit-detail-sheet{position:relative;z-index:1;display:grid;gap:var(--space-4);margin-block-start:calc(-1 * var(--space-6));padding:var(--space-5);border:1px solid var(--color-border-subtle);border-radius:var(--radius-sheet) var(--radius-sheet) var(--radius-card) var(--radius-card);background:var(--color-surface);box-shadow:var(--elevation-active)}.unit-detail-sheet h1,.unit-detail-sheet h2,.unit-detail-sheet p,.unit-detail-sheet ul{margin:0}.unit-detail-location{display:flex;align-items:center;gap:var(--space-1);color:var(--color-text-secondary)}.unit-detail-description{white-space:pre-line}.unit-detail-page{display:grid;gap:var(--space-4)}.unit-detail-page .listing-gallery{z-index:0}.unit-detail-page .ui-action-bar{position:sticky}.unit-detail-page .ui-ticket{margin-block:var(--space-2)}.stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-4)}.stay-card-photo{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radius-card);background:var(--color-surface-subtle)}.stay-card-photo--empty{display:grid;place-items:center;color:var(--color-text-secondary)}.stay-card-facts{display:flex;flex-wrap:wrap;gap:var(--space-2)}.stay-card-facts span{display:inline-flex;min-block-size:2.75rem;align-items:center;padding:var(--space-2) var(--space-3);border:1px solid var(--color-border-subtle);border-radius:var(--radius-pill);background:var(--color-surface-subtle);font-size:var(--font-size-small)}.stay-card-price{display:grid;gap:var(--space-1);padding-block-start:var(--space-3);border-block-start:1px solid var(--color-border-subtle)}.stay-card-price p{margin:0}.guest-editorial .ui-button--primary,.guest-editorial .ui-button--block{border-radius:var(--radius-pill)}.ui-panel p{margin:0}`,
-    body: `<div class="guest-editorial unit-detail-page">${photoMarkup}<section class="unit-detail-sheet" aria-label="Stay details">${demo ? demoListingChipHtml() : ""}<p class="unit-detail-location">${icon("pin")}${escapeHtml(unit.location.neighbourhood)}, ${escapeHtml(unit.location.city)} · exact address after payment</p><h1>${escapeHtml(unit.title)}</h1>${unitTilesHtml(unitTiles(unit.bedrooms, unit.bathrooms, unit.capacity))}${quote ? `<section class="unit-detail-price"><p>${escapeHtml(formatStayDates(quote.checkIn, quote.checkOut))} · ${quote.partySize} ${quote.partySize === 1 ? "guest" : "guests"}</p><p>All-In Stay Total</p><p class="ui-money-total">${formatNgnKobo(quote.allInStayTotalKobo)}</p><p>+ ${formatNgnKobo(quote.refundableSecurityDepositKobo)} Refundable Security Deposit (separate)</p></section>` : unitIndicativePriceHtml(unit.price.nightlyKobo)}${extendedStayPageFacts(unit, extendedStay).map((text) => `<p class="ui-money-metadata">${escapeHtml(text)}</p>`).join("")}${unitAboutHtml(unit.description)}</section><div class="ui-action-bar"><p class="ui-action-bar__sum"><strong>${formatNgnKobo(quote?.allInStayTotalKobo ?? unit.price.nightlyKobo)}</strong><span class="ui-money-metadata">${quote ? "All-In Stay Total" : "Price per night (indicative)"}</span></p><a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(returnRoute)}">${returnRoute === "/" ? "Continue to Request to Book" : "Back to search results"}</a></div></div>`,
+    body: `<div class="guest-editorial unit-detail-page">${photoMarkup}<section class="unit-detail-sheet" aria-label="Stay details">${demo ? demoListingChipHtml() : ""}<p class="unit-detail-location">${icon("pin")}${escapeHtml(unit.location.neighbourhood)}, ${escapeHtml(unit.location.city)} · exact address after payment</p><h1>${escapeHtml(unit.title)}</h1>${unitTilesHtml(unitTiles(unit.bedrooms, unit.bathrooms, unit.capacity))}${quote ? `<section class="unit-detail-price"><p>${escapeHtml(formatStayDates(quote.checkIn, quote.checkOut))} · ${quote.partySize} ${quote.partySize === 1 ? "guest" : "guests"}</p><p>${GUEST_GLOSSARY.allInStayTotal}</p><p class="ui-money-total">${formatNgnKobo(quote.allInStayTotalKobo)}</p><p>+ ${formatNgnKobo(quote.refundableSecurityDepositKobo)} ${GUEST_GLOSSARY.refundableSecurityDeposit} (separate)</p></section>` : unitIndicativePriceHtml(unit.price.nightlyKobo)}${extendedStayPageFacts(unit, extendedStay).map((text) => `<p class="ui-money-metadata">${escapeHtml(text)}</p>`).join("")}${unitAboutHtml(unit.description)}</section><div class="ui-action-bar"><p class="ui-action-bar__sum"><strong>${formatNgnKobo(quote?.allInStayTotalKobo ?? unit.price.nightlyKobo)}</strong><span class="ui-money-metadata">${quote ? GUEST_GLOSSARY.allInStayTotal : "Price per night (indicative)"}</span></p><a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(returnRoute)}">${returnRoute === "/" ? "Continue to Request to Book" : "Back to search results"}</a></div></div>`,
   });
 }
 
@@ -5569,19 +5569,21 @@ export function createGuestRequestHandler(
         return;
       }
       if (!(await threadReadable(app.environment, session, threadId))) {
-        sendJson(res, 404, {
-          ok: false,
-          code: "INVALID_THREAD",
-          message: "Unknown conversation.",
+        sendJson(res, 200, {
+          ok: true,
+          threadId,
+          timeline: [],
+          surfaces: [],
         });
         return;
       }
       const state = await app.getStateAsync(threadId);
       if (!state) {
-        sendJson(res, 404, {
-          ok: false,
-          code: "INVALID_THREAD",
-          message: "Unknown conversation.",
+        sendJson(res, 200, {
+          ok: true,
+          threadId,
+          timeline: [],
+          surfaces: [],
         });
         return;
       }

@@ -26,12 +26,18 @@ Write one named failing test per AC, covering the named failure paths. Check the
 ## Comments
 
 - ADR review: 0004 keeps the server authoritative (AC2–3); 0005 retains Request to Book (AC2); 0015 requires dated All-In Stay Total (AC2); 0016 separates the refundable deposit (AC2); 0023 and 0055 constrain dated search inputs (AC2); 0066 governs discovery ranking (no ranking changes); 0074 rejects stale actions (AC2); 0077 requires canonical facts across channels (AC2–3); 0078 requires reflow and usable targets (all screens); 0080 keeps conventional workflows (AC1–4); 0106 keeps thread and guest criteria continuity (AC1–2, AC4).
-- Implementation: discovery routes carry the selected criteria. Detail recomputes the current quote from the server discovery projection. Incomplete or stale quote inputs return an error. Thread identity stays at the web route boundary. Unknown thread state returns `INVALID_THREAD` with 404 instead of an empty thread.
-- Named acceptance tests: AC1 in `test/landing-handoff.test.ts`; AC2, AC3, and AC4 in `test/guest-conventional-search.test.ts`. AC2 covers incomplete and stale quote criteria. AC4 covers current thread identity and unknown-thread rejection.
+- Implementation: discovery routes carry the selected criteria. Detail recomputes the current quote from the server discovery projection. Incomplete or stale quote inputs return an error. Thread identity stays at the web route boundary. The state route returns the established empty response for unreadable threads and threads without a saved record.
+- Named acceptance tests: AC1 in `test/landing-handoff.test.ts`; AC2, AC3, and AC4 in `test/guest-conventional-search.test.ts`. AC2 covers incomplete and stale quote criteria. AC4 covers current thread identity and an empty state response for unknown threads.
 - Type and focused checks passed: `npm run check`; `npx tsx --test test/guest-conventional-search.test.ts test/guest-unit-detail-consistency.test.ts test/guest-discovery-consistency.test.ts test/landing-handoff.test.ts test/assistant-discovery-view.test.ts test/guest-conventional-booking-pages.test.ts` (29 passed, 0 failed).
 - Real Chrome checks passed, one file at a time: `npx tsx --test test/guest-discovery-consistency-chromium.test.ts` (8 passed, 0 failed); `npx tsx --test test/guest-unit-detail-consistency-chromium.test.ts` (3 passed, 0 failed). These checks cover 320, 390, and 1280 pixel layouts. Separate screenshots at every requested viewport and theme were not captured.
 - Definition of Done review: dedicated named tests cover all four acceptance criteria and their stated failure paths. Relevant ADRs are listed above. No constructor dependency was added. No policy rule or business threshold was added. No bearer credential or restricted identity data was logged. `npm test` remains for the batch pre-merge gate.
 - Reviewer follow-up: unfiltered detail links use the correct `?threadId` separator and show only the indicative nightly rate. Missing quote criteria still fail closed. `requiredAmenities` arrays round-trip as repeated query values, including on Back to results. Dedicated tests cover both cases.
+- ADRs 0070, 0075, and 0093 retain session, principal, and tenant authorization. ADR 0077 keeps route criteria separate from A2UI action context.
+- `npx tsx --test --test-name-pattern='HTTP refresh state|AC4: Back from Unit detail|AC7: Every guest label' test/local-guest-shell.test.ts test/guest-conventional-search.test.ts test/guest-copy-pass.test.ts` reproduced all three failures.
+- `npm run check` passed after the correction. `npx tsx --test test/guest-conventional-search.test.ts` passed 9/9. `npx tsx --test test/landing-handoff.test.ts` passed 7/7.
+- `npx tsx --test test/discovery-a2ui.test.ts` passed 13/13. `npx tsx --test test/guest-copy-pass.test.ts` passed 7/7.
+- `npx tsx --test test/guest-account-sign-in.test.ts` passed 69/69. `npx tsx --test test/guest-cross-tab-concurrency.test.ts` passed 18/18.
+- `npx tsx --test test/guest-new-conversation.test.ts` passed 6/6. `npx tsx --test test/guest-process-restart.test.ts` passed 23/23.
 
 ## Answer
 
