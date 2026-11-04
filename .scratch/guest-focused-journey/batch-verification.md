@@ -84,3 +84,20 @@ AC14 now waits for focus on the visible, enabled Back button inside the open Uni
 | `npx tsx --test --test-name-pattern 'AC14 — Surface replacement preserves usable focus' test/mobile-guest-journey-chromium.test.ts` after the change | 1 | 0 |
 
 A supplemental animation-frame probe stalled before it reported a test result. The named run used the unmodified browser scheduling. `npm run check` passed, including the Worker bundle guard.
+
+### Shared browser lock publication on Windows
+
+The full gate at `a1fe3c5` recorded 44 `EBUSY` rename errors while publishing the shared browser lock. The four affected browser files passed in isolated reruns.
+
+The harness now retries an `EBUSY` rename through the existing lock wait deadline. It still publishes the candidate by atomic rename and checks the owner before takeover or release.
+
+| Command | Passed | Failed |
+| --- | ---: | ---: |
+| `npx tsx --test --test-name-pattern 'EBUSY publishing\|unexpected candidate publication' test/browser-lock.test.ts` before the fix | 1 | 2 |
+| `npx tsx --test test/browser-lock.test.ts test/browser-attach.test.ts test/browser-phase-aggregate.test.ts test/browser-phase-timeout.test.ts test/chrome-devtools-config.test.ts` after the fix | 41 | 0 |
+
+The tests simulate transient and persistent `EBUSY` and an unexpected `EACCES` from the candidate rename. They verify bounded failure, successful acquisition on the same path, and preservation of the live owner.
+
+`npm run check` passed, including the Worker bundle guard.
+
+`npx tsx --test test/guest-new-conversation-chromium.test.ts` passed 2/2 with the default shared lock path and no temp-directory override. This run exercised ordinary browser acquisition and release.

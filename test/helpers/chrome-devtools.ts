@@ -441,7 +441,11 @@ export async function acquireBrowserLock(
         } catch {
           // Best-effort removal of our unpublished candidate; preserve the publication error below.
         }
-        if (mtimeMs(lockDir) === undefined) throw error;
+        const publicationError = error as NodeJS.ErrnoException;
+        // Windows can keep a directory busy briefly even when the lock path is absent.
+        // Retry publication through the same bounded wait and ownership checks.
+        const retryBusyRename = publicationError.code === "EBUSY" && publicationError.syscall === "rename";
+        if (mtimeMs(lockDir) === undefined && !retryBusyRename) throw error;
       }
     }
     if (published) {
