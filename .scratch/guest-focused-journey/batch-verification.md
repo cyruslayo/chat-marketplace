@@ -42,3 +42,16 @@ Verification used the detached worktree `C:/AI2026/chat-marketplace-guest-focus-
 | `npx tsx --test --test-name-pattern 'Production pilot:start\|local pilot smoke passes' test/pilot-local.test.ts` | 3 | 0 |
 
 `npm run check` passed in the working branch, including the Worker bundle guard. The full batch gate remains pending.
+
+### Keyboard activation follow-up
+
+The mobile tests now focus Ask Shortlet and Return before they press Enter. This checks that both controls are available to keyboard users.
+
+In the detached worktree, a temporary probe set Ask Shortlet to `display: none !important` before focus. The receipt case failed at the expected focus step. The probe was removed before the normal run.
+
+| Command | Passed | Failed |
+| --- | ---: | ---: |
+| `npx tsx --test --test-name-pattern 'Receipts render as markers' test/mobile-guest-journey-chromium.test.ts` with the probe | 0 | 1 |
+| `npx tsx --test --test-name-pattern 'Escape closes the focused workspace\|Receipts render as markers\|A free-text turn with a live surface open\|successful Guest journey works\|Mobile fixes do not duplicate transition telemetry\|desktop viewport remains usable\|booking/payment journey works at a true 768px\|Pending payment stays unconfirmed' test/mobile-guest-journey-chromium.test.ts` | 11 | 0 |
+
+`npm run check` passed, including the Worker bundle guard.

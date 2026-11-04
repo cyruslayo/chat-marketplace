@@ -309,14 +309,16 @@ test("AC4: Receipts render as markers, not assistant turns, live and after reloa
     await c.tab.waitForText("Request to Book");
     assert.equal(await c.tab.clickButton("Request to Book"), true);
     await c.tab.waitForText("Review request");
-    assert.equal(await c.tab.clickButton("Ask Shortlet"), true);
+    await c.tab.focus(".workspace-ask");
+    await c.tab.pressKey("Enter");
     await c.tab.waitForText("Draft created");
     assert.deepEqual(await c.tab.evaluate<string[]>(markers), ["Draft created"]);
     assert.equal(await c.tab.evaluate<number>(assistantReceipts), 0, "a receipt is never rendered as an assistant turn");
 
     await c.tab.navigate(`${c.base}/?threadId=${c.threadId}`);
     await c.tab.waitForText("Review request");
-    assert.equal(await c.tab.clickButton("Ask Shortlet"), true);
+    await c.tab.focus(".workspace-ask");
+    await c.tab.pressKey("Enter");
     await c.tab.waitForText("Draft created");
     assert.deepEqual(await c.tab.evaluate<string[]>(markers), ["Draft created"], "the restored timeline keeps the receipt as a marker");
     assert.equal(await c.tab.evaluate<number>(assistantReceipts), 0);
@@ -344,10 +346,12 @@ test("AC5: A free-text turn with a live surface open does not demote that surfac
 
     const surfaceId = await c.tab.evaluate<string>("document.querySelector('#active-workspace .weaver-mount')?.dataset.surfaceId ?? ''");
     assert.ok(surfaceId);
-    assert.equal(await c.tab.clickButton("Ask Shortlet"), true);
+    await c.tab.focus(".workspace-ask");
+    await c.tab.pressKey("Enter");
     await sendPrompt(c.tab, "actually can we make it 5 nights? and is there parking?");
     await c.tab.waitForText("lists Secure parking");
-    assert.equal(await c.tab.clickButton("Return to"), true);
+    await c.tab.focus("#workspace-reopen");
+    await c.tab.pressKey("Enter");
     await c.tab.waitForFunction("!document.getElementById('active-workspace').hidden");
     assert.equal(await c.tab.evaluate<string>("document.querySelector('#active-workspace .weaver-mount')?.dataset.surfaceId ?? ''"), surfaceId);
     assert.equal(await c.tab.evaluate<string>(renderer), "weaver", "the live surface is not demoted to the fallback");
@@ -459,7 +463,8 @@ async function completeAt(width: number, height: number): Promise<void> {
     assert.equal(metrics.focusedOverflow, 0, JSON.stringify(metrics));
     if (width < 1024) {
       assert.equal(await context.tab.evaluate<boolean>("document.getElementById('composer').getClientRects().length === 0"), true);
-      assert.equal(await context.tab.clickButton("Ask Shortlet"), true);
+      await context.tab.focus(".workspace-ask");
+      await context.tab.pressKey("Enter");
     }
     await context.tab.waitForFunction("document.getElementById('composer').getClientRects().length > 0");
     const conversation = await layoutMetrics(context.tab);
