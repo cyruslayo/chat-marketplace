@@ -55,3 +55,19 @@ In the detached worktree, a temporary probe set Ask Shortlet to `display: none !
 | `npx tsx --test --test-name-pattern 'Escape closes the focused workspace\|Receipts render as markers\|A free-text turn with a live surface open\|successful Guest journey works\|Mobile fixes do not duplicate transition telemetry\|desktop viewport remains usable\|booking/payment journey works at a true 768px\|Pending payment stays unconfirmed' test/mobile-guest-journey-chromium.test.ts` | 11 | 0 |
 
 `npm run check` passed, including the Worker bundle guard.
+
+### Keyboard reopen after the server check
+
+The isolated full mobile file at `7b21fd8` passed 42 of 43 tests. AC29 read the task visibility immediately after Enter, before the server state check completed. The original named case passed when run alone in the working branch.
+
+AC29 now pauses a real state request and checks that the task stays hidden. It then verifies the same active surface, enabled action, focus, and restored scroll.
+
+| Command | Passed | Failed |
+| --- | ---: | ---: |
+| `npx tsx --test test/mobile-guest-journey-chromium.test.ts` at `7b21fd8` | 42 | 1 |
+| `npx tsx --test --test-name-pattern 'AC29 — Focused workspace closes and reopens from the keyboard' test/mobile-guest-journey-chromium.test.ts` before the change | 1 | 0 |
+| `npx tsx --test --test-name-pattern 'AC29 — Focused workspace closes and reopens from the keyboard' test/mobile-guest-journey-chromium.test.ts` after the change | 1 | 0 |
+
+`npm run check` passed, including the Worker bundle guard.
+
+`npx tsx --test test/guest-focused-phone-shell-chromium.test.ts` passed 7/7. It covers stale, expired, superseded, and failed state responses.

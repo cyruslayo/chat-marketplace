@@ -494,7 +494,50 @@ test("AC17 — Slow or failed media does not block critical content", async () =
 test("AC18 — Weaver fallback remains usable at 320 pixels", async () => { const c = await startContext(320, 700); try { const result = await c.tab.evaluate<{ readonly hasFallback: boolean; readonly route: boolean; readonly scroll: boolean }>("(() => { const p = document.createElement('div'); p.className = 'surface-fallback'; p.innerHTML = '<p>Safe fallback</p><a href=\"/search\">Continue on the standard page</a>'; document.getElementById('active-workspace').append(p); return { hasFallback: Boolean(document.querySelector('.surface-fallback')), route: Boolean(p.querySelector('a')), scroll: document.documentElement.scrollWidth <= innerWidth }; })()"); assert.deepEqual(result, { hasFallback: true, route: true, scroll: true }); } finally { await c.close(); } });
 test("AC19 — A recoverable network error preserves Guest input", async () => { const c = await startContext(320, 700); try { await c.tab.focus("#composer-input"); await c.tab.evaluate("document.getElementById('composer-input').value = 'retry this message'"); await c.tab.setOffline(true); await c.tab.pressKey("Enter"); await c.tab.waitForFunction("document.getElementById('composer-input')?.value === 'retry this message'"); assert.equal(await c.tab.evaluate<string>("document.getElementById('composer-input').value"), "retry this message"); } finally { await c.close(); } });
 test("AC28 — Provider/network failure retains the current authoritative workspace", async () => { const c = await startContext(390, 844); try { await sendPrompt(c.tab, PROMPT); await c.tab.waitForText("Luxury 2-Bedroom Apartment"); await c.tab.setOffline(true); await c.tab.evaluate("(() => { const input = document.getElementById('composer-input'); input.value = 'check another area'; document.getElementById('composer').requestSubmit(); })()"); await c.tab.waitForText("temporarily unavailable"); const retained = await c.tab.evaluate<boolean>("Boolean(document.querySelector('#active-workspace[data-status=active] .weaver-mount[data-renderer=weaver]'))"); assert.equal(retained, true); assert.match(await c.tab.evaluate<string>("document.getElementById('composer-input').value"), /check another area/); } finally { await c.close(); } });
-test("AC29 — Focused workspace closes and reopens from the keyboard", async () => { const c = await startContext(390, 844); try { await sendPrompt(c.tab, PROMPT); await c.tab.waitForText("Luxury 2-Bedroom Apartment"); await c.tab.clickButton("View apartment", "Luxury 2-Bedroom Apartment in Old Ikoyi"); await c.tab.waitForText("Request to Book"); await c.tab.focus(".workspace-close"); await c.tab.pressKey("Enter"); const closed = await c.tab.evaluate<{ readonly hidden: boolean; readonly focus: string }>("({ hidden: document.getElementById('active-workspace').hidden, focus: document.activeElement?.id || '' })"); assert.deepEqual(closed, { hidden: true, focus: 'workspace-reopen' }); await c.tab.pressKey("Enter"); const reopened = await c.tab.evaluate<{ readonly hidden: boolean; readonly active: string; readonly closeExists: boolean; readonly closeClass: string }>("(() => ({ hidden: document.getElementById('active-workspace').hidden, active: document.activeElement?.outerHTML.slice(0, 120) || '', closeExists: Boolean(document.querySelector('.workspace-close')), closeClass: document.querySelector('.workspace-close')?.className || '' }))()"); assert.equal(reopened.hidden, false); assert.ok(reopened.closeExists, JSON.stringify(reopened)); assert.ok(reopened.active.includes('workspace-close'), JSON.stringify(reopened)); } finally { await c.close(); } });
+test("AC29 — Focused workspace closes and reopens from the keyboard", async () => {
+  const c = await startContext(390, 700);
+  try {
+    await sendPrompt(c.tab, PROMPT);
+    await c.tab.waitForText("Luxury 2-Bedroom Apartment");
+    assert.equal(await c.tab.clickButton("View apartment", "Luxury 2-Bedroom Apartment in Old Ikoyi"), true);
+    await c.tab.waitForText("Request to Book");
+
+    const surface = "#active-workspace .weaver-mount";
+    const surfaceId = await c.tab.evaluate<string>(`document.querySelector('${surface}')?.dataset.surfaceId ?? ''`);
+    assert.ok(surfaceId);
+    await c.tab.focus(".workspace-close");
+    const scrollBefore = await c.tab.evaluate<number>("(() => { const region = document.getElementById('workspace-region'); region.scrollTop = 100; return region.scrollTop; })()");
+    assert.ok(scrollBefore > 0);
+    await c.tab.pressKey("Enter");
+    await c.tab.waitForFunction("document.getElementById('active-workspace').hidden && document.activeElement?.id === 'workspace-reopen'");
+
+    let releaseState!: () => void;
+    const stateGate = new Promise<void>((resolve) => { releaseState = resolve; });
+    let stateReads = 0;
+    const stop = await c.tab.interceptRequests(async (url) => {
+      if (!url.includes("/api/state?")) return undefined;
+      stateReads += 1;
+      await stateGate;
+      return undefined;
+    });
+    try {
+      await c.tab.pressKey("Enter");
+      await c.tab.waitForFunction("document.getElementById('workspace-reopen').getAttribute('aria-busy') === 'true'");
+      assert.equal(await c.tab.evaluate<boolean>("document.getElementById('active-workspace').hidden"), true);
+      releaseState();
+
+      await c.tab.waitForFunction("!document.getElementById('active-workspace').hidden && document.activeElement?.matches('#active-workspace .workspace-close')");
+      assert.equal(stateReads, 1);
+      assert.equal(await c.tab.evaluate<string>(`document.querySelector('${surface}')?.dataset.surfaceId ?? ''`), surfaceId);
+      assert.equal(await c.tab.evaluate<string>("document.getElementById('active-workspace').dataset.status ?? ''"), "active");
+      assert.equal(await c.tab.evaluate<boolean>(`[...document.querySelectorAll('${surface} button')].some((button) => button.textContent?.includes('Request to Book') && !button.disabled && !button.closest('[inert]') && button.getClientRects().length > 0)`), true);
+      await c.tab.waitForFunction(`document.getElementById('workspace-region').scrollTop === ${scrollBefore}`);
+    } finally {
+      releaseState();
+      await stop();
+    }
+  } finally { await c.close(); }
+});
 test("AC20 — Mobile fixes do not break restart restoration", async () => { const c = await startContext(320, 700); try { await sendPrompt(c.tab, PROMPT); await c.tab.waitForText("Luxury 2-Bedroom Apartment"); await c.tab.navigate(`${c.base}/?threadId=${c.threadId}`); await c.tab.waitForText("Luxury 2-Bedroom Apartment"); } finally { await c.close(); } });
 test("AC21 — Mobile fixes do not break cross-tab concurrency", async () => { const c = await startContext(320, 700); let tabB: RealBrowserTab | undefined; try { tabB = await c.browser.createTab(`${c.base}/?threadId=${c.threadId}`); await tabB.setViewport(320, 700); await tabB.waitForSelector("#composer-input"); await sendPrompt(c.tab, PROMPT); await c.tab.waitForText("Luxury 2-Bedroom Apartment"); await tabB.navigate(`${c.base}/?threadId=${c.threadId}`); await tabB.waitForText("Luxury 2-Bedroom Apartment"); await Promise.all([c.tab.clickButton("View apartment", "Luxury 2-Bedroom Apartment in Old Ikoyi"), tabB.clickButton("View apartment", "Luxury 2-Bedroom Apartment in Old Ikoyi")]); await Promise.all([c.tab.waitForText("Request to Book"), tabB.waitForText("Request to Book")]); assert.equal(c.server.environment.interactionStore.listBookingRequestIds().length, 0); } finally { await tabB?.close(); await c.close(); } });
 test("AC22 — Mobile fixes do not duplicate transition telemetry", async () => { const c = await startContext(320, 700); try { await completeJourney(c); const events = c.server.environment.telemetry.events().filter((event) => event.type === "reservation.confirmed"); assert.equal(events.length, 1); } finally { await c.close(); } });
