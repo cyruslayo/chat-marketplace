@@ -1,6 +1,6 @@
 "use strict";
 (() => {
-  // node_modules/@cylayo/weaver-web/dist/basic/layout.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/layout.js
   function applyBasicHook(element, component) {
     element.setAttribute("data-a2ui-component", component);
   }
@@ -43,7 +43,7 @@
     return relationship.kind === "single" ? relationship.child === void 0 ? [] : [relationship.child] : relationship.children;
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic/markdown.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/markdown.js
   function appendText(document2, parent, text) {
     const lines = text.split("\n");
     lines.forEach((line, index) => {
@@ -106,7 +106,7 @@
     return [...output.childNodes];
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic/styles.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/styles.js
   var basicSpace = "var(--a2ui-space, 8px)";
   var basicRadius = "var(--a2ui-radius, 8px)";
   var basicOutline = "var(--a2ui-color-outline, rgba(0, 0, 0, 0.22))";
@@ -123,7 +123,7 @@
     appendBasicStyle(element, `border: 1px solid ${basicOutline}; border-radius: ${basicRadius}`);
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic/renderers.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/renderers.js
   var textElements = {
     h1: "h1",
     h2: "h2",
@@ -482,7 +482,7 @@
     return button;
   };
 
-  // node_modules/@cylayo/weaver-web/dist/basic/icon.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/icon.js
   var SVG_NAMESPACE = "http://www.w3.org/2000/svg";
   function createSvg(document2, svgPath) {
     const svg = document2.createElementNS(SVG_NAMESPACE, "svg");
@@ -514,7 +514,7 @@
     };
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic/inputs.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/inputs.js
   function createBasicInputRenderers(regexMatcher, dateTimeInputLocalValueResolver) {
     let opaqueId2 = 0;
     const nextId = (kind) => `weaver-basic-${kind}-${++opaqueId2}`;
@@ -874,7 +874,7 @@
       control.setAttribute(name, normalized);
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic/media.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/media.js
   var imageFits = {
     contain: "contain",
     cover: "cover",
@@ -966,7 +966,7 @@
     return { Image, Video, AudioPlayer };
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic/createBasicCatalogRendererRegistrations.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/createBasicCatalogRendererRegistrations.js
   function createBasicCatalogRendererRegistrations(options) {
     const inputs = createBasicInputRenderers(options.regexMatcher, options.dateTimeInputLocalValueResolver);
     const media = createBasicMediaRenderers(options.resourcePolicy);
@@ -992,7 +992,7 @@
     ];
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic/theme.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/theme.js
   function createBasicCatalogThemeAdapter(options) {
     return (input) => {
       if (input.catalogId !== options.catalogId)
@@ -1006,7 +1006,7 @@
     };
   }
 
-  // node_modules/@cylayo/weaver-core/dist/data-model/clone.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-model/clone.js
   function setObjectValue(target, key3, value) {
     Object.defineProperty(target, key3, {
       configurable: true,
@@ -1107,7 +1107,7 @@
     return true;
   }
 
-  // node_modules/@cylayo/weaver-core/dist/data-model/pointer.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-model/pointer.js
   var success = (value) => ({ ok: true, value });
   function parsePointer(path) {
     if (path === "/")
@@ -1179,7 +1179,7 @@
     return true;
   }
 
-  // node_modules/@cylayo/weaver-core/dist/data-context/path.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-context/path.js
   var success2 = (value) => ({ ok: true, value });
   function resolveScopedPath(path, scopeTokens) {
     if (path.startsWith("/")) {
@@ -1213,7 +1213,7 @@
     return success2({ absolutePath: formatPointer(tokens), tokens });
   }
 
-  // node_modules/@cylayo/weaver-core/dist/data-context/DataContext.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-context/DataContext.js
   var success3 = (value) => ({ ok: true, value });
   var DataContext = class _DataContext {
     #dataModel;
@@ -1285,7 +1285,7 @@
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/data-context/types.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-context/types.js
   function isDataPathBinding(value) {
     if (value === null || typeof value !== "object" || Array.isArray(value))
       return false;
@@ -1293,7 +1293,7 @@
     return keys.length === 1 && keys[0] === "path" && typeof value.path === "string";
   }
 
-  // node_modules/@cylayo/weaver-core/dist/functions/FunctionRegistry.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/functions/FunctionRegistry.js
   var key = (catalogId, name) => JSON.stringify([catalogId, name]);
   var FunctionRegistry = class {
     #catalogs;
@@ -1351,7 +1351,7 @@
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/functions/types.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/functions/types.js
   function isFunctionCall(value) {
     if (value === null || typeof value !== "object" || Array.isArray(value))
       return false;
@@ -1368,7 +1368,7 @@
     return !("returnType" in record) || typeof record.returnType === "string" && ["string", "number", "boolean", "array", "object", "any", "void"].includes(record.returnType);
   }
 
-  // node_modules/@cylayo/weaver-core/dist/functions/FunctionEvaluator.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/functions/FunctionEvaluator.js
   var MAX_DEFAULT_DEPTH = 32;
   var RecursiveFunctionFailure = class {
     error;
@@ -1666,7 +1666,7 @@
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/actions/ActionContextResolver.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/actions/ActionContextResolver.js
   function isAllowedLiteral(value) {
     return typeof value === "string" || typeof value === "boolean" || typeof value === "number" && Number.isFinite(value) || Array.isArray(value);
   }
@@ -1759,7 +1759,7 @@
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/checks/CheckEvaluator.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/checks/CheckEvaluator.js
   function actualType2(value) {
     if (value === null)
       return "null";
@@ -1903,7 +1903,7 @@
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/actions/ActionDispatcher.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/actions/ActionDispatcher.js
   function cloneActionJson(value) {
     return cloneJson(value);
   }
@@ -2105,7 +2105,7 @@
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/basic-functions/formatString.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/basic-functions/formatString.js
   var _a;
   var ExpressionParser = class {
     source;
@@ -2253,7 +2253,7 @@
     throw new Error("Unterminated interpolation");
   }
 
-  // node_modules/@cylayo/weaver-core/dist/basic-catalog/generated-basic-catalog.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/basic-catalog/generated-basic-catalog.js
   var A2UI_V091_BASIC_CATALOG_ID = "https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json";
   var A2UI_V091_BASIC_CATALOG = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -4799,7 +4799,7 @@
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/basic-catalog/index.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/basic-catalog/index.js
   function createBasicCatalogV091Registration() {
     return {
       catalogId: A2UI_V091_BASIC_CATALOG_ID,
@@ -4807,7 +4807,7 @@
     };
   }
 
-  // node_modules/@cylayo/weaver-core/dist/catalog/schema.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/catalog/schema.js
   var A2UI_CATALOG_SCHEMA = {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     type: "object",
@@ -4827,7 +4827,7 @@
     additionalProperties: true
   };
 
-  // node_modules/@cfworker/json-schema/dist/esm/deep-compare-strict.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/deep-compare-strict.js
   function deepCompareStrict(a, b) {
     const typeofa = typeof a;
     if (typeofa !== typeof b) {
@@ -4868,7 +4868,7 @@
     return a === b;
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/pointer.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/pointer.js
   function encodePointer(p) {
     return encodeURI(escapePointer(p));
   }
@@ -4876,7 +4876,7 @@
     return p.replace(/~/g, "~0").replace(/\//g, "~1");
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/dereference.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/dereference.js
   var schemaArrayKeyword = {
     prefixItems: true,
     items: true,
@@ -4997,7 +4997,7 @@
     return lookup;
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/format.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/format.js
   var DATE = /^(\d\d\d\d)-(\d\d)-(\d\d)$/;
   var DAYS = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   var TIME = /^(\d\d):(\d\d):(\d\d)(\.\d+)?(z|[+-]\d\d(?::?\d\d)?)?$/i;
@@ -5090,7 +5090,7 @@
     }
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/types.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/types.js
   var OutputFormat;
   (function(OutputFormat2) {
     OutputFormat2[OutputFormat2["Flag"] = 1] = "Flag";
@@ -5098,7 +5098,7 @@
     OutputFormat2[OutputFormat2["Detailed"] = 4] = "Detailed";
   })(OutputFormat || (OutputFormat = {}));
 
-  // node_modules/@cfworker/json-schema/dist/esm/ucs2-length.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/ucs2-length.js
   function ucs2length(s) {
     let result = 0;
     let length2 = s.length;
@@ -5117,7 +5117,7 @@
     return result;
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/validate.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/validate.js
   function validate(instance, schema, draft = "2019-09", lookup = dereference(schema), shortCircuit = true, recursiveAnchor = null, instanceLocation = "#", schemaLocation = "#", evaluated = /* @__PURE__ */ Object.create(null)) {
     if (schema === true) {
       return { valid: true, errors: [] };
@@ -5875,7 +5875,7 @@ Known schemas:
     return { valid: errors.length === 0, errors };
   }
 
-  // node_modules/@cfworker/json-schema/dist/esm/validator.js
+  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/validator.js
   var Validator = class {
     schema;
     draft;
@@ -5898,7 +5898,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/catalog/schema-validator.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/catalog/schema-validator.js
   var DRAFT = "2020-12";
   var TYPES = /* @__PURE__ */ new Set(["null", "boolean", "object", "array", "number", "string", "integer"]);
   function pointer(location2) {
@@ -6032,7 +6032,7 @@ Known schemas:
     return visit(schema, schema);
   }
 
-  // node_modules/@cylayo/weaver-core/dist/catalog/CatalogRegistry.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/catalog/CatalogRegistry.js
   var COMPONENT_ID_REF = "common_types.json#/$defs/ComponentId";
   var CHILD_LIST_REF = "common_types.json#/$defs/ChildList";
   var CHECKABLE_REF = "common_types.json#/$defs/Checkable";
@@ -6754,7 +6754,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/runtime/safety.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/runtime/safety.js
   var DEFAULT_MAX_RESOLUTION_DEPTH = 32;
   var DEFAULT_MAX_RESOLVED_INSTANCES = 1e3;
   var MAX_CONFIGURED_RESOLUTION_DEPTH = 256;
@@ -6865,7 +6865,7 @@ Known schemas:
     });
   }
 
-  // node_modules/@cylayo/weaver-core/dist/component-tree/ComponentTreeResolver.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/component-tree/ComponentTreeResolver.js
   function resolverError(error2) {
     return {
       code: error2.code === "CATALOG_NOT_FOUND" ? "CATALOG_NOT_FOUND" : "COMPONENT_STRUCTURE_NOT_FOUND",
@@ -7055,7 +7055,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/component-instances/ComponentInstanceResolver.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/component-instances/ComponentInstanceResolver.js
   function treeFailure(cause) {
     return {
       ok: false,
@@ -7264,7 +7264,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/component-properties/ComponentPropertyResolver.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/component-properties/ComponentPropertyResolver.js
   function clonePlain(value) {
     return cloneJson(value);
   }
@@ -7597,7 +7597,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/input-binding/InputBindingWriter.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/input-binding/InputBindingWriter.js
   function compatible2(kind, value) {
     switch (kind) {
       case "dynamicString":
@@ -7686,7 +7686,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/data-model/DataModel.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-model/DataModel.js
   var success4 = (value) => ({ ok: true, value });
   var DataModel = class {
     #state = {};
@@ -7906,7 +7906,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/validation.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/validation.js
   var MESSAGE_KEYS = [
     "createSurface",
     "updateComponents",
@@ -8078,12 +8078,12 @@ Known schemas:
     }
   }
 
-  // node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/client-capabilities.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/client-capabilities.js
   function buildA2UIClientCapabilities(input) {
     return { "v0.9": { supportedCatalogIds: [...input.supportedCatalogIds] } };
   }
 
-  // node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/validation-error.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/validation-error.js
   function buildA2UIValidationFailedClientMessage(input) {
     if (input.surfaceId.length === 0)
       throw new TypeError("surfaceId must not be empty");
@@ -8169,7 +8169,7 @@ Known schemas:
     return typeof value === "object" && value !== null && !Array.isArray(value);
   }
 
-  // node_modules/@cylayo/weaver-core/dist/surfaces/SurfaceStore.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/surfaces/SurfaceStore.js
   var success5 = (value) => ({ ok: true, value });
   var SurfaceStore = class {
     #surfaces = /* @__PURE__ */ new Map();
@@ -8338,7 +8338,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/message-processor/A2UIMessageProcessor.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/message-processor/A2UIMessageProcessor.js
   var A2UIMessageProcessor = class {
     store;
     catalogs;
@@ -8423,7 +8423,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-core/dist/runtime/WeaverRuntime.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/runtime/WeaverRuntime.js
   function cloneRuntimeJson(value) {
     return cloneJson(value);
   }
@@ -8631,7 +8631,7 @@ Known schemas:
     };
   }
 
-  // node_modules/@cylayo/weaver-web/dist/renderers/errors.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/renderers/errors.js
   var RendererRegistryConfigurationError = class extends Error {
     code = "RENDERER_ALREADY_REGISTERED";
     catalogId;
@@ -8644,7 +8644,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-web/dist/renderers/RendererRegistry.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/renderers/RendererRegistry.js
   var key2 = (catalogId, component) => JSON.stringify([catalogId, component]);
   var RendererRegistry = class {
     #renderers = /* @__PURE__ */ new Map();
@@ -8672,7 +8672,7 @@ Known schemas:
     }
   };
 
-  // node_modules/@cylayo/weaver-web/dist/surface/WebSurfaceRenderer.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/surface/WebSurfaceRenderer.js
   var identityKey = (sourceComponentId, scopePath) => JSON.stringify([sourceComponentId, scopePath]);
   var controlIdentityKey = (sourceComponentId, scopePath, localKey) => JSON.stringify([sourceComponentId, scopePath, localKey]);
   var WebSurfaceRenderer = class {
@@ -9049,7 +9049,7 @@ Known schemas:
     return result.ok ? { ok: true, value: { ...result.value } } : structuredClone(result);
   }
 
-  // node_modules/@cylayo/weaver-web/dist/basic-web-runtime/createBasicWebRuntime.js
+  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic-web-runtime/createBasicWebRuntime.js
   function createBasicWebRuntime(config = {}) {
     const catalogId = A2UI_V091_BASIC_CATALOG_ID;
     const runtimeCreated = createWeaverRuntime({
@@ -9518,11 +9518,23 @@ Known schemas:
   });
   var GUEST_ASSISTANT_COPY = Object.freeze({
     stayClarification: "How many nights will you be staying, and for how many guests?",
-    dateClarification: "Please give me the check-in date as YYYY-MM-DD.",
+    // Issue 08 (ADR 0106): an area the server does not know is refused with the closed list of areas it can search.
+    areaClarification: (examples) => `I couldn't find that area. Which area should I search? For example: ${examples}.`,
+    // Issue 07 (ADR 0106, ADR 0015): a budget the server cannot read from the guest's own words is refused, never searched as a guessed amount.
+    budgetClarification: "I could not read that budget. Please give an amount, for example 150k a night or 500k for the stay.",
     // ADR 0106: a planner date that the guest's text does not state is rejected and the guest is asked for dates in a form the server reads.
     datesClarification: "I need your check-in and checkout dates before I can search. Please write them with the day, month and year, for example 20 November 2026 to 23 November 2026.",
     // ADR 0015: a Unit's all-in price is quoted for the stay's dates, so opening one without dates asks for them.
     unitDatesClarification: "Add your check-in and checkout dates to see this apartment's price for your stay. Please write them with the day, month and year, for example 20 November 2026 to 23 November 2026.",
+    // Issue 04 (ADR 0106 2 Nov 2026, ADR 0080, ADR 0077): the show-back of a relative date the guest must confirm. The deterministic
+    // path says the same sentence (concierge.ts), so both paths show the same dates before a search.
+    dateShowBack: (arriving, leaving, nights, guests, place) => `Just to check: arriving ${arriving} and leaving ${leaving} (${nights} ${nights === 1 ? "night" : "nights"}), ${guests} ${guests === 1 ? "guest" : "guests"} in ${place}. Shall I search these dates? Reply "yes", or tell me different dates.`,
+    // Issue 04: an ambiguous phrase names its candidate days; one chip per day, and a tap chooses it.
+    // Issue 13b (ADR 0106, 2 Nov 2026; ADR 0080): the same date check while a Request Draft is open. "yes" updates the draft; nothing is searched.
+    draftDateShowBack: (arriving, leaving, nights, guests) => `Just to check: arriving ${arriving} and leaving ${leaving} (${nights} ${nights === 1 ? "night" : "nights"}), ${guests} ${guests === 1 ? "guest" : "guests"}. Shall I show your Request Draft with these dates? Reply "yes", or tell me different dates.`,
+    dateChoice: (days) => `Which day do you mean: ${days.join(" or ")}?`,
+    dateConfirmChip: "Yes",
+    dateChangeChip: "Change dates",
     safeClarification: "I can help you find and compare stays, explain pricing, or check a booking status. What would you like to do?",
     // Shown when a turn is slower than a normal one; the guest is not told the request failed.
     stillWorking: "Still working on your request. A stay search can take a little longer, so please keep this page open.",
@@ -9623,10 +9635,40 @@ Known schemas:
     reassurance: GUEST_NEW_CONVERSATION.unknown,
     failed: "The concierge could not answer just now. Your message is kept below; send it again."
   });
+  function guestOperatorName(name) {
+    return name?.trim() || GUEST_GLOSSARY.operatorFallback;
+  }
+  var GUEST_LOCATION_CONFLICT = Object.freeze({
+    question: (wanted, incumbent) => `Do you want ${wanted}, or should I keep searching in ${incumbent}?`
+  });
+  var GUEST_CHANGE_EXPLANATION = Object.freeze({
+    request: (operatorName) => {
+      const operator = guestOperatorName(operatorName);
+      return `A sent ${GUEST_GLOSSARY.bookingRequest} can't be changed while ${operator} reviews it. If ${operator} confirms, you can choose not to accept the offer at no cost and search again with new details. Nothing has been changed.`;
+    },
+    offer: () => `A ${GUEST_GLOSSARY.conditionalBookingOffer} can't be changed. You can choose not to accept it at no cost and search again with new details. Nothing has been changed.`,
+    payment: () => "An accepted offer can't be changed from this conversation. Nothing has been changed.",
+    booking: () => `Changes to a confirmed ${GUEST_GLOSSARY.reservation} are made as a booking amendment, which re-checks availability and price. I can't start one from this conversation yet. Nothing has been changed.`
+  });
+  var GUEST_FACILITY_COPY = Object.freeze({
+    listed: (title, amenityLabel) => `Yes: ${title} lists ${amenityLabel}.`,
+    notListed: (title, facilityLabel) => `${facilityLabel} isn't listed for ${title}, so I can't confirm it.`
+  });
   var GUEST_DISCLOSURE_WORDING = [
     { domain: /^Refundable Security Deposit is quoted separately and held as guest liability\.?$/, guest: `${GUEST_GLOSSARY.refundableSecurityDeposit} is quoted and collected separately from the stay payment.` },
     { domain: /^Optional services come strictly from the controlled catalogue with no off-platform payment\.?$/, guest: "Optional services are added only when you select them, with no off-platform payment." }
   ];
+  var AMENITY_LABELS = {
+    "24_7_power_generator": "24/7 backup power",
+    air_conditioning: "Air conditioning",
+    generator: "Backup power",
+    parking: "Secure parking",
+    security_guard: "On-site security",
+    swimming_pool: "Swimming pool",
+    wifi: "Wi-Fi",
+    workspace: "Dedicated workspace"
+  };
+  var GUEST_AMENITY_IDS = Object.freeze(Object.keys(AMENITY_LABELS));
   var GUEST_FACT_LABELS = Object.freeze({
     checkIn: "Check-in",
     checkOut: "Check-out",
