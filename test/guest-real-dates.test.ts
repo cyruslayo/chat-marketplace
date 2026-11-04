@@ -1,4 +1,5 @@
 import test from "node:test";
+import { temporaryDatabasePath } from "./helpers/temporary-database.js";
 import assert from "node:assert/strict";
 import { LocalGuestApp } from "../apps/local-guest/src/guest-server.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
@@ -15,7 +16,7 @@ function resolve(text: string, now = THURSDAY) {
 }
 
 async function withApp(run: (app: LocalGuestApp, environment: LocalGuestEnvironment, threadId: string) => Promise<void>): Promise<void> {
-  const environment = LocalGuestEnvironment.openNode({ databasePath: `.scratch/local-guest/real-dates-${crypto.randomUUID()}.sqlite` });
+  const environment = LocalGuestEnvironment.openNode({ databasePath: temporaryDatabasePath(`real-dates-${crypto.randomUUID()}.sqlite`) });
   try { await run(new LocalGuestApp(environment), environment, `g-${crypto.randomUUID()}`); } finally { environment.close(); }
 }
 
