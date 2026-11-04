@@ -71,3 +71,16 @@ AC29 now pauses a real state request and checks that the task stays hidden. It t
 `npm run check` passed, including the Worker bundle guard.
 
 `npx tsx --test test/guest-focused-phone-shell-chromium.test.ts` passed 7/7. It covers stale, expired, superseded, and failed state responses.
+
+### Focus after surface replacement
+
+At `b94a01c`, the isolated mobile file passed 42 of 43 tests. AC14 read focus immediately after the detail text appeared. The renderer moves focus on the next animation frame.
+
+AC14 now waits for focus on the visible, enabled Back button inside the open Unit detail. This checks the renderer's focus behavior under ADR 0078.
+
+| Command | Passed | Failed |
+| --- | ---: | ---: |
+| `npx tsx --test test/mobile-guest-journey-chromium.test.ts` at `b94a01c` | 42 | 1 |
+| `npx tsx --test --test-name-pattern 'AC14 — Surface replacement preserves usable focus' test/mobile-guest-journey-chromium.test.ts` after the change | 1 | 0 |
+
+A supplemental animation-frame probe stalled before it reported a test result. The named run used the unmodified browser scheduling. `npm run check` passed, including the Worker bundle guard.
