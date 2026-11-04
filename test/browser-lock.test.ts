@@ -1,7 +1,8 @@
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, rmdirSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
+import fs, { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, rmdirSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -54,6 +55,81 @@ test("The lock records its holder's PID and start time in the owner file", async
     assert.match(owner.lockToken, /^[0-9a-f-]{36}$/i);
   } finally {
     release();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+function failLockPublications(
+  t: TestContext,
+  lockDir: string,
+  fail: (attempt: number) => boolean,
+  code = "EBUSY",
+): { attempts: () => number; restore: () => void } {
+  const rename = fs.renameSync;
+  let attempts = 0;
+  const mock = t.mock.method(fs, "renameSync", (from: fs.PathLike, to: fs.PathLike) => {
+    if (to === lockDir && fail(++attempts)) {
+      throw Object.assign(new Error("Candidate publication failed"), { code, syscall: "rename" });
+    }
+    rename(from, to);
+  });
+  syncBuiltinESMExports();
+  return {
+    attempts: () => attempts,
+    restore: () => {
+      mock.mock.restore();
+      syncBuiltinESMExports();
+    },
+  };
+}
+
+test("A transient EBUSY publishing a candidate retries and acquires the same lock", async (t) => {
+  const dir = freshDir();
+  const lockDir = join(dir, "lock");
+  const failure = failLockPublications(t, lockDir, (attempt) => attempt === 1);
+  let release: (() => void) | undefined;
+  try {
+    release = await acquireBrowserLock({ lockDir, waitMs: 1000 });
+    assert.equal(failure.attempts(), 2);
+    assert.deepEqual(readdirSync(dir), ["lock"]);
+    const ownerPath = markerPath(lockDir);
+    const owner = readFileSync(ownerPath, "utf8");
+    assert.equal(JSON.parse(owner).pid, process.pid);
+    await assert.rejects(acquireBrowserLock({ lockDir, waitMs: 100 }), /holder PID/);
+    assert.equal(readFileSync(ownerPath, "utf8"), owner);
+    release();
+    assert.deepEqual(readdirSync(dir), []);
+  } finally {
+    failure.restore();
+    release?.();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("A persistent EBUSY publishing a candidate ends at the lock wait deadline", { timeout: 10_000 }, async (t) => {
+  const dir = freshDir();
+  const lockDir = join(dir, "lock");
+  const failure = failLockPublications(t, lockDir, () => true);
+  try {
+    await assert.rejects(acquireBrowserLock({ lockDir, waitMs: 500 }), /Timed out after 500 ms.*no recorded holder/);
+    assert.ok(failure.attempts() > 1);
+    assert.deepEqual(readdirSync(dir), []);
+  } finally {
+    failure.restore();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("An unexpected candidate publication error fails without a retry", async (t) => {
+  const dir = freshDir();
+  const lockDir = join(dir, "lock");
+  const failure = failLockPublications(t, lockDir, () => true, "EACCES");
+  try {
+    await assert.rejects(acquireBrowserLock({ lockDir, waitMs: 500 }), { code: "EACCES" });
+    assert.equal(failure.attempts(), 1);
+    assert.deepEqual(readdirSync(dir), []);
+  } finally {
+    failure.restore();
     rmSync(dir, { recursive: true, force: true });
   }
 });

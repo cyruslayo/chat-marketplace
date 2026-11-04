@@ -95,7 +95,7 @@ test("AC3: Each waiting state lists the outcomes the guest will see next", async
     const outcomes = seen.get(stage)?.outcomes.join(" ") ?? "";
     assert.match(outcomes, /If payment is verified before the deadline/, stage);
     assert.match(outcomes, /If the deadline passes, the Payment Window expires and the dates are released\./, stage);
-    assert.match(outcomes, /completes after the deadline is refunded/, stage);
+    assert.match(outcomes, /late payment needs review/, stage);
   }
 
   // Failure path: states that wait on nothing show no countdown.

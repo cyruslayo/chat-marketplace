@@ -1,4 +1,5 @@
 import { draftReplacementTerms, draftReplacementUnavailable, DRAFT_REPLACEMENT_PROPOSED_COPY, type DraftReplacementStay, type PendingDraftReplacement } from "./draft-replacement.js";
+import { GUEST_PHONE_COPY, GUEST_REQUEST_EDIT_COPY, GUEST_PAYMENT_COPY } from "../../web-agent/src/guest-content.js";
 import {
   createServer,
   type IncomingMessage,
@@ -634,6 +635,7 @@ const EVENT_STAGE_ALLOW_LIST: Readonly<Record<string, string>> = Object.freeze({
   "shortlet.conditional-offer.accept": OFFER_STAGE,
   "shortlet.card-payment.initialize-checkout": PAYMENT_STAGE,
   "shortlet.card-payment.verify-return": PAYMENT_STAGE,
+  "shortlet.request-draft.edit": REQUEST_STAGE,
   [REQUEST_DRAFT_REVIEW_EVENT]: REQUEST_STAGE,
   [REQUEST_DRAFT_SUBMIT_EVENT]: REQUEST_STAGE,
   [GUEST_PHONE_SUBMIT_EVENT]: REQUEST_STAGE,
@@ -1507,6 +1509,8 @@ export class LocalGuestApp {
         return this.#handleCardCheckout(thread, event);
       case "shortlet.card-payment.verify-return":
         return this.#handlePaymentReturn(thread, event);
+      case "shortlet.request-draft.edit":
+        return this.#handleDraftEdit(thread, event);
       case REQUEST_DRAFT_REVIEW_EVENT:
         return this.#handleDraftReview(thread, event);
       case REQUEST_DRAFT_SUBMIT_EVENT:
@@ -1637,6 +1641,7 @@ export class LocalGuestApp {
       !thread ||
       thread.requestId ||
       thread.offerId ||
+      thread.draftId !== id ||
       !surfaceId ||
       thread.activeSurfaces.get(REQUEST_STAGE) !== surfaceId ||
       page.requestScreen?.primary.surfaceId !== surfaceId ||
@@ -1674,6 +1679,26 @@ export class LocalGuestApp {
         projectionVersion: candidate.projectionVersion,
       },
     });
+  }
+
+  /** ADR 0080: a conventional contact save resumes the same review task. */
+  async conventionalResumeReview(id: string, principal: CommandPrincipal): Promise<void> {
+    const page = await this.conventionalBookingPage("draft", id, principal);
+    const thread = page ? this.#threads.get(page.threadId) : undefined;
+    if (!thread || thread.draftId !== id || thread.requestId || thread.offerId || this.#threadRunning(thread.threadId)) return;
+    if (thread.activeContact?.kind !== "phone" || thread.activeContact.resumeContext.resumeAction !== "review") return;
+    await this.#hydrateRemoteContact();
+    const result = this.#decorateResult(this.#handleDraftReview(thread, { name: REQUEST_DRAFT_REVIEW_EVENT, surfaceId: thread.activeContact.surfaceId, sourceComponentId: "contact-form", timestamp: this.#environment.clock().toISOString(), context: { artifactId: requestDraftArtifactId(id), draftId: id } }));
+    if (result.ok) this.#rememberResult(thread.threadId, undefined, result);
+    if (result.ok && this.#environment.guestDataIsRemote) await this.#persistRemoteThread(thread.threadId);
+  }
+
+  /** ADR 0072/0074: native edits bind to the same current draft surface. */
+  async conventionalDraftEdit(id: string, surfaceId: string, input: { checkIn: string; checkOut: string; partySize: number }, principal: CommandPrincipal): Promise<GuestTurnResult> {
+    const page = await this.conventionalBookingPage("draft", id, principal);
+    if (!page || !surfaceId || page.requestScreen?.primary.surfaceId !== surfaceId)
+      return { ok: false, code: "STALE_SURFACE", message: GUEST_REQUEST_EDIT_COPY.stale };
+    return this.handleEventAsync(page.threadId, { name: "shortlet.request-draft.edit", surfaceId, sourceComponentId: "request-edit-form", timestamp: this.#environment.clock().toISOString(), context: { draftId: id, ...input } });
   }
 
   /** ADR-0072/0080: the native form resolves current server authority, then reuses the Weaver command handler. */
@@ -2186,16 +2211,27 @@ export class LocalGuestApp {
       return undefined;
     try {
       const environment = this.#environment;
+      const artifact = environment.cardPaymentApp.getArtifact(thread.offerId, environment.guestPrincipal());
       const content = paymentScreenContent(
-        environment.cardPaymentApp.getArtifact(
-          thread.offerId,
-          environment.guestPrincipal(),
-        ),
+        artifact,
         environment.clock(),
         `/payments/offers/${encodeURIComponent(thread.offerId)}`,
         this.#currentUnit(thread)?.operator?.name,
       );
-      return content.state === "closed" ? undefined : content;
+      if (content.state === "closed") return undefined;
+      // ADR 0046/0077/0090: expose only methods that the current authoritative payment state permits.
+      if (artifact.facts.status === "ready" && artifact.actions.some(action => action.type === "initialize_checkout") &&
+          !environment.livePaymentAttempts.current(thread.offerId, environment.clock()) &&
+          environment.guestContactApp.get(environment.guestPrincipal())?.contactEmail) {
+        const manual = environment.manualTransfers?.isOffered(thread.offerId, environment.clock()) === true;
+        return { ...content, choice: {
+          action: `/payments/offers/${encodeURIComponent(thread.offerId)}`,
+          providerTransfer: environment.bankTransferApp !== null,
+          ...(manual ? { manualAction: `/payments/offers/${encodeURIComponent(thread.offerId)}/manual-transfer` } : {}),
+          amount: formatNgnKobo(artifact.facts.currentComponentAmountKobo ?? artifact.facts.allInStayTotalKobo ?? artifact.facts.amountDueNowKobo),
+        } };
+      }
+      return content;
     } catch {
       return undefined;
     }
@@ -3633,6 +3669,7 @@ export class LocalGuestApp {
     // ADR 0015: the all-in price needs the stay dates. Without them the guest is asked for dates; no detail opens and no
     // selection is recorded, so the thread stays usable.
     const filters = artifact.facts.filters;
+    const threadRoute = `${route}${route.includes("?") ? "&" : "?"}threadId=${encodeURIComponent(thread.threadId)}`;
     if (typeof filters?.checkIn !== "string" || typeof filters.checkOut !== "string") {
       return { ok: true, messages: [GUEST_ASSISTANT_COPY.unitDatesClarification], surfaces: [] };
     }
@@ -3671,7 +3708,7 @@ export class LocalGuestApp {
           surfaceId,
           mode: "focused-surface",
           summary: `${unit.title} details`,
-          conventionalRoute: route,
+          conventionalRoute: threadRoute,
           textFallback: `${unit.title}. ${unit.location.neighbourhood}, ${unit.location.city}. Entire Place; capacity ${unit.capacity} guests. ${GUEST_GLOSSARY.allInStayTotal}: ${unit.price.allInStayTotalKobo === null ? "not yet quoted" : formatNgnKobo(unit.price.allInStayTotalKobo)}. ${GUEST_GLOSSARY.refundableSecurityDeposit}: ${formatNgnKobo(unit.price.refundableSecurityDepositKobo)}. Inspection: ${unit.trust.inspection.status}; Management Authority: ${unit.trust.managementAuthority.status}.`,
           a2uiMessages: unitDetailArtifactToA2UI({
             artifact: unitDetailArtifact,
@@ -4686,12 +4723,14 @@ export class LocalGuestApp {
     const environment = this.#environment;
     const guest = environment.guestPrincipal();
     const replaced = thread.draftId;
+    const original = environment.bookingRequestApp.getDraft(replaced);
+    const addedOccupants = environment.demoOccupants(pending.stay.partySize);
     const draft = environment.bookingRequestApp.createDraft(
       {
         unitId: pending.unitId,
-        primaryGuest: { id: guest.id, name: environment.config.guestName },
-        occupants: environment.demoOccupants(pending.stay.partySize),
-        selfBookingAttestation: environment.selfBookingAttestation(),
+        primaryGuest: original.primaryGuest,
+        occupants: Array.from({ length: pending.stay.partySize }, (_, index) => original.occupants[index] ?? addedOccupants[index]!),
+        selfBookingAttestation: original.selfBookingAttestation,
         checkIn: pending.stay.checkIn,
         checkOut: pending.stay.checkOut,
       },
@@ -4790,6 +4829,31 @@ export class LocalGuestApp {
     const { facts } = artifact;
     // Issue 07 AC1: one reservation-status statement; ADR-0006 provider only on review.
     return `${guestReservationStatus("draft")}. ${facts.unitTitle}. ${review ? `${accommodationProviderLine(facts.operatorName)}. ` : ""}${formatStayDates(facts.checkIn, facts.checkOut)} · ${facts.nights} ${facts.nights === 1 ? "night" : "nights"} · ${facts.occupants.length} ${facts.occupants.length === 1 ? "guest" : "guests"}. ${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(facts.allInStayTotalKobo)}. ${facts.refundableSecurityDepositKobo > 0 ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(facts.refundableSecurityDepositKobo)}. ` : ""}${review ? `${GUEST_FACT_LABELS.ifRequestAccepted}. ${GUEST_FACT_LABELS.amountDueNow}: ${formatNgnKobo(facts.amountDueNowKobo)}. ${GUEST_GLOSSARY.revalidation}. ` : "Review these details before you send the request. "}Cancellation terms: ${facts.cancellationPolicy.summary}.`;
+  }
+
+  /** ADR 0015/0072: explicit structured input reuses replacement validation and commands. */
+  #handleDraftEdit(thread: GuestThreadState, event: GuestEventPayload): GuestTurnResult {
+    const input = event.context;
+    if (!thread.draftId || thread.requestId || thread.offerId || input?.draftId !== thread.draftId)
+      return { ok: false, code: "STALE_SURFACE", message: GUEST_REQUEST_EDIT_COPY.stale };
+    if (Object.keys(input).sort().join(",") !== "checkIn,checkOut,draftId,partySize" || typeof input.checkIn !== "string" || typeof input.checkOut !== "string" || typeof input.partySize !== "number" || !Number.isInteger(input.partySize) || input.partySize < 1)
+      return { ok: false, code: "INVALID_INPUT", message: GUEST_REQUEST_EDIT_COPY.invalid };
+    const draft = this.#environment.bookingRequestApp.getDraft(thread.draftId);
+    const unit = this.#currentUnit(thread);
+    if (!unit) return { ok: false, code: "INVALID_CONTEXT", message: GUEST_REQUEST_EDIT_COPY.stale };
+    const stay = { location: unit.location.city, neighbourhood: unit.location.neighbourhood, checkIn: input.checkIn, checkOut: input.checkOut, partySize: input.partySize };
+    let proposed: DraftStayTerms | null;
+    try { proposed = this.#replacementTerms(draft.unitId, stay); } catch { proposed = null; }
+    if (!proposed) return { ok: false, code: "INVALID_INPUT", message: GUEST_REQUEST_EDIT_COPY.invalid };
+    const context = { ...thread.discoveryContext, city: unit.location.city, neighbourhood: unit.location.neighbourhood, checkIn: stay.checkIn, nights: proposed.nights, partySize: stay.partySize, datesConfirmed: true };
+    const presentation = this.#presentDraftReplacement(thread, { unitId: draft.unitId, stay, filters: stay, context, proposed }, "");
+    if (!presentation.ok || !thread.pendingDraftReplacement) return presentation;
+    const pending = thread.pendingDraftReplacement;
+    const result = this.#handleDraftReplacementAccept(thread, { ...event, surfaceId: pending.surfaceId, context: { draftId: thread.draftId, basedOn: pending.basedOn } });
+    if (!result.ok || !thread.draftId) return result;
+    // ADR 0106: explicit trip edits must survive the assistant's next cold restore.
+    this.#recordAssistantStayFacts(thread, { checkIn: stay.checkIn, nights: proposed.nights, partySize: stay.partySize });
+    return this.#handleDraftReview(thread, { ...event, context: { artifactId: requestDraftArtifactId(thread.draftId), draftId: thread.draftId } });
   }
 
   #handleDraftReview(
@@ -4982,7 +5046,7 @@ export class LocalGuestApp {
         component: "Text",
         text:
           kind === "phone"
-            ? "Required to send a Booking Request. Use a Nigerian mobile number in +234 format; for example +234 801 234 5678. Phone is for booking coordination, not identity verification."
+            ? GUEST_PHONE_COPY.help
             : "Required to start hosted card checkout and send a payment receipt. This email is not your account identity.",
       },
       {
@@ -5037,7 +5101,7 @@ export class LocalGuestApp {
           surfaceId,
           mode: "focused-surface",
           summary: baseLabel,
-          conventionalRoute: `/guest/contact?kind=${kind}`,
+          conventionalRoute: `/guest/contact?kind=${kind}${kind === "phone" && thread.draftId ? `&returnTo=${encodeURIComponent(conventionalRequestDraftRoute(thread.draftId))}` : ""}`,
           conventionalRouteLabel:
             kind === "phone" ? "Edit phone number" : "Edit email address",
           textFallback: `${baseLabel} is required. ${kind === "phone" ? "Use a Nigerian mobile number, for example +234 801 234 5678." : "It is used for checkout and your receipt."} Open Contact details to save it.`,
@@ -5092,9 +5156,9 @@ export class LocalGuestApp {
       return this.#contactSurface(thread, "phone", resumeContext, {
         value,
         error:
-          error instanceof Error
-            ? error.message
-            : "Phone number could not be saved.",
+          error instanceof Error && /phone|Nigerian/i.test(error.message)
+            ? GUEST_PHONE_COPY.invalid
+            : error instanceof Error ? error.message : "Phone number could not be saved.",
       });
     }
     const {
@@ -5564,7 +5628,7 @@ export class LocalGuestApp {
     );
     return {
       ok: true,
-      messages: ["Complete the secure card payment to confirm your booking."],
+      messages: [GUEST_PAYMENT_COPY.accepted],
       receipts: [GUEST_RECEIPTS.offerAccepted],
       surfaces: [
         this.#paymentSurface(

@@ -50,12 +50,12 @@ test("AC2: the payment choice is a radio group with one submit that reaches toda
   const g = await guestPaymentPage(manual);
   try {
     const html = await (await g.get(g.paymentPage)).text();
-    assert.match(html, /<fieldset class="ui-segmented"/);
+    assert.match(html, /<fieldset class="ui-segmented payment-choice-methods"/);
     assert.match(html, /<input type="radio" name="method" value="card"[^>]*checked/);
     assert.match(html, /<input type="radio" name="method" value="bank_transfer"/);
     assert.equal((html.match(/<form method="post" action="[^"]*\/payments\/offers\/[^"/]+"/g) ?? []).length, 1, "one method form");
-    // ADR 0090: the manual option stays its own action.
-    assert.match(html, new RegExp(`<form method="post" action="${g.paymentPage}/manual-transfer"[^>]*>`));
+    // ADR 0090: the shared method selection dispatches to the existing manual action.
+    assert.match(html, /name="method" value="manual_transfer"/);
     assert.match(visibleText(html), /you can't switch to card until the transfer account expires/);
 
     // Failure paths: nothing starts.
@@ -120,7 +120,7 @@ test("AC5: the waiting screen shows the projected verification deadline and rece
     const closed = visibleText(await (await g.get(`${g.paymentPage}/manual-transfer`)).text());
     assert.ok(closed.includes(formatWAT(closedTransfer.paymentDeadlineAt)), "actual expiry time");
     assert.match(closed, /No Reservation was made/);
-    assert.match(closed, /refunded in full/);
+    assert.match(closed, /payment needs review/);
   } finally { await g.close(); }
 
   const t = await guestPaymentPage();
@@ -130,7 +130,7 @@ test("AC5: the waiting screen shows the projected verification deadline and rece
     t.advance(25 * 60 * 1000);
     const text = visibleText(await (await t.get(`${t.paymentPage}/transfer`)).text());
     assert.ok(text.includes(formatWAT(session.expiresAt)), "the account's real expiry");
-    assert.match(text, /Money sent after the deadline is refunded in full\./);
+    assert.match(text, /payment needs review/);
   } finally { await t.close(); }
 });
 

@@ -24,7 +24,7 @@ export function bankTransferArtifactToA2UI({ artifact, surfaceId }: { readonly a
     : facts.status === "transfer_initiated" ? `Transfer the exact amount to ${facts.bankName ?? "the bank shown"}, account ${facts.accountNumber ?? ""}. Your booking confirms automatically once the transfer arrives.`
       : facts.status === "processing_in_grace" ? `Your bank has started the transfer. It has not arrived yet and no ${GUEST_GLOSSARY.reservation} exists yet.`
         : facts.status === "confirmed" ? `Your transfer arrived and your ${GUEST_GLOSSARY.reservation} is confirmed.`
-          : facts.status === "late_payment_refund_pending" || facts.status === "late_payment_refunded" ? `Your payment arrived after the deadline, so no ${GUEST_GLOSSARY.reservation} was made. Refund of the full amount: ${facts.status === "late_payment_refunded" ? "completed" : "started"}.`
+          : facts.status === "late_payment_refund_pending" || facts.status === "late_payment_refunded" ? `Your payment arrived after the deadline, so no ${GUEST_GLOSSARY.reservation} was made. Refund of the full amount: ${facts.status === "late_payment_refunded" ? "recorded as complete" : "recorded for review; contact Shortlet for its status"}.`
             : facts.status === "expired" ? `The transfer account expired. No ${GUEST_GLOSSARY.reservation} was made.`
               : "Transfer the exact amount shown before the deadline.";
   // Guest UI consistency issue 04: each amount is its own label-prefixed Text, in canonical order (ADR 0015):

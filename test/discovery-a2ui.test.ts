@@ -165,7 +165,7 @@ test("AC9: the conventional artifact remains unchanged after A2UI conversion", (
   const before = structuredClone(artifact);
   discoveryArtifactToA2UI({ artifact, surfaceId: SURFACE_ID });
   assert.deepEqual(artifact, before);
-  assert.equal(artifact.actions[0].conventionalRoute, "/stays/unit-lagos-001");
+  assert.equal(artifact.actions[0].conventionalRoute, "/stays/unit-lagos-001?checkIn=2026-08-10&checkOut=2026-08-12&partySize=3&location=Lagos");
 });
 
 test("AC10: the generated surface uses the canonical Basic Catalog identifier", () => {
@@ -205,7 +205,7 @@ test("AC13: an action for another Unit does not authorize the visible Unit", () 
 test("AC14: conventional route is never copied into the client event context", () => {
   const artifact = datedArtifact();
   const action = artifact.actions[0];
-  assert.equal(action.conventionalRoute, "/stays/unit-lagos-001");
+  assert.equal(action.conventionalRoute, "/stays/unit-lagos-001?checkIn=2026-08-10&checkOut=2026-08-12&partySize=3&location=Lagos");
   const button = updateComponents(discoveryArtifactToA2UI({ artifact, surfaceId: SURFACE_ID }))
     .find((component) => component.component === "Button");
   assert.ok(button && button.component === "Button");

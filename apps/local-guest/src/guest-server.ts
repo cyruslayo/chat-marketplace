@@ -1,3 +1,4 @@
+import { GUEST_PHONE_COPY, GUEST_PAYMENT_COPY } from "../../web-agent/src/guest-content.js";
 import { generatePlatformId } from "../../../packages/platform-core/src/index.js";
 import {
   createServer,
@@ -390,9 +391,11 @@ export function renderGuestShellHtml(): string {
     .workspace-heading-text { min-width: 0; display: grid; gap: var(--space-1); }
     .workspace-title { margin: 0; font-size: var(--font-size-h3); line-height: var(--font-line-h3); font-weight: 650; overflow-wrap: anywhere; }
     .eyebrow { color: var(--color-action); font-size: var(--font-size-metadata); font-weight: 650; }
-    .workspace-close, #workspace-reopen, .contact-link { display: inline-flex; min-height: var(--control-min-target); align-items: center; justify-content: center; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-control); color: var(--color-text); background: var(--color-surface); text-decoration: none; cursor: pointer; }
+    .workspace-close, #workspace-reopen, .contact-link { display: inline-flex; min-block-size: var(--control-min-target); min-inline-size: var(--control-min-target); align-items: center; justify-content: center; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-control); color: var(--color-text); background: var(--color-surface); text-decoration: none; cursor: pointer; }
+    .workspace-close { gap: var(--space-1); }
     .contact-link { color: var(--color-text-secondary); font-size: var(--font-size-small); }
     .workspace-close:hover, #workspace-reopen:hover, .contact-link:hover { border-color: var(--color-action); }
+    .workspace-stage-label, .workspace-ask { display: none; }
     .workspace-status { margin: 0 0 var(--space-3); color: var(--color-text-secondary); font-size: var(--font-size-small); }
     .workspace-status[data-status="stale"], .workspace-status[data-status="expired"], .workspace-status[data-status="deleted"], .workspace-status[data-status="fallback"] { padding: var(--space-2) var(--space-3); border-inline-start: 3px dashed var(--color-warning); background: var(--color-warning-surface); color: var(--color-warning); }
     .weaver-mount { min-width: 0; max-width: 100%; overflow: visible; }
@@ -526,17 +529,23 @@ export function renderGuestShellHtml(): string {
       main:has(#active-workspace:not([hidden])) #active-workspace { max-inline-size: 35rem; }
       main:has(#active-workspace:not([hidden])) #active-workspace[data-surface-kind="discovery"] { max-inline-size: 47.5rem; }
     }
-    /*
-     * Issue 09 AC2: below 64rem a focused workspace is a full-screen sheet
-     * above the conversation. It stops at the composer, which stays usable
-     * (AC3); header Back and browser Back both close it.
-     */
+    /* Focused phone and tablet task: the task region owns scrolling. */
     @media (max-width: 63.999rem) {
-      #workspace-region:has(> #active-workspace[data-mode="focused-surface"][data-status="active"]:not([hidden])) {
-        position: fixed; inset: 0 0 var(--composer-block-size, 0px) 0; z-index: var(--layer-sticky); padding: max(var(--space-3), env(safe-area-inset-top)) var(--layout-gutter-mobile) var(--space-4); background: var(--color-canvas);
+      .app:has(#active-workspace[data-mode="focused-surface"]:not([hidden])) > .ui-appbar,
+      .app:has(#active-workspace[data-mode="focused-surface"]:not([hidden])) > .ui-rail-nav,
+      .app:has(#active-workspace[data-mode="focused-surface"]:not([hidden])) > .ui-task-rail-nav,
+      main:has(#active-workspace[data-mode="focused-surface"]:not([hidden])) > #transcript,
+      main:has(#active-workspace[data-mode="focused-surface"]:not([hidden])) > #criteria-strip,
+      main:has(#active-workspace[data-mode="focused-surface"]:not([hidden])) > form#composer { display: none; }
+      #workspace-region:has(> #active-workspace[data-mode="focused-surface"]:not([hidden])) {
+        position: fixed; inset: 0; z-index: var(--layer-sticky); padding: 0; background: var(--color-canvas); overflow-y: auto;
       }
-      #workspace-region:has(> #active-workspace[data-mode="focused-surface"][data-status="active"]:not([hidden])) .workspace-heading--focused-surface { position: sticky; top: calc(-1 * var(--space-3)); z-index: 1; margin-inline: calc(-1 * var(--space-4)); padding: var(--space-2) var(--space-4); background: var(--color-surface-elevated); }
-      form#composer { z-index: calc(var(--layer-sticky) + 1); }
+      #active-workspace[data-mode="focused-surface"] { min-height: 100%; border: 0; border-radius: 0; box-shadow: none; padding: 0 var(--layout-gutter-mobile) max(var(--space-6), env(safe-area-inset-bottom)); }
+      #active-workspace[data-mode="focused-surface"] .workspace-heading--focused-surface { position: sticky; top: 0; z-index: 1; align-items: center; justify-content: space-between; min-height: 3.5rem; margin: 0 calc(-1 * var(--layout-gutter-mobile)) var(--space-3); padding: max(var(--space-2), env(safe-area-inset-top)) var(--layout-gutter-mobile) var(--space-2); border-bottom: 1px solid var(--color-border-subtle); background: var(--color-surface); }
+      .workspace-stage-label { display: inline; color: var(--color-text-secondary); font-size: var(--font-size-small); font-weight: 650; text-align: center; overflow-wrap: anywhere; }
+      .workspace-ask { display: inline-flex; min-height: var(--control-min-target); }
+      .workspace-heading--focused-surface .workspace-close { padding-inline: var(--space-2); }
+      .workspace-close__detail { display: none; }
     }
     @media (max-height: 520px) { .ui-appbar { position: static; } #transcript { min-height: 0; } form#composer { position: sticky; } }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; } }
@@ -669,6 +678,14 @@ export function renderConventionalUnitDetailHtml(
   photoUrl?: (url: string) => string,
   demo = false,
   extendedStay?: { readonly policy: ExtendedStayPolicy; readonly now: Date },
+  quote?: {
+    readonly checkIn: string;
+    readonly checkOut: string;
+    readonly partySize: number;
+    readonly allInStayTotalKobo: number;
+    readonly refundableSecurityDepositKobo: number;
+  },
+  returnRoute = "/",
 ): string {
   const photos = normalizePhotoUrls(unit.photoUrls);
   // Guest gallery issue 01: the shared gallery. Every photo shows and links to its full image without JavaScript
@@ -681,7 +698,7 @@ export function renderConventionalUnitDetailHtml(
     title: unit.title,
     frame: appFrameHtml({ threadId: null, publicStep: "stay" }),
     style: `${LISTING_GALLERY_STYLE}.unit-detail-sheet{position:relative;z-index:1;display:grid;gap:var(--space-4);margin-block-start:calc(-1 * var(--space-6));padding:var(--space-5);border:1px solid var(--color-border-subtle);border-radius:var(--radius-sheet) var(--radius-sheet) var(--radius-card) var(--radius-card);background:var(--color-surface);box-shadow:var(--elevation-active)}.unit-detail-sheet h1,.unit-detail-sheet h2,.unit-detail-sheet p,.unit-detail-sheet ul{margin:0}.unit-detail-location{display:flex;align-items:center;gap:var(--space-1);color:var(--color-text-secondary)}.unit-detail-description{white-space:pre-line}.unit-detail-page{display:grid;gap:var(--space-4)}.unit-detail-page .listing-gallery{z-index:0}.unit-detail-page .ui-action-bar{position:sticky}.unit-detail-page .ui-ticket{margin-block:var(--space-2)}.stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-4)}.stay-card-photo{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radius-card);background:var(--color-surface-subtle)}.stay-card-photo--empty{display:grid;place-items:center;color:var(--color-text-secondary)}.stay-card-facts{display:flex;flex-wrap:wrap;gap:var(--space-2)}.stay-card-facts span{display:inline-flex;min-block-size:2.75rem;align-items:center;padding:var(--space-2) var(--space-3);border:1px solid var(--color-border-subtle);border-radius:var(--radius-pill);background:var(--color-surface-subtle);font-size:var(--font-size-small)}.stay-card-price{display:grid;gap:var(--space-1);padding-block-start:var(--space-3);border-block-start:1px solid var(--color-border-subtle)}.stay-card-price p{margin:0}.guest-editorial .ui-button--primary,.guest-editorial .ui-button--block{border-radius:var(--radius-pill)}.ui-panel p{margin:0}`,
-    body: `<div class="guest-editorial unit-detail-page">${photoMarkup}<section class="unit-detail-sheet" aria-label="Stay details">${demo ? demoListingChipHtml() : ""}<p class="unit-detail-location">${icon("pin")}${escapeHtml(unit.location.neighbourhood)}, ${escapeHtml(unit.location.city)} · exact address after payment</p><h1>${escapeHtml(unit.title)}</h1>${unitTilesHtml(unitTiles(unit.bedrooms, unit.bathrooms, unit.capacity))}${unitIndicativePriceHtml(unit.price.nightlyKobo)}${extendedStayPageFacts(unit, extendedStay).map((text) => `<p class="ui-money-metadata">${escapeHtml(text)}</p>`).join("")}${unitAboutHtml(unit.description)}</section><div class="ui-action-bar"><p class="ui-action-bar__sum"><strong>${formatNgnKobo(unit.price.nightlyKobo)}</strong><span class="ui-money-metadata">Price per night (indicative)</span></p><a class="ui-button ui-button--primary ui-button--block" href="/">Continue to Request to Book</a></div></div>`,
+    body: `<div class="guest-editorial unit-detail-page">${photoMarkup}<section class="unit-detail-sheet" aria-label="Stay details">${demo ? demoListingChipHtml() : ""}<p class="unit-detail-location">${icon("pin")}${escapeHtml(unit.location.neighbourhood)}, ${escapeHtml(unit.location.city)} · exact address after payment</p><h1>${escapeHtml(unit.title)}</h1>${unitTilesHtml(unitTiles(unit.bedrooms, unit.bathrooms, unit.capacity))}${quote ? `<section class="unit-detail-price"><p>${escapeHtml(formatStayDates(quote.checkIn, quote.checkOut))} · ${quote.partySize} ${quote.partySize === 1 ? "guest" : "guests"}</p><p>${GUEST_GLOSSARY.allInStayTotal}</p><p class="ui-money-total">${formatNgnKobo(quote.allInStayTotalKobo)}</p><p>+ ${formatNgnKobo(quote.refundableSecurityDepositKobo)} ${GUEST_GLOSSARY.refundableSecurityDeposit} (separate)</p></section>` : unitIndicativePriceHtml(unit.price.nightlyKobo)}${extendedStayPageFacts(unit, extendedStay).map((text) => `<p class="ui-money-metadata">${escapeHtml(text)}</p>`).join("")}${unitAboutHtml(unit.description)}</section><div class="ui-action-bar"><p class="ui-action-bar__sum"><strong>${formatNgnKobo(quote?.allInStayTotalKobo ?? unit.price.nightlyKobo)}</strong><span class="ui-money-metadata">${quote ? GUEST_GLOSSARY.allInStayTotal : "Price per night (indicative)"}</span></p><a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(returnRoute)}">${returnRoute === "/" ? "Continue to Request to Book" : "Back to search results"}</a></div></div>`,
   });
 }
 
@@ -786,12 +803,7 @@ export function renderConventionalBookingHtml(
 ): string {
   const stay = page.stay;
   const ticket = stay
-    ? stayTicketHtml({
-        ...stay,
-        ...(page.confirmation
-          ? { bookingReference: page.confirmation.bookingReference }
-          : {}),
-      })
+    ? stayTicketHtml(stay)
     : "";
   const breakdown = stay
     ? priceBreakdownHtml({
@@ -846,9 +858,22 @@ const SEARCH_COUNT_KEYS = ["partySize", "bedrooms"] as const;
 
 export function parseConventionalSearchQuery(
   params: URLSearchParams,
-): Readonly<Record<string, string | number>> | null {
-  const filters: Record<string, string | number> = {};
+): Readonly<Record<string, string | number | readonly string[]>> | null {
+  const filters: Record<string, string | number | readonly string[]> = {};
   for (const [key, value] of params) {
+    if (key === "threadId") {
+      if (!/^g-[a-f0-9-]+$/.test(value) || params.getAll(key).length !== 1)
+        return null;
+      continue;
+    }
+    if (key === "requiredAmenities") {
+      if (Object.hasOwn(filters, key)) continue;
+      const values = params.getAll(key);
+      if (values.some((item) => !/^[A-Za-z0-9_-]{1,48}$/.test(item)))
+        return null;
+      filters.requiredAmenities = values;
+      continue;
+    }
     // Issue 03b: the form's budget (whole naira) is optional, so an empty one means none.
     if (key === "budget") {
       if (value.trim() === "") continue;
@@ -914,15 +939,19 @@ export function renderConventionalSearchHtml(
   artifact: DiscoveryArtifactProjection,
   photoUrl?: (url: string) => string,
   demo = false,
+  threadId?: string,
 ): string {
   const { checkIn, checkOut } = artifact.facts.filters;
   const nights = quotedNightCount(checkIn, checkOut);
   const cards = artifact.facts.results
     .map((unit) => {
-      const route =
+      const selectedRoute =
         artifact.actions.find(
           (action) => action.type === "view-unit" && action.unitId === unit.id,
         )?.conventionalRoute ?? `/stays/${encodeURIComponent(unit.id)}`;
+      const route = threadId
+        ? `${selectedRoute}${selectedRoute.includes("?") ? "&" : "?"}threadId=${encodeURIComponent(threadId)}`
+        : selectedRoute;
       const photo = unit.photoUrls[0];
       return `<li data-unit-id="${escapeHtml(unit.id)}">${stayCardHtml({ href: route, title: unit.title, neighbourhood: unit.location.neighbourhood, city: unit.location.city, allInStayTotalKobo: unit.price.allInStayTotalKobo, refundableSecurityDepositKobo: unit.price.refundableSecurityDepositKobo, nightlyKobo: unit.price.nightlyKobo, bedrooms: unit.bedrooms ?? null, bathrooms: unit.bathrooms, capacity: unit.capacity, ...(nights === undefined ? {} : { nights }), ...(demo ? { demoListing: true } : {}), ...(photo === undefined ? {} : { photoSrc: photoUrl ? photoUrl(photo) : photo, photoCount: unit.photoUrls.length }) })}</li>`;
     })
@@ -951,6 +980,7 @@ export function renderConventionalSearchHtml(
   // Issue 03a / ADR-0080: the strip's Where, When and Guests, editable without JavaScript.
   const form =
     `<form class="ui-panel search-form" id="change-search" method="get" action="/stays/search" aria-label="Change your search">` +
+    (threadId ? `<input type="hidden" name="threadId" value="${escapeHtml(threadId)}">` : "") +
     `<div class="ui-field"><label class="ui-field__label" for="search-area">Where</label><select class="ui-input" id="search-area" name="area" required>${SEARCH_AREAS.map((area) => `<option value="${area.id}"${area.id === currentArea ? " selected" : ""}>${escapeHtml(area.label)}</option>`).join("")}</select></div>` +
     `<div class="ui-field"><label class="ui-field__label" for="search-check-in">Arrival date</label><input class="ui-input" id="search-check-in" name="checkIn" type="date" required value="${text(filters.checkIn)}"></div>` +
     `<div class="ui-field"><label class="ui-field__label" for="search-check-out">Departure date</label><input class="ui-input" id="search-check-out" name="checkOut" type="date" required value="${text(filters.checkOut)}"></div>` +
@@ -967,7 +997,9 @@ export function renderConventionalSearchHtml(
   const heading =
     count > 0 && areaLabel !== undefined
       ? `${count} ${count === 1 ? "apartment" : "apartments"} in ${areaLabel}`
-      : discoveryFallbackMessage(artifact);
+      : count === 0
+        ? "No stays match your search."
+        : discoveryFallbackMessage(artifact);
   const chip = (
     iconName: "pin" | "calendar" | "users" | "plus",
     label: string,
@@ -997,7 +1029,7 @@ export function renderConventionalSearchHtml(
     frame: appFrameHtml({ threadId: null, publicStep: "search" }),
     style:
       ".search-form{display:grid;gap:var(--space-3)}.stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-4)}",
-    body: `<div class="guest-editorial"><header class="ui-page__header" data-page="stay-search"><p class="ui-eyebrow">Stays that fit your trip</p><h1>${escapeHtml(heading)}</h1>${summary ? `<p>${escapeHtml(summary)}</p>` : ""}</header>${chips}${form}${cards ? `<ul class="stay-results" aria-label="Stay search results">${cards}</ul>` : ""}<p><a class="ui-button ui-button--primary" href="/">Back to your conversation</a></p></div>`,
+    body: `<div class="guest-editorial"><header class="ui-page__header" data-page="stay-search"><p class="ui-eyebrow">Stays that fit your trip</p><h1>${escapeHtml(heading)}</h1>${summary ? `<p>${escapeHtml(summary)}</p>` : ""}</header>${chips}${form}${cards ? `<ul class="stay-results" aria-label="Stay search results">${cards}</ul>` : ""}<p><a class="ui-button ui-button--primary" href="${threadId ? `/?threadId=${encodeURIComponent(threadId)}` : "/"}">Back to your conversation</a></p></div>`,
   });
 }
 
@@ -1044,6 +1076,7 @@ export function renderGuestContactHtml(
     readonly phoneNumber?: string;
     readonly contactEmail?: string;
   } = {},
+  returnTo = "",
 ): string {
   const safe = escapeHtml;
   const phoneError = kind === "phone" ? error : "";
@@ -1053,11 +1086,11 @@ export function renderGuestContactHtml(
   const phoneForm =
     kind === "email"
       ? ""
-      : `<form class="ui-panel" method="post" action="/guest/contact/phone"><div class="ui-field"><label class="ui-field__label" for="phoneNumber">Phone number <span aria-hidden="true">*</span></label><p class="ui-field__hint" id="phoneNumber-help">Required before you send a Booking Request. Use a Nigerian mobile number: +234 E.164 format. Example: +234 801 234 5678 or 0801 234 5678. This is for booking coordination, not identity verification.</p><input id="phoneNumber" name="phoneNumber" type="tel" inputmode="tel" autocomplete="tel" enterkeyhint="done" maxlength="32" required aria-describedby="phoneNumber-help${phoneError ? " phoneNumber-error" : ""}"${phoneError ? ' aria-invalid="true"' : ""} value="${safe(phoneValue)}">${phoneError ? `<p id="phoneNumber-error" class="ui-field__error" role="alert">${safe(phoneError)}</p>` : ""}</div><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Save phone number</button></form>`;
+      : `<form class="ui-panel" method="post" action="/guest/contact/phone"><div class="ui-field"><label class="ui-field__label" for="phoneNumber">Phone number <span aria-hidden="true">*</span></label><p class="ui-field__hint" id="phoneNumber-help">${GUEST_PHONE_COPY.help}</p><input id="phoneNumber" name="phoneNumber" type="tel" inputmode="tel" autocomplete="tel" enterkeyhint="done" maxlength="32" required aria-describedby="phoneNumber-help${phoneError ? " phoneNumber-error" : ""}"${phoneError ? ' aria-invalid="true"' : ""} value="${safe(phoneValue)}">${phoneError ? `<p id="phoneNumber-error" class="ui-field__error" role="alert">${safe(phoneError)}</p>` : ""}</div><input type="hidden" name="returnTo" value="${safe(returnTo)}"><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Save phone number</button></form>`;
   const emailForm =
     kind === "phone"
       ? ""
-      : `<form class="ui-panel" method="post" action="/guest/contact/email"><div class="ui-field"><label class="ui-field__label" for="contactEmail">Email address <span aria-hidden="true">*</span></label><p class="ui-field__hint" id="contactEmail-help">Required to initialize hosted card checkout and send your payment receipt. This email is not your account identity.</p><input id="contactEmail" name="contactEmail" type="email" inputmode="email" autocomplete="email" enterkeyhint="done" maxlength="254" required aria-describedby="contactEmail-help${emailError ? " contactEmail-error" : ""}"${emailError ? ' aria-invalid="true"' : ""} value="${safe(emailValue)}">${emailError ? `<p id="contactEmail-error" class="ui-field__error" role="alert">${safe(emailError)}</p>` : ""}</div><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Save email address</button></form>`;
+      : `<form class="ui-panel" method="post" action="/guest/contact/email"><div class="ui-field"><label class="ui-field__label" for="contactEmail">Email address <span aria-hidden="true">*</span></label><p class="ui-field__hint" id="contactEmail-help">Required to initialize hosted card checkout and send your payment receipt. This email is not your account identity.</p><input id="contactEmail" name="contactEmail" type="email" inputmode="email" autocomplete="email" enterkeyhint="done" maxlength="254" required aria-describedby="contactEmail-help${emailError ? " contactEmail-error" : ""}"${emailError ? ' aria-invalid="true"' : ""} value="${safe(emailValue)}">${emailError ? `<p id="contactEmail-error" class="ui-field__error" role="alert">${safe(emailError)}</p>` : ""}</div><input type="hidden" name="returnTo" value="${safe(returnTo)}"><input type="hidden" name="expectedRevision" value="${contact?.revision ?? 0}"><button class="ui-button ui-button--primary ui-button--block" type="submit">Save email address</button></form>`;
   const generalError =
     error && kind === "both"
       ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${safe(error)}</span></p>`
@@ -1282,7 +1315,7 @@ export function renderManualTransferPageHtml(input: {
     );
   }
   if (transfer.status === "rejected" || transfer.status === "expired") {
-    // ADR 0090/0045: no Reservation; any money received for this attempt is refunded in full.
+    // ADR 0090/0045: no Reservation; recorded refund debt does not establish completed repayment.
     const rejected = transfer.status === "rejected";
     return screen(
       "closed",
@@ -1301,7 +1334,7 @@ export function renderManualTransferPageHtml(input: {
               { label: "Expired at", iso: transfer.paymentDeadlineAt },
             ),
         sections: [
-          `<p>Any money we received for this booking is refunded in full.</p>`,
+          `<p>${escapeHtml(GUEST_PAYMENT_COPY.lateReview)}</p>`,
         ],
         actions: paymentRecoveryActionsHtml(conversation),
       },
@@ -1512,7 +1545,7 @@ export function renderTransferPageHtml(input: {
     );
   }
   if (!payable) {
-    // ADR 0045/0047: the account stopped at the deadline; money sent afterwards is refunded in full and never books.
+    // ADR 0045/0047: expiry removes booking authority; a refund record does not establish repayment.
     return screen(
       "closed",
       "This transfer account has expired",
@@ -1524,7 +1557,7 @@ export function renderTransferPageHtml(input: {
           `No ${GUEST_GLOSSARY.reservation} was made.`,
           { label: "The transfer account expired at", iso: transfer.expiresAt },
         ),
-        sections: [`<p>Money sent after the deadline is refunded in full.</p>`],
+        sections: [`<p>${escapeHtml(GUEST_PAYMENT_COPY.lateReview)}</p>`],
         actions: paymentRecoveryActionsHtml(conversation),
       },
     );
@@ -3715,7 +3748,7 @@ export function createGuestRequestHandler(
         return;
       }
       res.writeHead(200, GUEST_HTML_HEADERS);
-      res.end(renderConventionalSearchHtml(artifact, options.localPhotoUrl, app.environment.config.demo === true));
+      res.end(renderConventionalSearchHtml(artifact, options.localPhotoUrl, app.environment.config.demo === true, url.searchParams.get("threadId") ?? undefined));
       return;
     }
 
@@ -3735,13 +3768,77 @@ export function createGuestRequestHandler(
         res.end("Apartment not found");
         return;
       }
+      let quote:
+        | {
+            checkIn: string;
+            checkOut: string;
+            partySize: number;
+            allInStayTotalKobo: number;
+            refundableSecurityDepositKobo: number;
+          }
+        | undefined;
+      let returnRoute = "/";
+      if (url.searchParams.size > 0) {
+        // ADR 0077: reconstruct the quote from server facts; route values only select criteria and thread context.
+        const searchParams = new URLSearchParams(url.searchParams);
+        const threadId = searchParams.get("threadId");
+        if (
+          threadId !== null &&
+          (!/^g-[a-f0-9-]+$/.test(threadId) || searchParams.getAll("threadId").length !== 1)
+        ) {
+          sendPageError(req, res, 400, "SEARCH_INVALID");
+          return;
+        }
+        searchParams.delete("threadId");
+        const filters = parseConventionalSearchQuery(searchParams);
+        if (!filters) {
+          sendPageError(req, res, 400, "SEARCH_INVALID");
+          return;
+        }
+        try {
+          const hasAnyQuoteCriterion =
+            filters.checkIn !== undefined ||
+            filters.checkOut !== undefined ||
+            filters.partySize !== undefined;
+          if (
+            hasAnyQuoteCriterion &&
+            (typeof filters.checkIn !== "string" ||
+              typeof filters.checkOut !== "string" ||
+              typeof filters.partySize !== "number")
+          ) {
+            sendPageError(req, res, 400, "SEARCH_INVALID");
+            return;
+          }
+          const current = app.environment.discoveryQuery.search(filters).facts.results.find((result) => result.id === unitId);
+          if (!current || (hasAnyQuoteCriterion && typeof current.price.allInStayTotalKobo !== "number")) {
+            sendPageError(req, res, 409, "SEARCH_INVALID");
+            return;
+          }
+          if (hasAnyQuoteCriterion) {
+            quote = {
+              checkIn: filters.checkIn as string,
+              checkOut: filters.checkOut as string,
+              partySize: filters.partySize as number,
+              allInStayTotalKobo: current.price.allInStayTotalKobo!,
+              refundableSecurityDepositKobo: current.price.refundableSecurityDepositKobo,
+            };
+          }
+          const searchRoute = conventionalSearchRoute(filters);
+          returnRoute = searchRoute === "/stays/search"
+            ? threadId ? `/?threadId=${encodeURIComponent(threadId)}` : "/"
+            : `${searchRoute}${threadId ? `&threadId=${encodeURIComponent(threadId)}` : ""}`;
+        } catch {
+          sendPageError(req, res, 400, "SEARCH_INVALID");
+          return;
+        }
+      }
       res.writeHead(200, GUEST_HTML_HEADERS);
-      res.end(renderConventionalUnitDetailHtml(unit, options.localPhotoUrl, app.environment.config.demo === true, app.environment.extendedStayPolicy ? { policy: app.environment.extendedStayPolicy, now: app.environment.clock() } : undefined));
+      res.end(renderConventionalUnitDetailHtml(unit, options.localPhotoUrl, app.environment.config.demo === true, app.environment.extendedStayPolicy ? { policy: app.environment.extendedStayPolicy, now: app.environment.clock() } : undefined, quote, returnRoute));
       return;
     }
 
     const requestPost =
-      /^\/(booking-requests\/drafts|booking-requests)\/([^/]+)\/(review|submit|conversation|search)$/.exec(
+      /^\/(booking-requests\/drafts|booking-requests)\/([^/]+)\/(review|submit|edit|conversation|search)$/.exec(
         url.pathname,
       );
     if (req.method === "POST" && requestPost) {
@@ -3784,7 +3881,37 @@ export function createGuestRequestHandler(
       }
       const action = requestPost[3];
       let destination: string | undefined;
-      if (kind === "draft" && (action === "review" || action === "submit")) {
+      if (kind === "draft" && action === "edit") {
+        let form: URLSearchParams;
+        try { form = await readFormBody(req); } catch { sendPageError(req, res, 400, "INVALID_EVENT"); return; }
+        if ([...form.keys()].some(key => !["surfaceId", "checkIn", "checkOut", "partySize"].includes(key)) || [...new Set(form.keys())].some(key => form.getAll(key).length !== 1)) {
+          sendPageError(req, res, 400, "INVALID_EVENT"); return;
+        }
+        const result = await app.conventionalDraftEdit(id, form.get("surfaceId") ?? "", { checkIn: form.get("checkIn") ?? "", checkOut: form.get("checkOut") ?? "", partySize: Number(form.get("partySize")) }, principal);
+        if (!result.ok) {
+          // ADR 0078: invalid editable input stays on the owned review; stale authority still fails closed.
+          if (result.code === "INVALID_INPUT" && page.requestScreen?.edit) {
+            res.writeHead(400, GUEST_HTML_HEADERS);
+            res.end(renderConventionalBookingHtml({
+              ...page,
+              requestScreen: {
+                ...page.requestScreen,
+                edit: {
+                  ...page.requestScreen.edit,
+                  error: result.message,
+                  entered: {
+                    checkIn: form.get("checkIn") ?? "",
+                    checkOut: form.get("checkOut") ?? "",
+                    partySize: form.get("partySize") ?? "",
+                  },
+                },
+              },
+            }));
+          } else sendPageError(req, res, result.code === "STALE_SURFACE" ? 409 : 400, result.code);
+          return;
+        }
+        destination = result.surfaces.at(-1)?.conventionalRoute;
+      } else if (kind === "draft" && (action === "review" || action === "submit")) {
         let form: URLSearchParams;
         try {
           form = await readFormBody(req);
@@ -4012,14 +4139,25 @@ export function createGuestRequestHandler(
         (await readRawBody(req)).toString("utf8"),
       ).getAll("method");
       const method = methods.length === 1 ? methods[0] : undefined;
-      if (method !== "card" && method !== "bank_transfer") {
+      if (method !== "card" && method !== "bank_transfer" && method !== "manual_transfer") {
         sendPageError(req, res, 400, "PAYMENT_METHOD_INVALID");
         return;
       }
+      try {
+        const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
+        const artifact = app.environment.cardPaymentApp.getArtifact(offerId, principal);
+        // ADR 0044/0046/0090: dispatch only currently available methods, before any payment attempt starts.
+        if (artifact.facts.status !== "ready" || !artifact.actions.some(action => action.type === "initialize_checkout") ||
+          app.environment.livePaymentAttempts.current(offerId, app.environment.clock()) ||
+          (method === "bank_transfer" && !app.environment.bankTransferApp) ||
+          (method === "manual_transfer" && !app.environment.manualTransfers?.isOffered(offerId, app.environment.clock()))) {
+          sendPageError(req, res, 409, "ACTION_NOT_AUTHORIZED"); return;
+        }
+      } catch { sendPageError(req, res, 409, "ACTION_NOT_AUTHORIZED"); return; }
       const base = `/payments/offers/${encodeURIComponent(offerId)}`;
       // 307 keeps the POST, so bank transfer reaches its existing initialization route unchanged.
       res.writeHead(method === "card" ? 303 : 307, {
-        Location: method === "card" ? `${base}/continue` : `${base}/transfer`,
+        Location: method === "card" ? `${base}/continue` : method === "manual_transfer" ? `${base}/manual-transfer` : `${base}/transfer`,
       });
       res.end();
       return;
@@ -4107,6 +4245,7 @@ export function createGuestRequestHandler(
                 : "Continue to hosted card checkout";
         const canContinue =
           artifact.actions.length > 0 &&
+          (!processing || threadId !== null) &&
           (artifact.facts.status !== "ready" ||
             contactEmailMissing ||
             !processing);
@@ -4117,7 +4256,6 @@ export function createGuestRequestHandler(
             app.environment.clock(),
           ) === true;
         const offerTransferChoice =
-          (app.environment.bankTransferApp !== null || manualOffered) &&
           artifact.facts.status === "ready" &&
           !contactEmailMissing &&
           !processing;
@@ -4178,12 +4316,7 @@ export function createGuestRequestHandler(
               amount: formatNgnKobo(
                 componentAmount ?? artifact.facts.amountDueNowKobo,
               ),
-              switching:
-                app.environment.bankTransferApp !== null
-                  ? `If you choose bank transfer, you can't switch to card until the transfer account expires.${manualOffered ? " The same applies to manual bank transfer." : ""}`
-                  : "If you choose manual bank transfer, you can't switch to card until it expires or is declined.",
-              manualCopy:
-                "Manual bank transfer: pay our business account and upload your receipt. Your booking confirms only after we check the money has arrived.",
+
             })
           : undefined;
         res.writeHead(200, GUEST_HTML_HEADERS);
@@ -5127,6 +5260,14 @@ export function createGuestRequestHandler(
         role: "guest",
         tenantId: session.tenantId,
       };
+      const ownedReturn = async (value: string): Promise<string> => {
+        const match = /^\/booking-requests\/drafts\/([^/?#]+)$/.exec(value);
+        if (!match) return "";
+        let id: string;
+        try { id = decodeURIComponent(match[1]!); } catch { return ""; }
+        const page = await app.conventionalBookingPage("draft", id, contactPrincipal);
+        return page?.requestScreen?.primary.surfaceId ? value : "";
+      };
       if (req.method === "GET" && url.pathname === "/guest/contact") {
         const kind = url.searchParams.get("kind");
         const requestedKind =
@@ -5140,6 +5281,8 @@ export function createGuestRequestHandler(
             ),
             "",
             requestedKind,
+            {},
+            await ownedReturn(url.searchParams.get("returnTo") ?? ""),
           ),
         );
         return;
@@ -5151,9 +5294,13 @@ export function createGuestRequestHandler(
           return;
         }
         let submittedValue = "";
+        let returnTo = "";
         const contactKind = url.pathname.endsWith("/phone") ? "phone" : "email";
         try {
           const form = await readFormBody(req);
+          const requestedReturn = form.get("returnTo") ?? "";
+          returnTo = await ownedReturn(requestedReturn);
+          if (requestedReturn && !returnTo) { sendPageError(req, res, 409, "STALE_SURFACE"); return; }
           const expectedRevision = Number(form.get("expectedRevision"));
           if (contactKind === "phone") {
             submittedValue = form.get("phoneNumber") ?? "";
@@ -5176,7 +5323,8 @@ export function createGuestRequestHandler(
                 : {}),
             });
           }
-          res.writeHead(303, { Location: "/guest/contact" });
+          if (returnTo && contactKind === "phone") await app.conventionalResumeReview(returnTo.split("/").at(-1)!, contactPrincipal);
+          res.writeHead(303, { Location: returnTo || "/guest/contact" });
           res.end();
           return;
         } catch (error) {
@@ -5189,13 +5337,14 @@ export function createGuestRequestHandler(
               ),
               error instanceof GuestContactOwnedByAccountError
                 ? GUEST_ACCOUNT_COPY.errors.emailOwnedByAccount
-                : error instanceof Error
-                  ? error.message
-                  : "Contact could not be saved",
+                : contactKind === "phone" && error instanceof Error && /phone|Nigerian/i.test(error.message)
+                  ? GUEST_PHONE_COPY.invalid
+                  : error instanceof Error ? error.message : "Contact could not be saved",
               contactKind,
               contactKind === "phone"
                 ? { phoneNumber: submittedValue }
                 : { contactEmail: submittedValue },
+              returnTo,
             ),
           );
           return;

@@ -29,6 +29,13 @@ export function cardPaymentCopy(facts: CardPaymentFacts): { readonly title: stri
   };
 }
 
+export interface PaymentMethodChoice {
+  readonly action: string;
+  readonly providerTransfer: boolean;
+  readonly manualAction?: string;
+  readonly amount: string;
+}
+
 /** Presentation only: what the shared payment screen shows around the ticket and breakdown (ADR-0077). */
 export interface PaymentScreenContent {
   readonly state: "ready" | "handoff" | "closed";
@@ -40,8 +47,7 @@ export interface PaymentScreenContent {
   readonly serverNow: string;
   readonly explanation: string;
   readonly steps: readonly string[];
-  /** The payment page, where the Guest chooses another way to pay (offered only while a card checkout is pending). */
-  readonly choosePath?: string;
+  readonly choice?: PaymentMethodChoice;
 }
 
 export function paymentScreenContent(artifact: CardPaymentArtifact, now: Date, paymentPath: string, operatorName?: string): PaymentScreenContent {
@@ -57,6 +63,6 @@ export function paymentScreenContent(artifact: CardPaymentArtifact, now: Date, p
     serverNow: now.toISOString(),
     explanation: copy.content,
     steps: waiting ? guestWaitingCopy("payment-window", operatorName).outcomes : [],
-    ...(facts.status === "checkout_initiated" && waiting ? { choosePath: paymentPath } : {}),
+
   };
 }

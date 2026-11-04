@@ -15,6 +15,12 @@ test("AC1: In real Chromium, starting a new conversation keeps the Booking Reque
       const original = await storedThread(tab);
       assert.ok(original);
 
+      if (viewport[0] === 375) {
+        await tab.focus(".workspace-ask");
+        await tab.pressKey("Enter");
+        await tab.waitForFunction("document.activeElement?.id === 'composer-input'", 10_000);
+      }
+      await tab.focus("#new-conversation");
       // The confirmation opens in the page, takes focus and states the effect.
       assert.equal(await tab.clickButton("New conversation"), true);
       await tab.waitForFunction("!document.getElementById('new-conversation-confirm').hidden", 10_000);

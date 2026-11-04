@@ -123,6 +123,32 @@ test("Landing 14 AC1: A failed first concierge turn keeps the message and lets t
   });
 });
 
+test("AC1: the first landing message opens one conversation on retry and while another conversation exists", async () => {
+  await withServer({}, async (base, server) => {
+    const original = server.app.handleTurn.bind(server.app);
+    server.app.handleTurn = async () => ({ ok: false, message: "The concierge could not answer just now." }) as never;
+    const failed = await start(base, { message: MESSAGE });
+    assert.equal(failed.status, 422);
+    const cookie = sessionCookie(failed);
+    const threadId = /name="threadId" value="(g-[a-f0-9-]+)"/.exec(await failed.text())?.[1];
+    assert.ok(threadId);
+    server.app.handleTurn = original;
+    const retry = await fetch(`${base}/conversation`, {
+      method: "POST", redirect: "manual",
+      headers: { "content-type": "application/x-www-form-urlencoded", origin: base, cookie },
+      body: new URLSearchParams({ message: MESSAGE, threadId: threadId! }).toString(),
+    });
+    assert.equal(retry.status, 303);
+    const firstLocation = retry.headers.get("location")!;
+    assert.equal(userTurns(await view(base, firstLocation, cookie)), 1);
+    const second = await start(base, { message: "Is there a stay in Abuja?" }, cookie);
+    assert.equal(second.status, 200);
+    const offer = await second.text();
+    assert.ok(offer.includes(`href="${firstLocation}"`));
+    assert.equal(userTurns(await view(base, firstLocation, cookie)), 1);
+  });
+});
+
 test("Landing 14 AC2: The typed text never appears in any URL, redirect location or log line", async () => {
   const secret = "My name is Ada Obi and my number is 08031234567";
   const nonSensitiveText = "My name is Ada Obi";

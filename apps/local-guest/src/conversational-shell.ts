@@ -63,7 +63,7 @@ export function closeFocusedSurface(state: ConversationShellState): Conversation
 }
 
 export function reopenFocusedSurface(state: ConversationShellState): ConversationShellState {
-  if (state.activeSurface?.mode !== "focused-surface" || state.activeSurface.status !== "active") return state;
+  if (state.activeSurface?.mode !== "focused-surface" || state.activeSurface.status === "deleted" || state.activeSurface.status === "superseded") return state;
   return { ...state, focusedSurfaceOpen: true };
 }
 

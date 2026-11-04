@@ -396,6 +396,15 @@ export function toDiscoveryProjection(unit: Unit, dateRange: StayDateRange | nul
 export const INDICATIVE_RATES_DISCLOSURE = "Rates without dates and party size are indicative; dated results show the All-In Stay Total.";
 
 function createInteractionArtifact({ id, filters, results, quoted }: { id: string; filters: any; results: any[]; quoted: boolean }) {
+  const searchParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (Array.isArray(value)) {
+      for (const item of value) searchParams.append(key, String(item));
+    } else if (value !== undefined) {
+      searchParams.set(key, String(value));
+    }
+  }
+  const searchQuery = searchParams.toString();
   return deepFreeze({
     id, kind: "shortlet.discovery-results", schemaVersion: "shortlet.discovery/v1", projectionVersion: 1,
     domainReferences: results.map((unit: any) => ({ type: "Unit", id: unit.id })),
@@ -403,7 +412,7 @@ function createInteractionArtifact({ id, filters, results, quoted }: { id: strin
     disclosures: quoted ? [] : [INDICATIVE_RATES_DISCLOSURE],
     facts: { filters: Object.freeze({ ...filters }), results: Object.freeze(results) },
     amounts: results.map((unit: any) => ({ unitId: unit.id, ...unit.price })),
-    actions: results.map((unit: any) => ({ type: "view-unit", unitId: unit.id, conventionalRoute: `/stays/${unit.id}` })),
+    actions: results.map((unit: any) => ({ type: "view-unit", unitId: unit.id, conventionalRoute: `/stays/${unit.id}${searchQuery ? `?${searchQuery}` : ""}` })),
     acknowledgements: [], sensitivity: "public"
   });
 }

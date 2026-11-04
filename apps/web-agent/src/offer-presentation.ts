@@ -2,6 +2,7 @@ import type { ConditionalOfferArtifact } from "../../web/src/conditional-offer-a
 import {
   accommodationProviderLine,
   GUEST_GLOSSARY,
+  GUEST_PAYMENT_COPY,
   guestDisclosure,
   guestReservationStatus,
   guestWaitingCopy,
@@ -18,7 +19,7 @@ export interface OfferScreenContent {
   readonly consequence: string;
   readonly steps: readonly string[];
   readonly notes: readonly string[];
-  readonly policies: readonly string[];
+  readonly policies: readonly { readonly heading: string; readonly items: readonly string[] }[];
   readonly amount: string;
   readonly accept?: { readonly path: string; readonly surfaceId: string };
   readonly conversationPath: string;
@@ -72,9 +73,9 @@ export function offerScreenContent(
         ? [...copy.meanwhile, guestReservationStatus("offer-issued")]
         : [],
     policies: [
-      `Cancellation: ${facts.cancellationPolicy.summary} (${facts.cancellationPolicy.version})`,
-      `Guest conduct: ${facts.guestConductRules.join("; ")}`,
-      ...artifact.disclosures.map(guestDisclosure),
+      { heading: GUEST_PAYMENT_COPY.cancellation, items: [facts.cancellationPolicy.summary] },
+      { heading: GUEST_PAYMENT_COPY.conduct, items: facts.guestConductRules },
+      { heading: GUEST_PAYMENT_COPY.otherTerms, items: artifact.disclosures.map(guestDisclosure) },
     ],
     amount,
     ...(artifact.actions.some((action) => action.type === "accept") && surfaceId

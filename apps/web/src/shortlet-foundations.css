@@ -528,10 +528,12 @@
 
   .ui-steps { display: grid; gap: var(--space-3); margin: 0; padding: 0; list-style: none; counter-reset: ui-step; }
   .ui-steps > li { display: grid; grid-template-columns: 1.75rem minmax(0, 1fr); align-items: start; gap: var(--space-3); color: var(--color-text-secondary); font-size: var(--font-size-small); counter-increment: ui-step; }
-  .ui-steps > li::before { content: counter(ui-step); display: inline-flex; align-items: center; justify-content: center; inline-size: 1.75rem; block-size: 1.75rem; border-radius: var(--radius-pill); background: var(--color-action-subtle); color: var(--color-action); font-size: 0.8125rem; font-weight: 650; }
+  .ui-steps__number { display: inline-flex; align-items: center; justify-content: center; inline-size: 1.75rem; block-size: 1.75rem; border-radius: var(--radius-pill); background: var(--color-action-subtle); color: var(--color-action); font-size: 0.8125rem; font-weight: 650; }
 
   .ui-segmented { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); margin: 0; padding: var(--space-1); border: 0; border-radius: var(--radius-pill); background: var(--color-surface-subtle); }
   .ui-segmented > label { position: relative; display: flex; align-items: center; justify-content: center; gap: var(--space-2); min-block-size: var(--control-min-target); border: 1px solid transparent; border-radius: var(--radius-pill); color: var(--color-text-secondary); font-weight: 500; cursor: pointer; }
+  .payment-choice-methods { grid-template-columns: minmax(0, 1fr); border-radius: var(--radius-card); }
+  .payment-choice-methods > label { justify-content: flex-start; text-align: left; border-radius: var(--radius-control); }
   .ui-segmented input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; }
   .ui-segmented > label:has(input:checked) { border-color: var(--color-border-subtle); background: var(--color-surface); color: var(--color-text); font-weight: 650; }
   .ui-segmented > label:has(input:focus-visible) { outline: 3px solid var(--color-focus); outline-offset: 2px; }

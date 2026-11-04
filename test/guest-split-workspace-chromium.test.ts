@@ -69,8 +69,8 @@ test("AC2: At 375px, the workspace opens as a sheet, and both browser Back and h
       const sheet = (await box(tab, "#workspace-region"))!;
       assert.equal(await tab.evaluate<string>("getComputedStyle(document.getElementById('workspace-region')).position"), "fixed");
       assert.ok(sheet.top <= 1 && sheet.width >= 374, `full-screen sheet: ${JSON.stringify(sheet)}`);
-      // The composer is not covered by the sheet.
-      assert.equal(await tab.evaluate<boolean>("(() => { const r = document.getElementById('composer-input').getBoundingClientRect(); return document.getElementById('composer').contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)); })()"), true);
+      // The focused task owns the phone viewport; chat opens through Ask Shortlet.
+      assert.equal(await tab.evaluate<string>("getComputedStyle(document.getElementById('composer')).display"), "none");
     };
     const assertClosed = async (): Promise<void> => {
       await tab.waitForFunction("document.getElementById('active-workspace').hidden === true", 5_000);
@@ -123,18 +123,22 @@ test("Review fix: after a reload with the sheet open, one browser Back still clo
   }
 });
 
-test("AC3: Sending a message while the workspace is open keeps it open and updates it where relevant", async () => {
+test("AC3: Asking from a focused phone task returns to that task after the message, while desktop updates in place", async () => {
   const fixture = await restartFixture();
   const browser = await launchRealBrowser();
   try {
-    // Mobile sheet: a question about the stay is answered and the sheet stays open.
+    // Mobile task: Ask Shortlet reveals the composer and preserves a return path.
     const phone = await openShell(browser, fixture.base, 375, 812);
     await send(phone, SEARCH);
     await phone.waitForSelector("#active-workspace .stay-card", 10_000);
     assert.equal(await phone.clickButton("View apartment"), true);
     await phone.waitForSelector("#active-workspace[data-mode=\"focused-surface\"]:not([hidden])", 10_000);
+    assert.equal(await phone.clickButton("Ask Shortlet"), true);
     await send(phone, "is there parking?");
     await phone.waitForText("lists Secure parking", 10_000);
+    assert.equal(await phone.evaluate<boolean>("document.getElementById('active-workspace').hidden"), true);
+    assert.equal(await phone.clickButton("Return to"), true);
+    await phone.waitForFunction("!document.getElementById('active-workspace').hidden && history.state?.shortletSheet === true", 10_000);
     assert.equal(await phone.evaluate<boolean>("document.getElementById('active-workspace').hidden"), false);
     assert.equal(await phone.evaluate<string>("getComputedStyle(document.getElementById('workspace-region')).position"), "fixed");
     assert.equal(await phone.evaluate<boolean>("history.state?.shortletSheet === true"), true);

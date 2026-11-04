@@ -116,3 +116,32 @@ test("the phone prompt the guest already answered is superseded by the review af
     assert.equal(replayed.ok ? "" : replayed.code, "STALE_SURFACE");
   } finally { f.close(); }
 });
+
+test("AC1: direct request edits retain contact and invalidate the old draft after an assistant cold restore", async () => {
+  const f = datedFixture(scriptedPlanner(SCRIPT).client, undefined, { clock: LIVE_LIKE_CLOCK, stagingGuest: true });
+  try {
+    const threadId = "g-d1a0000320";
+    const search = successOf(await f.app.handleTurn(threadId, STAY_TEXT), "search");
+    const detail = await tap(f, threadId, search.surfaces[0]!, "View");
+    const draft = await tap(f, threadId, detail.surfaces[0]!, "Request to Book");
+    const phone = await tap(f, threadId, draft.surfaces[0]!, "Review");
+    const action = firstButtonAction(phone.surfaces[0]!);
+    const invalid = successOf(await coldApp(f, threadId).handleEventAsync(threadId, { ...action, context: { ...action.context, contactValue: "08012" } }), "invalid phone");
+    assert.match(JSON.stringify(invalid.surfaces), /08012/);
+    assert.match(JSON.stringify(invalid.surfaces), /Enter a Nigerian mobile number, such as 0801 234 5678/);
+    const retry = firstButtonAction(invalid.surfaces[0]!);
+    const review = successOf(await coldApp(f, threadId).handleEventAsync(threadId, { ...retry, context: { ...retry.context, contactValue: PHONE } }), "phone correction");
+    const old = review.surfaces[0]!;
+    const id = old.surfaceId.split(":").at(-1)!;
+    const updated = successOf(await coldApp(f, threadId).conventionalDraftEdit(id, old.surfaceId, { checkIn: "2026-12-14", checkOut: "2026-12-18", partySize: 2 }, f.environment.guestPrincipal()), "direct edit");
+    const restored = restartedDatedApp(f, scriptedPlanner({}).client);
+    const state = restored.app.getState(threadId);
+    assert.equal(restored.runtime.getThread(threadId).taskState.stayIntent.nights, 4);
+    assert.equal(state?.surfaces[0]?.surfaceId, updated.surfaces[0]?.surfaceId);
+    assert.match(JSON.stringify(state?.surfaces), /2026-12-18/);
+    assert.equal(f.environment.guestContactApp.get(f.environment.guestPrincipal())?.phoneNumber, "+2348012345678");
+    const stale = await coldApp(f, threadId).conventionalRequestAction(id, "submit", old.surfaceId, f.environment.guestPrincipal());
+    assert.equal(stale.ok, false);
+    assert.equal(f.environment.interactionStore.listBookingRequestIds().length, 0);
+  } finally { f.close(); }
+});

@@ -566,11 +566,7 @@ function organizeBookingTicket(mount: HTMLElement): void {
         title: title.textContent?.trim() ?? "",
         checkIn: { day: checkInDay, date: checkIn.value },
         checkOut: { day: checkOutDay, date: checkOut.value },
-        foot:
-          stay.value +
-          (activePayload?.confirmation
-            ? ` · Booking reference ${activePayload.confirmation.bookingReference}`
-            : ""),
+        foot: stay.value,
       }),
       [title, checkIn.element, checkOut.element, stay.element],
     );
@@ -638,10 +634,10 @@ function organizeConfirmation(
   );
   root.replaceChildren(template.content);
   root
-    .querySelector<HTMLAnchorElement>(".request-actions a")
+    .querySelector<HTMLAnchorElement>(".request-next a")
     ?.addEventListener("click", (event) => {
       event.preventDefault();
-      closeWorkspace(workspaceReopen);
+      askShortlet();
     });
 }
 
@@ -673,7 +669,20 @@ function organizePaymentScreen(
   );
   const slot = template.content.querySelector("[data-payment-action-slot]");
   if (slot && actions) slot.replaceWith(actions);
-  root.replaceChildren(template.content);
+  if (content.choice && actions) {
+    const original = actions.querySelector<HTMLButtonElement>("button");
+    const form = template.content.querySelector<HTMLFormElement>(".payment-choice-form");
+    form?.addEventListener("submit", event => {
+      if (new FormData(form).get("method") !== "card") return;
+      // ADR 0072: card retains Weaver's server-bound event; the other methods post to their conventional commands.
+      event.preventDefault();
+      if (original && !original.disabled) original.click();
+    });
+    const binding = document.createElement("div");
+    binding.hidden = true;
+    binding.append(actions);
+    root.replaceChildren(template.content, binding);
+  } else root.replaceChildren(template.content);
   const countdown = root.querySelector<HTMLElement>(".waiting-countdown");
   if (countdown && activePayload?.waiting?.kind === "payment-window")
     startCountdown(activePayload.waiting, countdown, true);
@@ -1272,7 +1281,8 @@ function isOfferScreen(value: unknown): value is OfferScreenContent {
     !Number.isFinite(Date.parse(value.serverNow)) ||
     !isStringList(value.steps) ||
     !isStringList(value.notes) ||
-    !isStringList(value.policies) ||
+    !Array.isArray(value.policies) ||
+    !value.policies.every(section => isRecord(section) && typeof section.heading === "string" && isStringList(section.items)) ||
     !isSafeInternalRoute(value.conversationPath) ||
     (value.searchPath !== undefined && !isSafeInternalRoute(value.searchPath))
   )
@@ -1301,7 +1311,10 @@ function isPaymentScreen(value: unknown): value is PaymentScreenContent {
       (typeof value.deadlineIso === "string" &&
         Number.isFinite(Date.parse(value.deadlineIso)))) &&
     isStringList(value.steps) &&
-    (value.choosePath === undefined || isSafeInternalRoute(value.choosePath))
+    (value.choice === undefined || (value.state === "ready" && isRecord(value.choice) &&
+      isSafeInternalRoute(value.choice.action) && typeof value.choice.providerTransfer === "boolean" &&
+      typeof value.choice.amount === "string" &&
+      (value.choice.manualAction === undefined || isSafeInternalRoute(value.choice.manualAction))))
   );
 }
 
@@ -1501,6 +1514,7 @@ let isLoading = false;
 let eventInFlight = false;
 let lastActivatedControl: HTMLElement | undefined;
 let workspaceOpener: HTMLElement | undefined;
+let focusedScrollTop = 0;
 const createdSurfaceIds = new Set<string>();
 
 type ShellTelemetryEvent =
@@ -1638,10 +1652,15 @@ function fallback(mount: HTMLElement, surface: SurfacePresentation): void {
 }
 
 function showReopen(): void {
+  if (workspaceReopen.disabled) {
+    workspaceReopen.hidden = false;
+    workspaceReopen.textContent = "Checking current details…";
+    return;
+  }
   const current = shellState.activeSurface;
   const canReopen =
     current?.mode === "focused-surface" &&
-    current.status === "active" &&
+    current.status !== "deleted" && current.status !== "superseded" &&
     activePayload !== undefined;
   workspaceReopen.hidden = !canReopen || shellState.focusedSurfaceOpen;
   if (canReopen)
@@ -1849,6 +1868,7 @@ function syncSheetHistory(): void {
 
 /** Closes the focused workspace (header Back, Escape or browser Back) and returns focus. */
 function closeWorkspace(focusTarget: HTMLElement): void {
+  focusedScrollTop = workspaceRegion.scrollTop;
   shellState = closeFocusedSurface(shellState);
   composerForm.dataset.focused = "false";
   activeWorkspace.hidden = true;
@@ -1861,13 +1881,23 @@ function closeWorkspace(focusTarget: HTMLElement): void {
   announce("Returned to the conversation. Your stay details are still here.");
 }
 
+function askShortlet(): void {
+  closeWorkspace(composerInput);
+  composerInput.focus({ preventScroll: true });
+  announce("Conversation ready. Your stay details are still here.");
+}
+
 function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
   stopCountdown();
   const presentation = presentationFor(surface);
+  const previousScroll = activePayload?.surfaceId === surface.surfaceId
+    ? shellState.focusedSurfaceOpen ? workspaceRegion.scrollTop : focusedScrollTop
+    : 0;
+  focusedScrollTop = previousScroll;
   composerForm.dataset.focused = presentation.mode === "focused-surface" ? "true" : "false";
   activePayload = surface;
   activeWorkspace.replaceChildren();
-  activeWorkspace.hidden = false;
+  activeWorkspace.hidden = presentation.mode === "focused-surface" && !shellState.focusedSurfaceOpen;
   activeWorkspace.tabIndex = -1;
   workspaceRegion.hidden = false;
   activeWorkspace.dataset.mode = presentation.mode;
@@ -1896,9 +1926,24 @@ function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
     arrow.setAttribute("aria-hidden", "true");
     arrow.textContent = "←";
     close.appendChild(arrow);
-    close.append("Back to conversation");
+    close.append("Back");
+    const detail = document.createElement("span");
+    detail.className = "workspace-close__detail";
+    detail.textContent = " to conversation";
+    close.appendChild(detail);
+    close.setAttribute("aria-label", "Back to conversation");
     close.addEventListener("click", () => closeWorkspace(workspaceReopen));
     heading.appendChild(close);
+    const stage = document.createElement("span");
+    stage.className = "workspace-stage-label";
+    stage.textContent = guestSurfaceHeading(presentation.summary);
+    heading.appendChild(stage);
+    const ask = document.createElement("button");
+    ask.type = "button";
+    ask.className = "workspace-ask ui-button ui-button--quiet";
+    ask.textContent = "Ask Shortlet";
+    ask.addEventListener("click", askShortlet);
+    heading.appendChild(ask);
   }
   activeWorkspace.appendChild(heading);
 
@@ -1935,7 +1980,7 @@ if (
     mount.setAttribute("inert", "");
     mount.setAttribute("aria-disabled", "true");
   }
-  if (presentation.status === "fallback") { trackTelemetry("fallback-rendered"); fallback(mount, presentation); showReopen(); return; }
+  if (presentation.status === "fallback") { trackTelemetry("fallback-rendered"); fallback(mount, presentation); showReopen(); syncSheetHistory(); return; }
 
   if (createdSurfaceIds.has(surface.surfaceId)) {
     // ADR-0074: a refreshed server projection re-creates a surface this page
@@ -1953,6 +1998,7 @@ if (
       fallback(mount, { ...presentation, status: "fallback" });
       announce("The workspace could not be displayed safely. A standard route remains available.", true);
       showReopen();
+      syncSheetHistory();
       return;
     }
   }
@@ -1967,6 +2013,7 @@ if (
     trackTelemetry("fallback-rendered");
     announce("The workspace could not be displayed safely. A standard route remains available.", true);
     showReopen();
+    syncSheetHistory();
     return;
   }
   mount.dataset.renderer = "weaver";
@@ -1986,6 +2033,7 @@ if (
     mount.appendChild(link);
   }
   showReopen();
+  workspaceRegion.scrollTop = previousScroll;
   if (moveFocus) {
     activeWorkspace.scrollIntoView({ block: "start" });
     // Priority order, not document order: the heading precedes the close control in the DOM.
@@ -2005,17 +2053,19 @@ if (
   syncSheetHistory();
 }
 
-function acceptSurface(surface: GuestSurfacePayload): void {
+function acceptSurface(surface: GuestSurfacePayload, preserveConversation = false): void {
   const before = shellState.historicalSummaries.length;
   const replaced = shellState.activeSurface !== undefined && shellState.activeSurface.surfaceId !== surface.surfaceId;
+  const keepConversationOpen = preserveConversation || (!replaced && shellState.activeSurface?.mode === "focused-surface" && !shellState.focusedSurfaceOpen);
   shellState = replaceActiveSurface(shellState, presentationFor(surface));
+  if (keepConversationOpen) shellState = closeFocusedSurface(shellState);
   if (replaced) trackTelemetry("surface-replaced");
   for (const summary of shellState.historicalSummaries.slice(before)) addHistoricalSummary(summary);
-  renderSurface(surface, replaced);
+  renderSurface(surface, replaced && !preserveConversation);
   syncSheetHistory();
 }
 
-function renderSurfaces(surfaces: readonly GuestSurfacePayload[]): void {
+function renderSurfaces(surfaces: readonly GuestSurfacePayload[], preserveConversation = false): void {
   for (const historical of surfaces.slice(0, -1)) {
     const presentation = presentationFor(historical);
     addHistoricalSummary({
@@ -2025,7 +2075,7 @@ function renderSurfaces(surfaces: readonly GuestSurfacePayload[]): void {
     });
   }
   const current = surfaces.at(-1);
-  if (current) acceptSurface(current);
+  if (current) acceptSurface(current, preserveConversation);
 }
 
 /**
@@ -2505,7 +2555,7 @@ function renderResponse(response: GuestResponse): boolean {
 return true;
 }
 
-async function refreshServerState(): Promise<boolean> {
+async function refreshServerState(preserveConversation = shellState.activeSurface?.mode === "focused-surface" && !shellState.focusedSurfaceOpen): Promise<boolean> {
   try {
     const response = (await postJson(
       `/api/state?threadId=${encodeURIComponent(threadId)}`,
@@ -2517,7 +2567,7 @@ async function refreshServerState(): Promise<boolean> {
       renderVerticalStarters(response.verticals);
     }
     if (response.ok && response.surfaces && response.surfaces.length > 0) {
-      renderSurfaces(response.surfaces);
+      renderSurfaces(response.surfaces, preserveConversation);
       return true;
     }
   } catch {
@@ -2635,13 +2685,85 @@ try {
   throw new Error("Unable to create the Weaver web runtime");
 }
 
-workspaceReopen.addEventListener("click", () => {
+workspaceReopen.addEventListener("click", async () => {
+  if (workspaceReopen.disabled) return;
+  const previous = shellState.activeSurface;
   workspaceOpener = workspaceReopen;
-  shellState = reopenFocusedSurface(shellState);
-  if (activePayload) {
-    renderSurface(activePayload, true);
-    activeWorkspace.querySelector<HTMLElement>(".workspace-close")?.focus({ preventScroll: true });
+  // ADR-0074: a retained task never regains action authority before a server projection arrives.
+  workspaceReopen.disabled = true;
+  workspaceReopen.setAttribute("aria-busy", "true");
+  showReopen();
+  composerInput.focus({ preventScroll: true });
+  const refreshed = await refreshServerState(true);
+  let recoveryFocus: HTMLButtonElement | undefined;
+  if (!refreshed && activePayload) {
+    shellState = markActiveSurfaceStatus(shellState, "stale");
+    renderSurface({ ...activePayload, status: "stale" });
+    shellState = reopenFocusedSurface(shellState);
+    activeWorkspace.hidden = false;
+    composerForm.dataset.focused = "true";
+    const recovery = document.createElement("div");
+    recovery.className = "workspace-recovery ui-panel";
+    recovery.setAttribute("role", "status");
+    const message = document.createElement("p");
+    message.textContent = "Current details could not be checked. This saved view has no actions.";
+    const retry = document.createElement("button");
+    retry.type = "button";
+    retry.id = "workspace-retry-status";
+    retry.className = "ui-button";
+    retry.textContent = "Retry current status";
+    retry.addEventListener("click", async () => {
+      retry.disabled = true;
+      retry.textContent = "Checking current status…";
+      if (await refreshServerState()) {
+        // ADR-0078: a successful refresh removes Retry, so focus its replacement task control.
+        const taskBack = shellState.activeSurface?.mode === "focused-surface" && !activeWorkspace.hidden
+          ? activeWorkspace.querySelector<HTMLElement>(".workspace-close")
+          : null;
+        (taskBack ?? composerInput).focus({ preventScroll: true });
+        return;
+      }
+      retry.disabled = false;
+      retry.textContent = "Retry current status";
+      announce("Current details could not be checked. Try again or open the standard details.", true);
+    });
+    recovery.append(message, retry);
+    if (activePayload.conventionalRoute) {
+      const link = document.createElement("a");
+      link.className = "ui-button";
+      link.href = activePayload.conventionalRoute;
+      link.textContent = "Open standard details";
+      recovery.appendChild(link);
+    }
+    activeWorkspace.querySelector(".workspace-status")?.after(recovery);
+    recoveryFocus = retry;
+    syncSheetHistory();
+    announce("Current details could not be checked. Review the saved details without using their actions.", true);
   }
+  workspaceReopen.disabled = false;
+  workspaceReopen.removeAttribute("aria-busy");
+  showReopen();
+  if (recoveryFocus) {
+    recoveryFocus.focus({ preventScroll: true });
+    requestAnimationFrame(() => { workspaceRegion.scrollTop = focusedScrollTop; });
+    return;
+  }
+  const current = shellState.activeSurface;
+  if (!current || current.surfaceId !== previous?.surfaceId ||
+    (previous.status === "active" && current.status !== "active")) {
+    composerInput.focus({ preventScroll: true });
+    return;
+  }
+  shellState = reopenFocusedSurface(shellState);
+  if (!shellState.focusedSurfaceOpen || !activePayload) return;
+  activeWorkspace.hidden = false;
+  composerForm.dataset.focused = "true";
+  showReopen();
+  syncSheetHistory();
+  activeWorkspace.querySelector<HTMLElement>(".workspace-close")?.focus({ preventScroll: true });
+  requestAnimationFrame(() => {
+    if (sheetOpen()) workspaceRegion.scrollTop = focusedScrollTop;
+  });
 });
 
 // ADR-0078: focused workspaces are keyboard-dismissible and restore focus to
@@ -2660,10 +2782,6 @@ window.addEventListener("popstate", () => {
   closeWorkspace(workspaceReopen);
 });
 
-// The sheet stops at the composer, so its height is shared with the CSS.
-new ResizeObserver(() => {
-  document.documentElement.style.setProperty("--composer-block-size", `${Math.ceil(composerForm.getBoundingClientRect().height)}px`);
-}).observe(composerForm);
 sheetQuery.addEventListener("change", syncSheetHistory);
 
 for (const suggestion of document.querySelectorAll<HTMLButtonElement>(".prompt-suggestion[data-prompt]")) {

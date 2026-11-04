@@ -9787,6 +9787,30 @@ Known schemas:
     cartPageTitle: "Shopping cart",
     pageTitleSuffix: "Shop"
   });
+  var GUEST_REQUEST_EDIT_COPY = {
+    heading: "Edit your request",
+    dates: "Edit dates",
+    guests: "Edit guests",
+    guestCount: "Number of guests",
+    save: "Save and review",
+    phone: "Edit phone number",
+    invalid: "Check your dates and number of guests.",
+    stale: "Use the current Request Draft."
+  };
+  var GUEST_PAYMENT_COPY = {
+    accept: "Accept and choose payment",
+    accepted: "Choose how to pay. Your booking confirms only after payment is verified.",
+    cancellation: "Cancellation",
+    conduct: "Guest conduct",
+    otherTerms: "Other booking terms",
+    card: "Card",
+    cardHelp: "Hosted card checkout. Do not start another payment while this attempt is pending.",
+    transfer: "Bank transfer",
+    transferHelp: "If you choose bank transfer, you can't switch to card until the transfer account expires.",
+    manual: "Manual bank transfer",
+    manualHelp: "Pay our business account and upload your receipt. Your booking confirms only after we check the money has arrived. You can't switch until this attempt expires or is declined.",
+    lateReview: "A late payment needs review and does not confirm your booking. Contact Shortlet if you sent money after the deadline."
+  };
 
   // apps/local-guest/src/turn-budget.ts
   var SCOPE_CLASSIFIER_BUDGET_MS = 8e3;
@@ -9861,7 +9885,7 @@ Known schemas:
     return { ...state, focusedSurfaceOpen: false };
   }
   function reopenFocusedSurface(state) {
-    if (state.activeSurface?.mode !== "focused-surface" || state.activeSurface.status !== "active") return state;
+    if (state.activeSurface?.mode !== "focused-surface" || state.activeSurface.status === "deleted" || state.activeSurface.status === "superseded") return state;
     return { ...state, focusedSurfaceOpen: true };
   }
   function markActiveSurfaceStatus(state, status) {
@@ -9978,8 +10002,8 @@ Known schemas:
       countdown: true,
       consequence: content.consequence
     }) : content.state === "expired" ? `<p class="ui-banner ui-banner--neutral offer-deadline">${icon("clock")}<span>The deadline was <time datetime="${escapeHtml(content.deadlineIso)}">${escapeHtml(formatWAT(content.deadlineIso))}</time><br>${escapeHtml(content.consequence)}</span></p>` : "";
-    const policies = live ? `<section class="ui-panel offer-policies" aria-label="Before you pay"><h2>Before you pay</h2><p>${escapeHtml(content.provider)}</p>${content.policies.map((text) => `<p>${escapeHtml(text)}</p>`).join("")}${content.notes.map((text) => `<p>${escapeHtml(text)}</p>`).join("")}</section>` : "";
-    const actions = content.accept ? `<div class="ui-action-bar offer-actions"><div><strong>${escapeHtml(content.amount)}</strong><span class="ui-price-breakdown__label">${GUEST_FACT_LABELS.amountDueNow}</span></div>${form(content.accept.path, "Accept and pay", true, content.accept.surfaceId)}</div>` : `<div class="offer-actions request-actions">${form(content.conversationPath, "Back to your conversation", true)}${content.searchPath ? form(content.searchPath, "Find other stays", false) : ""}</div>`;
+    const policies = live ? `<section class="ui-panel offer-policies" aria-label="Before you pay"><h2>Before you pay</h2><p>${escapeHtml(content.provider)}</p>${content.policies.map((section) => `<section><h3>${escapeHtml(section.heading)}</h3><ul>${section.items.map((text) => `<li>${escapeHtml(text)}</li>`).join("")}</ul></section>`).join("")}${content.notes.map((text) => `<p>${escapeHtml(text)}</p>`).join("")}</section>` : "";
+    const actions = content.accept ? `<div class="ui-action-bar offer-actions"><div><strong>${escapeHtml(content.amount)}</strong><span class="ui-price-breakdown__label">${GUEST_FACT_LABELS.amountDueNow}</span></div>${form(content.accept.path, GUEST_PAYMENT_COPY.accept, true, content.accept.surfaceId)}</div>` : `<div class="offer-actions request-actions">${form(content.conversationPath, "Back to your conversation", true)}${content.searchPath ? form(content.searchPath, "Find other stays", false) : ""}</div>`;
     return `<section class="offer-screen" data-offer-state="${content.state}" data-server-now="${escapeHtml(content.serverNow)}"><header class="request-head offer-head" data-page="booking-record"><p class="ui-eyebrow">Conditional Booking Offer</p><h1>${escapeHtml(content.title)}</h1><span class="ui-status ui-status--${live ? "success" : content.state === "expired" || content.state === "closed" ? "danger" : "warning"}">${escapeHtml(content.status)}</span></header>${banner}${ticket}${live ? breakdown : ""}${policies}${content.steps.length ? `<section class="ui-panel"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>` : ""}${actions}</section>`;
   }
   function paymentLayoutHtml(input) {
@@ -10004,20 +10028,25 @@ Known schemas:
       breakdown,
       sections: [
         `<p class="payment-explanation">${escapeHtml(content.explanation)}</p>`,
+        ...content.choice ? [paymentChoiceHtml(content.choice)] : slots.sections === void 0 ? [] : [slots.sections],
         ...content.steps.length ? [
           `<section class="ui-panel payment-steps"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>`
-        ] : [],
-        ...slots.sections === void 0 ? [] : [slots.sections]
+        ] : []
       ],
-      actions: `${slots.actions ?? ""}${content.choosePath === void 0 ? "" : `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.choosePath)}">Choose another way to pay</a>`}`,
+      actions: content.choice ? "" : slots.actions ?? "",
       serverNow: content.serverNow
     });
   }
+  function paymentChoiceHtml(input) {
+    const method = (value, label, help, checked = false) => `<label><input type="radio" name="method" value="${value}"${checked ? " checked" : ""} aria-labelledby="method-${value}-label" aria-describedby="method-${value}-help"><span class="ui-field"><strong id="method-${value}-label">${escapeHtml(label)}</strong><span id="method-${value}-help" class="ui-field__hint">${escapeHtml(help)}</span></span></label>`;
+    const methods = `<fieldset class="ui-segmented payment-choice-methods"><legend class="ui-sr-only">Payment method</legend>${method("card", GUEST_PAYMENT_COPY.card, GUEST_PAYMENT_COPY.cardHelp, true)}${input.providerTransfer ? method("bank_transfer", GUEST_PAYMENT_COPY.transfer, GUEST_PAYMENT_COPY.transferHelp) : ""}${input.manualAction ? method("manual_transfer", GUEST_PAYMENT_COPY.manual, GUEST_PAYMENT_COPY.manualHelp) : ""}</fieldset>`;
+    return `<form method="post" action="${escapeHtml(input.action)}" class="payment-choice-form"><section class="ui-panel payment-choice" aria-label="Choose how to pay"><h2>How would you like to pay?</h2>${methods}</section><div class="payment-actions ui-action-bar"><button class="ui-button ui-button--primary ui-button--block" type="submit">Continue to stay payment \xB7 ${escapeHtml(input.amount)}</button></div></form>`;
+  }
   function stepsHtml(items) {
-    return `<ol class="ui-steps">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>`;
+    return `<ol class="ui-steps">${items.map((item, index) => `<li><span class="ui-steps__number">${index + 1}</span><span>${escapeHtml(item)}</span></li>`).join("")}</ol>`;
   }
   function confirmationScreenHtml(content, ticket, breakdown) {
-    return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}<section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}</section><div class="request-actions"><a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Back to your conversation</a><a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.detailsHref)}">View booking details</a>${content.scheduleHref ? `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.scheduleHref)}">View payment schedule</a>` : ""}</div><section class="ui-panel booking-details" id="booking-details" tabindex="-1"><h2>Booking details</h2><p>${escapeHtml(content.details)}</p></section></section>`;
+    return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}<div class="confirmation-reference"><dl class="ui-facts ui-facts--stacked"><dt>Booking reference</dt><dd>${escapeHtml(content.bookingReference)}</dd></dl></div><section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}<a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Ask about arrival</a></section><div class="request-actions">${content.scheduleHref ? `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.scheduleHref)}">View payment schedule</a>` : ""}</div><details class="ui-panel booking-details" id="booking-details"><summary class="ui-button ui-button--secondary ui-button--block">Full contract terms</summary><p>${escapeHtml(content.details)}</p></details></section>`;
   }
   function signInOfferHtml(content) {
     return `<section class="ui-panel" data-sign-in-offer aria-labelledby="sign-in-offer-title"><h2 id="sign-in-offer-title">${escapeHtml(GUEST_ACCOUNT_COPY.offerTitle)}</h2><p>${escapeHtml(GUEST_ACCOUNT_COPY.offerIntro)}</p><form method="post" action="/account/sign-in"><div class="ui-field"><label class="ui-field__label" for="sign-in-offer-email">${escapeHtml(GUEST_ACCOUNT_COPY.emailLabel)}</label><input id="sign-in-offer-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" maxlength="254" required value="${escapeHtml(content.email)}"></div><input type="hidden" name="return" value="${escapeHtml(content.returnPath)}"><button class="ui-button ui-button--secondary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.offerButton)}</button></form></section>`;
@@ -10029,11 +10058,13 @@ Known schemas:
   function requestScreenHtml(content, ticket, breakdown, actionTotal) {
     const form = (action, primary) => `<form method="post" action="${escapeHtml(action.path)}">${action.surfaceId === void 0 ? "" : `<input type="hidden" name="surfaceId" value="${escapeHtml(action.surfaceId)}">`}<button class="ui-button ui-button--${primary ? "primary" : "secondary"} ui-button--block" type="submit"${action.surfaceId === "" ? " disabled" : ""}>${escapeHtml(action.label)}</button></form>`;
     const who = content.guests === void 0 ? "" : `<section class="ui-panel request-guests" aria-label="Who's staying"><h2>Who's staying</h2><dl class="ui-facts ui-facts--stacked"><dt>Guests</dt><dd>${escapeHtml(content.guests)}</dd>${content.selfBooking === void 0 ? "" : `<dt>You're booking for yourself</dt><dd>${content.selfBooking ? "Yes" : "No"}</dd>`}</dl>${content.changeHref === void 0 ? "" : `<a class="ui-link" href="${escapeHtml(content.changeHref)}">Change dates or guests${icon("arrow-right")}</a>`}</section>`;
+    const edit = content.edit;
+    const editor = edit === void 0 ? "" : `<section class="ui-panel request-edit"><h2>${GUEST_REQUEST_EDIT_COPY.heading}</h2>${edit.error ? `<p id="request-edit-error" class="ui-field__error" role="alert">${escapeHtml(edit.error)}</p>` : ""}<form class="ui-field" method="post" action="${escapeHtml(edit.route)}"><input type="hidden" name="surfaceId" value="${escapeHtml(content.primary.surfaceId ?? "")}"><details${edit.error ? " open" : ""}><summary class="ui-button ui-button--secondary">${GUEST_REQUEST_EDIT_COPY.dates}</summary><div class="ui-field"><label for="request-check-in">${GUEST_FACT_LABELS.checkIn}</label><input id="request-check-in" type="date" name="checkIn" value="${escapeHtml(edit.entered?.checkIn ?? edit.checkIn)}"${edit.error ? ' aria-invalid="true" aria-describedby="request-edit-error"' : ""} required></div><div class="ui-field"><label for="request-check-out">${GUEST_FACT_LABELS.checkOut}</label><input id="request-check-out" type="date" name="checkOut" value="${escapeHtml(edit.entered?.checkOut ?? edit.checkOut)}"${edit.error ? ' aria-invalid="true" aria-describedby="request-edit-error"' : ""} required></div></details><details${edit.error ? " open" : ""}><summary class="ui-button ui-button--secondary">${GUEST_REQUEST_EDIT_COPY.guests}</summary><div class="ui-field"><label for="request-party-size">${GUEST_REQUEST_EDIT_COPY.guestCount}</label><input id="request-party-size" type="number" name="partySize" value="${escapeHtml(edit.entered?.partySize ?? String(edit.partySize))}"${edit.error ? ' aria-invalid="true" aria-describedby="request-edit-error"' : ""} min="1" required></div></details><button class="ui-button ui-button--secondary ui-button--block" type="submit">${GUEST_REQUEST_EDIT_COPY.save}</button></form><a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(edit.contactHref)}">${GUEST_REQUEST_EDIT_COPY.phone}</a></section>`;
     const banner = content.banner === void 0 ? "" : `<p class="ui-banner ui-banner--neutral">${icon("info")}<span>${escapeHtml(content.banner)}</span></p>`;
     const deadline = content.deadline === void 0 ? "" : `<p class="request-deadline"><time class="waiting-deadline-time" datetime="${escapeHtml(content.deadline.iso)}">${escapeHtml(content.deadline.text)}</time><span class="waiting-countdown"></span></p>`;
     const editable = content.state === "draft" || content.state === "review";
     const sum = editable && actionTotal !== void 0 ? `<p class="ui-action-bar__sum"><strong>${escapeHtml(actionTotal)}</strong><span class="ui-money-metadata">${GUEST_GLOSSARY.allInStayTotal}</span></p>` : "";
-    return `<section class="request-screen" data-request-state="${content.state}"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">${GUEST_GLOSSARY.bookingRequest}</p><h2>${escapeHtml(content.title)}</h2>${statusHtml(content.tone, content.status)}</header>${banner}<div class="request-ticket">${ticket}</div>${who}<div class="request-breakdown">${breakdown}</div>${content.schedule === void 0 ? "" : paymentScheduleHtml(content.schedule)}${content.provider === void 0 ? "" : `<p class="request-provider">${escapeHtml(content.provider)}</p>`}${content.sentAt === void 0 ? "" : `<p class="ui-field__hint">${escapeHtml(content.sentAt)}</p>`}${deadline}<section class="ui-panel request-next"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>${content.notes.length ? `<div class="request-notes">${content.notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</div>` : ""}<div class="request-actions${editable ? " ui-action-bar" : ""}">${sum}${form(content.primary, true)}${content.secondary === void 0 ? "" : form(content.secondary, false)}</div></section>`;
+    return `<section class="request-screen" data-request-state="${content.state}"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">${GUEST_GLOSSARY.bookingRequest}</p><h2>${escapeHtml(content.title)}</h2>${statusHtml(content.tone, content.status)}</header>${banner}<div class="request-ticket">${ticket}</div>${who}${editor}<div class="request-breakdown">${breakdown}</div>${content.schedule === void 0 ? "" : paymentScheduleHtml(content.schedule)}${content.provider === void 0 ? "" : `<p class="request-provider">${escapeHtml(content.provider)}</p>`}${content.sentAt === void 0 ? "" : `<p class="ui-field__hint">${escapeHtml(content.sentAt)}</p>`}${deadline}<section class="ui-panel request-next"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>${content.notes.length ? `<div class="request-notes">${content.notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</div>` : ""}<div class="request-actions${editable ? " ui-action-bar" : ""}">${sum}${form(content.primary, true)}${content.secondary === void 0 ? "" : form(content.secondary, false)}</div></section>`;
   }
   function statusHtml(tone, text) {
     return statusBadge(text, tone);
@@ -10400,7 +10431,7 @@ Known schemas:
           title: title.textContent?.trim() ?? "",
           checkIn: { day: checkInDay, date: checkIn.value },
           checkOut: { day: checkOutDay, date: checkOut.value },
-          foot: stay.value + (activePayload?.confirmation ? ` \xB7 Booking reference ${activePayload.confirmation.bookingReference}` : "")
+          foot: stay.value
         }),
         [title, checkIn.element, checkOut.element, stay.element]
       );
@@ -10458,9 +10489,9 @@ Known schemas:
       breakdown.outerHTML
     );
     root.replaceChildren(template.content);
-    root.querySelector(".request-actions a")?.addEventListener("click", (event) => {
+    root.querySelector(".request-next a")?.addEventListener("click", (event) => {
       event.preventDefault();
-      closeWorkspace(workspaceReopen);
+      askShortlet();
     });
   }
   function organizePaymentScreen(mount, content) {
@@ -10487,7 +10518,19 @@ Known schemas:
     );
     const slot = template.content.querySelector("[data-payment-action-slot]");
     if (slot && actions) slot.replaceWith(actions);
-    root.replaceChildren(template.content);
+    if (content.choice && actions) {
+      const original = actions.querySelector("button");
+      const form = template.content.querySelector(".payment-choice-form");
+      form?.addEventListener("submit", (event) => {
+        if (new FormData(form).get("method") !== "card") return;
+        event.preventDefault();
+        if (original && !original.disabled) original.click();
+      });
+      const binding = document.createElement("div");
+      binding.hidden = true;
+      binding.append(actions);
+      root.replaceChildren(template.content, binding);
+    } else root.replaceChildren(template.content);
     const countdown = root.querySelector(".waiting-countdown");
     if (countdown && activePayload?.waiting?.kind === "payment-window")
       startCountdown(activePayload.waiting, countdown, true);
@@ -10925,14 +10968,14 @@ Known schemas:
   function isOfferScreen(value) {
     if (!isRecord3(value) || !["live", "expired", "accepted", "closed"].includes(String(value.state)) || ["title", "status", "provider", "consequence", "amount"].some(
       (key3) => typeof value[key3] !== "string"
-    ) || typeof value.deadlineIso !== "string" || !Number.isFinite(Date.parse(value.deadlineIso)) || typeof value.serverNow !== "string" || !Number.isFinite(Date.parse(value.serverNow)) || !isStringList(value.steps) || !isStringList(value.notes) || !isStringList(value.policies) || !isSafeInternalRoute(value.conversationPath) || value.searchPath !== void 0 && !isSafeInternalRoute(value.searchPath))
+    ) || typeof value.deadlineIso !== "string" || !Number.isFinite(Date.parse(value.deadlineIso)) || typeof value.serverNow !== "string" || !Number.isFinite(Date.parse(value.serverNow)) || !isStringList(value.steps) || !isStringList(value.notes) || !Array.isArray(value.policies) || !value.policies.every((section) => isRecord3(section) && typeof section.heading === "string" && isStringList(section.items)) || !isSafeInternalRoute(value.conversationPath) || value.searchPath !== void 0 && !isSafeInternalRoute(value.searchPath))
       return false;
     return value.accept === void 0 || value.state === "live" && isRecord3(value.accept) && isSafeInternalRoute(value.accept.path) && typeof value.accept.surfaceId === "string" && value.accept.surfaceId !== "";
   }
   function isPaymentScreen(value) {
     return isRecord3(value) && ["ready", "handoff"].includes(String(value.state)) && ["success", "warning", "danger", "neutral"].includes(String(value.tone)) && ["title", "status", "explanation"].every(
       (key3) => typeof value[key3] === "string"
-    ) && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow)) && (value.deadlineIso === void 0 || typeof value.deadlineIso === "string" && Number.isFinite(Date.parse(value.deadlineIso))) && isStringList(value.steps) && (value.choosePath === void 0 || isSafeInternalRoute(value.choosePath));
+    ) && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow)) && (value.deadlineIso === void 0 || typeof value.deadlineIso === "string" && Number.isFinite(Date.parse(value.deadlineIso))) && isStringList(value.steps) && (value.choice === void 0 || value.state === "ready" && isRecord3(value.choice) && isSafeInternalRoute(value.choice.action) && typeof value.choice.providerTransfer === "boolean" && typeof value.choice.amount === "string" && (value.choice.manualAction === void 0 || isSafeInternalRoute(value.choice.manualAction)));
   }
   function isSurfacePayload(value) {
     if (!isRecord3(value) || typeof value.surfaceId !== "string" || value.surfaceId.trim() === "" || !Array.isArray(value.a2uiMessages))
@@ -11031,6 +11074,7 @@ Known schemas:
   var eventInFlight = false;
   var lastActivatedControl;
   var workspaceOpener;
+  var focusedScrollTop = 0;
   var createdSurfaceIds = /* @__PURE__ */ new Set();
   function trackTelemetry(event) {
     void fetch("/api/telemetry", {
@@ -11123,8 +11167,13 @@ Known schemas:
     mountGuestSurfaceOrFallback({ attemptMount: () => ({ ok: false }), mount, surface, onConventionalRouteFallback: () => trackTelemetry("conventional-route-fallback") });
   }
   function showReopen() {
+    if (workspaceReopen.disabled) {
+      workspaceReopen.hidden = false;
+      workspaceReopen.textContent = "Checking current details\u2026";
+      return;
+    }
     const current = shellState.activeSurface;
-    const canReopen = current?.mode === "focused-surface" && current.status === "active" && activePayload !== void 0;
+    const canReopen = current?.mode === "focused-surface" && current.status !== "deleted" && current.status !== "superseded" && activePayload !== void 0;
     workspaceReopen.hidden = !canReopen || shellState.focusedSurfaceOpen;
     if (canReopen)
       workspaceReopen.textContent = `Return to ${guestSurfaceHeading(current.summary).toLocaleLowerCase()}`;
@@ -11271,6 +11320,7 @@ Known schemas:
     }
   }
   function closeWorkspace(focusTarget) {
+    focusedScrollTop = workspaceRegion.scrollTop;
     shellState = closeFocusedSurface(shellState);
     composerForm.dataset.focused = "false";
     activeWorkspace.hidden = true;
@@ -11282,13 +11332,20 @@ Known schemas:
     trackTelemetry("focused-surface-closed");
     announce("Returned to the conversation. Your stay details are still here.");
   }
+  function askShortlet() {
+    closeWorkspace(composerInput);
+    composerInput.focus({ preventScroll: true });
+    announce("Conversation ready. Your stay details are still here.");
+  }
   function renderSurface(surface, moveFocus = false) {
     stopCountdown();
     const presentation = presentationFor(surface);
+    const previousScroll = activePayload?.surfaceId === surface.surfaceId ? shellState.focusedSurfaceOpen ? workspaceRegion.scrollTop : focusedScrollTop : 0;
+    focusedScrollTop = previousScroll;
     composerForm.dataset.focused = presentation.mode === "focused-surface" ? "true" : "false";
     activePayload = surface;
     activeWorkspace.replaceChildren();
-    activeWorkspace.hidden = false;
+    activeWorkspace.hidden = presentation.mode === "focused-surface" && !shellState.focusedSurfaceOpen;
     activeWorkspace.tabIndex = -1;
     workspaceRegion.hidden = false;
     activeWorkspace.dataset.mode = presentation.mode;
@@ -11311,9 +11368,24 @@ Known schemas:
       arrow.setAttribute("aria-hidden", "true");
       arrow.textContent = "\u2190";
       close.appendChild(arrow);
-      close.append("Back to conversation");
+      close.append("Back");
+      const detail = document.createElement("span");
+      detail.className = "workspace-close__detail";
+      detail.textContent = " to conversation";
+      close.appendChild(detail);
+      close.setAttribute("aria-label", "Back to conversation");
       close.addEventListener("click", () => closeWorkspace(workspaceReopen));
       heading.appendChild(close);
+      const stage = document.createElement("span");
+      stage.className = "workspace-stage-label";
+      stage.textContent = guestSurfaceHeading(presentation.summary);
+      heading.appendChild(stage);
+      const ask = document.createElement("button");
+      ask.type = "button";
+      ask.className = "workspace-ask ui-button ui-button--quiet";
+      ask.textContent = "Ask Shortlet";
+      ask.addEventListener("click", askShortlet);
+      heading.appendChild(ask);
     }
     activeWorkspace.appendChild(heading);
     const statusMessage = guestSurfaceStatusMessage(presentation.status);
@@ -11341,6 +11413,7 @@ Known schemas:
       trackTelemetry("fallback-rendered");
       fallback(mount, presentation);
       showReopen();
+      syncSheetHistory();
       return;
     }
     if (createdSurfaceIds.has(surface.surfaceId)) {
@@ -11356,6 +11429,7 @@ Known schemas:
         fallback(mount, { ...presentation, status: "fallback" });
         announce("The workspace could not be displayed safely. A standard route remains available.", true);
         showReopen();
+        syncSheetHistory();
         return;
       }
     }
@@ -11370,6 +11444,7 @@ Known schemas:
       trackTelemetry("fallback-rendered");
       announce("The workspace could not be displayed safely. A standard route remains available.", true);
       showReopen();
+      syncSheetHistory();
       return;
     }
     mount.dataset.renderer = "weaver";
@@ -11388,6 +11463,7 @@ Known schemas:
       mount.appendChild(link);
     }
     showReopen();
+    workspaceRegion.scrollTop = previousScroll;
     if (moveFocus) {
       activeWorkspace.scrollIntoView({ block: "start" });
       const focusTarget = [".workspace-close", ".workspace-heading h2", ".weaver-mount h1", ".weaver-mount h2", ".weaver-mount h3", ".weaver-mount button"].map((selector) => activeWorkspace.querySelector(selector)).find((element) => element !== null);
@@ -11403,16 +11479,18 @@ Known schemas:
     if (moveFocus) announce(`${guestSurfaceHeading(presentation.summary)} is ready.`);
     syncSheetHistory();
   }
-  function acceptSurface(surface) {
+  function acceptSurface(surface, preserveConversation = false) {
     const before = shellState.historicalSummaries.length;
     const replaced = shellState.activeSurface !== void 0 && shellState.activeSurface.surfaceId !== surface.surfaceId;
+    const keepConversationOpen = preserveConversation || !replaced && shellState.activeSurface?.mode === "focused-surface" && !shellState.focusedSurfaceOpen;
     shellState = replaceActiveSurface(shellState, presentationFor(surface));
+    if (keepConversationOpen) shellState = closeFocusedSurface(shellState);
     if (replaced) trackTelemetry("surface-replaced");
     for (const summary of shellState.historicalSummaries.slice(before)) addHistoricalSummary(summary);
-    renderSurface(surface, replaced);
+    renderSurface(surface, replaced && !preserveConversation);
     syncSheetHistory();
   }
-  function renderSurfaces(surfaces) {
+  function renderSurfaces(surfaces, preserveConversation = false) {
     for (const historical of surfaces.slice(0, -1)) {
       const presentation = presentationFor(historical);
       addHistoricalSummary({
@@ -11422,7 +11500,7 @@ Known schemas:
       });
     }
     const current = surfaces.at(-1);
-    if (current) acceptSurface(current);
+    if (current) acceptSurface(current, preserveConversation);
   }
   function renderJourney(journey) {
     if (!journey) return;
@@ -11865,7 +11943,7 @@ Known schemas:
     for (const receipt of response.receipts ?? []) addReceipt(receipt);
     return true;
   }
-  async function refreshServerState() {
+  async function refreshServerState(preserveConversation = shellState.activeSurface?.mode === "focused-surface" && !shellState.focusedSurfaceOpen) {
     try {
       const response = await postJson(
         `/api/state?threadId=${encodeURIComponent(threadId)}`
@@ -11877,7 +11955,7 @@ Known schemas:
         renderVerticalStarters(response.verticals);
       }
       if (response.ok && response.surfaces && response.surfaces.length > 0) {
-        renderSurfaces(response.surfaces);
+        renderSurfaces(response.surfaces, preserveConversation);
         return true;
       }
     } catch {
@@ -11987,13 +12065,82 @@ Known schemas:
     announce("The interface runtime could not start. Please reload the page.", true);
     throw new Error("Unable to create the Weaver web runtime");
   }
-  workspaceReopen.addEventListener("click", () => {
+  workspaceReopen.addEventListener("click", async () => {
+    if (workspaceReopen.disabled) return;
+    const previous = shellState.activeSurface;
     workspaceOpener = workspaceReopen;
-    shellState = reopenFocusedSurface(shellState);
-    if (activePayload) {
-      renderSurface(activePayload, true);
-      activeWorkspace.querySelector(".workspace-close")?.focus({ preventScroll: true });
+    workspaceReopen.disabled = true;
+    workspaceReopen.setAttribute("aria-busy", "true");
+    showReopen();
+    composerInput.focus({ preventScroll: true });
+    const refreshed = await refreshServerState(true);
+    let recoveryFocus;
+    if (!refreshed && activePayload) {
+      shellState = markActiveSurfaceStatus(shellState, "stale");
+      renderSurface({ ...activePayload, status: "stale" });
+      shellState = reopenFocusedSurface(shellState);
+      activeWorkspace.hidden = false;
+      composerForm.dataset.focused = "true";
+      const recovery = document.createElement("div");
+      recovery.className = "workspace-recovery ui-panel";
+      recovery.setAttribute("role", "status");
+      const message = document.createElement("p");
+      message.textContent = "Current details could not be checked. This saved view has no actions.";
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.id = "workspace-retry-status";
+      retry.className = "ui-button";
+      retry.textContent = "Retry current status";
+      retry.addEventListener("click", async () => {
+        retry.disabled = true;
+        retry.textContent = "Checking current status\u2026";
+        if (await refreshServerState()) {
+          const taskBack = shellState.activeSurface?.mode === "focused-surface" && !activeWorkspace.hidden ? activeWorkspace.querySelector(".workspace-close") : null;
+          (taskBack ?? composerInput).focus({ preventScroll: true });
+          return;
+        }
+        retry.disabled = false;
+        retry.textContent = "Retry current status";
+        announce("Current details could not be checked. Try again or open the standard details.", true);
+      });
+      recovery.append(message, retry);
+      if (activePayload.conventionalRoute) {
+        const link = document.createElement("a");
+        link.className = "ui-button";
+        link.href = activePayload.conventionalRoute;
+        link.textContent = "Open standard details";
+        recovery.appendChild(link);
+      }
+      activeWorkspace.querySelector(".workspace-status")?.after(recovery);
+      recoveryFocus = retry;
+      syncSheetHistory();
+      announce("Current details could not be checked. Review the saved details without using their actions.", true);
     }
+    workspaceReopen.disabled = false;
+    workspaceReopen.removeAttribute("aria-busy");
+    showReopen();
+    if (recoveryFocus) {
+      recoveryFocus.focus({ preventScroll: true });
+      requestAnimationFrame(() => {
+        workspaceRegion.scrollTop = focusedScrollTop;
+      });
+      return;
+    }
+    const current = shellState.activeSurface;
+    if (!current || current.surfaceId !== previous?.surfaceId || previous.status === "active" && current.status !== "active") {
+      composerInput.focus({ preventScroll: true });
+      return;
+    }
+    shellState = reopenFocusedSurface(shellState);
+    if (!shellState.focusedSurfaceOpen || !activePayload) return;
+    activeWorkspace.hidden = false;
+    composerForm.dataset.focused = "true";
+    showReopen();
+    syncSheetHistory();
+    activeWorkspace.querySelector(".workspace-close")?.focus({ preventScroll: true });
+    requestAnimationFrame(() => {
+      if (sheetOpen()) workspaceRegion.scrollTop = focusedScrollTop;
+    });
   });
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape" || activeWorkspace.hidden || !activeWorkspace.contains(document.activeElement)) return;
@@ -12006,9 +12153,6 @@ Known schemas:
     sheetInHistory = false;
     closeWorkspace(workspaceReopen);
   });
-  new ResizeObserver(() => {
-    document.documentElement.style.setProperty("--composer-block-size", `${Math.ceil(composerForm.getBoundingClientRect().height)}px`);
-  }).observe(composerForm);
   sheetQuery.addEventListener("change", syncSheetHistory);
   for (const suggestion of document.querySelectorAll(".prompt-suggestion[data-prompt]")) {
     suggestion.addEventListener("click", () => {

@@ -22,7 +22,24 @@ test("AC1: the confirmed reservation renders the same ticket, paid breakdown, st
       assert.match(result.chat, /Booking reference.*res_/);
       assert.match(result.chat, /Before you arrive.*ui-steps/);
       assert.match(result.chat, /does not itself grant physical access/);
-      assert.match(result.chat, /View booking details/);
+      assert.match(result.chat, /Full contract terms/);
+      assert.match(result.chat, /Ask about arrival/);
+      assert.ok(result.chat.indexOf("Stay payment paid:") < result.chat.indexOf('class="confirmation-reference"'));
+      await tab.focus(".confirmed-screen .request-next a");
+      await tab.pressKey("Enter");
+      assert.equal(await tab.evaluate<string>("document.activeElement.id"), "composer-input");
+      assert.equal(await tab.evaluate<boolean>("document.querySelector('#active-workspace').hidden"), true);
+      await tab.navigate(`${fixture.base}${path}`);
+      await tab.waitForSelector(".confirmed-screen");
+      await tab.focus("#booking-details summary");
+      await tab.pressKey("Enter");
+      assert.equal(await tab.evaluate<boolean>("document.querySelector('#booking-details').open"), true);
+      const accessibility = JSON.stringify(await tab.getAccessibilityTree());
+      for (const text of ["Reservation confirmed", "Booking reference", "Ask about arrival", "Full contract terms", "Cancellation terms", "does not itself grant physical access"]) assert.ok(accessibility.includes(text), text);
+      await tab.setViewport(320, 900);
+      await tab.evaluate("document.documentElement.style.zoom = '2'");
+      assert.equal(await tab.evaluate<number>("document.documentElement.scrollWidth - innerWidth"), 0);
+      assert.match(await tab.evaluate<string>("document.querySelector('.confirmed-screen').innerText"), /Stay payment paid:.*₦370,000/s);
       assert.doesNotMatch(result.chat, /Total to complete booking|If your request is accepted/);
     } finally { await browser.close(); }
   });

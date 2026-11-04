@@ -19,6 +19,15 @@ export interface RequestScreenContent {
   readonly guests?: string;
   readonly selfBooking?: boolean;
   readonly changeHref?: string;
+  readonly edit?: {
+    readonly route: string;
+    readonly checkIn: string;
+    readonly checkOut: string;
+    readonly partySize: number;
+    readonly contactHref: string;
+    readonly error?: string;
+    readonly entered?: { readonly checkIn: string; readonly checkOut: string; readonly partySize: string };
+  };
   readonly deadline?: { readonly iso: string; readonly text: string };
   readonly sentAt?: string;
   readonly primary: { readonly path: string; readonly label: string; readonly surfaceId?: string };
@@ -40,8 +49,9 @@ export function draftScreenContent(artifact: RequestDraftArtifact, route: string
     ...(review ? { provider: accommodationProviderLine(facts.operatorName) } : {
       guests: names.length ? names.join(", ") : `${facts.occupants.length} ${facts.occupants.length === 1 ? "guest" : "guests"}`,
       ...(facts.selfBookingAttestation === undefined ? {} : { selfBooking: facts.selfBookingAttestation.accepted }),
-      changeHref: `/conversation?threadId=${encodeURIComponent(threadId)}`,
+
     }),
+    ...(surfaceId ? { edit: { route: `${route}/edit`, checkIn: facts.checkIn, checkOut: facts.checkOut, partySize: facts.occupants.length, contactHref: `/guest/contact?kind=phone&returnTo=${encodeURIComponent(route)}` } } : {}),
     primary: { path: `${route}/${review ? "submit" : "review"}`, label: review ? "Submit Booking Request" : "Review request", surfaceId },
   };
 }

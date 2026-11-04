@@ -8,6 +8,8 @@ import {
   GUEST_ACCOUNT_COPY,
   GUEST_DEMO_COPY,
   GUEST_FACT_LABELS,
+  GUEST_REQUEST_EDIT_COPY,
+  GUEST_PAYMENT_COPY,
   GUEST_GLOSSARY,
   GUEST_JOURNEY,
   GUEST_TASK_RAIL,
@@ -39,7 +41,7 @@ import { guestStatusTone } from "./conversational-shell.js";
 import type { RequestScreenContent } from "../../web-agent/src/request-presentation.js";
 import type { ConfirmationContent } from "../../web-agent/src/confirmation-presentation.js";
 import type { OfferScreenContent } from "../../web-agent/src/offer-presentation.js";
-import type { PaymentScreenContent } from "../../web-agent/src/payment-presentation.js";
+import type { PaymentScreenContent, PaymentMethodChoice } from "../../web-agent/src/payment-presentation.js";
 import type { CommerceOfferPresentation } from "../../web-agent/src/commerce-presentation.js";
 
 /** The absolute deadline in Africa/Lagos time (ADR 0078), without the "Pay by" prefix. */
@@ -257,10 +259,10 @@ export function offerScreenHtml(
       ? `<p class="ui-banner ui-banner--neutral offer-deadline">${icon("clock")}<span>The deadline was <time datetime="${escapeHtml(content.deadlineIso)}">${escapeHtml(formatWAT(content.deadlineIso))}</time><br>${escapeHtml(content.consequence)}</span></p>`
       : "";
   const policies = live
-    ? `<section class="ui-panel offer-policies" aria-label="Before you pay"><h2>Before you pay</h2><p>${escapeHtml(content.provider)}</p>${content.policies.map((text) => `<p>${escapeHtml(text)}</p>`).join("")}${content.notes.map((text) => `<p>${escapeHtml(text)}</p>`).join("")}</section>`
+    ? `<section class="ui-panel offer-policies" aria-label="Before you pay"><h2>Before you pay</h2><p>${escapeHtml(content.provider)}</p>${content.policies.map((section) => `<section><h3>${escapeHtml(section.heading)}</h3><ul>${section.items.map(text => `<li>${escapeHtml(text)}</li>`).join("")}</ul></section>`).join("")}${content.notes.map((text) => `<p>${escapeHtml(text)}</p>`).join("")}</section>`
     : "";
   const actions = content.accept
-    ? `<div class="ui-action-bar offer-actions"><div><strong>${escapeHtml(content.amount)}</strong><span class="ui-price-breakdown__label">${GUEST_FACT_LABELS.amountDueNow}</span></div>${form(content.accept.path, "Accept and pay", true, content.accept.surfaceId)}</div>`
+    ? `<div class="ui-action-bar offer-actions"><div><strong>${escapeHtml(content.amount)}</strong><span class="ui-price-breakdown__label">${GUEST_FACT_LABELS.amountDueNow}</span></div>${form(content.accept.path, GUEST_PAYMENT_COPY.accept, true, content.accept.surfaceId)}</div>`
     : `<div class="offer-actions request-actions">${form(content.conversationPath, "Back to your conversation", true)}${content.searchPath ? form(content.searchPath, "Find other stays", false) : ""}</div>`;
   return `<section class="offer-screen" data-offer-state="${content.state}" data-server-now="${escapeHtml(content.serverNow)}"><header class="request-head offer-head" data-page="booking-record"><p class="ui-eyebrow">Conditional Booking Offer</p><h1>${escapeHtml(content.title)}</h1><span class="ui-status ui-status--${live ? "success" : content.state === "expired" || content.state === "closed" ? "danger" : "warning"}">${escapeHtml(content.status)}</span></header>${banner}${ticket}${live ? breakdown : ""}${policies}${content.steps.length ? `<section class="ui-panel"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>` : ""}${actions}</section>`;
 }
@@ -320,35 +322,23 @@ export function paymentScreenHtml(
     breakdown,
     sections: [
       `<p class="payment-explanation">${escapeHtml(content.explanation)}</p>`,
+      ...(content.choice ? [paymentChoiceHtml(content.choice)] : slots.sections === undefined ? [] : [slots.sections]),
       ...(content.steps.length
         ? [
             `<section class="ui-panel payment-steps"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>`,
           ]
         : []),
-      ...(slots.sections === undefined ? [] : [slots.sections]),
     ],
-    actions: `${slots.actions ?? ""}${content.choosePath === undefined ? "" : `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.choosePath)}">Choose another way to pay</a>`}`,
+    actions: content.choice ? "" : slots.actions ?? "",
     serverNow: content.serverNow,
   });
 }
 
-/** How to pay: a native radio group and one submit (works without JavaScript, ADR 0080), then the manual option. */
-export function paymentChoiceHtml(input: {
-  readonly action: string;
-  readonly manualAction?: string;
-  readonly providerTransfer: boolean;
-  readonly amount: string;
-  readonly switching: string;
-  readonly manualCopy: string;
-}): string {
-  const methods = input.providerTransfer
-    ? `<fieldset class="ui-segmented"><legend class="ui-sr-only">Payment method</legend><label><input type="radio" name="method" value="card" checked>${icon("card")}Card</label><label><input type="radio" name="method" value="bank_transfer">${icon("bank")}Bank transfer</label></fieldset>`
-    : `<input type="hidden" name="method" value="card">`;
-  const manual =
-    input.manualAction === undefined
-      ? ""
-      : `<form method="post" action="${escapeHtml(input.manualAction)}" class="payment-manual"><section class="ui-panel"><button class="ui-button ui-button--secondary ui-button--block" type="submit">${icon("upload")}Pay by manual bank transfer</button><p class="ui-field__hint">${escapeHtml(input.manualCopy)}</p></section></form>`;
-  return `<form method="post" action="${escapeHtml(input.action)}" class="payment-choice-form"><section class="ui-panel payment-choice" aria-label="Choose how to pay"><h2>How would you like to pay?</h2><p class="ui-field__hint">${escapeHtml(input.switching)}</p>${methods}</section><div class="payment-actions ui-action-bar"><button class="ui-button ui-button--primary ui-button--block" type="submit">Continue · ${escapeHtml(input.amount)}</button></div></form>${manual}`;
+/** All available payment methods use one native radio group and command dispatch (ADR 0080). */
+export function paymentChoiceHtml(input: PaymentMethodChoice): string {
+  const method = (value: string, label: string, help: string, checked = false) => `<label><input type="radio" name="method" value="${value}"${checked ? " checked" : ""} aria-labelledby="method-${value}-label" aria-describedby="method-${value}-help"><span class="ui-field"><strong id="method-${value}-label">${escapeHtml(label)}</strong><span id="method-${value}-help" class="ui-field__hint">${escapeHtml(help)}</span></span></label>`;
+  const methods = `<fieldset class="ui-segmented payment-choice-methods"><legend class="ui-sr-only">Payment method</legend>${method("card", GUEST_PAYMENT_COPY.card, GUEST_PAYMENT_COPY.cardHelp, true)}${input.providerTransfer ? method("bank_transfer", GUEST_PAYMENT_COPY.transfer, GUEST_PAYMENT_COPY.transferHelp) : ""}${input.manualAction ? method("manual_transfer", GUEST_PAYMENT_COPY.manual, GUEST_PAYMENT_COPY.manualHelp) : ""}</fieldset>`;
+  return `<form method="post" action="${escapeHtml(input.action)}" class="payment-choice-form"><section class="ui-panel payment-choice" aria-label="Choose how to pay"><h2>How would you like to pay?</h2>${methods}</section><div class="payment-actions ui-action-bar"><button class="ui-button ui-button--primary ui-button--block" type="submit">Continue to stay payment · ${escapeHtml(input.amount)}</button></div></form>`;
 }
 
 /** The bank-transfer details in one card (account number with its copy button, exact amount, booking-only note). */
@@ -398,7 +388,7 @@ export function paymentRecoveryActionsHtml(conversationHref: string): string {
 
 /** "What happens next": a plain numbered list. */
 export function stepsHtml(items: readonly string[]): string {
-  return `<ol class="ui-steps">${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol>`;
+  return `<ol class="ui-steps">${items.map((item, index) => `<li><span class="ui-steps__number">${index + 1}</span><span>${escapeHtml(item)}</span></li>`).join("")}</ol>`;
 }
 
 /** Issue 10: the confirmation uses the same kit sections on the page and in the workspace. */
@@ -407,7 +397,7 @@ export function confirmationScreenHtml(
   ticket: string,
   breakdown: string,
 ): string {
-  return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}<section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}</section><div class="request-actions"><a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Back to your conversation</a><a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.detailsHref)}">View booking details</a>${content.scheduleHref ? `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.scheduleHref)}">View payment schedule</a>` : ""}</div><section class="ui-panel booking-details" id="booking-details" tabindex="-1"><h2>Booking details</h2><p>${escapeHtml(content.details)}</p></section></section>`;
+  return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}<div class="confirmation-reference"><dl class="ui-facts ui-facts--stacked"><dt>Booking reference</dt><dd>${escapeHtml(content.bookingReference)}</dd></dl></div><section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}<a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Ask about arrival</a></section><div class="request-actions">${content.scheduleHref ? `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.scheduleHref)}">View payment schedule</a>` : ""}</div><details class="ui-panel booking-details" id="booking-details"><summary class="ui-button ui-button--secondary ui-button--block">Full contract terms</summary><p>${escapeHtml(content.details)}</p></details></section>`;
 }
 
 /** Issue 08: the sign-in offer. The email is the contact already given, and `returnPath` is the screen to come back to. */
@@ -446,6 +436,8 @@ export function requestScreenHtml(
     content.guests === undefined
       ? ""
       : `<section class="ui-panel request-guests" aria-label="Who's staying"><h2>Who's staying</h2><dl class="ui-facts ui-facts--stacked"><dt>Guests</dt><dd>${escapeHtml(content.guests)}</dd>${content.selfBooking === undefined ? "" : `<dt>You're booking for yourself</dt><dd>${content.selfBooking ? "Yes" : "No"}</dd>`}</dl>${content.changeHref === undefined ? "" : `<a class="ui-link" href="${escapeHtml(content.changeHref)}">Change dates or guests${icon("arrow-right")}</a>`}</section>`;
+  const edit = content.edit;
+  const editor = edit === undefined ? "" : `<section class="ui-panel request-edit"><h2>${GUEST_REQUEST_EDIT_COPY.heading}</h2>${edit.error ? `<p id="request-edit-error" class="ui-field__error" role="alert">${escapeHtml(edit.error)}</p>` : ""}<form class="ui-field" method="post" action="${escapeHtml(edit.route)}"><input type="hidden" name="surfaceId" value="${escapeHtml(content.primary.surfaceId ?? "")}"><details${edit.error ? " open" : ""}><summary class="ui-button ui-button--secondary">${GUEST_REQUEST_EDIT_COPY.dates}</summary><div class="ui-field"><label for="request-check-in">${GUEST_FACT_LABELS.checkIn}</label><input id="request-check-in" type="date" name="checkIn" value="${escapeHtml(edit.entered?.checkIn ?? edit.checkIn)}"${edit.error ? ' aria-invalid="true" aria-describedby="request-edit-error"' : ""} required></div><div class="ui-field"><label for="request-check-out">${GUEST_FACT_LABELS.checkOut}</label><input id="request-check-out" type="date" name="checkOut" value="${escapeHtml(edit.entered?.checkOut ?? edit.checkOut)}"${edit.error ? ' aria-invalid="true" aria-describedby="request-edit-error"' : ""} required></div></details><details${edit.error ? " open" : ""}><summary class="ui-button ui-button--secondary">${GUEST_REQUEST_EDIT_COPY.guests}</summary><div class="ui-field"><label for="request-party-size">${GUEST_REQUEST_EDIT_COPY.guestCount}</label><input id="request-party-size" type="number" name="partySize" value="${escapeHtml(edit.entered?.partySize ?? String(edit.partySize))}"${edit.error ? ' aria-invalid="true" aria-describedby="request-edit-error"' : ""} min="1" required></div></details><button class="ui-button ui-button--secondary ui-button--block" type="submit">${GUEST_REQUEST_EDIT_COPY.save}</button></form><a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(edit.contactHref)}">${GUEST_REQUEST_EDIT_COPY.phone}</a></section>`;
   const banner =
     content.banner === undefined
       ? ""
@@ -459,7 +451,7 @@ export function requestScreenHtml(
     editable && actionTotal !== undefined
       ? `<p class="ui-action-bar__sum"><strong>${escapeHtml(actionTotal)}</strong><span class="ui-money-metadata">${GUEST_GLOSSARY.allInStayTotal}</span></p>`
       : "";
-  return `<section class="request-screen" data-request-state="${content.state}"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">${GUEST_GLOSSARY.bookingRequest}</p><h2>${escapeHtml(content.title)}</h2>${statusHtml(content.tone, content.status)}</header>${banner}<div class="request-ticket">${ticket}</div>${who}<div class="request-breakdown">${breakdown}</div>${content.schedule === undefined ? "" : paymentScheduleHtml(content.schedule)}${content.provider === undefined ? "" : `<p class="request-provider">${escapeHtml(content.provider)}</p>`}${content.sentAt === undefined ? "" : `<p class="ui-field__hint">${escapeHtml(content.sentAt)}</p>`}${deadline}<section class="ui-panel request-next"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>${content.notes.length ? `<div class="request-notes">${content.notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</div>` : ""}<div class="request-actions${editable ? " ui-action-bar" : ""}">${sum}${form(content.primary, true)}${content.secondary === undefined ? "" : form(content.secondary, false)}</div></section>`;
+  return `<section class="request-screen" data-request-state="${content.state}"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">${GUEST_GLOSSARY.bookingRequest}</p><h2>${escapeHtml(content.title)}</h2>${statusHtml(content.tone, content.status)}</header>${banner}<div class="request-ticket">${ticket}</div>${who}${editor}<div class="request-breakdown">${breakdown}</div>${content.schedule === undefined ? "" : paymentScheduleHtml(content.schedule)}${content.provider === undefined ? "" : `<p class="request-provider">${escapeHtml(content.provider)}</p>`}${content.sentAt === undefined ? "" : `<p class="ui-field__hint">${escapeHtml(content.sentAt)}</p>`}${deadline}<section class="ui-panel request-next"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>${content.notes.length ? `<div class="request-notes">${content.notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</div>` : ""}<div class="request-actions${editable ? " ui-action-bar" : ""}">${sum}${form(content.primary, true)}${content.secondary === undefined ? "" : form(content.secondary, false)}</div></section>`;
 }
 
 export type KitStatusTone = "success" | "warning" | "danger" | "neutral";

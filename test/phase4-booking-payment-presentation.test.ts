@@ -81,7 +81,7 @@ test("D, E and M. Conditional Offer shows absolute WAT expiry and offers one dir
   assert.match(text, /becomes a Reservation only after payment is verified/i);
   const buttons = messages.flatMap((message) => "updateComponents" in message ? message.updateComponents.components : []).filter((component) => component.component === "Button");
   assert.equal(buttons.length, 1);
-  assert.match(JSON.stringify(buttons), /Accept.*Offer|Accept Conditional Booking Offer/i);
+  assert.match(JSON.stringify(buttons), /Accept and choose payment/i);
   assert.doesNotMatch(text, /not-rendered|2026-09-24T/);
   const expired = conditionalOfferArtifactToA2UI({ artifact: offerArtifact("expired", false), surfaceId: "expired" });
   assert.doesNotMatch(JSON.stringify(expired), /conditional-offer-accept-button|Accept Conditional Booking Offer/);
