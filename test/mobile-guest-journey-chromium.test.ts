@@ -9,6 +9,7 @@ import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { startLocalGuestServer, type LocalGuestServerHandle } from "../apps/local-guest/src/guest-server.js";
 import type { PSPVerifyResult } from "../domains/shortlet/src/index.js";
 import { CLIENT_TURN_TIMEOUT_MS } from "../apps/local-guest/src/turn-budget.js";
+import { GUEST_PHONE_COPY } from "../apps/web-agent/src/guest-content.js";
 
 const PROMPT = "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people";
 const VIEWPORTS = [
@@ -147,26 +148,32 @@ test("AC3: New assistant turns are announced politely; errors are announced asse
 });
 
 test("AC4: Escape closes the focused workspace and moves focus back to the control that opened it", async () => {
-  const c = await startContext(390, 844);
-  try {
-    await sendPrompt(c.tab, PROMPT);
-    await c.tab.waitForText("Luxury 2-Bedroom Apartment");
-    await c.tab.clickButton("View apartment", "Luxury 2-Bedroom Apartment in Old Ikoyi");
-    await c.tab.waitForText("Request to Book");
-    await c.tab.clickButton("Back to conversation");
-    await c.tab.waitForFunction("document.getElementById('active-workspace')?.hidden === true");
-    await c.tab.pressKey("Enter");
-    await c.tab.waitForFunction("document.getElementById('active-workspace')?.hidden === false");
-    await c.tab.focus("#composer-input");
-    await c.tab.pressKey("Escape");
-    assert.equal(await c.tab.evaluate<boolean>("document.getElementById('active-workspace').hidden"), false, "Escape outside the focused workspace must leave it open");
-    await c.tab.focus(".workspace-close");
-    await c.tab.pressKey("Escape");
-    const closed = await c.tab.evaluate<{ readonly hidden: boolean; readonly focus: string }>("({ hidden: document.getElementById('active-workspace').hidden, focus: document.activeElement?.id || '' })");
-    assert.deepEqual(closed, { hidden: true, focus: "workspace-reopen" });
-    await c.tab.pressKey("Escape");
-    assert.equal(await c.tab.evaluate<boolean>("document.getElementById('active-workspace').hidden"), true, "Escape outside an open focused workspace must not change workspace state");
-  } finally { await c.close(); }
+  for (const [width, height] of [[390, 844], [1280, 800]]) {
+    const c = await startContext(width, height);
+    try {
+      await sendPrompt(c.tab, PROMPT);
+      await c.tab.waitForText("Luxury 2-Bedroom Apartment");
+      await c.tab.clickButton("View apartment", "Luxury 2-Bedroom Apartment in Old Ikoyi");
+      await c.tab.waitForText("Request to Book");
+      await c.tab.clickButton("Back to conversation");
+      await c.tab.waitForFunction("document.getElementById('active-workspace')?.hidden === true");
+      await c.tab.pressKey("Enter");
+      await c.tab.waitForFunction("document.getElementById('active-workspace')?.hidden === false");
+      if (width === 390) {
+        assert.equal(await c.tab.evaluate<boolean>("document.getElementById('composer').getClientRects().length === 0"), true);
+      } else {
+        await c.tab.focus("#composer-input");
+        await c.tab.pressKey("Escape");
+        assert.equal(await c.tab.evaluate<boolean>("document.getElementById('active-workspace').hidden"), false, "Escape outside the focused workspace must leave it open");
+      }
+      await c.tab.focus(".workspace-close");
+      await c.tab.pressKey("Escape");
+      const closed = await c.tab.evaluate<{ readonly hidden: boolean; readonly focus: string }>("({ hidden: document.getElementById('active-workspace').hidden, focus: document.activeElement?.id || '' })");
+      assert.deepEqual(closed, { hidden: true, focus: "workspace-reopen" });
+      await c.tab.pressKey("Escape");
+      assert.equal(await c.tab.evaluate<boolean>("document.getElementById('active-workspace').hidden"), true, "Escape outside an open focused workspace must not change workspace state");
+    } finally { await c.close(); }
+  }
 });
 
 test("AC5: New turns scroll into view inside the transcript at 320px and 1280px", async () => {
@@ -301,11 +308,15 @@ test("AC4: Receipts render as markers, not assistant turns, live and after reloa
     assert.equal(await c.tab.clickButton("View apartment", "Luxury 2-Bedroom Apartment in Old Ikoyi"), true);
     await c.tab.waitForText("Request to Book");
     assert.equal(await c.tab.clickButton("Request to Book"), true);
+    await c.tab.waitForText("Review request");
+    assert.equal(await c.tab.clickButton("Ask Shortlet"), true);
     await c.tab.waitForText("Draft created");
     assert.deepEqual(await c.tab.evaluate<string[]>(markers), ["Draft created"]);
     assert.equal(await c.tab.evaluate<number>(assistantReceipts), 0, "a receipt is never rendered as an assistant turn");
 
     await c.tab.navigate(`${c.base}/?threadId=${c.threadId}`);
+    await c.tab.waitForText("Review request");
+    assert.equal(await c.tab.clickButton("Ask Shortlet"), true);
     await c.tab.waitForText("Draft created");
     assert.deepEqual(await c.tab.evaluate<string[]>(markers), ["Draft created"], "the restored timeline keeps the receipt as a marker");
     assert.equal(await c.tab.evaluate<number>(assistantReceipts), 0);
@@ -331,9 +342,14 @@ test("AC5: A free-text turn with a live surface open does not demote that surfac
     await c.tab.waitForText("Waiting for Operator response");
     assert.equal(await c.tab.evaluate<string>(renderer), "weaver");
 
-    // The refresh re-presents the same request surface; it must stay rich and actionable.
+    const surfaceId = await c.tab.evaluate<string>("document.querySelector('#active-workspace .weaver-mount')?.dataset.surfaceId ?? ''");
+    assert.ok(surfaceId);
+    assert.equal(await c.tab.clickButton("Ask Shortlet"), true);
     await sendPrompt(c.tab, "actually can we make it 5 nights? and is there parking?");
     await c.tab.waitForText("lists Secure parking");
+    assert.equal(await c.tab.clickButton("Return to"), true);
+    await c.tab.waitForFunction("!document.getElementById('active-workspace').hidden");
+    assert.equal(await c.tab.evaluate<string>("document.querySelector('#active-workspace .weaver-mount')?.dataset.surfaceId ?? ''"), surfaceId);
     assert.equal(await c.tab.evaluate<string>(renderer), "weaver", "the live surface is not demoted to the fallback");
     assert.equal(await c.tab.evaluate<number>("document.querySelectorAll('#active-workspace .surface-fallback').length"), 0);
     assert.equal(await c.tab.evaluate<string>("document.getElementById('error-announcer')?.textContent ?? ''"), "");
@@ -372,7 +388,7 @@ async function completeJourney(context: MobileContext, recoverFromPendingPayment
   assert.ok(phoneNodes.some((node) => node.role === "textbox" && node.name === "Phone number"));
   await tab.evaluate("(() => { const input = document.querySelector('.weaver-mount input'); if (!(input instanceof HTMLInputElement)) throw new Error('phone input missing'); input.value = '123'; input.dispatchEvent(new Event('input', { bubbles: true })); })()");
   assert.equal(await tab.clickButton("Save phone number"), true);
-  await tab.waitForText("valid Nigerian mobile number");
+  await tab.waitForText(GUEST_PHONE_COPY.invalid);
   const phoneError = await tab.evaluate<{ readonly retained: string; readonly invalid: string | null; readonly description: string | null }>("(() => { const input = document.querySelector('.weaver-mount input'); return { retained: input?.value || '', invalid: input?.getAttribute('aria-invalid') || null, description: input?.getAttribute('aria-describedby') || null }; })()");
   assert.equal(phoneError.retained, "123");
   assert.equal(phoneError.invalid, "true", await tab.evaluate("document.querySelector('.weaver-mount')?.innerHTML || 'missing mount'"));
@@ -435,7 +451,21 @@ async function layoutMetrics(tab: RealBrowserTab): Promise<{ readonly viewportWi
 
 async function completeAt(width: number, height: number): Promise<void> {
   const context = await startContext(width, height);
-  try { await completeJourney(context); await context.tab.waitForSelector("#composer", 15000); const metrics = await layoutMetrics(context.tab); assert.ok(metrics.documentWidth <= metrics.viewportWidth, `horizontal document scroll at ${width}px: ${JSON.stringify(metrics)}`); assert.equal(metrics.activeWorkspaces, 1, JSON.stringify(metrics)); assert.ok(metrics.composerRight <= metrics.viewportWidth + 1 && metrics.composerBottom <= metrics.viewportHeight + 1, JSON.stringify(metrics)); assert.ok(metrics.inputFontSize >= 16, JSON.stringify(metrics)); assert.equal(metrics.focusedOverflow, 0, JSON.stringify(metrics)); } finally { await context.close(); }
+  try {
+    await completeJourney(context);
+    const metrics = await layoutMetrics(context.tab);
+    assert.ok(metrics.documentWidth <= metrics.viewportWidth, `horizontal document scroll at ${width}px: ${JSON.stringify(metrics)}`);
+    assert.equal(metrics.activeWorkspaces, 1, JSON.stringify(metrics));
+    assert.equal(metrics.focusedOverflow, 0, JSON.stringify(metrics));
+    if (width < 1024) {
+      assert.equal(await context.tab.evaluate<boolean>("document.getElementById('composer').getClientRects().length === 0"), true);
+      assert.equal(await context.tab.clickButton("Ask Shortlet"), true);
+    }
+    await context.tab.waitForFunction("document.getElementById('composer').getClientRects().length > 0");
+    const conversation = await layoutMetrics(context.tab);
+    assert.ok(conversation.composerRight <= conversation.viewportWidth + 1 && conversation.composerBottom <= conversation.viewportHeight + 1, JSON.stringify(conversation));
+    assert.ok(conversation.inputFontSize >= 16, JSON.stringify(conversation));
+  } finally { await context.close(); }
 }
 
 for (const [width, height] of VIEWPORTS.slice(0, 4)) {

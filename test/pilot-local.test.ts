@@ -380,17 +380,23 @@ for (const width of [320, 390]) test(`AC${width === 320 ? 26 : 27} — ${width}p
   const paths = temporaryPaths(); bootstrapLocalPilot(paths); const server = startLocalPilotServer({ port: PORT, paths }); const browser = await launchRealBrowser();
   try {
     await server.listen(); const guest = await browser.createTab(); const operator = await browser.createTab(); await guest.setViewport(width, 800);
-    await guestToRequest(guest, "Abuja", width === 320 ? "+2348094445566" : "+2348095556677", true);
+    const phone = width === 320 ? "+2348094445566" : "+2348095556677";
+    await guestToRequest(guest, "Abuja", phone, true);
     await operatorLoginAndDecision(operator, issueLocalOperatorToken(paths), "Confirm"); await reloadTab(guest); await guest.waitForText("Conditional Booking Offer", 15000); await clickActiveButton(guest, "Accept");
     await guest.waitForText("Continue to stay payment", 15000); const workspace = await guest.evaluate<string>("location.href");
     const emailStatus = await guest.evaluate<number>(`fetch('/guest/contact/email',{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({contactEmail:${JSON.stringify(`mobile.${width}@example.test`)},expectedRevision:'1'}),redirect:'manual'}).then((response)=>response.status)`); assert.equal(emailStatus, 0);
     await guest.navigate(workspace); await guest.waitForText("Continue to stay payment", 15000); await clickActiveButton(guest, "Continue to stay payment"); await guest.waitForText("Payment handoff", 15000);
     const standard = await guest.evaluate<string>(`[...document.querySelectorAll('a')].find((link)=>link.getAttribute('href')?.includes('/payments/offers/'))?.href || ''`); assert.ok(standard); await guest.navigate(standard); await guest.waitForText("Continue to local demo payment", 15000);
     const local = await guest.evaluate<string>(`[...document.querySelectorAll('a')].find((link)=>link.textContent?.includes('Continue to local demo payment'))?.href || ''`); assert.ok(local); await guest.navigate(local); await guest.waitForText("Local demo payment", 15000); assert.equal(await guest.clickButton("Complete local payment"), true); await guest.waitForText("Booking confirmed", 15000);
-    const metrics = await guest.evaluate<{ viewport: number; document: number; phone: boolean; reservation: boolean }>(`({viewport:innerWidth,document:document.documentElement.scrollWidth,phone:document.body.innerText.includes('Booking Request'),reservation:document.body.innerText.includes('Booking confirmed')})`);
-    const database = new DatabaseSync(paths.databasePath);
-    const contact = database.prepare("SELECT contact_email FROM guest_contacts LIMIT 1").get() as { contact_email?: string } | undefined;
-    database.close();
-    assert.equal(metrics.viewport, width, JSON.stringify(metrics)); assert.ok(metrics.document <= width, JSON.stringify(metrics)); assert.equal(metrics.phone, true, JSON.stringify(metrics)); assert.equal(contact?.contact_email, `mobile.${width}@example.test`); assert.equal(metrics.reservation, true, JSON.stringify(metrics));
+    const metrics = await guest.evaluate<{ viewport: number; document: number; reservation: boolean }>(`({viewport:innerWidth,document:document.documentElement.scrollWidth,reservation:document.body.innerText.includes('Booking confirmed')})`);
+    const database = new DatabaseSync(paths.databasePath, { readOnly: true });
+    try {
+      const contact = database.prepare("SELECT phone_number, contact_email FROM guest_contacts WHERE phone_number = ?").get(phone);
+      assert.equal(contact?.phone_number, phone);
+      assert.equal(contact?.contact_email, `mobile.${width}@example.test`);
+    } finally { database.close(); }
+    assert.equal(metrics.viewport, width, JSON.stringify(metrics));
+    assert.ok(metrics.document <= width, JSON.stringify(metrics));
+    assert.equal(metrics.reservation, true, JSON.stringify(metrics));
   } finally { await browser.close(); await server.close(); rmSync(paths.directory, { recursive: true, force: true }); }
 });
