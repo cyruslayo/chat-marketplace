@@ -90,6 +90,8 @@ export class GeminiInteractionsClient implements AssistantModelClient {
 
   async generate(request: AssistantModelRequest): Promise<AssistantModelResponse> {
     const inputSteps = this.#mapHistoryToInteractionsInput(request.history);
+    // Issue 03 (ADR 0106): the per-turn line is appended after the history steps. Leading it would shift the continuation's pinned indices.
+    if (request.turnContext !== undefined) inputSteps.push({ type: "user_input", content: [{ type: "text", text: request.turnContext }] });
     const tools = this.#mapToolsToInteractionsTools(request.tools);
 
     let generation_config: Interactions.GenerationConfig | undefined;

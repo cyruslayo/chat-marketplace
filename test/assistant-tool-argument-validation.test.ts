@@ -58,10 +58,10 @@ function executedToolCount(diagnostics: readonly AssistantDiagnosticEvent[]): nu
 /**
  * ADR 0074 (commit 0ea551f): a task state may omit `replacedPendingAction` (the initial state) or carry it as null (every
  * committed clone). Both mean "no replaced proposal", so the snapshot writes the key as null and the two compare equal.
- * Only that representation is normalised; every other field is compared as before.
+ * Issue 13a adds `pendingDraftReplacement` with the same absent-or-null meaning. Only those representations are normalised; every other field is compared as before.
  */
 function withNoticeKey(state: AssistantTaskState): AssistantTaskState {
-  return { ...state, replacedPendingAction: state.replacedPendingAction ?? null };
+  return { ...state, replacedPendingAction: state.replacedPendingAction ?? null, pendingDraftReplacement: state.pendingDraftReplacement ?? null };
 }
 
 function threadSnapshot(thread: AssistantThreadState): string {
@@ -117,7 +117,7 @@ test("a tool call with an argument of the wrong type is rejected before the tool
 });
 
 test("a numeric argument outside minimum/maximum is rejected before the tool runs", async () => {
-  const { diagnostics, results } = await runRejectedCall("search_stays", { city: "Lagos", nights: 99, guests: 2 });
+  const { diagnostics, results } = await runRejectedCall("search_stays", { city: "Lagos", nights: 181, guests: 2 });
 
   assert.equal(executedToolCount(diagnostics), 0);
   assert.equal(results[0]?.result.error, "invalid_arguments");

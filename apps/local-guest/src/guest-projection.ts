@@ -1,5 +1,8 @@
 import type { DiscoveryArtifactProjection } from "../../../apps/web-agent/src/index.js";
 import { parseDiscoverySearchContext, type DiscoverySearchContext } from "./concierge.js";
+import { parsePendingDraftReplacement, type PendingDraftReplacement } from "./draft-replacement.js";
+import { isAssistantBudgetPer, type AssistantBudgetPer } from "./assistant/assistant-state.js";
+import { SEARCH_AREAS } from "./stay-vocabulary.js";
 import type { PendingAssistantAction } from "./assistant/pending-actions.js";
 import type { ReplacedPendingAction } from "./assistant/assistant-state.js";
 
@@ -56,6 +59,8 @@ export interface GuestPersistentProjection {
   readonly pendingActionSurfaceId: string | null;
   /** ADR 0074: the proposal a search change or task switch removed. Missing or invalid reads as null. */
   readonly replacedPendingAction: PersistedReplacedProposal | null;
+  /** Issue 13a: the open Request Draft replacement and the surface id the guest holds for it. A cold restore re-keys that id. Missing reads as null. */
+  readonly pendingDraftReplacement?: PendingDraftReplacement | null;
 }
 
 /** The pending action as the runtime holds it, validated field by field on restore. Executed actions are never stored. */
@@ -152,8 +157,41 @@ export interface PersistedAssistantContext {
   readonly partySize?: number;
   readonly bedrooms?: number;
   readonly maxBudgetKobo?: number;
+  /** Issue 06 (ADR 0015): whether `maxBudgetKobo` is for the stay or per night. Only present with a budget. */
+  readonly maxBudgetPer?: AssistantBudgetPer;
   readonly requiredAmenities?: readonly string[];
   readonly selectedUnitId?: string;
+  /** Issue 09 (ADR 0106, 0093): a different area the guest was asked about and has not answered. A field of this context, not a record. */
+  readonly pendingLocation?: { readonly city: "Lagos" | "Abuja"; readonly neighbourhood?: string };
+  /** Issue 04 (ADR 0106 2 Nov 2026, ADR 0093): the candidate dates of an unconfirmed relative phrase. A field of this context, not a record. */
+  readonly pendingDate?: { readonly candidates: readonly string[]; readonly checkIn?: string };
+}
+
+/**
+ * Issue 09 (ADR 0106, 0093): the pending location change, closed. A city and, when given, one neighbourhood from the closed area list of
+ * that city. Anything else is not a pending change: it is dropped (fail closed), so no search can run on a guessed area.
+ */
+function parsePendingLocation(value: unknown): PersistedAssistantContext["pendingLocation"] | undefined {
+  if (!isRecord(value) || (value.city !== "Lagos" && value.city !== "Abuja")) return undefined;
+  if (Object.keys(value).some((key) => key !== "city" && key !== "neighbourhood")) return undefined;
+  if (value.neighbourhood === undefined) return { city: value.city };
+  const known = typeof value.neighbourhood === "string" && SEARCH_AREAS.some((area) => area.city === value.city && area.neighbourhood === value.neighbourhood);
+  return known ? { city: value.city, neighbourhood: value.neighbourhood as string } : undefined;
+}
+
+/**
+ * Issue 04 (ADR 0106, 0093): the pending date show-back, closed. One or two ISO calendar dates; anything else is dropped (fail closed), so
+ * no unconfirmed date can become a search.
+ */
+function parsePendingDate(value: unknown): PersistedAssistantContext["pendingDate"] | undefined {
+  if (!isRecord(value) || Object.keys(value).some((key) => key !== "candidates" && key !== "checkIn")) return undefined;
+  const candidates = value.candidates;
+  if (!Array.isArray(candidates) || candidates.length < 1 || candidates.length > 2) return undefined;
+  const isIsoDate = (entry: unknown): entry is string => typeof entry === "string" && /^\d{4}-\d{2}-\d{2}$/.test(entry) && !Number.isNaN(Date.parse(`${entry}T00:00:00Z`));
+  if (!candidates.every(isIsoDate)) return undefined;
+  // Issue 05b: a checkout show-back carries the check-in it was shown with; an invalid one drops the whole pending date (fail closed).
+  if (value.checkIn === undefined) return { candidates: [...(candidates as string[])] };
+  return isIsoDate(value.checkIn) ? { candidates: [...(candidates as string[])], checkIn: value.checkIn } : undefined;
 }
 
 export function isPersistentTimelineEntry(value: unknown): value is { readonly role: "assistant" | "user" | "receipt"; readonly text: string } {
@@ -179,7 +217,7 @@ function isUnitDetail(value: unknown): value is { readonly unitId: string; reado
 
 function parseAssistantContext(value: unknown): PersistedAssistantContext | null {
   if (!isRecord(value) || (value.city !== "Lagos" && value.city !== "Abuja")) return null;
-  const allowed = new Set(["city", "neighbourhood", "checkIn", "isDemoDate", "checkOut", "nights", "partySize", "bedrooms", "maxBudgetKobo", "requiredAmenities", "selectedUnitId"]);
+  const allowed = new Set(["city", "neighbourhood", "checkIn", "isDemoDate", "checkOut", "nights", "partySize", "bedrooms", "maxBudgetKobo", "maxBudgetPer", "requiredAmenities", "selectedUnitId", "pendingLocation", "pendingDate"]);
   if (Object.keys(value).some((key) => !allowed.has(key))) return null;
   if (value.neighbourhood !== undefined && (typeof value.neighbourhood !== "string" || value.neighbourhood.length > 100)) return null;
   if (value.isDemoDate !== undefined && typeof value.isDemoDate !== "boolean") return null;
@@ -193,6 +231,14 @@ function parseAssistantContext(value: unknown): PersistedAssistantContext | null
   }
   if (value.requiredAmenities !== undefined && (!Array.isArray(value.requiredAmenities) || value.requiredAmenities.length > 16 || !value.requiredAmenities.every((entry) => typeof entry === "string" && /^[A-Za-z0-9_-]{1,48}$/.test(entry)))) return null;
   if (value.selectedUnitId !== undefined && (typeof value.selectedUnitId !== "string" || value.selectedUnitId.length < 1 || value.selectedUnitId.length > 128)) return null;
+  // Issue 06: a legacy budget with no meaning restores as a stay total (the planner was its only writer, and it wrote stay totals).
+  // A meaning that is present but not in the closed list drops the budget (fail closed); it is never guessed.
+  const budgetPer: AssistantBudgetPer | undefined = value.maxBudgetPer === undefined
+    ? "stay"
+    : isAssistantBudgetPer(value.maxBudgetPer) ? value.maxBudgetPer : undefined;
+  const budget = typeof value.maxBudgetKobo === "number" && budgetPer !== undefined
+    ? { maxBudgetKobo: value.maxBudgetKobo, maxBudgetPer: budgetPer }
+    : {};
   return {
     city: value.city,
     ...(typeof value.neighbourhood === "string" ? { neighbourhood: value.neighbourhood } : {}),
@@ -202,9 +248,17 @@ function parseAssistantContext(value: unknown): PersistedAssistantContext | null
     ...(typeof value.nights === "number" ? { nights: value.nights } : {}),
     ...(typeof value.partySize === "number" ? { partySize: value.partySize } : {}),
     ...(typeof value.bedrooms === "number" ? { bedrooms: value.bedrooms } : {}),
-    ...(typeof value.maxBudgetKobo === "number" ? { maxBudgetKobo: value.maxBudgetKobo } : {}),
+    ...budget,
     ...(Array.isArray(value.requiredAmenities) ? { requiredAmenities: [...value.requiredAmenities] as string[] } : {}),
     ...(typeof value.selectedUnitId === "string" ? { selectedUnitId: value.selectedUnitId } : {}),
+    ...(value.pendingLocation === undefined ? {} : (() => {
+      const pendingLocation = parsePendingLocation(value.pendingLocation);
+      return pendingLocation === undefined ? {} : { pendingLocation };
+    })()),
+    ...(value.pendingDate === undefined ? {} : (() => {
+      const pendingDate = parsePendingDate(value.pendingDate);
+      return pendingDate === undefined ? {} : { pendingDate };
+    })()),
   };
 }
 
@@ -274,6 +328,7 @@ export function parseGuestProjection(value: unknown): GuestPersistentProjection 
     pendingAction,
     pendingActionSurfaceId,
     replacedPendingAction,
+    pendingDraftReplacement: parsePendingDraftReplacement(value.pendingDraftReplacement ?? null),
     version: 1,
     timeline: Object.freeze(value.timeline.map((entry) => Object.freeze({ role: entry.role, text: entry.text }))),
     discoveryContext,

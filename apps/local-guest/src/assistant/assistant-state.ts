@@ -1,3 +1,4 @@
+import type { PendingDraftReplacement } from "../draft-replacement.js";
 import type { PendingAssistantAction } from "./pending-actions.js";
 import type { AssistantConversationStep } from "./assistant-model.js";
 
@@ -26,16 +27,52 @@ export interface AssistantStayReference {
   readonly managementAuthorityStatus: string;
 }
 
+/**
+ * Issue 06 (ADR 0015): a budget is either an All-In Stay Total ("stay") or a nightly amount ("night") that is converted with the
+ * stay's nights at search time, as the deterministic concierge does (`stayBudgetKobo`). The closed list is the only accepted meaning.
+ */
+export const ASSISTANT_BUDGET_PERS = ["stay", "night"] as const;
+export type AssistantBudgetPer = (typeof ASSISTANT_BUDGET_PERS)[number];
+
+export function isAssistantBudgetPer(value: unknown): value is AssistantBudgetPer {
+  return value === "stay" || value === "night";
+}
+
+/** Issue 09 (ADR 0106): a different area the guest was asked about and has not answered; no search runs for it until answered. */
+export interface AssistantPendingLocation {
+  readonly city: string;
+  readonly neighbourhood?: string;
+}
+
+/**
+ * Issue 04 (ADR 0106, 2 Nov 2026): the candidate check-in dates of a relative phrase the guest has not confirmed. One candidate is a
+ * show-back (the guest's yes confirms it); two or more are a choice (a tap on one candidate is the confirmation). Authorizes nothing.
+ */
+export interface AssistantPendingDate {
+  readonly candidates: readonly string[];
+  /**
+   * Issue 05b (ADR 0106, 2 Nov 2026): set when the pending date is a checkout. The check-in it was shown with is guest-authored
+   * (typed or confirmed), and the confirmed checkout is the candidate after it.
+   */
+  readonly checkIn?: string;
+}
+
 export interface AssistantStayIntent {
   location?: string;
   neighbourhood?: string;
+  /** Issue 09: the area the held search would move to, while the conflict question is open. */
+  pendingLocation?: AssistantPendingLocation;
+  /** Issue 04: the dates a relative phrase gave, awaiting the guest's confirmation. Never a check-in until confirmed. */
+  pendingDate?: AssistantPendingDate;
   checkIn?: string;
   isDemoDate?: boolean;
   checkOut?: string;
   nights?: number;
   partySize?: number;
   bedrooms?: number;
+  /** The budget in kobo, with `maxBudgetPer` saying whether it is for the stay or per night (issue 06). */
   maxBudgetKobo?: number;
+  maxBudgetPer?: AssistantBudgetPer;
   requiredAmenities?: readonly string[];
 }
 
@@ -55,6 +92,8 @@ export interface AssistantTaskState {
    * authority. The next explicit confirmation is answered with a fixed reply instead of a model call, then the marker clears.
    */
   replacedPendingAction?: ReplacedPendingAction | null;
+  /** Issue 13a: the open replacement of the current Request Draft (ADR 0074, ADR 0080). Its surface id is re-keyed on a cold restore. */
+  pendingDraftReplacement?: PendingDraftReplacement | null;
 }
 
 export type PendingReplacementReason = "search_changed" | "task_switched";
@@ -138,11 +177,14 @@ export function cloneTaskState(state: AssistantTaskState): AssistantTaskState {
     },
     shortlist: state.shortlist.map((item) => ({ ...item, amenities: [...item.amenities] })),
     selectedStayRef: state.selectedStayRef,
+    // Issue 13a: the open draft and its replacement survive a clone (a restore clones the task state).
+    currentDraftId: state.currentDraftId,
     currentBookingRequestId: state.currentBookingRequestId,
     currentOfferId: state.currentOfferId,
     currentReservationId: state.currentReservationId,
     currentContractId: state.currentContractId,
     pendingAction: state.pendingAction ? { ...state.pendingAction } : null,
     replacedPendingAction: state.replacedPendingAction ? { ...state.replacedPendingAction } : null,
+    pendingDraftReplacement: state.pendingDraftReplacement ?? null,
   };
 }

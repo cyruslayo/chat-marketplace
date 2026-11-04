@@ -1,3 +1,4 @@
+import { draftReplacementTerms, draftReplacementUnavailable, DRAFT_REPLACEMENT_PROPOSED_COPY, type DraftReplacementStay, type PendingDraftReplacement } from "./draft-replacement.js";
 import {
   createServer,
   type IncomingMessage,
@@ -55,6 +56,7 @@ import {
   guestRequestStatus,
   guestPaymentStatus,
   GUEST_FACT_LABELS,
+  GUEST_CHANGE_EXPLANATION,
   GUEST_GLOSSARY,
   GUEST_JOURNEY,
   GUEST_RECEIPTS,
@@ -68,6 +70,9 @@ import {
   guestOperatorName,
   guestReservationStatus,
   guestAmenityLabel,
+  GUEST_FACILITY_COPY,
+  guestCapabilityReply,
+  type GuestCapabilityStage,
   discoveryFallbackMessage,
   type DiscoveryArtifactProjection,
 } from "../../../apps/web-agent/src/index.js";
@@ -197,10 +202,15 @@ import {
   applyCriteriaEdit,
   budgetLabel,
   quickRepliesFor,
+  type StayCriterion,
   searchAreaFor,
   SEARCH_AREAS,
+  stayBudgetKobo,
   type CriteriaEdit,
+  type StayBudget,
 } from "./concierge.js";
+import { AMENITY_CATALOGUE_IDS } from "./stay-vocabulary.js";
+import { ContinuousOccupancyError } from "../../../domains/shortlet/src/index.js";
 import {
   amenityQuestions,
   extractStayRequestFacts,
@@ -214,11 +224,6 @@ import {
   type StayRequestFilters,
 } from "./concierge.js";
 import {
-  handleGeminiTurn,
-  type GeminiConciergeClient,
-} from "./gemini-concierge.js";
-import type { Content } from "@google/genai";
-import {
   AssistantRuntime,
   type AssistantControlOutcome,
   type AssistantShortletRestoreInput,
@@ -226,7 +231,7 @@ import {
   type AssistantVertical,
 } from "./assistant/assistant-runtime.js";
 import { ASSISTANT_CONTROL_COPY } from "./assistant/control-copy.js";
-import type { AssistantStayReference, AssistantTaskState } from "./assistant/assistant-state.js";
+import { isAssistantBudgetPer, type AssistantStayReference, type AssistantTaskState } from "./assistant/assistant-state.js";
 import { redactSensitiveData } from "../../../packages/platform-core/src/redaction.js";
 import {
   TASK_START_EVENT,
@@ -527,6 +532,7 @@ function criteriaKey(context: DiscoverySearchContext | null): string {
     context?.pendingLocationChange?.label ?? null,
     context?.budget?.kobo ?? null,
     context?.budget?.per ?? null,
+    context?.requiredAmenities?.join(",") ?? null,
   ]);
 }
 
@@ -536,6 +542,15 @@ const MAX_BUDGET_NAIRA = 1_000_000_000;
 
 function isPositiveInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
+}
+
+/**
+ * Issue 06 (ADR 0015): the All-In Stay Total a persisted budget compares with, converted with the stay's nights exactly as the
+ * deterministic concierge converts it (`stayBudgetKobo`). Undefined without a budget, or for a nightly budget without nights.
+ */
+function persistedBudgetTotal(context: PersistedAssistantContext): number | undefined {
+  if (context.maxBudgetKobo === undefined || context.maxBudgetPer === undefined) return undefined;
+  return stayBudgetKobo({ budget: { kobo: context.maxBudgetKobo, per: context.maxBudgetPer }, ...(context.nights === undefined ? {} : { nights: context.nights }) });
 }
 
 /** Reads one strip edit; anything but the exact expected shape fails closed (ADR-0072). */
@@ -643,7 +658,6 @@ type GuestStage =
 
 interface GuestThreadState {
   readonly threadId: string;
-  readonly geminiHistory: Content[];
   discoveryContext: DiscoverySearchContext | null;
   discoveryArtifact: DiscoveryArtifactProjection | null;
   /** ADR 0106: the id the guest's current discovery card names; a cold restore keeps it (see `#assistantContextSearch`). */
@@ -663,10 +677,6 @@ interface GuestThreadState {
   offerId: string | null;
   activeSurfaces: Map<string, string>;
   supersededSurfaces: Set<string>;
-  geminiLastSearch: {
-    readonly surfaceId: string;
-    readonly a2uiMessages: readonly A2UIServerMessage[];
-  } | null;
   timeline: GuestTimelineEntry[];
   lastSurfaces: GuestSurfacePayload[];
   /** Issue 03a: the criteria of each executed search, oldest first (for "Undo last change"). */
@@ -710,25 +720,6 @@ function isDiscoveryArtifactProjection(value: unknown): value is DiscoveryArtifa
   return Array.isArray((record.facts as Record<string, unknown>).results);
 }
 
-/** The stay a replacement Request Draft would cover (issue 14). */
-interface DraftReplacementStay {
-  readonly location: string;
-  readonly neighbourhood?: string;
-  readonly checkIn: string;
-  readonly checkOut: string;
-  readonly partySize: number;
-}
-
-interface PendingDraftReplacement {
-  readonly basedOnDraftId: string;
-  readonly basedOn: string;
-  readonly unitId: string;
-  readonly stay: DraftReplacementStay;
-  readonly filters: StayRequestFilters;
-  readonly context: DiscoverySearchContext;
-  readonly proposed: DraftStayTerms;
-  readonly surfaceId: string;
-}
 
 /**
  * Issue 06 (M13, engineering setting): the longest the Paystack checkout waits for the provider's initialize call while it holds the
@@ -782,7 +773,6 @@ export function cardCheckoutFailureReason(error: unknown): CardCheckoutFailureRe
 export class LocalGuestApp {
   #environment: LocalGuestEnvironment;
   readonly #threads = new Map<string, GuestThreadState>();
-  readonly #geminiClient: GeminiConciergeClient | null;
   readonly #assistantRuntime: AssistantRuntime | null;
   readonly #modelCallBudget: ModelCallBudget | null;
   readonly #paystackCheckoutTimeoutMs: number;
@@ -791,7 +781,6 @@ export class LocalGuestApp {
   constructor(
     environment: LocalGuestEnvironment,
     options: {
-      readonly geminiClient?: GeminiConciergeClient;
       readonly assistantRuntime?: AssistantRuntime;
       /** Issue 19: once the daily cap is spent, new turns use the deterministic concierge (ADR 0080). */
       readonly modelCallBudget?: ModelCallBudget;
@@ -802,7 +791,6 @@ export class LocalGuestApp {
     } = {},
   ) {
     this.#environment = environment;
-    this.#geminiClient = options.geminiClient ?? null;
     this.#assistantRuntime = options.assistantRuntime ?? null;
     this.#modelCallBudget = options.modelCallBudget ?? null;
     const timeoutMs = options.paystackCheckoutTimeoutMs ?? PAYSTACK_CHECKOUT_PROVIDER_TIMEOUT_MS;
@@ -866,6 +854,7 @@ export class LocalGuestApp {
     readonly surfaces?: readonly { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] }[];
     readonly tasks?: readonly AssistantTaskRailEntry[];
     readonly controlOutcome?: AssistantControlOutcome;
+    readonly quickReplies?: readonly string[];
   }): GuestTurnResult {
     return {
       ok: true,
@@ -875,6 +864,8 @@ export class LocalGuestApp {
       ...(output.controlOutcome === undefined ? {} : { assistantControlOutcome: output.controlOutcome }),
       messages: output.messages ?? (output.message ? [output.message] : []),
       surfaces: this.#assistantSurfaces(output.surfaces ?? []),
+      // Issue 10: one-tap replies for the clarification (the runtime gives them only for clarify_stay and stay/area clarifications).
+      ...(output.quickReplies === undefined ? {} : { quickReplies: output.quickReplies }),
       ...(output.tasks === undefined || output.tasks.length === 0
         ? {}
         : { tasks: output.tasks, verticals: this.#verticals() }),
@@ -950,77 +941,6 @@ export class LocalGuestApp {
     if (stageReply) return { ok: true, messages: stageReply, surfaces: [] };
     const replacement = this.#proposeDraftReplacement(thread, text);
     if (replacement) return replacement;
-    if (this.#geminiClient) {
-      try {
-        const live = await handleGeminiTurn({
-          client: this.#geminiClient,
-          history: thread.geminiHistory,
-          text,
-          demoCheckIn: this.#environment.config.demoCheckIn,
-          ...(this.#environment.extendedStayPolicy ? { extendedStayPolicy: this.#environment.extendedStayPolicy } : {}),
-          now: this.#environment.clock(),
-          search: (filters) => {
-            this.#prepareDiscovery(thread);
-            const adapter = createWeaverWebAgentAdapter({
-              query: {
-                search: (query) =>
-                  this.#environment.discoveryQuery.search(query),
-              },
-              createSurfaceId: () => thread.discoverySurfaceId,
-            });
-            const result = adapter.search({ ...filters });
-            thread.discoveryArtifact = result.artifact;
-            thread.activeSurfaces.set(
-              DISCOVERY_STAGE,
-              thread.discoverySurfaceId,
-            );
-            this.#emitTransition(thread, "unit.discovery.results_produced", {
-              aggregateType: "discovery",
-              aggregateId: result.artifact.id,
-              surfaceId: thread.discoverySurfaceId,
-            });
-            thread.geminiLastSearch = result;
-            return {
-              resultCount: result.artifact.facts.results.length,
-              location: filters.location,
-              ...(filters.neighbourhood
-                ? { neighbourhood: filters.neighbourhood }
-                : {}),
-              checkIn: filters.checkIn,
-              checkOut: filters.checkOut,
-            };
-          },
-        });
-        if (live.kind === "clarify")
-          return { ok: true, messages: [live.reply], surfaces: [] };
-        const result = thread.geminiLastSearch;
-        if (!result)
-          throw new Error("Gemini search did not produce a discovery surface");
-        return {
-          ok: true,
-          messages: [live.reply],
-          surfaces: [
-            {
-              surfaceId: result.surfaceId,
-              a2uiMessages: result.a2uiMessages,
-              mode: "inline-surface",
-              summary: discoverySummary(
-                thread.discoveryArtifact?.facts.filters,
-              ),
-              conventionalRoute: conventionalSearchRoute({}),
-            },
-          ],
-        };
-      } catch {
-        return {
-          ok: false,
-          code: "CONCIERGE_UNAVAILABLE",
-          message:
-            "The concierge is temporarily unavailable. Please try again.",
-        };
-      }
-    }
-
     const previousContext = thread.discoveryContext;
     // Issue 01: dates resolve against the injected clock and are never assumed.
     const facts = extractStayRequestFacts(text, {
@@ -1051,7 +971,7 @@ export class LocalGuestApp {
         messages: [resolution.reply],
         surfaces: [],
         ...(resolution.kind === "clarify"
-          ? { quickReplies: quickRepliesFor(resolution.next) }
+          ? this.#clarificationChips(thread, resolution.next)
           : {}),
       });
     }
@@ -1126,9 +1046,10 @@ export class LocalGuestApp {
             const listed = question.ids.find((id) =>
               unit.amenities.includes(id),
             );
+            // Issue 11 (ADR 0077): the same sentences the assistant's facility answer reads (guest-content.ts).
             return listed === undefined
-              ? `${question.label} isn't listed for ${unit.title}, so I can't confirm it.`
-              : `Yes: ${unit.title} lists ${guestAmenityLabel(listed)}.`;
+              ? GUEST_FACILITY_COPY.notListed(unit.title, question.label)
+              : GUEST_FACILITY_COPY.listed(unit.title, guestAmenityLabel(listed));
           });
     const facts = extractStayRequestFacts(text, {
       now: this.#environment.clock(),
@@ -1152,30 +1073,20 @@ export class LocalGuestApp {
     stage: "request" | "offer" | "payment" | "booking",
     unit: Unit | null,
   ): string {
-    const operator = guestOperatorName(unit?.operator?.name);
-    if (stage === "request")
-      return `A sent ${GUEST_GLOSSARY.bookingRequest} can't be changed while ${operator} reviews it. If ${operator} confirms, you can choose not to accept the offer at no cost and search again with new details. Nothing has been changed.`;
-    if (stage === "offer")
-      return `A ${GUEST_GLOSSARY.conditionalBookingOffer} can't be changed. You can choose not to accept it at no cost and search again with new details. Nothing has been changed.`;
-    if (stage === "payment")
-      return "An accepted offer can't be changed from this conversation. Nothing has been changed.";
-    return `Changes to a confirmed ${GUEST_GLOSSARY.reservation} are made as a booking amendment, which re-checks availability and price. I can't start one from this conversation yet. Nothing has been changed.`;
+    if (stage === "request") return GUEST_CHANGE_EXPLANATION.request(unit?.operator?.name);
+    if (stage === "offer") return GUEST_CHANGE_EXPLANATION.offer();
+    if (stage === "payment") return GUEST_CHANGE_EXPLANATION.payment();
+    return GUEST_CHANGE_EXPLANATION.booking();
   }
 
+  /** Issue 11 (ADR 0077): the stage copy lives in guest-content.ts, shared with the assistant's stage reply. */
   #capabilityReply(stage: GuestStage, unit: Unit | null): string {
-    const about =
-      unit === null
-        ? ""
-        : ` I can also answer questions about ${unit.title}, such as parking or Wi-Fi.`;
-    if (stage === "request")
-      return `Your ${GUEST_GLOSSARY.bookingRequest} is with ${guestOperatorName(unit?.operator?.name)} for review; the details are in the workspace.${about}`;
-    if (stage === "offer")
-      return `Your ${GUEST_GLOSSARY.conditionalBookingOffer} is in the workspace. Review it and accept it there if it suits you.${about}`;
-    if (stage === "payment")
-      return `Your payment step is in the workspace.${about}`;
-    if (stage === "booking")
-      return `Your booking details are in the workspace.${about}`;
-    return `Your current details are in the workspace.${about}`;
+    const capabilityStage: GuestCapabilityStage =
+      stage === "request" || stage === "offer" || stage === "payment" || stage === "booking" ? stage : "current";
+    return guestCapabilityReply(
+      capabilityStage,
+      unit === null ? undefined : { title: unit.title, operatorName: unit.operator?.name },
+    );
   }
 
   /**
@@ -2590,6 +2501,7 @@ export class LocalGuestApp {
       pendingAction: thread.pendingAction,
       pendingActionSurfaceId: thread.pendingActionSurfaceId,
       replacedPendingAction: thread.replacedPendingAction,
+      pendingDraftReplacement: thread.pendingDraftReplacement,
     };
   }
 
@@ -2602,6 +2514,7 @@ export class LocalGuestApp {
     // Issue 13b: a comparison is restored as the results it was opened from.
     if (surfaceId.includes(":discovery:") || surfaceId.includes(":compare:"))
       return DISCOVERY_STAGE;
+    if (surfaceId.includes(":request:replacement:")) return DRAFT_REPLACEMENT_STAGE;
     if (surfaceId.includes(":unit:")) return UNIT_STAGE;
     if (
       surfaceId.includes(":request:draft:") ||
@@ -2725,7 +2638,6 @@ export class LocalGuestApp {
 
     const thread: GuestThreadState = {
       threadId,
-      geminiHistory: [],
       discoveryContext:
         projection.discoveryContext === null
           ? null
@@ -2744,7 +2656,6 @@ export class LocalGuestApp {
       offerId: projection.offerId,
       activeSurfaces: new Map(),
       supersededSurfaces: new Set(),
-      geminiLastSearch: null,
       timeline: projection.timeline.map(({ role, text }) => ({ role, text })),
       lastSurfaces: [],
       searchHistory: projection.searchHistory.map((context) => ({
@@ -2756,8 +2667,9 @@ export class LocalGuestApp {
       replacedPendingAction: projection.replacedPendingAction,
       compareSelection: null,
       draftChangeContext: null,
-      pendingDraftReplacement: null,
+      pendingDraftReplacement: projection.pendingDraftReplacement ?? null,
     };
+    if (thread.pendingDraftReplacement) thread.activeSurfaces.set(DRAFT_REPLACEMENT_STAGE, thread.pendingDraftReplacement.surfaceId);
     this.#threads.set(threadId, thread);
     this.#rebuildAssistantDiscovery(thread);
     const restoredProjection = thread.assistantContext
@@ -3131,8 +3043,6 @@ export class LocalGuestApp {
       offerId: null,
       activeSurfaces: new Map(),
       supersededSurfaces: new Set(),
-      geminiHistory: [],
-      geminiLastSearch: null,
       timeline: [],
       lastSurfaces: [],
       searchHistory: [],
@@ -3153,11 +3063,19 @@ export class LocalGuestApp {
     if (city !== "Lagos" && city !== "Abuja") return null;
     const knownNeighbourhoods = new Set(this.#environment.unitRepository.findAll().map((unit) => unit.location.neighbourhood));
     const neighbourhood = state.stayIntent.neighbourhood;
-    const amenityIds = new Set(this.#environment.unitRepository.findAll().flatMap((unit) => unit.amenities));
-    const requiredAmenities = state.stayIntent.requiredAmenities?.filter((amenity) => amenityIds.has(amenity) && /^[A-Za-z0-9_-]{1,48}$/.test(amenity)).slice(0, 16);
+    // Issue 08: the closed amenity catalogue (ADR 0106) is the only source of persisted amenity ids.
+    const requiredAmenities = state.stayIntent.requiredAmenities?.filter((amenity) => AMENITY_CATALOGUE_IDS.includes(amenity)).slice(0, 16);
     const selectedStay = state.selectedStayRef ? state.shortlist.find((stay) => stay.stayRef === state.selectedStayRef) : undefined;
+    // Issue 09 (ADR 0093): the pending location change is a field of the existing context, persisted only with the held search.
+    const pending = state.stayIntent.pendingLocation;
+    // Issue 04 (ADR 0106 2 Nov 2026, ADR 0093): the pending date show-back is a field of the same context, kept across a cold restore.
+    const pendingDate = state.stayIntent.pendingDate;
     return {
       city,
+      ...(pendingDate ? { pendingDate: { candidates: [...pendingDate.candidates], ...(pendingDate.checkIn === undefined ? {} : { checkIn: pendingDate.checkIn }) } } : {}),
+      ...(pending && (pending.city === "Lagos" || pending.city === "Abuja")
+        ? { pendingLocation: pending.neighbourhood === undefined ? { city: pending.city } : { city: pending.city, neighbourhood: pending.neighbourhood } }
+        : {}),
       ...(neighbourhood && knownNeighbourhoods.has(neighbourhood) ? { neighbourhood } : {}),
       ...(state.stayIntent.checkIn && /^\d{4}-\d{2}-\d{2}$/.test(state.stayIntent.checkIn) ? { checkIn: state.stayIntent.checkIn } : {}),
       ...(typeof state.stayIntent.isDemoDate === "boolean" ? { isDemoDate: state.stayIntent.isDemoDate } : {}),
@@ -3165,7 +3083,10 @@ export class LocalGuestApp {
       ...(Number.isSafeInteger(state.stayIntent.nights) && (state.stayIntent.nights ?? 0) > 0 ? { nights: state.stayIntent.nights } : {}),
       ...(Number.isSafeInteger(state.stayIntent.partySize) && (state.stayIntent.partySize ?? 0) > 0 ? { partySize: state.stayIntent.partySize } : {}),
       ...(Number.isSafeInteger(state.stayIntent.bedrooms) && (state.stayIntent.bedrooms ?? -1) >= 0 ? { bedrooms: state.stayIntent.bedrooms } : {}),
-      ...(Number.isSafeInteger(state.stayIntent.maxBudgetKobo) && (state.stayIntent.maxBudgetKobo ?? -1) >= 0 ? { maxBudgetKobo: state.stayIntent.maxBudgetKobo } : {}),
+      // Issue 06 (ADR 0015): a budget is persisted with its meaning, stay or night; without one it is not persisted.
+      ...(Number.isSafeInteger(state.stayIntent.maxBudgetKobo) && (state.stayIntent.maxBudgetKobo ?? -1) >= 0 && isAssistantBudgetPer(state.stayIntent.maxBudgetPer)
+        ? { maxBudgetKobo: state.stayIntent.maxBudgetKobo, maxBudgetPer: state.stayIntent.maxBudgetPer }
+        : {}),
       ...(requiredAmenities?.length ? { requiredAmenities } : {}),
       ...(selectedStay ? { selectedUnitId: selectedStay.unitId } : {}),
     };
@@ -3182,16 +3103,37 @@ export class LocalGuestApp {
     currentArtifact?: DiscoveryArtifactProjection,
     keepArtifactId: string | null = null,
   ): void {
+    // Issue 04 (ADR 0106, 2 Nov 2026): a pending date show-back is not a search. A restore must not rebuild results for its dates.
+    if (context.pendingDate !== undefined) {
+      // Issue 16 (parity): while a date show-back is open the criteria strip shows the held stay "to confirm", as the deterministic
+      // path does (its discovery context is unconfirmed). No search runs and no results change. With a Request Draft open the
+      // deterministic path keeps the draft's own criteria ("Your Request Draft is unchanged"), so nothing changes here either.
+      if (thread.draftId && !thread.requestId && !thread.offerId) return;
+      const [candidate] = context.pendingDate.candidates;
+      const pendingCheckIn = context.pendingDate.checkIn ?? (context.pendingDate.candidates.length === 1 ? candidate : undefined);
+      thread.discoveryContext = {
+        city: context.city,
+        ...(context.neighbourhood ? { neighbourhood: context.neighbourhood } : {}),
+        ...(context.nights === undefined ? {} : { nights: context.nights }),
+        ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
+        ...(pendingCheckIn === undefined ? {} : { checkIn: pendingCheckIn }),
+        datesConfirmed: false,
+      };
+      return;
+    }
+    const budgetTotal = persistedBudgetTotal(context);
     const filters = {
       location: context.city,
       ...(context.neighbourhood ? { neighbourhood: context.neighbourhood } : {}),
       ...(context.checkIn && context.checkOut ? { checkIn: context.checkIn, checkOut: context.checkOut } : {}),
       ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
       ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
-      ...(context.maxBudgetKobo === undefined ? {} : { maxPriceKobo: context.maxBudgetKobo }),
+      ...(budgetTotal === undefined ? {} : { maxPriceKobo: budgetTotal }),
       ...(context.requiredAmenities?.length ? { requiredAmenities: context.requiredAmenities } : {}),
     };
     try {
+      // ADR 0015: a nightly budget is compared only with the stay's nights. Without them it is not rebuilt as an unfiltered search.
+      if (context.maxBudgetKobo !== undefined && budgetTotal === undefined) throw new RangeError("a budget needs its stay's total");
       // ADR 0077/0080: cold start rebuilds current facts from the authorized domain query.
       const currentFilters = currentArtifact?.facts.filters;
       const matchesContext = currentArtifact !== undefined
@@ -3215,7 +3157,9 @@ export class LocalGuestApp {
         ...(context.nights === undefined ? {} : { nights: context.nights }),
         ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
         ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
-        ...(context.maxBudgetKobo === undefined ? {} : { budget: { kobo: context.maxBudgetKobo, per: "stay" as const } }),
+        ...(context.maxBudgetKobo === undefined || context.maxBudgetPer === undefined ? {} : { budget: { kobo: context.maxBudgetKobo, per: context.maxBudgetPer } }),
+        // Issue 08 AC5: the deterministic fallback searches with the amenities the assistant searched with.
+        ...(context.requiredAmenities?.length ? { requiredAmenities: context.requiredAmenities } : {}),
       };
       thread.searchHistory = [thread.discoveryContext];
       // ADR 0106: the detail's artifact is the unit-detail artifact the detail card's Request to Book names, never the discovery artifact.
@@ -3321,8 +3265,10 @@ export class LocalGuestApp {
         ...(context.nights === undefined ? {} : { nights: context.nights }),
         ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
         ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
-        ...(context.maxBudgetKobo === undefined ? {} : { maxBudgetKobo: context.maxBudgetKobo }),
+        ...(context.maxBudgetKobo === undefined || context.maxBudgetPer === undefined ? {} : { maxBudgetKobo: context.maxBudgetKobo, maxBudgetPer: context.maxBudgetPer }),
         ...(context.requiredAmenities ? { requiredAmenities: context.requiredAmenities } : {}),
+        ...(context.pendingLocation ? { pendingLocation: context.pendingLocation } : {}),
+        ...(context.pendingDate ? { pendingDate: { candidates: [...context.pendingDate.candidates], ...(context.pendingDate.checkIn === undefined ? {} : { checkIn: context.pendingDate.checkIn }) } } : {}),
       },
       shortlist,
       ...(selected ? { selectedStayRef: selected.stayRef } : {}),
@@ -3333,6 +3279,7 @@ export class LocalGuestApp {
       ...(currentContractId ? { currentContractId } : {}),
       pendingAction: thread.pendingAction,
       replacedPendingAction: thread.replacedPendingAction,
+      pendingDraftReplacement: thread.pendingDraftReplacement,
     };
     const canonicalUserFacts = context.isDemoDate === false
       ? [context.checkIn, context.checkOut].filter((fact): fact is string => typeof fact === "string")
@@ -3396,6 +3343,12 @@ export class LocalGuestApp {
       // ADR 0106: the same unit-detail artifact id `#openUnitDetail` issues, so the detail's Request to Book stays authorized.
       thread.unitDetail = unit ? { unitId: unit.id, artifactId: unitDetailArtifactId(unit.id, thread.discoveryArtifact.projectionVersion) } : null;
     } else if (!selected) thread.unitDetail = null;
+    // Issue 13a (ADR 0074, ADR 0080): the open replacement of the Request Draft and the surface id the guest holds for it. A search
+    // that changes the stay has already retired it in the runtime, so the thread drops it too.
+    const replacement = assistant.taskState.pendingDraftReplacement ?? null;
+    thread.pendingDraftReplacement = replacement;
+    if (replacement) thread.activeSurfaces.set(DRAFT_REPLACEMENT_STAGE, replacement.surfaceId);
+    else this.#supersede(thread, DRAFT_REPLACEMENT_STAGE);
     const activeSurface = assistant.lastSurfaces.at(-1);
     const stage = activeSurface ? this.#stageForSurfaceId(activeSurface.surfaceId) : null;
     // ADR 0106: the planner's discovery card is the shell's current discovery surface. Adopting its id keeps the id the
@@ -4066,12 +4019,28 @@ export class LocalGuestApp {
         messages: [resolution.reply],
         surfaces: [],
         ...(resolution.kind === "clarify"
-          ? { quickReplies: quickRepliesFor(resolution.next) }
+          ? this.#clarificationChips(thread, resolution.next)
           : {}),
       };
     const result = this.#executeDiscovery(thread, resolution.filters);
     this.#reconcileAssistantStay(thread);
     return result;
+  }
+
+  /**
+   * Issue 10: the one-tap replies for a clarification on this thread. A thread the assistant holds takes its chips from the active
+   * pack, so the assistant never offers relative dates it cannot resolve (ADR 0106). Other threads keep the deterministic chips.
+   */
+  #clarificationChips(
+    thread: GuestThreadState,
+    next: StayCriterion,
+  ): { readonly quickReplies?: readonly string[] } {
+    const runtime = this.#assistantRuntime;
+    if (runtime && runtime.hasThread(thread.threadId)) {
+      const replies = runtime.clarificationQuickReplies(thread.threadId, "plan");
+      return replies === undefined ? {} : { quickReplies: replies };
+    }
+    return { quickReplies: quickRepliesFor(next) };
   }
 
   /**
@@ -4091,6 +4060,11 @@ export class LocalGuestApp {
       this.#recordAssistantArea(thread, next);
       return;
     }
+    // Issue 06 (ADR 0015): the budget chip, or its clear (null), is recorded with its stay or per-night meaning.
+    if (edit.field === "budget") {
+      this.#recordAssistantStayFacts(thread, { budget: edit.budget });
+      return;
+    }
     const facts =
       edit.field === "when"
         ? {
@@ -4099,17 +4073,14 @@ export class LocalGuestApp {
               : {}),
             nights: edit.nights,
           }
-        : edit.field === "guests"
-          ? { partySize: edit.partySize }
-          : null;
-    if (facts === null) return;
+        : { partySize: edit.partySize };
     this.#recordAssistantStayFacts(thread, facts);
   }
 
   /** ADR 0106: records the chip's stay facts in the assistant task state and keeps the persisted context in step. */
   #recordAssistantStayFacts(
     thread: GuestThreadState,
-    facts: { readonly checkIn?: string; readonly nights?: number; readonly partySize?: number },
+    facts: { readonly checkIn?: string; readonly nights?: number; readonly partySize?: number; readonly budget?: StayBudget | null },
   ): void {
     const runtime = this.#assistantRuntime;
     if (!runtime || !runtime.hasThread(thread.threadId)) return;
@@ -4185,6 +4156,8 @@ export class LocalGuestApp {
       ...(previous.checkIn !== undefined && previous.datesConfirmed !== false ? { checkIn: previous.checkIn } : {}),
       ...(previous.nights !== undefined ? { nights: previous.nights } : {}),
       ...(previous.partySize !== undefined ? { partySize: previous.partySize } : {}),
+      // Issue 06: the previous budget, or none (a clear), so the assistant's state matches the strip the undo restores.
+      budget: previous.budget ?? null,
     });
     this.#recordAssistantArea(thread, previous);
     const result = this.#executeDiscovery(thread, resolution.filters, {
@@ -4331,7 +4304,9 @@ export class LocalGuestApp {
 
     const environment = this.#environment;
     const guest: CommandPrincipal = environment.guestPrincipal();
-    const draft = environment.bookingRequestApp.createDraft(
+    let draft: ReturnType<typeof environment.bookingRequestApp.createDraft>;
+    try {
+      draft = environment.bookingRequestApp.createDraft(
       {
         unitId: detail.unitId,
         primaryGuest: {
@@ -4343,7 +4318,12 @@ export class LocalGuestApp {
         ...this.#stayDatesFor(thread),
       },
       guest,
-    );
+      );
+    } catch (error) {
+      // ADR 0023 as amended 1 Nov 2026: a Continuous Occupancy refusal is an ordinary guest-facing refusal with the server's sentence.
+      if (error instanceof ContinuousOccupancyError) return { ok: false, code: "CONTINUOUS_OCCUPANCY_REFUSED", message: error.message };
+      throw error;
+    }
     thread.draftId = draft.draftId;
     const requestSurfaceId = `thread-${thread.threadId}:request:draft:${draft.draftId}`;
     this.#supersede(thread, UNIT_STAGE);
@@ -4413,6 +4393,7 @@ export class LocalGuestApp {
       checkOut: draft.checkOut,
       partySize: draft.occupants.length || 1,
       ...(this.#environment.extendedStayPolicy ? { extendedStayPolicy: this.#environment.extendedStayPolicy } : {}),
+      demoTerms: this.#environment.config.demo === true,
       clock: this.#environment.clock,
     });
     return requestDraftArtifactFromProjection(
@@ -4511,7 +4492,7 @@ export class LocalGuestApp {
         surfaces: [],
       };
     }
-    // The 14-night and 90-day refusals are the discovery ones, unchanged.
+    // The 29-night Short Stay and 90-day refusals are the discovery ones, unchanged (ADR 0023 as amended 1 Nov 2026).
     if (resolution.kind !== "search")
       return {
         ok: true,
@@ -4560,7 +4541,7 @@ export class LocalGuestApp {
         context: merged.context,
         proposed: proposal,
       },
-      "Here is your Request Draft with the new details. It changes only if you choose “Use the new details”.",
+      DRAFT_REPLACEMENT_PROPOSED_COPY,
     );
   }
 
@@ -4569,37 +4550,11 @@ export class LocalGuestApp {
     unitId: string,
     stay: DraftReplacementStay,
   ): DraftStayTerms | null {
-    const environment = this.#environment;
-    // Revalidate availability and capacity for the stay itself, not budget or bedroom preferences.
-    const results = environment.discoveryQuery.search({ ...stay }).facts
-      .results;
-    const unit = environment.unitRepository.findById(unitId) as Unit | null;
-    if (!unit || !results.some((candidate) => candidate.id === unitId))
-      return null;
-    const quote = createStayQuote({
-      unit,
-      checkIn: stay.checkIn,
-      checkOut: stay.checkOut,
-      partySize: stay.partySize,
-      ...(environment.extendedStayPolicy ? { extendedStayPolicy: environment.extendedStayPolicy } : {}),
-      clock: environment.clock,
-    });
-    return {
-      checkIn: quote.checkIn,
-      checkOut: quote.checkOut,
-      nights: quote.nights,
-      partySize: stay.partySize,
-      allInStayTotalKobo: quote.allInStayTotalKobo,
-      refundableSecurityDepositKobo: quote.refundableSecurityDepositKobo,
-      amountDueNowKobo: quote.totalAmountDueNowKobo,
-    };
+    return draftReplacementTerms(this.#environment, unitId, stay);
   }
 
   #replacementUnavailable(unitId: string, stay: DraftReplacementStay): string {
-    const title =
-      (this.#environment.unitRepository.findById(unitId) as Unit | null)
-        ?.title ?? `This ${GUEST_GLOSSARY.unit}`;
-    return `${title} isn't available for ${formatStayDates(stay.checkIn, stay.checkOut)} for ${stay.partySize} ${stay.partySize === 1 ? "guest" : "guests"}.`;
+    return draftReplacementUnavailable(this.#environment, unitId, stay);
   }
 
   #presentDraftReplacement(
@@ -4924,11 +4879,18 @@ export class LocalGuestApp {
         aggregateId: thread.draftId,
         surfaceId: event.surfaceId,
       });
-      const disclosed = this.#environment.bookingRequestApp.disclose(
-        thread.draftId,
-        this.#environment.guestPrincipal(),
-        this.#environment.config.autoDeliverRequests !== false,
-      );
+      let disclosed;
+      try {
+        disclosed = this.#environment.bookingRequestApp.disclose(
+          thread.draftId,
+          this.#environment.guestPrincipal(),
+          this.#environment.config.autoDeliverRequests !== false,
+        );
+      } catch (error) {
+        // ADR 0023 as amended 1 Nov 2026: refused at submission before any hold, with the server's sentence.
+        if (error instanceof ContinuousOccupancyError) return { ok: false, code: "CONTINUOUS_OCCUPANCY_REFUSED", message: error.message };
+        throw error;
+      }
       thread.requestId = disclosed.requestId;
       this.#supersede(thread, REQUEST_STAGE);
       const surface = this.#requestSurface(thread, disclosed.requestId);

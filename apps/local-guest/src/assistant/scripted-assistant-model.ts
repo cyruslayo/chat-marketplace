@@ -249,10 +249,17 @@ export class ScriptedAssistantModel implements AssistantModelClient {
       };
     }
 
-    // 9. Relative dates -> prompt for exact date
+    // 9. Relative dates: the planner proposes a check-in the guest did not write. The pack rejects it as a dated
+    // clarification before any search runs (ADR 0106). Offline fixture only; the production planner is the model.
     if (/\b(next friday|next week|tomorrow|next month)\b/.test(norm)) {
       return {
-        text: "Please give me the check-in date as YYYY-MM-DD.",
+        toolCalls: [
+          {
+            id: `call-${crypto.randomUUID()}`,
+            name: "search_stays",
+            args: { city: "Lagos", checkIn: "2026-11-20", nights: 3, guests: 2 },
+          },
+        ],
       };
     }
 

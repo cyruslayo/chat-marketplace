@@ -75,9 +75,9 @@ test("AC5: The strip can be operated by keyboard alone and reflows at 320px", as
     await tab.waitForFunction("document.activeElement?.id === 'criteria-check-in'", 5_000);
     await tabTo(tab, "#criteria-nights");
     await tab.pressKey("Backspace");
-    await tab.insertText("15");
+    await tab.insertText("181");
     await tab.pressKey("Enter");
-    await tab.waitForText("Stays can be at most 14 nights", 10_000);
+    await tab.waitForText("Stays can be at most 180 nights. Please choose 180 nights or fewer.", 10_000);
     assert.equal(await tab.evaluate<string>("document.getElementById('criteria-status').getAttribute('role')"), "alert");
     assert.equal(await chipLabel(tab, "when"), "When: 10–13 Sept 2026 · 3 nights");
     await tab.pressKey("Escape");

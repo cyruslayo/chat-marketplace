@@ -64,7 +64,7 @@ test("dated budget filters use the All-In Stay Total, not the nightly rate", () 
 test("rejects stays outside launch duration and booking horizon", () => {
   const deps = setup();
   const query = new UnitDiscoveryQuery({ ...deps, clock: () => new Date("2026-07-22T00:00:00Z") });
-  assert.throws(() => query.search({ checkIn: "2026-07-23", checkOut: "2026-08-07" }), /14 nights/);
+  assert.throws(() => query.search({ checkIn: "2026-07-23", checkOut: "2026-08-22" }), /29 nights/);
   assert.throws(() => query.search({ checkIn: "2026-10-21", checkOut: "2026-10-22" }), /90-day/);
 });
 

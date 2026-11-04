@@ -1,6 +1,6 @@
 import type { AssistantToolDefinition, AssistantToolResult } from "./assistant-model.js";
 import type { AssistantStageHandler } from "./assistant-stage-handler.js";
-import type { ConciergeIntent } from "./scope-classifier.js";
+import type { ConciergeIntent, ScopeAssessment } from "./scope-classifier.js";
 import type { AssistantTaskState, AssistantTurnSurface } from "./assistant-state.js";
 import type { PendingAssistantAction } from "./pending-actions.js";
 import type { LocalGuestEnvironment } from "../fixture.js";
@@ -32,6 +32,8 @@ export interface AssistantToolContext {
   readonly threadId: string;
   readonly taskId: string;
   readonly userTextHistory: readonly string[];
+  /** Issue 09 (ADR 0099): the arguments as the model sent them, before the pack's normalization. The pack reads its own closed words from them. */
+  readonly requestedArguments?: Readonly<Record<string, unknown>>;
   readonly currentTurnDates?: { readonly checkIn?: string; readonly checkOut?: string };
   readonly now: Date;
   readonly demoCheckIn: string;
@@ -53,6 +55,16 @@ export type AssistantControlOutcome = typeof ASSISTANT_CONTROL_OUTCOMES[number];
 /** ADR 0106/0079: a closed code for one application effect this turn produced. Diagnostics only. */
 export type AssistantToolEffectCode = "request_draft_created_availability_checked_not_reserved";
 
+/** Issue 13a (ADR 0106, 2 Nov 2026; ADR 0080): a nights or party change the planner's search call asks for while a Request Draft is open. */
+export interface DraftRevisionRequest {
+  readonly draftId: string;
+  readonly checkIn: string;
+  readonly nights: number;
+  readonly partySize: number;
+  readonly city: string;
+  readonly neighbourhood?: string;
+}
+
 export interface AssistantToolExecutionResult {
   readonly result: Record<string, unknown>;
   readonly updatedTaskState: AssistantTaskState;
@@ -63,6 +75,8 @@ export interface AssistantToolExecutionResult {
   readonly projectedSurface?: { readonly kind: "discovery" | "cart" | "checkout" | "order"; readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] };
   /** Diagnostics only: the closed effect code of this execution, set by the pack that ran it (issue 04). */
   readonly effectCode?: AssistantToolEffectCode;
+  /** Issue 13a: set when the call is a draft revision, so no search ran and the draft stage quotes the change. */
+  readonly draftRevision?: DraftRevisionRequest;
 }
 
 export interface AssistantSurfaceMessages {
@@ -77,6 +91,12 @@ export interface AssistantReplyPlan {
   readonly kind: AssistantReplyPlanKind;
   readonly references: readonly string[];
 }
+
+/**
+ * Issue 10 (ADR 0099): which clarification the runtime is about to return. `stay_details` and `dates` are rejected tool calls,
+ * `area` is an unknown area refused by the pack, and `plan` is a typed `clarify_stay` reply.
+ */
+export type AssistantClarificationKind = "stay_details" | "dates" | "area" | "plan" | "location" | "date";
 
 /** One task's place in the shell task rail: a domain label plus its current step. */
 export interface AssistantTaskSummary {
@@ -115,11 +135,37 @@ export interface AssistantDomainPack {
   readonly platformActionNames?: readonly string[];
   toolsForState(taskState: AssistantTaskState): readonly AssistantToolDefinition[];
   validateToolCall(name: string, args: Record<string, unknown>, taskState: AssistantTaskState): AssistantToolPreconditionFailure | undefined;
+  /**
+   * ADR 0099 / ADR 0106 (issue 08): maps a guest's own words in an offered tool's arguments to the pack's closed values, before the
+   * exact-schema check. Undefined means no mapping. It never grants access and never widens the schema.
+   */
+  normalizeToolArguments?(name: string, args: Record<string, unknown>): Record<string, unknown>;
+  /**
+   * Issue 10 (ADR 0099, 0106): the one-tap replies for a clarification, from the committed task state. The runtime only passes them
+   * on: it never adds chips to a scope, support or redirect reply. Undefined adds no chips.
+   */
+  clarificationQuickReplies?(taskState: AssistantTaskState, kind: AssistantClarificationKind): readonly string[] | undefined;
+  /**
+   * Issue 09 (ADR 0099): the clarification a turn's successful results ask for, when the pack's own result says so (for example a
+   * location question held as pending). The runtime then offers that clarification's chips. Undefined keeps the plan's own chips.
+   */
+  replyClarificationKind?(results: readonly AssistantToolResult[]): AssistantClarificationKind | undefined;
   executeTool(name: string, args: Record<string, unknown>, context: AssistantToolContext): AssistantToolExecutionResult;
+  /**
+   * Issue 04 (ADR 0106, 2 Nov 2026, ADR 0099): settles the pack's pending guest-date show-back on the candidate task state, before the
+   * turn is classified. Pure over that state; the runtime calls it once per guest turn.
+   */
+  settlePendingGuestFacts?(text: string, taskState: AssistantTaskState, now: Date): void;
   /** Pack-owned minimal facts for model history. Raw execution results remain local to the platform. */
   projectToolResult?(name: string, result: Record<string, unknown>, limits: { readonly maxItems: number }): Record<string, unknown>;
   /** Canonical bounded facts used when older operation pairs leave retained history. */
   projectStateSummary?(taskState: AssistantTaskState, limits: { readonly maxItems: number }): Record<string, unknown>;
+  /**
+   * Issue 03 (ADR 0099): one line of per-turn context for the classifier and planner, built from the turn clock (for example
+   * today's date). It goes only into per-turn request context, never the system instruction (prompt cache), and it grants no
+   * authority (ADR 0106). Undefined adds nothing.
+   */
+  turnContext?(now: Date): string | undefined;
   /** Where a task in this domain is right now, for the shell task rail. */
   taskSummary(taskState: AssistantTaskState): AssistantTaskSummary;
   /** Projections the runtime renders for this pack's authoritative results. */
@@ -131,9 +177,21 @@ export interface AssistantDomainPack {
   cardPaymentSurface(artifact: unknown, surfaceId: string): readonly unknown[];
   bookingContractSurface(artifact: unknown, surfaceId: string): readonly unknown[];
   /** Validates references and renders a reply from current server-owned operation data. */
-  renderReply?(plan: AssistantReplyPlan | undefined, results: readonly AssistantToolResult[], latestUserText: string): string;
+  renderReply?(plan: AssistantReplyPlan | undefined, results: readonly AssistantToolResult[], latestUserText: string, taskState?: AssistantTaskState): string;
   /** A control outcome the pack's current results imply for a reply (for example no current booking). Undefined keeps the runtime's outcome. */
   replyControlOutcome?(results: readonly AssistantToolResult[]): AssistantControlOutcome | undefined;
+  /**
+   * ADR 0099 / ADR 0106 (issue 12): a pack may answer a validated turn from its own task state. The runtime calls it after the scope
+   * verdict and before any planner round, so a returned reply runs no planner call and no tool. The verdict is the only input the
+   * model supplies; the stage and the copy come from the pack. Undefined leaves the turn to the planner as before. It must not
+   * change the task state.
+   */
+  answerValidatedTurn?(turn: { readonly intents: readonly ConciergeIntent[]; readonly slots: ScopeAssessment["slots"]; readonly taskState: AssistantTaskState }): string | undefined;
+  /**
+   * Issue 16 AC2 (ADR 0099, ADR 0106): one server-chosen tool call for a validated turn, with no planner round. The runtime runs it
+   * through the same checks as a planner call (preconditions, the offered schema, the stage handlers). Undefined means no call.
+   */
+  serverToolTurn?(turn: { readonly intents: readonly ConciergeIntent[]; readonly text: string; readonly taskState: AssistantTaskState }): { readonly name: string; readonly args: Record<string, unknown> } | undefined;
   /** Issue 04: the pack's stage handlers, called in order for each authoritative execution and for confirmed pending actions. */
   readonly stageHandlers?: readonly AssistantStageHandler[];
   /**

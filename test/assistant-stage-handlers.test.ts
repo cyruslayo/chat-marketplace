@@ -233,7 +233,9 @@ test("criterion 6: each shortlet stage handler declares the supersede rule the s
     confirms: handler.confirms ?? null,
   }));
   assert.deepEqual(summary, [
-    { stage: "discovery", supersedes: ["discovery", "unit"], confirms: null },
+    // Issue 13a: a search that changes the stay also retires an open draft replacement (ADR 0074), and the replacement stage is its own handler.
+    { stage: "discovery", supersedes: ["discovery", "unit", "draft_replacement"], confirms: null },
+    { stage: "draft_replacement", supersedes: ["draft_replacement"], confirms: null },
     { stage: "unit", supersedes: ["discovery", "unit"], confirms: null },
     { stage: "request", supersedes: ["discovery", "unit", "request"], confirms: null },
     { stage: "request", supersedes: ["unit"], confirms: "request_to_book" },

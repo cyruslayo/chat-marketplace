@@ -23,7 +23,7 @@ function pendingRequest() {
     occupants: [{ name: "Delivery Guest" }],
     checkIn: "2026-08-20",
     checkOut: "2026-08-22",
-  }, { clock: () => DISCLOSED });
+  }, { tenantId: "tenant-lagos", clock: () => DISCLOSED });
   const request = manager.discloseBookingRequest(createPlatformCommandEnvelope({ commandName: "booking_request.disclose", principal: { id: "guest-delivery", role: "guest", tenantId: "tenant-lagos" }, payload: { draftId: draft.draftId, autoDeliver: false } }), { clock: () => DISCLOSED });
   const operator = { id: unit.operator.id, role: "operator" as const, tenantId: "tenant-lagos" };
   const deliver = (minutes: number) => manager.markDelivered(createPlatformCommandEnvelope({ commandName: "booking_request.mark_delivered", principal: operator, payload: { requestId: request.requestId } }), { clock: () => at(minutes) });

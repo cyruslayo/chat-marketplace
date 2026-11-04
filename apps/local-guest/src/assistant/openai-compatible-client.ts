@@ -93,7 +93,7 @@ export class OpenAiCompatibleClient implements AssistantModelClient {
   async generate(request: AssistantModelRequest): Promise<AssistantModelResponse> {
     const body = JSON.stringify({
       model: this.#model,
-      messages: mapHistoryToMessages(request.systemInstruction, request.history),
+      messages: mapHistoryToMessages(request.systemInstruction, request.history, request.turnContext),
       ...(request.tools.length > 0 ? { tools: request.tools.map(mapTool) } : {}),
       ...(request.structuredOutput ? {
         response_format: { type: "json_schema", json_schema: { name: request.structuredOutput.name, schema: request.structuredOutput.schema, strict: request.structuredOutput.strict ?? true } },
@@ -180,8 +180,10 @@ function httpsBaseUrl(value: string): string {
  * Rebuilds provider messages from the neutral fields only. `rawStep` is ignored, so a thread that
  * started on another provider is never replayed with that provider's opaque steps (ADR-0070).
  */
-function mapHistoryToMessages(systemInstruction: string, history: readonly AssistantConversationStep[]): ChatMessage[] {
+function mapHistoryToMessages(systemInstruction: string, history: readonly AssistantConversationStep[], turnContext?: string): ChatMessage[] {
   const messages: ChatMessage[] = [{ role: "system", content: systemInstruction }];
+  // Issue 03: the per-turn line follows the cached system prefix, so the system message stays byte-identical across days.
+  if (turnContext !== undefined) messages.push({ role: "user", content: turnContext });
   for (const item of history) {
     switch (item.role) {
       case "user":

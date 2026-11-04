@@ -7,7 +7,7 @@ import { SqliteOperatorRepository } from "../../../domains/shortlet/src/sqlite-o
 import { LocalGuestEnvironment } from "../../local-guest/src/fixture.js";
 import { LocalApartmentOwnerEnvironment } from "../../local-owner/src/local-owner-environment.js";
 import { createDemoRequestAcceptor } from "../../local-owner/src/demo-operator-acceptance.js";
-import { opsStub, accessToken, opsHeaders } from "./ops-test-helpers.js";
+import { opsStub, accessToken, opsHeaders, isolatedTenantName } from "./ops-test-helpers.js";
 import type { CloudflareEnv } from "../src/cloudflare-config.js";
 import { SqliteGuestInteractionStore } from "../../../domains/shortlet/src/guest-interaction-store.js";
 import { DurableObjectSqlDatabase } from "../src/do-sql-database.js";
@@ -96,6 +96,60 @@ test("AC6: the Durable Object SQLite composition preserves the 30-night journey 
       if (confirmed.outcome === "confirmed") expect(confirmed.bookingContract.dates.nights).toBe(30);
     } finally {
       restarted.close();
+      owner.close();
+    }
+  });
+});
+
+test("AC5: The Cloudflare Worker composition without SHORTLET_DEMO=enabled accepts a 30-night search at an opted-in unit", async () => {
+  // Issue 05 (ADR 0092 as amended 1 Nov 2026): Extended Stays are on in every deployment. This is the non-demo staging composition over the Durable Object SQLite store.
+  // A fresh Durable Object per run, so the seeded grants of the other cases do not collide with this composition.
+  const shortlet = (env as unknown as { readonly SHORTLET: CloudflareEnv["SHORTLET"] }).SHORTLET;
+  const stub = shortlet.get(shortlet.idFromName(isolatedTenantName("extended-non-demo")));
+  await runInDurableObject(stub, async (_instance, ctx) => {
+    const database = new DurableObjectSqlDatabase(ctx.storage);
+    const units = new SqliteUnitRepository(database);
+    const clock = () => START;
+    const owner = new LocalApartmentOwnerEnvironment({ tenantId: "tenant-do-non-demo", demo: false, deployment: "staging", clock }, { database, unitRepository: units, operatorRepository: new SqliteOperatorRepository(database, { clock }) });
+    const unit = units.findById("unit-lagos-ikoyi-001")!;
+    units.save({
+      ...unit,
+      extendedStay: {
+        optedIn: true,
+        monthlyAgreedAmounts: { accommodationKobo: 15_000_000, mandatoryChargesKobo: 500_000, version: "non-demo-monthly-v1" },
+        utilitiesAndServicing: { powerAndGeneratorFuelIncluded: true, waterIncluded: true, internetIncluded: true, cleaningIncluded: true, cleaningFrequency: "weekly" },
+      },
+    });
+    const guest = new LocalGuestEnvironment({
+      tenantId: "tenant-do-non-demo",
+      operatorId: unit.operator.id,
+      operatorName: unit.operator.name,
+      representativePersonId: "non-demo-operator-representative",
+      representativePersonName: "Non-demo Operator",
+      adminId: "non-demo-admin",
+      guestId: "guest-do-non-demo",
+      guestName: "Synthetic Guest",
+      initialGuestPhoneNumber: "+2348012345678",
+      initialGuestContactEmail: "guest@example.test",
+      demo: false,
+      deployment: "staging",
+      clock,
+    }, { database, unitRepository: units });
+    try {
+      expect(guest.config.demo).toBe(false);
+      const found = guest.discoveryQuery.search({ checkIn: "2026-09-20", checkOut: "2026-10-20", partySize: 1 });
+      expect(found.facts.results.map((result: { id: string }) => result.id)).toContain(unit.id);
+      const draft = guest.bookingRequestApp.createDraft({
+        unitId: unit.id,
+        primaryGuest: { id: guest.config.guestId, name: guest.config.guestName },
+        occupants: guest.demoOccupants(1),
+        selfBookingAttestation: guest.selfBookingAttestation(),
+        checkIn: "2026-09-20",
+        checkOut: "2026-10-20",
+      }, guest.guestPrincipal());
+      expect(draft.draftId).toBeTruthy();
+    } finally {
+      guest.close();
       owner.close();
     }
   });

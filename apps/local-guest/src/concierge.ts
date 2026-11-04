@@ -14,18 +14,16 @@
  * facts found in the latest message.
  */
 
-import { BOOKING_HORIZON_DAYS, MAX_STAY_NIGHTS, dateKeyInLagos, isExtendedStayLength, type ExtendedStayPolicy } from "../../../domains/shortlet/src/index.js";
+import { BOOKING_HORIZON_DAYS, DEFAULT_STAY_DATE_POLICY, MAX_STAY_NIGHTS, dateKeyInLagos, isExtendedStayLength, resolveStayDatePhrases, type ExtendedStayPolicy } from "../../../domains/shortlet/src/index.js";
 import { formatNgnKobo } from "../../web-agent/src/discovery-a2ui.js";
+import { GUEST_ASSISTANT_COPY, GUEST_LOCATION_CONFLICT } from "../../web-agent/src/guest-content.js";
+import { AMENITY_ALIASES, SEARCH_AREAS, STAY_LOCATION_ALIASES } from "./stay-vocabulary.js";
+import { extractBudget, type StayBudget } from "./stay-budget.js";
 
-/**
- * Issue 03b / ADR-0015: a budget is compared with the All-In Stay Total and
- * never includes the Refundable Security Deposit (ADR-0016). A nightly budget
- * is kept as nightly and converted with the current nights at search time.
- */
-export interface StayBudget {
-  readonly kobo: number;
-  readonly per: "stay" | "night";
-}
+export { SEARCH_AREAS };
+// Issue 07: the budget parser lives in stay-budget.ts so the assistant's pack reads budgets with the same rules.
+export type { StayBudget };
+export { extractBudget };
 
 export interface StayRequestFilters {
   readonly location: string;
@@ -37,6 +35,8 @@ export interface StayRequestFilters {
   readonly bedrooms?: number;
   /** Issue 03b: the budget as an All-In Stay Total for these dates (ADR-0015). */
   readonly maxPriceKobo?: number;
+  /** Issue 08: catalogue amenity ids the Unit must list (the fallback keeps what the assistant searched with). */
+  readonly requiredAmenities?: readonly string[];
 }
 
 export type StayRequestInterpretation = StayRequestResolution;
@@ -83,6 +83,8 @@ export interface DiscoverySearchContext {
   /** False while a resolved relative phrase ("this weekend") awaits the Guest's yes. */
   readonly datesConfirmed?: boolean;
   readonly budget?: StayBudget;
+  /** Issue 08: catalogue amenity ids the guest needs (the assistant's closed list, kept for the deterministic fallback). */
+  readonly requiredAmenities?: readonly string[];
 }
 
 /**
@@ -136,6 +138,37 @@ export function quickRepliesFor(next: StayCriterion): readonly string[] {
   }
 }
 
+/** The stay facts the deterministic path needs before it can search (the criteria asked for one at a time, issue 02). */
+export interface StayCriteriaFacts {
+  readonly city?: string;
+  readonly partySize?: number;
+  readonly checkIn?: string;
+  readonly nights?: number;
+}
+
+/** Every criterion a search needs, present. */
+export interface CompleteStayCriteria {
+  readonly city: string;
+  readonly partySize: number;
+  readonly checkIn: string;
+  readonly nights: number;
+}
+
+export type StayCriteriaGap = { readonly next: StayCriterion } | { readonly complete: CompleteStayCriteria };
+
+/**
+ * Issue 10 (ADR 0080): the single rule for which criterion is missing, in the order where, who, when, how long. The deterministic
+ * resolver and the assistant's clarification chips both use it, so both paths name the same criterion for the same facts.
+ */
+export function stayCriteriaGap(criteria: StayCriteriaFacts): StayCriteriaGap {
+  const { city, partySize, checkIn, nights } = criteria;
+  if (city === undefined) return { next: "where" };
+  if (partySize === undefined) return { next: "who" };
+  if (checkIn === undefined) return { next: "when" };
+  if (nights === undefined) return { next: "nights" };
+  return { complete: { city, partySize, checkIn, nights } };
+}
+
 export type StayRequestResolution =
   | { readonly kind: "search"; readonly filters: StayRequestFilters }
   | { readonly kind: "clarify"; readonly missing: readonly string[]; readonly next: StayCriterion; readonly reply: string }
@@ -144,23 +177,9 @@ export type StayRequestResolution =
   /** Dates outside launch limits (ADR-0023, ADR-0055), explained with the limit. */
   | { readonly kind: "refuse"; readonly reply: string };
 
-const LOCATION_PATTERNS: readonly {
-  readonly pattern: RegExp;
-  readonly city: string;
-  readonly neighbourhood?: string;
-}[] = [
-  { pattern: /\b(wuse\s*2|wuse\s*ii|wuse\s+two)\b/i, city: "Abuja", neighbourhood: "Wuse 2" },
-  // Abuja/Wuse knowledge: a bare "Wuse" names the Abuja district even though
-  // the accepted pilot inventory only carries the Wuse 2 neighbourhood.
-  { pattern: /\bwuse\b/i, city: "Abuja" },
-  { pattern: /\babuja\b/i, city: "Abuja" },
-  { pattern: /\b(ikoyi|old ikoyi)\b/i, city: "Lagos", neighbourhood: "Old Ikoyi" },
-  { pattern: /\b(lekki|lekki phase 1)\b/i, city: "Lagos", neighbourhood: "Lekki Phase 1" },
-  { pattern: /\b(victoria island|vi)\b/i, city: "Lagos", neighbourhood: "Victoria Island" },
-  { pattern: /\b(lagos)\b/i, city: "Lagos" },
-];
 
-const NIGHTS_PATTERN = /\b(\d{1,2})\s*(?:nights?|nitesc?|nts?)\b/i;
+// Up to three digits: Extended Stays run to 180 nights (ADR 0092, amended 1 Nov 2026), so two digits cannot read them.
+const NIGHTS_PATTERN = /\b(\d{1,3})\s*(?:nights?|nitesc?|nts?)\b/i;
 const GUESTS_PATTERN = /\b(\d{1,2})\s*(?:people|persons?|guests?|adults?|pax)\b/i;
 const BEDROOMS_PATTERN = /\b(\d{1,2}|one|two|three|four)\s*[- ]?bedrooms?\b/i;
 const BEDROOM_WORDS: Readonly<Record<string, number>> = { one: 1, two: 2, three: 3, four: 4 };
@@ -190,19 +209,6 @@ const UNSUPPORTED_PREFERENCES: readonly { readonly pattern: RegExp; readonly lab
   { pattern: /\b(?:workspace|desk)\b/i, label: "workspace" },
 ];
 
-const MONTHS: Readonly<Record<string, number>> = {
-  jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4, may: 5,
-  jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8, sep: 9, sept: 9, september: 9,
-  oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
-};
-const MONTH_NAME = "jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?";
-const ORDINAL = "(?:st|nd|rd|th)?";
-const DAY_MONTH_RANGE = new RegExp(`\\b(\\d{1,2})${ORDINAL}\\s*(?:-|–|—|to|until|till)\\s*(\\d{1,2})${ORDINAL}\\s+(?:of\\s+)?(${MONTH_NAME})\\b`, "i");
-const DAY_MONTH = new RegExp(`\\b(\\d{1,2})${ORDINAL}\\s+(?:of\\s+)?(${MONTH_NAME})\\b`, "gi");
-// "May" leads too many ordinary sentences ("may 2 people stay"), so month-first dates skip it.
-const MONTH_DAY = new RegExp(`\\b(${MONTH_NAME.replace("|may|", "|")})\\.?\\s+(\\d{1,2})${ORDINAL}\\b`, "gi");
-const WEEKDAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"] as const;
-const WEEKDAY_PATTERN = /\b(this\s+|next\s+|on\s+)?(sunday|monday|tuesday|wednesday|thursday|friday|saturday)\b/i;
 
 function dayNumber(dateIso: string): number {
   const [year, month, day] = dateIso.split("-").map(Number);
@@ -217,10 +223,6 @@ function addCalendarDays(dateIso: string, days: number): string {
   return fromDayNumber(dayNumber(dateIso) + days);
 }
 
-function weekdayOf(dateIso: string): number {
-  return new Date(`${dateIso}T00:00:00Z`).getUTCDay();
-}
-
 /** "Fri 4 Sept 2026": every resolved date is shown back concretely (issue 01). */
 export function formatGuestDay(dateIso: string): string {
   // ADR-0077: en-NG dates across channels.
@@ -230,63 +232,33 @@ export function formatGuestDay(dateIso: string): string {
   return `${part("weekday")} ${part("day")} ${part("month")} ${part("year")}`;
 }
 
-/** The next occurrence of a day and month on or after today (Africa/Lagos). */
-function calendarDate(day: number, month: number, today: string): string | undefined {
-  const year = Number(today.slice(0, 4));
-  for (const candidateYear of [year, year + 1]) {
-    const candidate = `${candidateYear}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-    const parsed = new Date(`${candidate}T00:00:00Z`);
-    if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== candidate) return undefined;
-    if (candidate >= today) return candidate;
+/**
+ * The dates the Guest's words give, read by the shared stay-date resolver (issue 02, ADR 0106). A day the Guest typed, or
+ * a stay "10-13 Nov", is given, so the search runs at once. A relative phrase is worked out from the clock and is not given,
+ * so it is shown back first. A "next <weekday>" that is ambiguous takes its following-week reading, as this path always has
+ * (the two-chip show-back belongs to the assistant, issue 04).
+ */
+function stayRequestDates(text: string, now: Date): StayRequestDates | undefined {
+  const found = resolveStayDatePhrases(text, now, DEFAULT_STAY_DATE_POLICY);
+  // Typed days in text order. A typed day that the Booking Horizon refuses still counts, so the refusal names it (ADR 0055).
+  const typed = found.flatMap((result) => {
+    if (result.kind === "day" && result.source === "literal") return [{ date: result.date, endDate: result.endDate }];
+    if (result.kind === "unresolved" && result.source === "literal" && result.date !== undefined) return [{ date: result.date, endDate: result.endDate }];
+    return [];
+  });
+  const stay = typed.find((day): day is { readonly date: string; readonly endDate: string } => day.endDate !== undefined);
+  if (stay !== undefined) return { checkIn: stay.date, checkOut: stay.endDate, given: true };
+  const [first, second] = typed;
+  if (first !== undefined) {
+    if (second !== undefined && second.date > first.date) return { checkIn: first.date, checkOut: second.date, given: true };
+    return { checkIn: first.date, given: true };
   }
-  return undefined;
-}
-
-function explicitDates(text: string, today: string): StayRequestDates | undefined {
-  const range = DAY_MONTH_RANGE.exec(text);
-  if (range) {
-    const month = MONTHS[range[3]!.toLowerCase()];
-    const checkIn = month === undefined ? undefined : calendarDate(Number(range[1]), month, today);
-    const checkOutDay = month === undefined ? undefined : calendarDate(Number(range[2]), month, checkIn ?? today);
-    if (checkIn !== undefined && checkOutDay !== undefined) return { checkIn, checkOut: checkOutDay, given: true };
-  }
-  const mentions: { readonly index: number; readonly date: string }[] = [];
-  for (const match of text.matchAll(DAY_MONTH)) {
-    const month = MONTHS[match[2]!.toLowerCase()];
-    const date = month === undefined ? undefined : calendarDate(Number(match[1]), month, today);
-    if (date !== undefined) mentions.push({ index: match.index ?? 0, date });
-  }
-  for (const match of text.matchAll(MONTH_DAY)) {
-    const month = MONTHS[match[1]!.toLowerCase()];
-    const date = month === undefined ? undefined : calendarDate(Number(match[2]), month, today);
-    if (date !== undefined) mentions.push({ index: match.index ?? 0, date });
-  }
-  mentions.sort((left, right) => left.index - right.index);
-  const [first, second] = mentions;
-  if (first === undefined) return undefined;
-  if (second !== undefined && second.date > first.date) return { checkIn: first.date, checkOut: second.date, given: true };
-  return { checkIn: first.date, given: true };
-}
-
-function relativeDates(text: string, today: string): StayRequestDates | undefined {
-  if (/\b(?:tonight|today)\b/i.test(text)) return { checkIn: today, given: false };
-  if (/\btomorrow\b/i.test(text)) return { checkIn: addCalendarDays(today, 1), given: false };
-  const weekend = /\b(this\s+|next\s+)?weekend\b/i.exec(text);
-  if (weekend) {
-    // Friday check-in, Sunday check-out, on or after the injected clock.
-    const friday = addCalendarDays(today, (5 - weekdayOf(today) + 7) % 7);
-    const checkIn = /next/i.test(weekend[1] ?? "") ? addCalendarDays(friday, 7) : friday;
-    return { checkIn, checkOut: addCalendarDays(checkIn, 2), given: false };
-  }
-  const weekday = WEEKDAY_PATTERN.exec(text);
-  if (weekday) {
-    const target = WEEKDAYS.indexOf(weekday[2]!.toLowerCase() as typeof WEEKDAYS[number]);
-    if (/next/i.test(weekday[1] ?? "")) {
-      // "next Friday" is that weekday in the following Monday-start week.
-      const nextMonday = addCalendarDays(today, 7 - ((weekdayOf(today) + 6) % 7));
-      return { checkIn: addCalendarDays(nextMonday, (target + 6) % 7), given: false };
-    }
-    return { checkIn: addCalendarDays(today, (target - weekdayOf(today) + 7) % 7), given: false };
+  // No typed day: the first relative phrase the Guest wrote. A relative date the horizon refuses is not used here.
+  for (const result of found) {
+    if (result.kind === "day" && result.source === "relative") return { checkIn: result.date, given: false };
+    if (result.kind === "range" && result.grain === "weekend") return { checkIn: result.earliest, checkOut: result.latest, given: false };
+    // The last candidate is the following-week reading, which the policy's rule gives on its own.
+    if (result.kind === "ambiguous" && result.candidates.length > 0) return { checkIn: result.candidates[result.candidates.length - 1]!, given: false };
   }
   return undefined;
 }
@@ -302,9 +274,11 @@ function buildContext(parts: {
   readonly checkIn?: string;
   readonly datesConfirmed?: boolean;
   readonly budget?: StayBudget;
+  readonly requiredAmenities?: readonly string[];
 }): DiscoverySearchContext {
   return {
     ...(parts.budget === undefined ? {} : { budget: { kobo: parts.budget.kobo, per: parts.budget.per } }),
+    ...(parts.requiredAmenities === undefined || parts.requiredAmenities.length === 0 ? {} : { requiredAmenities: [...parts.requiredAmenities] }),
     ...(parts.city === undefined ? {} : { city: parts.city }),
     ...(parts.neighbourhood === undefined ? {} : { neighbourhood: parts.neighbourhood }),
     ...(parts.nights === undefined ? {} : { nights: parts.nights }),
@@ -324,9 +298,11 @@ function scalarParts(context: DiscoverySearchContext): {
   readonly checkIn?: string;
   readonly datesConfirmed?: boolean;
   readonly budget?: StayBudget;
+  readonly requiredAmenities?: readonly string[];
 } {
   return {
     ...(context.budget === undefined ? {} : { budget: context.budget }),
+    ...(context.requiredAmenities === undefined ? {} : { requiredAmenities: context.requiredAmenities }),
     ...(context.city === undefined ? {} : { city: context.city }),
     ...(context.neighbourhood === undefined ? {} : { neighbourhood: context.neighbourhood }),
     ...(context.nights === undefined ? {} : { nights: context.nights }),
@@ -339,7 +315,7 @@ function scalarParts(context: DiscoverySearchContext): {
 /** Resolves the first accepted Lagos/Abuja location phrase in a message. */
 export function resolveLocationMention(text: string): StayRequestLocation | undefined {
   const normalized = text.trim();
-  for (const candidate of LOCATION_PATTERNS) {
+  for (const candidate of STAY_LOCATION_ALIASES) {
     const match = candidate.pattern.exec(normalized);
     if (!match) continue;
     return {
@@ -347,32 +323,6 @@ export function resolveLocationMention(text: string): StayRequestLocation | unde
       ...(candidate.neighbourhood === undefined ? {} : { neighbourhood: candidate.neighbourhood }),
       label: match[0],
     };
-  }
-  return undefined;
-}
-
-const NAIRA_AMOUNT = "(₦|ngn\\s*|n(?=\\d))?\\s*(\\d{1,3}(?:,\\d{3})+|\\d+(?:\\.\\d+)?)\\s*(k|m|million|thousand)?\\b\\s*(naira)?";
-const PER_NIGHT = "(\\s*(?:a|per|\\/|each|every)\\s*night)?";
-// Words a Guest puts between "budget" and the amount ("my budget is around ₦400k").
-const BUDGET_FILLER = "(?:\\s+(?:is|of|about|around|roughly|approximately|approx\\.?|at most|max|maximum))*";
-const BUDGET_PATTERN = new RegExp(`\\b(?:budget${BUDGET_FILLER}|under|below|max(?:imum)?|up to|no more than|not more than|less than)\\s*:?\\s*${NAIRA_AMOUNT}${PER_NIGHT}`, "gi");
-// The amount first: "₦400k budget", "500,000 naira total budget".
-const AMOUNT_BUDGET_PATTERN = new RegExp(`${NAIRA_AMOUNT}${PER_NIGHT}\\s+(?:total\\s+)?budget\\b`, "gi");
-const PRICED_NIGHT_PATTERN = new RegExp(`(₦|ngn\\s*)\\s*(\\d{1,3}(?:,\\d{3})+|\\d+(?:\\.\\d+)?)\\s*(k|m|million|thousand)?\\b\\s*(naira)?(\\s*(?:a|per|\\/|each|every)\\s*night)`, "gi");
-const AMOUNT_MULTIPLIERS: Readonly<Record<string, number>> = { k: 1_000, thousand: 1_000, m: 1_000_000, million: 1_000_000 };
-
-/**
- * Issue 03b: "budget ₦500k", "under 200,000 naira", "₦60k a night". A bare
- * small number ("under 3 nights", "max 4 guests") is never read as money: it
- * needs a currency mark, a k/m multiplier, "naira", or at least ₦1,000.
- */
-function extractBudget(text: string): StayBudget | undefined {
-  for (const match of [...text.matchAll(BUDGET_PATTERN), ...text.matchAll(AMOUNT_BUDGET_PATTERN), ...text.matchAll(PRICED_NIGHT_PATTERN)]) {
-    const [, currency, digits, multiplier, naira, perNight] = match;
-    const value = Number.parseFloat((digits ?? "").replaceAll(",", "")) * (multiplier ? AMOUNT_MULTIPLIERS[multiplier.toLowerCase()] ?? 1 : 1);
-    if (!Number.isFinite(value) || value <= 0) continue;
-    if (!currency && !multiplier && !naira && value < 1_000) continue;
-    return { kobo: Math.round(value * 100), per: perNight ? "night" : "stay" };
   }
   return undefined;
 }
@@ -413,8 +363,7 @@ export function extractStayRequestFacts(text: string, options: { readonly now?: 
   const nightsMatch = NIGHTS_PATTERN.exec(normalized);
   const guestsMatch = GUESTS_PATTERN.exec(normalized);
   const bedroomsMatch = BEDROOMS_PATTERN.exec(normalized);
-  const rangeDates = options.now === undefined ? undefined : explicitDates(normalized, dateKeyInLagos(options.now, "now"));
-  const dates = rangeDates ?? (options.now === undefined ? undefined : relativeDates(normalized, dateKeyInLagos(options.now, "now")));
+  const dates = options.now === undefined ? undefined : stayRequestDates(normalized, options.now);
   // A check-out date fixes the number of nights; otherwise use the nights the Guest typed.
   const nights = dates?.checkOut !== undefined
     ? dayNumber(dates.checkOut) - dayNumber(dates.checkIn)
@@ -440,28 +389,13 @@ export function extractStayRequestFacts(text: string, options: { readonly now?: 
   };
 }
 
-// Questions about a Unit's facilities, answered only from `unit.amenities`
-// (issue 04a AC2). An entry without ids is never listed by the catalogue, so
-// the answer is always that it isn't listed.
-const AMENITY_QUESTIONS: readonly { readonly pattern: RegExp; readonly label: string; readonly ids: readonly string[] }[] = [
-  { pattern: /\bparking\b/i, label: "Parking", ids: ["parking"] },
-  { pattern: /\b(?:swimming\s+)?pool\b/i, label: "A pool", ids: ["swimming_pool"] },
-  { pattern: /\b(?:wi-?fi|internet)\b/i, label: "Wi-Fi", ids: ["wifi"] },
-  { pattern: /\b(?:generator|backup power|24\/7 power|light|power)\b/i, label: "Backup power", ids: ["24_7_power_generator", "generator"] },
-  { pattern: /\b(?:security|guards?)\b/i, label: "On-site security", ids: ["security_guard"] },
-  { pattern: /\b(?:air[- ]?con(?:ditioning)?|a\/c|ac)\b/i, label: "Air conditioning", ids: ["air_conditioning"] },
-  { pattern: /\b(?:workspace|desk)\b/i, label: "A workspace", ids: ["workspace"] },
-  { pattern: /\bgym\b/i, label: "A gym", ids: [] },
-  { pattern: /\bkitchen\b/i, label: "A kitchen", ids: [] },
-  { pattern: /\bbalcony\b/i, label: "A balcony", ids: [] },
-];
 const QUESTION_PATTERN = /\?|\b(?:is there|are there|does (?:it|the (?:apartment|place|flat)) have|do (?:you|they) have|has it got|what about)\b/i;
 const CHANGE_PATTERN = /\b(?:make it|change|extend|shorten|move (?:it|the dates)|add (?:a|another|one more) night|fewer nights|more nights)\b/i;
 
 /** Facility questions in a message, in the order the catalogue lists them. */
 export function amenityQuestions(text: string): readonly { readonly label: string; readonly ids: readonly string[] }[] {
   if (!QUESTION_PATTERN.test(text)) return [];
-  return AMENITY_QUESTIONS.filter((question) => question.pattern.test(text)).map(({ label, ids }) => ({ label, ids }));
+  return AMENITY_ALIASES.filter((question) => question.pattern.test(text)).map(({ label, ids }) => ({ label, ids }));
 }
 
 /** True when a message asks to change the stay (dates, nights, guests or area). */
@@ -492,10 +426,14 @@ function withPending(context: DiscoverySearchContext, pending: PendingLocationCh
   return buildContext({ ...scalarParts(context), pendingLocationChange: pending });
 }
 
-function locationConflictQuestion(pending: PendingLocationChange, context: DiscoverySearchContext): string {
+/**
+ * The conflict question for a pending location change (issue 09). Shared by the deterministic merge and the assistant's pack, so both
+ * ask the same sentence (ADR 0080); the sentence itself is in guest-content.ts (ADR 0077).
+ */
+export function locationConflictQuestion(pending: PendingLocationChange, context: DiscoverySearchContext): string {
   const wanted = pending.label.toLowerCase() === pending.city.toLowerCase() ? pending.city : `${pending.label} in ${pending.city}`;
   const incumbent = context.neighbourhood === undefined ? context.city ?? "your current search" : `${context.neighbourhood} in ${context.city ?? ""}`.trim();
-  return `Do you want ${wanted}, or should I keep searching in ${incumbent}?`;
+  return GUEST_LOCATION_CONFLICT.question(wanted, incumbent);
 }
 
 /**
@@ -609,8 +547,13 @@ function clarifyReply(context: DiscoverySearchContext, missing: readonly string[
  */
 /** Refuses dates outside launch limits with a plain statement of the limit. */
 function dateLimitRefusal(checkIn: string, nights: number, today: string, policy?: ExtendedStayPolicy): string | undefined {
-  // ADR-0023: one through fourteen nights.
+  // ADR-0023 as amended 1 Nov 2026: Short Stays are one through MAX_STAY_NIGHTS (29) nights. A policy (ADR 0092) adds its own range.
   if (nights > MAX_STAY_NIGHTS && !isExtendedStayLength(nights, policy)) {
+    if (policy && policy.minimumNights === MAX_STAY_NIGHTS + 1) {
+      // Contiguous ranges (29 Short, 30 onward Extended): the existing no-policy sentence, with the policy's maximum.
+      // WORDING TO CONFIRM WITH THE OWNER (issue 02): this reuses the no-policy template; see Comments.
+      return `Stays can be at most ${policy.maximumNights} nights. Please choose ${policy.maximumNights} nights or fewer.`;
+    }
     return policy
       ? `This demo supports stays up to ${MAX_STAY_NIGHTS} nights, or ${policy.minimumNights} to ${policy.maximumNights} nights.`
       : `Stays can be at most ${MAX_STAY_NIGHTS} nights. Please choose ${MAX_STAY_NIGHTS} nights or fewer.`;
@@ -646,10 +589,16 @@ export function resolveStayRequestContext(
   if (partySize === undefined) missing.push("how many guests are staying");
   if (checkIn === undefined) missing.push("what date you arrive (for example: 10 Sept or this Friday)");
   if (nights === undefined) missing.push("how many nights you need");
-  if (city === undefined || checkIn === undefined || nights === undefined || partySize === undefined) {
-    const next: StayCriterion = city === undefined ? "where" : partySize === undefined ? "who" : checkIn === undefined ? "when" : "nights";
-    return { kind: "clarify", missing, next, reply: clarifyReply(context, missing) };
-  }
+  const gap = stayCriteriaGap({ city, partySize, checkIn, nights });
+  if ("next" in gap) return { kind: "clarify", missing, next: gap.next, reply: clarifyReply(context, missing) };
+  return confirmedOrSearch(context, gap.complete);
+}
+
+/** The resolution once every criterion is known: a search, or a confirmation of the dates (ADR 0015, ADR 0055). */
+function confirmedOrSearch(
+  context: DiscoverySearchContext,
+  { city, partySize, checkIn, nights }: CompleteStayCriteria,
+): StayRequestResolution {
   const checkOut = addCalendarDays(checkIn, nights);
   const filters: StayRequestFilters = {
     location: city,
@@ -660,31 +609,20 @@ export function resolveStayRequestContext(
     ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
     // ADR-0015: the budget filters on the All-In Stay Total for these nights.
     ...(context.budget === undefined ? {} : { maxPriceKobo: stayBudgetKobo(context)! }),
+    ...(context.requiredAmenities === undefined ? {} : { requiredAmenities: context.requiredAmenities }),
   };
   if (context.datesConfirmed !== true) {
     const place = context.neighbourhood ?? city;
     return {
       kind: "confirm",
       filters,
-      reply: `Just to check: arriving ${formatGuestDay(checkIn)} and leaving ${formatGuestDay(checkOut)} (${nights} ${nights === 1 ? "night" : "nights"}), ${partySize} ${partySize === 1 ? "guest" : "guests"} in ${place}. Shall I search these dates? Reply "yes", or tell me different dates.`,
+      // Issue 04 (ADR 0077, 0080): the show-back sentence is the shared copy, also used by the assistant path.
+      reply: GUEST_ASSISTANT_COPY.dateShowBack(formatGuestDay(checkIn), formatGuestDay(checkOut), nights, partySize, place),
     };
   }
   return { kind: "search", filters };
 }
 
-/**
- * Issue 03a: the areas a Guest can pick on the criteria strip and on the
- * conventional search form (ADR-0080). They are the locations the concierge
- * already understands in free text; no new inventory area is invented here.
- */
-export const SEARCH_AREAS: readonly { readonly id: string; readonly label: string; readonly city: string; readonly neighbourhood?: string }[] = Object.freeze([
-  { id: "abuja", label: "Abuja (all areas)", city: "Abuja" },
-  { id: "wuse-2", label: "Wuse 2, Abuja", city: "Abuja", neighbourhood: "Wuse 2" },
-  { id: "lagos", label: "Lagos (all areas)", city: "Lagos" },
-  { id: "old-ikoyi", label: "Old Ikoyi, Lagos", city: "Lagos", neighbourhood: "Old Ikoyi" },
-  { id: "lekki-phase-1", label: "Lekki Phase 1, Lagos", city: "Lagos", neighbourhood: "Lekki Phase 1" },
-  { id: "victoria-island", label: "Victoria Island, Lagos", city: "Lagos", neighbourhood: "Victoria Island" },
-]);
 
 export function searchAreaFor(context: DiscoverySearchContext): typeof SEARCH_AREAS[number] | undefined {
   if (context.city === undefined) return undefined;
@@ -746,6 +684,10 @@ export function parseDiscoverySearchContext(value: unknown): DiscoverySearchCont
   if (!optionalPositiveInteger(record.nights) || !optionalPositiveInteger(record.partySize) || !optionalPositiveInteger(record.bedrooms)) return null;
   if (record.checkIn !== undefined && (typeof record.checkIn !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(record.checkIn))) return null;
   if (record.datesConfirmed !== undefined && typeof record.datesConfirmed !== "boolean") return null;
+  // Issue 08: persisted amenity ids use the same shape the projection accepts (guest-projection.ts), at most sixteen.
+  const rawAmenities = record.requiredAmenities;
+  if (rawAmenities !== undefined && (!Array.isArray(rawAmenities) || rawAmenities.length > 16
+    || !rawAmenities.every((entry) => typeof entry === "string" && /^[A-Za-z0-9_-]{1,48}$/.test(entry)))) return null;
   const rawBudget = record.budget;
   let budget: StayBudget | undefined;
   if (rawBudget !== undefined) {
@@ -776,6 +718,7 @@ export function parseDiscoverySearchContext(value: unknown): DiscoverySearchCont
     ...(pending === undefined ? {} : { pendingLocationChange: pending }),
     ...(typeof record.checkIn === "string" ? { checkIn: record.checkIn, datesConfirmed: record.datesConfirmed === true } : {}),
     ...(budget === undefined ? {} : { budget }),
+    ...(Array.isArray(rawAmenities) ? { requiredAmenities: [...rawAmenities] as string[] } : {}),
   });
 }
 
