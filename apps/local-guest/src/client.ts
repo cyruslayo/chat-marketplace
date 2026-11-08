@@ -43,6 +43,7 @@ import {
   type StayCardParts,
 } from "./guest-kit.js";
 import type { ConfirmationContent } from "../../web-agent/src/confirmation-presentation.js";
+import { NOTICE_OPEN_EVENT } from "../../web-agent/src/booking-contract-a2ui.js";
 import type { OfferScreenContent } from "../../web-agent/src/offer-presentation.js";
 import type { PaymentScreenContent } from "../../web-agent/src/payment-presentation.js";
 import type { RequestScreenContent } from "../../web-agent/src/request-presentation.js";
@@ -633,6 +634,13 @@ function organizeConfirmation(
     breakdown.outerHTML,
   );
   root.replaceChildren(template.content);
+  // Issue 18: the confirmation screen replaces the Weaver tree, so its Give notice button is wired here to the same open event
+  // the booking surface's Weaver action sends (the card is then the only confirmation, ADR 0060).
+  const bookingSurfaceId = activePayload?.surfaceId;
+  root.querySelector<HTMLButtonElement>("[data-notice-open]")?.addEventListener("click", () => {
+    if (bookingSurfaceId === undefined) return;
+    void sendEvent({ name: NOTICE_OPEN_EVENT, surfaceId: bookingSurfaceId, sourceComponentId: "booking-contract-notice-action", timestamp: new Date().toISOString(), context: { surfaceId: bookingSurfaceId } });
+  });
   root
     .querySelector<HTMLAnchorElement>(".request-next a")
     ?.addEventListener("click", (event) => {

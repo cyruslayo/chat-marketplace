@@ -396,12 +396,21 @@ export function stepsHtml(items: readonly string[]): string {
 }
 
 /** Issue 10: the confirmation uses the same kit sections on the page and in the workspace. */
+/**
+ * Issue 18 (ADR 0060, 0077, 0080): the Notice to End block on a confirmed booking in the chat. A recorded notice shows the page's
+ * facts; otherwise the button opens the notice card through the assistant (the client wires `data-notice-open`).
+ */
+export function confirmationNoticeHtml(notice: NonNullable<ConfirmationContent["notice"]>): string {
+  if (notice.kind === "action") return `<div class="request-actions"><button class="ui-button ui-button--secondary ui-button--block" type="button" data-notice-open>${escapeHtml(GUEST_NOTICE_COPY.action)}</button></div>`;
+  return `<section class="ui-panel" aria-labelledby="notice-recorded-heading" data-notice-recorded><h2 id="notice-recorded-heading">${escapeHtml(GUEST_NOTICE_COPY.recordedHeading)}</h2><p>${escapeHtml(GUEST_NOTICE_COPY.recordedLead)}</p>${noticeFactsDlHtml(notice.facts)}</section>`;
+}
+
 export function confirmationScreenHtml(
   content: ConfirmationContent,
   ticket: string,
   breakdown: string,
 ): string {
-  return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}<div class="confirmation-reference"><dl class="ui-facts ui-facts--stacked"><dt>Booking reference</dt><dd>${escapeHtml(content.bookingReference)}</dd></dl></div><section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}<a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Ask about arrival</a></section><div class="request-actions">${content.scheduleHref ? `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.scheduleHref)}">View payment schedule</a>` : ""}</div><details class="ui-panel booking-details" id="booking-details"><summary class="ui-button ui-button--secondary ui-button--block">Full contract terms</summary><p>${escapeHtml(content.details)}</p></details></section>`;
+  return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}${content.notice ? confirmationNoticeHtml(content.notice) : ""}<div class="confirmation-reference"><dl class="ui-facts ui-facts--stacked"><dt>Booking reference</dt><dd>${escapeHtml(content.bookingReference)}</dd></dl></div><section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}<a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Ask about arrival</a></section><div class="request-actions">${content.scheduleHref ? `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.scheduleHref)}">View payment schedule</a>` : ""}</div><details class="ui-panel booking-details" id="booking-details"><summary class="ui-button ui-button--secondary ui-button--block">Full contract terms</summary><p>${escapeHtml(content.details)}</p></details></section>`;
 }
 
 /** Issue 08: the sign-in offer. The email is the contact already given, and `returnPath` is the screen to come back to. */

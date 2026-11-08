@@ -1,5 +1,5 @@
 import type { BookingContractArtifact } from "../../web/src/booking-contract-artifact.js";
-import { accommodationProviderLine, GUEST_FACT_LABELS, guestFact } from "./guest-content.js";
+import { accommodationProviderLine, GUEST_FACT_LABELS, GUEST_NOTICE_COPY, guestFact, type NoticeFactsInput } from "./guest-content.js";
 
 export interface ConfirmationContent {
   readonly bookingReference: string;
@@ -10,6 +10,12 @@ export interface ConfirmationContent {
   /** Demo-launch issue 12 AC4: present for an Extended Stay only; the page that lists its Billing Periods. */
   readonly scheduleHref?: string;
   readonly details: string;
+  /**
+   * Issue 18 (ADR 0060, 0077, 0080): the Notice to End block on a confirmed booking. A recorded notice shows its facts (the page's
+   * helper); an Extended Stay without one offers the action that opens the card. The chat's confirmation screen replaces the Weaver
+   * tree, so this block is what carries the notice into the chat.
+   */
+  readonly notice?: { readonly kind: "recorded"; readonly facts: NoticeFactsInput } | { readonly kind: "action" };
 }
 
 /** ADR-0085: a confirmed Reservation never grants physical-access authority. */
@@ -31,6 +37,7 @@ export function confirmationContent(artifact: BookingContractArtifact, threadId:
     conversationHref: `/conversation?threadId=${encodeURIComponent(threadId)}`,
     detailsHref: `${route}#booking-details`,
     ...(artifact.facts.noticeToEndTerms ? { scheduleHref: `/bookings/periods/${encodeURIComponent(artifact.facts.offerId)}` } : {}),
+    ...(artifact.facts.noticeToEnd ? { notice: { kind: "recorded" as const, facts: artifact.facts.noticeToEnd } } : artifact.facts.noticeToEndTerms ? { notice: { kind: "action" as const } } : {}),
     details: [accommodationProviderLine(artifact.facts.accommodationProvider.name),
       ...(guestNames.length ? [guestFact(GUEST_FACT_LABELS.guests, guestNames.join(", "))] : []),
       `Checkout time: ${artifact.facts.checkout?.time ?? "11:00"} WAT`,

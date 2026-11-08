@@ -9669,6 +9669,16 @@ Known schemas:
     workspace: "Dedicated workspace"
   };
   var GUEST_AMENITY_IDS = Object.freeze(Object.keys(AMENITY_LABELS));
+  function formatGuestDate(value) {
+    const date2 = /* @__PURE__ */ new Date(`${value.slice(0, 10)}T00:00:00.000Z`);
+    if (!/^\d{4}-\d{2}-\d{2}/.test(value) || Number.isNaN(date2.getTime())) return void 0;
+    return new Intl.DateTimeFormat("en-NG", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      timeZone: "UTC"
+    }).format(date2);
+  }
   var GUEST_FACT_LABELS = Object.freeze({
     checkIn: "Check-in",
     checkOut: "Check-out",
@@ -9853,6 +9863,34 @@ Known schemas:
     manualHelp: "Pay our business account and upload your receipt. Your booking confirms only after we check the money has arrived. You can't switch until this attempt expires or is declined.",
     lateReview: "A late payment needs review and does not confirm your booking. Contact Shortlet if you sent money after the deadline."
   };
+  var GUEST_NOTICE_COPY = Object.freeze({
+    action: "Give notice to end your stay",
+    heading: "End your stay early",
+    confirm: "Give notice",
+    back: "Keep my stay",
+    recordedBack: "Back to my stay",
+    /** Issue 18 (proposed for owner confirmation, 8 Nov 2026): refusals and the typed-confirmation reply. */
+    notExtended: "Giving notice applies to an Extended Stay. This is a Short Stay, so it cannot be ended early from here.",
+    notVerified: "You can give notice once you have checked in at the property.",
+    unavailable: "Notice to End is not available for this stay right now.",
+    cardOpened: "Here are the terms for giving notice. Press Give notice on the card to confirm.",
+    given: "Notice given. Your stay now ends on the new last night.",
+    stale: "The notice terms have changed. Ask again to see the current terms.",
+    newLastNight: "New last night",
+    newCheckOut: "New checkout",
+    refund: "Refund for paid nights after it",
+    owed: "Still owed up to it",
+    recordedHeading: "Notice given",
+    recordedLead: "Your stay now ends on the new last night below. Refunds are paid by hand, as the terms say."
+  });
+  function noticeFactRows(facts, money) {
+    return [
+      { key: "newLastNight", label: GUEST_NOTICE_COPY.newLastNight, value: formatGuestDate(facts.newLastNight) ?? facts.newLastNight, raw: facts.newLastNight },
+      { key: "newCheckOut", label: GUEST_NOTICE_COPY.newCheckOut, value: formatGuestDate(facts.newCheckOut) ?? facts.newCheckOut, raw: facts.newCheckOut },
+      { key: "refund", label: GUEST_NOTICE_COPY.refund, value: money(facts.refundKobo), raw: String(facts.refundKobo) },
+      { key: "owed", label: GUEST_NOTICE_COPY.owed, value: money(facts.owedKobo), raw: String(facts.owedKobo) }
+    ];
+  }
 
   // apps/local-guest/src/turn-budget.ts
   var SCOPE_CLASSIFIER_BUDGET_MS = 8e3;
@@ -10087,8 +10125,12 @@ Known schemas:
   function stepsHtml(items) {
     return `<ol class="ui-steps">${items.map((item, index) => `<li><span class="ui-steps__number">${index + 1}</span><span>${escapeHtml(item)}</span></li>`).join("")}</ol>`;
   }
+  function confirmationNoticeHtml(notice) {
+    if (notice.kind === "action") return `<div class="request-actions"><button class="ui-button ui-button--secondary ui-button--block" type="button" data-notice-open>${escapeHtml(GUEST_NOTICE_COPY.action)}</button></div>`;
+    return `<section class="ui-panel" aria-labelledby="notice-recorded-heading" data-notice-recorded><h2 id="notice-recorded-heading">${escapeHtml(GUEST_NOTICE_COPY.recordedHeading)}</h2><p>${escapeHtml(GUEST_NOTICE_COPY.recordedLead)}</p>${noticeFactsDlHtml(notice.facts)}</section>`;
+  }
   function confirmationScreenHtml(content, ticket, breakdown) {
-    return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}<div class="confirmation-reference"><dl class="ui-facts ui-facts--stacked"><dt>Booking reference</dt><dd>${escapeHtml(content.bookingReference)}</dd></dl></div><section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}<a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Ask about arrival</a></section><div class="request-actions">${content.scheduleHref ? `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.scheduleHref)}">View payment schedule</a>` : ""}</div><details class="ui-panel booking-details" id="booking-details"><summary class="ui-button ui-button--secondary ui-button--block">Full contract terms</summary><p>${escapeHtml(content.details)}</p></details></section>`;
+    return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}${content.notice ? confirmationNoticeHtml(content.notice) : ""}<div class="confirmation-reference"><dl class="ui-facts ui-facts--stacked"><dt>Booking reference</dt><dd>${escapeHtml(content.bookingReference)}</dd></dl></div><section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}<a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Ask about arrival</a></section><div class="request-actions">${content.scheduleHref ? `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.scheduleHref)}">View payment schedule</a>` : ""}</div><details class="ui-panel booking-details" id="booking-details"><summary class="ui-button ui-button--secondary ui-button--block">Full contract terms</summary><p>${escapeHtml(content.details)}</p></details></section>`;
   }
   function signInOfferHtml(content) {
     return `<section class="ui-panel" data-sign-in-offer aria-labelledby="sign-in-offer-title"><h2 id="sign-in-offer-title">${escapeHtml(GUEST_ACCOUNT_COPY.offerTitle)}</h2><p>${escapeHtml(GUEST_ACCOUNT_COPY.offerIntro)}</p><form method="post" action="/account/sign-in"><div class="ui-field"><label class="ui-field__label" for="sign-in-offer-email">${escapeHtml(GUEST_ACCOUNT_COPY.emailLabel)}</label><input id="sign-in-offer-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" maxlength="254" required value="${escapeHtml(content.email)}"></div><input type="hidden" name="return" value="${escapeHtml(content.returnPath)}"><button class="ui-button ui-button--secondary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.offerButton)}</button></form></section>`;
@@ -10133,6 +10175,17 @@ Known schemas:
     const thumb = parts.photoSrc === void 0 ? icon("photo") : `<img src="${escapeHtml(parts.photoSrc)}" alt="" width="64" height="64" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
     return `<a class="ui-result-row" href="${escapeHtml(parts.href)}"><span class="ui-result-row__thumb">${thumb}</span><span class="ui-result-row__body"><span class="ui-result-row__title">${escapeHtml(parts.title)}</span><span class="ui-result-row__price">${escapeHtml(parts.total)} <span>${escapeHtml(parts.totalLabel)}</span></span></span>${icon("chevron-right")}</a>`;
   }
+  function noticeFactsDlHtml(facts) {
+    const rows = noticeFactRows(facts, formatNgnKobo);
+    const cells = rows.map((row) => {
+      const attribute = row.key === "newLastNight" ? ` data-new-last-night="${escapeHtml(row.raw)}"` : row.key === "refund" ? ` data-refund-kobo="${escapeHtml(row.raw)}"` : row.key === "owed" ? ` data-owed-kobo="${escapeHtml(row.raw)}"` : "";
+      return `<dt>${escapeHtml(row.label)}</dt><dd${attribute}>${escapeHtml(row.value)}</dd>`;
+    }).join("");
+    return `<dl class="ui-facts ui-facts--stacked">${cells}</dl>`;
+  }
+
+  // apps/web-agent/src/booking-contract-a2ui.ts
+  var NOTICE_OPEN_EVENT = "shortlet.assistant.open-notice";
 
   // apps/local-guest/src/guest-surface-fallback.ts
   function mountGuestSurfaceOrFallback(options) {
@@ -10531,6 +10584,11 @@ Known schemas:
       breakdown.outerHTML
     );
     root.replaceChildren(template.content);
+    const bookingSurfaceId = activePayload?.surfaceId;
+    root.querySelector("[data-notice-open]")?.addEventListener("click", () => {
+      if (bookingSurfaceId === void 0) return;
+      void sendEvent({ name: NOTICE_OPEN_EVENT, surfaceId: bookingSurfaceId, sourceComponentId: "booking-contract-notice-action", timestamp: (/* @__PURE__ */ new Date()).toISOString(), context: { surfaceId: bookingSurfaceId } });
+    });
     root.querySelector(".request-next a")?.addEventListener("click", (event) => {
       event.preventDefault();
       askShortlet();

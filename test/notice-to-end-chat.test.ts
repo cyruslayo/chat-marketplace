@@ -23,6 +23,9 @@ import type { AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant
 import { ASSISTANT_CONTROL_COPY } from "../apps/local-guest/src/assistant/control-copy.js";
 import { ASSISTANT_CANCEL_ACTION_EVENT, ASSISTANT_CONFIRM_ACTION_EVENT } from "../apps/local-guest/src/assistant/pending-action-a2ui.js";
 import { GUEST_NOTICE_COPY, noticeFactRows } from "../apps/web-agent/src/guest-content.js";
+import { confirmationScreenHtml } from "../apps/local-guest/src/guest-kit.js";
+import type { ConfirmationContent } from "../apps/web-agent/src/confirmation-presentation.js";
+import { formatNgnKobo } from "../apps/web-agent/src/discovery-a2ui.js";
 import { formatMoney } from "../apps/web/src/ui-kit.js";
 import { SqliteCheckInSupportStore } from "../domains/shortlet/src/checkin-support.js";
 import { SqliteBookingStateRepository } from "../domains/shortlet/src/booking-state.js";
@@ -225,6 +228,49 @@ test("AC6: Forged, superseded or unknown surface ids, and a superseded contract 
     const superseded = await coldApp(f, threadId).app.handleEventAsync(threadId, confirm);
     assert.equal(superseded.ok === false ? superseded.code : "ok", "STALE_SURFACE", "a superseded contract version is refused");
     assert.equal(contractOf(f, offerId).noticeToEnd, undefined, "nothing is recorded after a refusal");
+  } finally {
+    f.close();
+  }
+});
+
+/** The chat's booking screen as the client inserts it: the confirmation screen built from the restored state's booking surface (ADR 0077/0080). */
+function renderedBookingScreen(f: DatedFixture, threadId: string): { readonly html: string; readonly notice: ConfirmationContent["notice"] } {
+  const booking = coldApp(f, threadId).app.getState(threadId)!.surfaces.find((surface) => surface.surfaceId.includes(":booking:"));
+  assert.ok(booking?.confirmation, "the restored booking surface carries its confirmation screen content");
+  return { html: confirmationScreenHtml(booking.confirmation, "", ""), notice: booking.confirmation.notice };
+}
+
+test("After Give notice, the rendered chat booking screen shows Notice given, the new last night, and no Give notice action", async () => {
+  // Issue 18 defect: the chat booking screen is the confirmation screen, which replaced the Weaver tree and dropped the notice.
+  const threadId = "g-0cc1000a01";
+  const f = extendedFixture();
+  try {
+    const { booking, offerId } = await extendedToReservation(f, threadId);
+    recordVerifiedAccess(f, contractOf(f, offerId).reservationId);
+    const card = successOf(await coldApp(f, threadId, model()).app.handleEventAsync(threadId, buttonNamed(booking, OPEN_EVENT)), "open").surfaces[0]!;
+    successOf(await coldApp(f, threadId).app.handleEventAsync(threadId, buttonNamed(card, ASSISTANT_CONFIRM_ACTION_EVENT)), "give notice");
+    const { html, notice } = renderedBookingScreen(f, threadId);
+    assert.equal(notice?.kind, "recorded", "the booking screen carries the recorded notice");
+    assert.ok(html.includes(GUEST_NOTICE_COPY.recordedHeading), "the booking screen shows Notice given");
+    if (notice?.kind !== "recorded") return;
+    for (const row of noticeFactRows(notice.facts, formatNgnKobo)) assert.ok(html.includes(row.value), `the booking screen shows ${row.label}: ${row.value}`);
+    assert.ok(html.includes("9 Nov 2026"), "the booking screen shows the new last night");
+    assert.equal(html.includes("data-notice-open"), false, "no Give notice action after notice");
+    assert.equal(html.includes(GUEST_NOTICE_COPY.action), false, "no Give notice label after notice");
+  } finally {
+    f.close();
+  }
+});
+
+test("Before notice, the chat booking screen of a confirmed Extended Stay offers Give notice", async () => {
+  const threadId = "g-0cc1000a02";
+  const f = extendedFixture();
+  try {
+    await extendedToReservation(f, threadId);
+    const { html } = renderedBookingScreen(f, threadId);
+    assert.ok(html.includes('data-notice-open'), "the chat booking screen has the Give notice action");
+    assert.ok(html.includes(GUEST_NOTICE_COPY.action), "the action carries the notice label");
+    assert.equal(html.includes(GUEST_NOTICE_COPY.recordedHeading), false, "no Notice given block before notice");
   } finally {
     f.close();
   }
