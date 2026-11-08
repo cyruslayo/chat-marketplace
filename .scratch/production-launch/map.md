@@ -38,7 +38,7 @@ Start now: agents **01, 03, 04, 10, 11**; owner **02, 13, 16, 17** (and start 14
 | 07 | [Production configuration and descriptor check](issues/07-production-configuration-and-descriptor-check.md) | AFK | ready-for-agent | 03, 17 |
 | 08 | [14:00 check-in window at import](issues/08-enforce-14-00-check-in-window-at-import.md) | AFK | ready-for-agent | 02 |
 | 09 | [Pilot metrics operators can see](issues/09-pilot-metrics-for-operators.md) | AFK | resolved | 04 |
-| 10 | [Request and assistant logging](issues/10-request-and-assistant-logging.md) | AFK | ready-for-agent | none |
+| 10 | [Request and assistant logging](issues/10-request-and-assistant-logging.md) | AFK | resolved | none |
 | 11 | [Server-generated guest thread ids](issues/11-server-generated-guest-thread-ids.md) | AFK | ready-for-agent | none |
 | 12 | [Batch gate and merge](issues/12-batch-gate-and-merge.md) | task | ready-for-agent | 01, 03-09 |
 | 13 | [Counsel pack and recorded text](issues/13-counsel-pack-and-recorded-text.md) | task | ready-for-human | none |
@@ -50,6 +50,7 @@ Start now: agents **01, 03, 04, 10, 11**; owner **02, 13, 16, 17** (and start 14
 | 19 | [Production build, deploy, inventory](issues/19-production-build-and-inventory.md) | task | ready-for-agent | 14, 15, 17, 18 |
 | 20 | [Staffed dry run](issues/20-staffed-dry-run.md) | task | ready-for-human | 16, 19 |
 | 21 | [Go/no-go and invite guests](issues/21-open-to-invited-guests.md) | grilling | ready-for-human | 20 |
+| 22 | [Record relocation outcomes durably](issues/22-durable-relocation-outcome-recording.md) | AFK | ready-for-agent | none |
 
 ## How to work an issue in a new session
 
@@ -64,3 +65,4 @@ Start now: agents **01, 03, 04, 10, 11**; owner **02, 13, 16, 17** (and start 14
 - 03: [Signing-key implementation](issues/03-configure-conditional-offer-signing-secret.md) at `e9f109f`: one configured key in Node/Worker guest and owner, five secret descriptor bindings, true cold restore and wrong-key refusal. 88/88 scoped Node and 7/7 scoped Worker tests; clean type check. Wrapped review 49 retains its separate triage items.
 - 04: [Back-office stub removal](issues/04-remove-back-office-stubs.md) at `8fa90f5` also resolves [pilot 20](../pilot-launch-readiness/issues/20-remove-back-office-stubs.md): stored request contact, no fabricated verification and unavailable reliability cold start under the owner decision. 97/97 scoped Node and 7/7 Worker tests; clean type check.
 - 09: [Pilot metrics](issues/09-pilot-metrics-for-operators.md) at `ad27c23`, wrapping [pilot 13](../pilot-launch-readiness/issues/13-pilot-metrics.md): `/operator/metrics` behind Operator authentication, metrics defined in `domains/shortlet/CONTEXT.md`, durable sources on Node and the Worker. 7/7 Node, 1/1 Worker, 8/8 affected back-office tests; clean type check. Relocations are reported unavailable, never zero, pending the owner's source decision.
+- 10: [Logging](issues/10-request-and-assistant-logging.md) at `7793c01`, wrapping [pilot 24](../pilot-launch-readiness/issues/24-structured-logging.md): one redacted `http_request` line per request, provider added to the assistant turn record, unhandled rejections by class. 4/4 Worker and 12/12 Node record tests; clean type check. Follow-up 22 records the owner's choice to keep relocation metrics unavailable until a durable relocation store exists.
