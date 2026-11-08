@@ -76,22 +76,22 @@ test("Local Apartment Owner Experience — Full End-to-End Verification", async 
     assert.equal(overview.availability.isAvailable, true);
   });
 
-  await t.test("3. Trust Tier and Settlement Projections reconcile with authoritative committed ledger (Preferred Tier Ordinary 100%)", () => {
+  await t.test("3. Trust tier and settlement projections reconcile with the authoritative ledger (Standard tier: issue-04 cold start)", () => {
     const overview = env.getStateOverview();
 
     // Verify Trust Tier evaluation
-    assert.equal(overview.trustTier.tier, "preferred");
+    assert.equal(overview.trustTier.tier, "standard");
     assert.equal(overview.enforcement.enforcementLevel, "coaching");
     assert.equal(overview.enforcement.operatorStatus, "active");
 
-    // Verify Payout Plan breakdown for Preferred tier under ADR 0083
+    // Issue 04 owner decision: no observed reliability means the Standard legacy tier, not a fictitious Preferred rating.
     // 3 nights @ ₦120,000 = ₦360,000 + ₦10,000 mandatory charges = ₦370,000
     assert.equal(overview.payoutProjections.commissionBaseKobo, 37000000);
     assert.equal(overview.payoutProjections.commissionRate, 0.1); // 10% preferred rate
     assert.equal(overview.payoutProjections.commissionKobo, 3700000); // ₦37,000
     assert.equal(overview.payoutProjections.operatorNetKobo, 33300000); // ₦333,000
-    assert.equal(overview.payoutProjections.payableNowKobo, 33300000); // 100% ordinary payout for Preferred
-    assert.equal(overview.payoutProjections.reserveTrancheKobo, 0); // 0% routine reserve
+    assert.equal(overview.payoutProjections.payableNowKobo, 29970000); // Standard plan: 90% ordinary payout
+    assert.equal(overview.payoutProjections.reserveTrancheKobo, 3330000); // Standard plan: 10% routine reserve
 
     // Verify that the initial Issue-28 Release was committed into the accounting repository
     const release = env.accountingRepository.findReleaseByReservationId("res-sample-ikoyi-001") as ProductionRevenueReleaseRecord | null;
@@ -100,16 +100,16 @@ test("Local Apartment Owner Experience — Full End-to-End Verification", async 
     assert.equal(release.commissionRate, 0.1);
     assert.equal(release.operatorNetKobo, 33300000);
 
-    // Verify that the Issue-30 ledger reclassification adjustment was committed
+    // No reclassification adjustment: the observed tier is already Standard (issue-04 cold start).
     const adjustments = env.accountingRepository.findAdjustmentsForRelease(release.releaseId);
-    assert.equal(adjustments.length, 1);
-    assert.equal(adjustments[0].reasonCode, "settlement_tier_preferred_reclassification");
+    assert.equal(adjustments.length, 0);
 
-    // Verify total ledger lines: initial release + reclassification adjustment
+
+    // Verify total ledger lines: the initial release only
     const journals = env.accountingRepository.findLedgerEntriesForRelease(release.releaseId);
-    assert.equal(journals.length, 2);
+    assert.equal(journals.length, 1);
     assert.equal(journals[0].balanced, true);
-    assert.equal(journals[1].balanced, true);
+
   });
 
   await t.test("4. Booking Request response workflow via Representative Grant (Confirm/Decline & Inventory Lock)", () => {
@@ -220,8 +220,8 @@ test("Local Apartment Owner Experience — Full End-to-End Verification", async 
       };
       assert.equal(state.operator.id, "op-lagos-owner-001");
       assert.equal(state.unit.id, "unit-lagos-ikoyi-001");
-      assert.equal(state.trustTier.tier, "preferred");
-      assert.equal(state.payoutProjections.payableNowKobo, 33300000);
+      assert.equal(state.trustTier.tier, "standard");
+      assert.equal(state.payoutProjections.payableNowKobo, 29970000);
 
       // Test POST /action/demo-request
       const postDemo = await fetch(`http://localhost:${actualPort}/action/demo-request`, {

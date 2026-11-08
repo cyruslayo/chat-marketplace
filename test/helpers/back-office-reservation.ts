@@ -24,6 +24,12 @@ export async function reservation(f: SignedInOperator, checkIn: string, checkOut
   assert.equal((await decideRequest({ ...f.session, cookie: cookieOf(f) }, id, "confirm")).status, 303);
   const guest = guestCardPayments(f.server.environment);
   try { guest.pay(id); } finally { guest.close(); }
+  // Issue 04: the Guest's stored contact is what the back office shows. Save it after payment: the payment journey
+  // re-saves the request, and the contact step runs before payment in the real flow, so write it last here.
+  const stored = f.server.environment.interactionStore.findBookingRequest(id);
+  assert.ok(stored);
+  f.server.environment.interactionStore.saveBookingRequest({ ...stored, phoneNumber: "+2348012345678", contactEmailSnapshot: "guest@example.test" });
+  assert.equal(f.server.environment.interactionStore.findBookingRequest(id)?.phoneNumber, "+2348012345678");
   return id;
 }
 

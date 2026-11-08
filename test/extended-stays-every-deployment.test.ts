@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { LOCAL_ONLY_CONDITIONAL_OFFER_KEY } from "../domains/shortlet/src/index.js";
+import type { PaystackClient } from "../packages/platform-core/src/payments/index.js";
 import { LocalApartmentOwnerEnvironment } from "../apps/local-owner/src/local-owner-environment.js";
 import {
   DEMO_EXTENDED_STAY_POLICY,
@@ -95,18 +96,25 @@ test("AC1: A production composition accepts a search, quote and Booking Request 
   });
 });
 
-test("AC1 (owner composition): a production owner composition accepts a 30-night Booking Request at an opted-in unit", () => {
+test("AC1 (owner composition): a production owner composition accepts a 30-night Booking Request at an opted-in unit", async () => {
   const files = demoDatabase();
   const database = openNodeSqliteDatabase(files.path);
   const unitRepository = new UnitRepository();
   seedIssue01Units(unitRepository);
   const seeded = unitRepository.findAll()[0]!;
   unitRepository.save(extendUnit(seeded));
-  const owner = new LocalApartmentOwnerEnvironment({ databasePath: files.path, clock: () => SYNTHETIC_NOW, production: true, demo: false, deployment: "production", seedFixture: false, conditionalOfferSigningKey: process.env.SHORTLET_CONDITIONAL_OFFER_KEY ?? LOCAL_ONLY_CONDITIONAL_OFFER_KEY }, { database, unitRepository, operatorRepository: null });
+  // The Guest composition creates and discloses the request (issue 04: a production disclosure needs a stored contact).
+  // The owner composition only reads the result, as it does on the Worker.
+  const paystack: PaystackClient = { configuration: { environment: "live", callbackBaseUrl: "https://demo.example.test" }, async initializeTransaction() { throw new Error("not used"); }, async verifyTransaction() { throw new Error("not used"); }, verifyWebhookSignature() { return false; } };
+  const config = { databasePath: files.path, clock: () => SYNTHETIC_NOW, production: true, demo: false, deployment: "production" as const, seedFixture: false, deterministicPsp: false, paystackClient: paystack, conditionalOfferSigningKey: process.env.SHORTLET_CONDITIONAL_OFFER_KEY ?? LOCAL_ONLY_CONDITIONAL_OFFER_KEY };
+  const guest = new LocalGuestEnvironment(config, { database, unitRepository, seedDemoUnits: false });
+  const owner = new LocalApartmentOwnerEnvironment(config, { database, unitRepository, operatorRepository: null });
   try {
     assert.equal(owner.config.demo, false, "the owner composition is not demo");
-    const principal = { id: "synthetic-owner-composition-guest", role: "guest" as const, tenantId: owner.config.tenantId };
-    const draft = owner.bookingRequestApp.createDraft({
+    const principal = { id: guest.config.guestId, role: "guest" as const, tenantId: guest.config.tenantId };
+    await guest.guestContactApp.submitPhone({ phoneNumber: "+2348012345678" }, principal);
+    await guest.guestContactApp.submitEmail({ contactEmail: "guest@example.test" }, principal);
+    const draft = guest.bookingRequestApp.createDraft({
       unitId: seeded.id,
       primaryGuest: { id: principal.id, name: "Synthetic Guest" },
       occupants: [{ name: "Synthetic Guest" }],
@@ -114,10 +122,11 @@ test("AC1 (owner composition): a production owner composition accepts a 30-night
       checkIn: CHECK_IN,
       checkOut: addDays(CHECK_IN, 30),
     }, principal);
-    const requestId = owner.bookingRequestApp.disclose(draft.draftId, principal).requestId;
-    assert.equal(owner.bookingRequestApp.getRequest(requestId).quote.stayType, "extended", "the owner composition books a 30-night Extended Stay");
+    const requestId = guest.bookingRequestApp.disclose(draft.draftId, principal).requestId;
+    assert.equal(owner.bookingRequestApp.getRequest(requestId).quote.stayType, "extended", "the owner composition reads the 30-night Extended Stay the Guest created");
   } finally {
     owner.close();
+    guest.close();
     database.close();
     removeDemoDatabase(files.dir);
   }

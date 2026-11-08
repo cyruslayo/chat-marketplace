@@ -76,7 +76,7 @@ async function openRestartFixture(directory: string, config: Partial<LocalGuestF
     setTime(value: string) { now = new Date(value); },
     async advance(target: RestartStage, onStage?: (stage: RestartStage, result: GuestTurnSuccess) => void | Promise<void>, text = "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people") {
       const discovery = await send("/api/turn", { text });
-      assert.equal(discovery.ok, true);
+      assert.equal(discovery.ok, true, discovery.ok ? "" : `${discovery.code}: ${discovery.message}`);
       result = discovery;
       await onStage?.("discovery", result);
       for (let index = 1; index <= stages.indexOf(target); index++) {
@@ -88,7 +88,7 @@ async function openRestartFixture(directory: string, config: Partial<LocalGuestF
         } else {
           const action = guestAction(result.surfaces[0]!); actions.push(action);
           const next = await send("/api/event", action);
-          assert.equal(next.ok, true);
+          assert.equal(next.ok, true, next.ok ? "" : `${stages[index]}: ${next.code}: ${next.message}`);
           result = next;
         }
         await onStage?.(stages[index]!, result);

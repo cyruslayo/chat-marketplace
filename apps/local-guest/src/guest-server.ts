@@ -3770,12 +3770,7 @@ export function createGuestRequestHandler(
         requestedThreadId !== null &&
         THREAD_ID_PATTERN.test(requestedThreadId) &&
         shellSession?.threadIds.has(requestedThreadId) === true;
-      const existing = shellSession === null ? [] : [...shellSession.threadIds];
-      const threadId = requestedIsServerIssued
-        ? requestedThreadId!
-        : url.searchParams.get("new") === "1" || existing.length === 0
-          ? mintThreadId()
-          : existing.at(-1)!;
+      const threadId = requestedIsServerIssued ? requestedThreadId! : mintThreadId();
       shellSession?.threadIds.add(threadId);
       res.writeHead(200, GUEST_HTML_HEADERS);
       res.end(renderGuestShellHtml(threadId));
