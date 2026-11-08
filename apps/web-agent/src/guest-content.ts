@@ -32,8 +32,9 @@ export function guestStayMonthsWords(count: number): string {
 export const GUEST_ASSISTANT_COPY = Object.freeze({
   stayClarification: "How many nights will you be staying, and for how many guests?",
   // Issue 19 (ADR 0106): a model's nights that differ from the length the guest typed are refused, and that length is shown back.
+  // Owner decision (8 Nov 2026): the wording of the denial sentence. A months length shows its months in brackets.
   statedStay: (nights: number, stated?: { readonly unit: "night" | "week" | "fortnight" | "month"; readonly count: number }) =>
-    `Just to check: ${nights} nights${stated?.unit === "month" ? ` ${guestStayMonthsWords(stated.count)}` : ""}. Which length should I search?`,
+    `Just to check: you’d like ${nights} nights${stated?.unit === "month" ? ` ${guestStayMonthsWords(stated.count)}` : ""}. Shall I search for that?`,
   // Issue 08 (ADR 0106): an area the server does not know is refused with the closed list of areas it can search.
   areaClarification: (examples: string) => `I couldn't find that area. Which area should I search? For example: ${examples}.`,
   // Issue 07 (ADR 0106, ADR 0015): a budget the server cannot read from the guest's own words is refused, never searched as a guessed amount.

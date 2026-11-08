@@ -66,7 +66,7 @@ test("AC3 a planner call with 61 nights is a tool_denial and no 61-night search 
   try {
     const result = await coldTurn(f.environment, model, "g-1f1900000061", TEXT_TWO_MONTHS, diagnostics);
     assert.equal(result.ok, true, `a rejected tool call is not a failed turn: ${messageOf(result)}`);
-    assert.match(messageOf(result), /60 nights \(2 months\)/, "the reply shows the guest's length back");
+    assert.equal(messageOf(result), "Just to check: you’d like 60 nights (2 months). Shall I search for that?", "the reply shows the guest's length back");
     assert.deepEqual(searchOutcomes(diagnostics), [false], "the 61-night search_stays call is rejected");
     assert.equal(persistedStay(f.environment, "g-1f1900000061")?.nights, undefined, "no 61-night stay is recorded");
   } finally { f.close(); }

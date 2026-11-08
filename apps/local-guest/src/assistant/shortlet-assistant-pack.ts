@@ -338,8 +338,9 @@ function normalizeGuestWords(text: string): string {
  * guest-authored, read here on the server from the guest's own words and never from the model. The current turn's text decides
  * first. A vague current length (a few months, 2-3 months) authorizes no nights beyond the ones the task already holds. With no
  * length in this turn, an earlier guest length counts only while the task still holds the nights it set: a chip or other edit that
- * changed the nights since then overrides the earlier words (ADR 0106 chip facts). The canonical guest text (userTextHistory) carries
- * earlier words across a cold restore, so the check holds on every request.
+ * changed the nights since then overrides the earlier words (ADR 0106 chip facts). Only the current turn's words reach userTextHistory: the canonical
+ * history holds ISO dates, and a cold restore clears the conversation history (restoreShortletState), so an earlier length is
+ * not seen. Cross-turn authority needs the stated length kept in state (owner decision; not done here).
  */
 export type GuestStatedStay =
   | { readonly kind: "length"; readonly unit: StayLengthUnit; readonly count: number; readonly nights: number }
