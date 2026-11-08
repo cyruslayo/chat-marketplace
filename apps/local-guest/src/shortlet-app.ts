@@ -217,6 +217,7 @@ import {
   amenityQuestions,
   extractStayRequestFacts,
   type StatedStayLength,
+  stayNightsLabel,
   formatGuestDay,
   mergeStayRequestContext,
   resolveStayRequestContext,
@@ -256,7 +257,7 @@ import {
   ASSISTANT_CONFIRM_ACTION_EVENT,
   ASSISTANT_CANCEL_ACTION_EVENT,
 } from "./assistant/pending-action-a2ui.js";
-import { GUEST_ACCOUNT_COPY, GUEST_ASSISTANT_COPY, guestStayMonthsWords } from "../../web-agent/src/guest-content.js";
+import { GUEST_ACCOUNT_COPY, GUEST_ASSISTANT_COPY } from "../../web-agent/src/guest-content.js";
 import { SqliteGuestContactRepository, type GuestContactSource } from "../../../domains/shortlet/src/index.js";
 import {
   GuestContactOwnedByAccountError,
@@ -514,6 +515,16 @@ const GUEST_PHONE_SUBMIT_EVENT = "shortlet.guest-contact.submit-phone";
 const GUEST_EMAIL_SUBMIT_EVENT = "shortlet.guest-contact.submit-email";
 
 const PENDING_ACTION_STAGE = "pending_action";
+/**
+ * Issue 19 (owner decision, 8 Nov 2026): the persisted stated length as the criteria strip reads it, only while it holds the strip's
+ * nights. A length whose nights differ from the held stay is not shown (a changed night count drops its months show-back).
+ */
+function statedStayLengthPart(context: PersistedAssistantContext): { readonly stayLength?: StatedStayLength } {
+  const stated = context.statedStay;
+  if (stated === undefined || context.nights !== stated.nights) return {};
+  return { stayLength: { unit: stated.unit, count: stated.count, nights: stated.nights } };
+}
+
 /** Issue 03a: the criteria strip is shell chrome with one server-known id per thread. */
 const CRITERIA_STAGE = "criteria";
 export const CRITERIA_EDIT_EVENT = "shortlet.criteria.edit";
@@ -1122,7 +1133,7 @@ export class LocalGuestApp {
     });
     const result = adapter.search({ ...filters });
     // Issue 19 (ADR 0092): a stay stated in months shows its nights and the months in brackets; nights and weeks show the dates only.
-    const statedMonths = options.stayLength?.unit === "month" ? `, ${options.stayLength.nights} nights ${guestStayMonthsWords(options.stayLength.count)}` : "";
+    const statedMonths = options.stayLength?.unit === "month" ? `, ${stayNightsLabel(options.stayLength.nights, options.stayLength)}` : "";
     thread.discoveryArtifact = result.artifact;
     // ADR 0106: the results on screen name this artifact, so a cold restore keeps this id.
     thread.discoveryArtifactId = result.artifact.id;
@@ -3127,6 +3138,8 @@ export class LocalGuestApp {
       ...(typeof state.stayIntent.isDemoDate === "boolean" ? { isDemoDate: state.stayIntent.isDemoDate } : {}),
       ...(state.stayIntent.checkOut && /^\d{4}-\d{2}-\d{2}$/.test(state.stayIntent.checkOut) ? { checkOut: state.stayIntent.checkOut } : {}),
       ...(Number.isSafeInteger(state.stayIntent.nights) && (state.stayIntent.nights ?? 0) > 0 ? { nights: state.stayIntent.nights } : {}),
+      // Issue 19 (ADR 0106, amended 8 Nov 2026): the stated length is persisted with the context, and nothing else is added.
+      ...(state.stayIntent.statedStay ? { statedStay: { nights: state.stayIntent.statedStay.nights, unit: state.stayIntent.statedStay.unit, count: state.stayIntent.statedStay.count } } : {}),
       ...(Number.isSafeInteger(state.stayIntent.partySize) && (state.stayIntent.partySize ?? 0) > 0 ? { partySize: state.stayIntent.partySize } : {}),
       ...(Number.isSafeInteger(state.stayIntent.bedrooms) && (state.stayIntent.bedrooms ?? -1) >= 0 ? { bedrooms: state.stayIntent.bedrooms } : {}),
       // Issue 06 (ADR 0015): a budget is persisted with its meaning, stay or night; without one it is not persisted.
@@ -3161,6 +3174,7 @@ export class LocalGuestApp {
         city: context.city,
         ...(context.neighbourhood ? { neighbourhood: context.neighbourhood } : {}),
         ...(context.nights === undefined ? {} : { nights: context.nights }),
+        ...statedStayLengthPart(context),
         ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
         ...(pendingCheckIn === undefined ? {} : { checkIn: pendingCheckIn }),
         datesConfirmed: false,
@@ -3201,6 +3215,7 @@ export class LocalGuestApp {
         ...(context.neighbourhood ? { neighbourhood: context.neighbourhood } : {}),
         ...(context.checkIn ? { checkIn: context.checkIn, datesConfirmed: true } : {}),
         ...(context.nights === undefined ? {} : { nights: context.nights }),
+        ...statedStayLengthPart(context),
         ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
         ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
         ...(context.maxBudgetKobo === undefined || context.maxBudgetPer === undefined ? {} : { budget: { kobo: context.maxBudgetKobo, per: context.maxBudgetPer } }),
@@ -3334,6 +3349,7 @@ export class LocalGuestApp {
         ...(typeof context.isDemoDate === "boolean" ? { isDemoDate: context.isDemoDate } : {}),
         ...(context.checkOut ? { checkOut: context.checkOut } : {}),
         ...(context.nights === undefined ? {} : { nights: context.nights }),
+        ...(context.statedStay ? { statedStay: { nights: context.statedStay.nights, unit: context.statedStay.unit, count: context.statedStay.count } } : {}),
         ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
         ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
         ...(context.maxBudgetKobo === undefined || context.maxBudgetPer === undefined ? {} : { maxBudgetKobo: context.maxBudgetKobo, maxBudgetPer: context.maxBudgetPer }),
@@ -4140,6 +4156,8 @@ export class LocalGuestApp {
               ? { checkIn: next.checkIn }
               : {}),
             nights: edit.nights,
+            // Issue 19 (owner decision, 8 Nov 2026): a nights chip edit replaces the stated length (a chip edit is unit night).
+            ...(edit.nights === undefined ? {} : { statedStay: { nights: edit.nights, unit: "night" as const, count: edit.nights } }),
           }
         : { partySize: edit.partySize };
     this.#recordAssistantStayFacts(thread, facts);
@@ -4148,7 +4166,7 @@ export class LocalGuestApp {
   /** ADR 0106: records the chip's stay facts in the assistant task state and keeps the persisted context in step. */
   #recordAssistantStayFacts(
     thread: GuestThreadState,
-    facts: { readonly checkIn?: string; readonly nights?: number; readonly partySize?: number; readonly budget?: StayBudget | null },
+    facts: { readonly checkIn?: string; readonly nights?: number; readonly statedStay?: { readonly nights: number; readonly unit: "night" | "week" | "month"; readonly count: number }; readonly partySize?: number; readonly budget?: StayBudget | null },
   ): void {
     const runtime = this.#assistantRuntime;
     if (!runtime || !runtime.hasThread(thread.threadId)) return;
@@ -4257,10 +4275,7 @@ export class LocalGuestApp {
           };
     const nights = context.nights;
     // Issue 19 (decision 2): a stay stated in months shows its months in brackets; the chip value stays the number of nights.
-    const nightsLabel =
-      nights === undefined
-        ? ""
-        : `${nights} ${nights === 1 ? "night" : "nights"}${context.stayLength?.unit === "month" ? ` ${guestStayMonthsWords(context.stayLength.count)}` : ""}`;
+    const nightsLabel = nights === undefined ? "" : stayNightsLabel(nights, context.stayLength);
     const checkOut =
       context.checkIn !== undefined && nights !== undefined
         ? new Date(

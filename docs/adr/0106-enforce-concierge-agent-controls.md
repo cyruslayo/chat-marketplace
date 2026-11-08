@@ -97,6 +97,7 @@ This amendment does not change the verdict's authority, tool gating, the fail-cl
 - Derivation. A confirmed check-in with chip nights gives the checkout by the same night-count rule as the planner's search (`checkOutForNights`), and StayDateRange validates it (ADR 0023 length, ADR 0055 horizon). An invalid stay records neither nights nor checkout. The check-in itself is still recorded when it is confirmed.
 - Authority. Nights and party size are not dates and carry no date authority. A planner date still needs guest text or a confirmed chip check-in. A model-proposed check-in is never recorded through this path, and a relative or unconfirmed chip date is not recorded.
 - Projection. The persisted assistant context keeps only the fields it already held (city, neighbourhood, check-in, checkout, nights, party size and the other filters). No new record is persisted (ADR 0093 minimal projection, ADR 0099 and ADR 0101).
+- Amendment (8 Nov 2026, issue 19): Projection. The persisted assistant context also keeps the guest's stated stay length (nights, and the unit and count the guest used), set only from guest text, a chip edit or guest dates, so it survives cold restores; no other field is added.
 
 ### Amendment (2 Nov 2026): confirmed date phrases are guest-authored
 

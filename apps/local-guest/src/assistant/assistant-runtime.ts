@@ -801,7 +801,7 @@ export class AssistantRuntime {
    * - A party size is recorded as a positive integer. A model-proposed fact is never recorded through this path.
    * - A budget chip (issue 06, ADR 0015) records its amount and whether it is for the stay or per night; `null` clears it.
    */
-  recordGuestStay(threadId: string, facts: { readonly checkIn?: string; readonly nights?: number; readonly partySize?: number; readonly budget?: { readonly kobo: number; readonly per: AssistantBudgetPer } | null }): boolean {
+  recordGuestStay(threadId: string, facts: { readonly checkIn?: string; readonly nights?: number; readonly statedStay?: { readonly nights: number; readonly unit: "night" | "week" | "month"; readonly count: number }; readonly partySize?: number; readonly budget?: { readonly kobo: number; readonly per: AssistantBudgetPer } | null }): boolean {
     if (this.threadBusy(threadId)) return false;
     const thread = this.#threads.get(threadId);
     if (!thread) return false;
@@ -821,6 +821,8 @@ export class AssistantRuntime {
       if (checkOut !== null) {
         stay.nights = facts.nights;
         stay.checkOut = checkOut;
+        // Issue 19 (owner decision, 8 Nov 2026): a nights chip edit replaces the stated length with its nights (unit night).
+        if (facts.statedStay !== undefined) stay.statedStay = { ...facts.statedStay };
       }
     }
     if (facts.partySize !== undefined && Number.isSafeInteger(facts.partySize) && facts.partySize > 0) stay.partySize = facts.partySize;

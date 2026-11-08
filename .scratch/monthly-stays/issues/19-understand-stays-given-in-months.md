@@ -176,3 +176,30 @@ renamed to carry issue 19 AC6), `test/landing-chip-limit.test.ts` (the approved-
   across a cold restore (see the correction above). The two requested strip tests were not written, since they cannot pass as specified.
   Owner decision needed: (a) keep the stated length in the task state or canonical facts (a new persisted field, which needs an ADR
   amendment), or (b) keep the strip on nights only on the assistant path, with months shown only on the deterministic path.
+
+### Follow-up (8 Nov 2026, owner decision): the stated length is persisted with the conversation
+
+Decision (owner, 8 Nov 2026): the guest's stated stay length is kept as `stayIntent.statedStay` (`AssistantStatedStay`: `nights`, `unit` night | week | month, `count`) and persisted as `assistantContext.statedStay` (ADR 0106 Projection, amended 8 Nov 2026). No other field and no new record.
+
+- Set: a length typed in a turn (`recordGuestStatedStay`, run at each turn start from the pack's `settlePendingGuestFacts`); a nights chip edit (unit night); a check-out the guest gave (the search commit, and a confirmed checkout show-back, unit night).
+- Replaced by a new typed length, a nights chip edit or a checkout. A vague length keeps it. A fortnight is kept as two weeks (the owner's closed unit set has no fortnight).
+- Authority: `guestStatedStay(userTextHistory, statedStay)`. The current turn's length or its vagueness decides first; otherwise the persisted length binds `search_stays` and `prepare_request_draft`. A different nights value is a `tool_denial` with `GUEST_ASSISTANT_COPY.statedStay` (wording unchanged). The earlier-length branch that never fired after a cold restore is removed.
+- Restore: `#assistantContextFromState` writes it, `#restoreShortletState` restores it onto the stay intent, and `parseStatedStay` (guest-projection.ts) refuses a malformed value (the context is refused, nothing is guessed).
+- Strip and reply: `stayNightsLabel` (concierge.ts) is the one helper for the deterministic show-back, the criteria summary and the criteria strip ("60 nights (2 months)" only when the length is in months and its nights equal the nights shown). On the assistant path the strip gets the length from the persisted context (`statedStayLengthPart`, shortlet-app.ts) only while its nights equal the held nights.
+- Runtime: `recordGuestStay` copies `statedStay` as an opaque stay fact, with the nights it sets (assistant-runtime.ts); the runtime does not read it.
+
+Files: `apps/local-guest/src/assistant/assistant-state.ts` (type, field); `apps/local-guest/src/assistant/shortlet-assistant-pack.ts` (`guestStatedStay`, `statedStayOf`, `recordGuestStatedStay`, the settle, search-commit and hook edits); `apps/local-guest/src/assistant/assistant-runtime.ts` (`recordGuestStay`); `apps/local-guest/src/guest-projection.ts` (`PersistedStatedStay`, `parseStatedStay`); `apps/local-guest/src/shortlet-app.ts` (persist, restore, strip, chip facts); `apps/local-guest/src/concierge.ts` (`stayNightsLabel`); `docs/adr/0106-enforce-concierge-agent-controls.md` (one dated line under Projection, 8 Nov 2026, issue 19). No client.ts change, so `apps/local-guest/dist/client.js` is not rebuilt.
+
+Tests: `test/stay-length-persisted.test.ts` (new, five tests with the owner's names; reuses `test/helpers/guest-date-fixtures.ts`: assistant enabled, clock 2026-10-27, staging-like guest, a new `LocalGuestApp` over the same store before every event). Before the change: 0 pass, 5 fail (no `statedStay`; the strip without the months).
+
+Commands and counts:
+- `env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test test/stay-length-persisted.test.ts`: 5 pass, 0 fail (after the change).
+- Affected set (16 owner files: stay-length-*, guest-criteria-strip, assistant-cold-journey, assistant-pending-action-restore, assistant-persistent-continuity, assistant-runtime-boundary, assistant-pack-registry, assistant-scope-controls, landing-monthly-copy, warm-session-post-payment, plus assistant-checkout-dates, assistant-short-stays-29-nights, assistant-budget-chip, assistant-location-change, assistant-date-literals; 18 files with the new one): 153 pass, 0 fail.
+- Widened set (the 73 test files importing the changed modules, plus the new file): 667 tests, 665 pass, 2 fail. The two are `test/commerce-surfaces-chromium.test.ts` real-Chromium tests ("renders visible discovery, cart and order facts" and "renders the proposed checkout ..."), which fail with commerce off; both are on the accepted-failure list in AGENTS.md.
+- `env -u LLM_API_KEY npm run check`: exit 0.
+- Not run: `test/guest-criteria-strip-chromium.test.ts` (the rule runs it only when the strip markup changes; the markup and the deterministic label text are unchanged). Not run: full `npm test` and `npm run test:workers` (the batch pre-merge gate).
+
+Gaps for the owner:
+1. A months-only first turn is not persisted. A clarification turn commits no task state (ADR 0106 `tool_denial`, assistant-runtime.ts:87), and the persisted context needs a city and a check-in. In a scripted reproduction, "Ikoyi for 2 months from 5 Jan" then "2 of us" persisted no assistant context, and the second turn asked for the dates instead of searching. So the new tests carry the party in the first turn. The two-turn example in the brief needs a decision on whether a clarification turn may persist location and check-in (this changes the `tool_denial` rule). Until then, a months-only first turn binds only while the process stays warm.
+2. The check-out rule (a check-out the guest gave sets unit night) is implemented but has no dedicated test. The phrasings I tried ("Ikoyi 5 Jan to 6 Mar for 2 guests", "check-in ... and checkout ...") were refused by the existing date rules before reaching it.
+3. The pre-existing `any` at `apps/local-guest/src/assistant/shortlet-assistant-pack.ts:943` (`results.map((unit: any, ...)`) is untouched.

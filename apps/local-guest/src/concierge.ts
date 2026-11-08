@@ -79,6 +79,15 @@ export interface StatedStayLength {
   readonly nights: number;
 }
 
+/**
+ * Issue 19 (decision 2; owner decision 8 Nov 2026): "60 nights (2 months)" while the stated length is in months and holds these
+ * nights; the nights alone otherwise. The reply, the criteria strip and the criteria summary all read it.
+ */
+export function stayNightsLabel(nights: number, stayLength: StatedStayLength | undefined): string {
+  const words = `${nights} ${nights === 1 ? "night" : "nights"}`;
+  return stayLength?.unit === "month" && stayLength.nights === nights ? `${words} ${guestStayMonthsWords(stayLength.count)}` : words;
+}
+
 export interface DiscoverySearchContext {
   readonly city?: string;
   readonly neighbourhood?: string;
@@ -549,7 +558,7 @@ function knownCriteria(context: DiscoverySearchContext): string[] {
     criteria.push(context.datesConfirmed === true ? stay : `${stay} (to confirm)`);
   }
   // Issue 19: a stay the guest stated in months shows its months in brackets after the nights (decision 2).
-  if (context.nights !== undefined) criteria.push(`${context.nights} ${context.nights === 1 ? "night" : "nights"}${context.stayLength?.unit === "month" ? ` ${guestStayMonthsWords(context.stayLength.count)}` : ""}`);
+  if (context.nights !== undefined) criteria.push(stayNightsLabel(context.nights, context.stayLength));
   if (context.bedrooms !== undefined) criteria.push(`${context.bedrooms} ${context.bedrooms === 1 ? "bedroom" : "bedrooms"}`);
   const budget = budgetLabel(context);
   if (budget !== undefined) criteria.push(`budget ${budget.startsWith("About") ? `about ${budget.slice("About ".length)}` : budget}`);

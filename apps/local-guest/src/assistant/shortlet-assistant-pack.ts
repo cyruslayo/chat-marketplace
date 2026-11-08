@@ -26,6 +26,8 @@ import { GUEST_ASSISTANT_COPY, GUEST_AMENITY_IDS, GUEST_CHANGE_EXPLANATION, GUES
 import type { LocalGuestEnvironment } from "../fixture.js";
 import type { AssistantToolDefinition } from "./assistant-model.js";
 import type {
+  AssistantStatedStay,
+  AssistantStayIntent,
   AssistantStayReference,
   AssistantTaskState,
 } from "./assistant-state.js";
@@ -334,28 +336,38 @@ function normalizeGuestWords(text: string): string {
  * refused. Owner decision needed: see issue 07 Comments.
  */
 /**
- * Issue 19 (ADR 0106, 27 Oct and 2 Nov 2026 amendments; ADR 0092): a stay length the guest typed (nights, weeks or months) is
- * guest-authored, read here on the server from the guest's own words and never from the model. The current turn's text decides
- * first. A vague current length (a few months, 2-3 months) authorizes no nights beyond the ones the task already holds. With no
- * length in this turn, an earlier guest length counts only while the task still holds the nights it set: a chip or other edit that
- * changed the nights since then overrides the earlier words (ADR 0106 chip facts). Only the current turn's words reach userTextHistory: the canonical
- * history holds ISO dates, and a cold restore clears the conversation history (restoreShortletState), so an earlier length is
- * not seen. Cross-turn authority needs the stated length kept in state (owner decision; not done here).
+ * Issue 19 (ADR 0106, 27 Oct and 2 Nov 2026 amendments; ADR 0092; owner decision 8 Nov 2026): a stay length the guest typed (nights,
+ * weeks or months) is guest-authored, read here on the server from the guest's own words and never from the model.
+ * The length is kept as `stayIntent.statedStay`: recordGuestStatedStay sets it at each turn start, a nights chip edit and a check-out the
+ * guest gave set it too, and it is persisted with the assistant context, so it binds after a cold restore. The current turn's text
+ * decides first. A vague current length (a few months, 2-3 months) authorizes no nights beyond the ones the task already holds.
+ * Otherwise the stated length binds until the guest types a new length or edits the nights.
  */
 export type GuestStatedStay =
   | { readonly kind: "length"; readonly unit: StayLengthUnit; readonly count: number; readonly nights: number }
   | { readonly kind: "vague" };
 
-export function guestStatedStay(userTextHistory: readonly string[], heldNights: number | undefined): GuestStatedStay | undefined {
+export function guestStatedStay(userTextHistory: readonly string[], stated: AssistantStatedStay | undefined): GuestStatedStay | undefined {
   const current = userTextHistory.at(-1);
   const now = current === undefined ? undefined : readStayLength(current);
   if (now?.kind === "length") return now;
   if (now?.kind === "vague") return { kind: "vague" };
-  for (let index = userTextHistory.length - 2; index >= 0; index -= 1) {
-    const earlier = readStayLength(userTextHistory[index] ?? "");
-    if (earlier.kind === "length") return heldNights === earlier.nights ? earlier : undefined;
-  }
-  return undefined;
+  return stated === undefined ? undefined : { kind: "length", unit: stated.unit, count: stated.count, nights: stated.nights };
+}
+
+/** The closed stated-length shape the task keeps: a fortnight is two weeks (owner decision, 8 Nov 2026). */
+export function statedStayOf(length: { readonly unit: StayLengthUnit; readonly count: number; readonly nights: number }): AssistantStatedStay {
+  if (length.unit === "fortnight") return { unit: "week", count: 2 * length.count, nights: length.nights };
+  return { unit: length.unit, count: length.count, nights: length.nights };
+}
+
+/**
+ * Issue 19 (owner decision, 8 Nov 2026): a length the guest types in this turn replaces the stated length, and is recorded before the
+ * turn is classified. A vague or absent length keeps the stated length (a vague one authorizes only the nights the task holds).
+ */
+export function recordGuestStatedStay(text: string, stayIntent: AssistantStayIntent, policy?: ExtendedStayPolicy): void {
+  const reading = readStayLength(text, policy);
+  if (reading.kind === "length") stayIntent.statedStay = statedStayOf(reading);
 }
 
 /**
@@ -599,6 +611,7 @@ export function settlePendingStayDate(text: string, taskState: AssistantTaskStat
     if (checkOut === null) return;
     taskState.stayIntent.checkOut = checkOut;
     taskState.stayIntent.nights = stayNights;
+    taskState.stayIntent.statedStay = { nights: stayNights, unit: "night", count: stayNights };
     return;
   }
   const nights = taskState.stayIntent.nights;
@@ -808,7 +821,7 @@ export function executeAssistantTool(
 
       // Issue 19: a length the guest typed holds for the nights the search uses. A checkout the guest gave wins over a duration (ADR 0106).
       if (dateWords.checkOut === undefined && checkOutRelative === undefined) {
-        nights = guestStatedNights(nights, guestStatedStay(context.userTextHistory, taskState.stayIntent.nights), taskState.stayIntent.nights, context.environment.extendedStayPolicy);
+        nights = guestStatedNights(nights, guestStatedStay(context.userTextHistory, taskState.stayIntent.statedStay), taskState.stayIntent.nights, context.environment.extendedStayPolicy);
       }
       // ADR 0106: a search with stay details must name both nights and party size (in this call or the task state).
       // A missing value is a rejected tool call answered with the fixed stay clarification, not an application fault.
@@ -960,6 +973,8 @@ export function executeAssistantTool(
         ...(dateContext ? { isDemoDate: dateContext.isDemoDate } : {}),
         ...(checkOut ? { checkOut } : {}),
         ...(nights !== undefined ? { nights } : {}),
+        // Issue 19 (owner decision, 8 Nov 2026): a check-out the guest wrote replaces the stated length with its nights.
+        ...(dateWords.checkOut !== undefined && nights !== undefined ? { statedStay: { nights, unit: "night" as const, count: nights } } : {}),
         ...(guests !== undefined ? { partySize: guests } : {}),
         ...(bedrooms !== undefined ? { bedrooms } : {}),
         ...(statedBudget !== undefined ? { maxBudgetKobo: statedBudget.kobo, maxBudgetPer: statedBudget.per } : {}),
@@ -1228,7 +1243,7 @@ export function executeAssistantTool(
       if (!stay) throw new Error(`Stay reference '${stayRef}' is not in the current shortlist.`);
       // Issue 19: the guest's stated length holds for a draft too (ADR 0106); without one the model's nights are read as before.
       const requestedNights = args.nights == null ? undefined : Number(args.nights);
-      const nights = guestStatedNights(requestedNights, guestStatedStay(context.userTextHistory, taskState.stayIntent.nights), taskState.stayIntent.nights, context.environment.extendedStayPolicy) ?? Number(args.nights);
+      const nights = guestStatedNights(requestedNights, guestStatedStay(context.userTextHistory, taskState.stayIntent.statedStay), taskState.stayIntent.nights, context.environment.extendedStayPolicy) ?? Number(args.nights);
       const guests = Number(args.guests);
       // ADR 0023 as amended / ADR 0106: an out-of-range length is a rejected tool call (tool_denial), never a thrown error.
       if (!Number.isSafeInteger(nights) || nights < 1 || (nights > MAX_STAY_NIGHTS && !isExtendedStayLength(nights, context.environment.extendedStayPolicy))) throw new AssistantStayDetailsError("nights must fit the configured Short Stay or Extended Stay range");
@@ -1729,7 +1744,10 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     clarificationQuickReplies: clarificationChipsFor,
     replyClarificationKind: (results) => locationChangeReplyKind(results) ?? dateChangeReplyKind(results),
     executeTool: executeAssistantTool,
-    settlePendingGuestFacts: (text, state, now) => settlePendingStayDate(text, state, now, environment.extendedStayPolicy),
+    settlePendingGuestFacts: (text, state, now) => {
+      settlePendingStayDate(text, state, now, environment.extendedStayPolicy);
+      recordGuestStatedStay(text, state.stayIntent, environment.extendedStayPolicy);
+    },
     projectToolResult: (_name, result, limits) => {
       const keys = new Set(["locationChangePending", "dateConfirmationPending", "stayRef", "city", "capacity", "bedrooms", "resultCount", "checkIn", "checkOut", "nights", "partySize", "isDemoDate", "nightlyKobo", "mandatoryFeesKobo", "allInStayTotalKobo", "refundableSecurityDepositKobo", "amountDueNowKobo", "totalAmountDueNowKobo", "currency", "inspectionStatus", "managementAuthorityStatus", "status", "expiresAt", "expiresAtIso", "hasOffer", "hasBooking", "draftCreated", "created", "availabilityChecked", "inventoryReserved", "operation", "available", "stays", "compared", "result", "hasRequest", "requestStatus", "facility", "facilityListed", "facilityAmenity"]);
       const closedStatuses = new Set(["passed", "failed", "expired", "verified", "unverified", "none", "request_draft", "request_submitted", "request_disclosed", "offer_issued", "issued", "accepted", "payment_pending", "paid", "cancelled", "rejected", "stale", "revoked", "confirmed", "no_active_booking", "unknown"]);

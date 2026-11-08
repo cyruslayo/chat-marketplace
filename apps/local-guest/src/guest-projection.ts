@@ -147,6 +147,16 @@ function parseActiveContact(value: unknown): PersistedActiveContact | null {
   return { surfaceId: value.surfaceId, kind: value.kind, resumeContext };
 }
 
+/**
+ * Issue 19 (ADR 0106 Projection, amended 8 Nov 2026): the stay length the guest typed, with the nights it sets. It binds the next
+ * searches and drafts after a cold restore. A field of this context, not a record.
+ */
+export interface PersistedStatedStay {
+  readonly nights: number;
+  readonly unit: "night" | "week" | "month";
+  readonly count: number;
+}
+
 export interface PersistedAssistantContext {
   readonly city: "Lagos" | "Abuja";
   readonly neighbourhood?: string;
@@ -166,6 +176,19 @@ export interface PersistedAssistantContext {
   readonly pendingLocation?: { readonly city: "Lagos" | "Abuja"; readonly neighbourhood?: string };
   /** Issue 04 (ADR 0106 2 Nov 2026, ADR 0093): the candidate dates of an unconfirmed relative phrase. A field of this context, not a record. */
   readonly pendingDate?: { readonly candidates: readonly string[]; readonly checkIn?: string };
+  /** Issue 19 (ADR 0106, amended 8 Nov 2026): the stay length the guest typed. A field of this context, not a record. */
+  readonly statedStay?: PersistedStatedStay;
+}
+
+/** Issue 19: the stated length, closed (a night count, a week or a month with its count). Anything else is refused (fail closed). */
+function parseStatedStay(value: unknown): PersistedStatedStay | null {
+  if (!isRecord(value)) return null;
+  const { nights, unit, count } = value;
+  if (typeof nights !== "number" || !Number.isSafeInteger(nights) || nights < 1) return null;
+  if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 1) return null;
+  if (unit !== "night" && unit !== "week" && unit !== "month") return null;
+  if (unit === "night" && count !== nights) return null;
+  return { nights, unit, count };
 }
 
 /**
@@ -218,7 +241,7 @@ function isUnitDetail(value: unknown): value is { readonly unitId: string; reado
 
 function parseAssistantContext(value: unknown): PersistedAssistantContext | null {
   if (!isRecord(value) || (value.city !== "Lagos" && value.city !== "Abuja")) return null;
-  const allowed = new Set(["city", "neighbourhood", "checkIn", "isDemoDate", "checkOut", "nights", "partySize", "bedrooms", "maxBudgetKobo", "maxBudgetPer", "requiredAmenities", "selectedUnitId", "pendingLocation", "pendingDate"]);
+  const allowed = new Set(["city", "neighbourhood", "checkIn", "isDemoDate", "checkOut", "nights", "partySize", "bedrooms", "maxBudgetKobo", "maxBudgetPer", "requiredAmenities", "selectedUnitId", "pendingLocation", "pendingDate", "statedStay"]);
   if (Object.keys(value).some((key) => !allowed.has(key))) return null;
   if (value.neighbourhood !== undefined && (typeof value.neighbourhood !== "string" || value.neighbourhood.length > 100)) return null;
   if (value.isDemoDate !== undefined && typeof value.isDemoDate !== "boolean") return null;
@@ -237,6 +260,9 @@ function parseAssistantContext(value: unknown): PersistedAssistantContext | null
   const budgetPer: AssistantBudgetPer | undefined = value.maxBudgetPer === undefined
     ? "stay"
     : isAssistantBudgetPer(value.maxBudgetPer) ? value.maxBudgetPer : undefined;
+  // Issue 19: a stated length that does not parse is not guessed (the context is refused, so no search runs on it).
+  const statedStay = value.statedStay === undefined ? null : parseStatedStay(value.statedStay);
+  if (value.statedStay !== undefined && statedStay === null) return null;
   const budget = typeof value.maxBudgetKobo === "number" && budgetPer !== undefined
     ? { maxBudgetKobo: value.maxBudgetKobo, maxBudgetPer: budgetPer }
     : {};
@@ -252,6 +278,7 @@ function parseAssistantContext(value: unknown): PersistedAssistantContext | null
     ...budget,
     ...(Array.isArray(value.requiredAmenities) ? { requiredAmenities: [...value.requiredAmenities] as string[] } : {}),
     ...(typeof value.selectedUnitId === "string" ? { selectedUnitId: value.selectedUnitId } : {}),
+    ...(statedStay === null ? {} : { statedStay }),
     ...(value.pendingLocation === undefined ? {} : (() => {
       const pendingLocation = parsePendingLocation(value.pendingLocation);
       return pendingLocation === undefined ? {} : { pendingLocation };
