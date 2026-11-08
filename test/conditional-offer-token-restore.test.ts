@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import type { AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 import type { GuestTurnResult, GuestTurnSuccess } from "../apps/local-guest/src/shortlet-app.js";
-import { createConfirmationToken, decodeConfirmationToken } from "../domains/shortlet/src/index.js";
+import { createConfirmationToken, decodeConfirmationToken, LOCAL_ONLY_CONDITIONAL_OFFER_KEY } from "../domains/shortlet/src/index.js";
 import { datedFixture, firstButtonAction, LIVE_LIKE_CLOCK, scriptedPlanner, trueRestartedDatedApp, type DatedFixture } from "./helpers/guest-date-fixtures.js";
 
 // Defect C (checkout investigation, 26bafd5): the Conditional Offer confirmation token was regenerated with a random salt
@@ -132,8 +132,8 @@ test("a forged token is rejected after a restore and the offer stays issued", as
 test("a token whose claims name another offer is rejected after a restore", async () => {
   const { current, offer } = await issuedOffer();
   const held = heldAccept(offer);
-  const claims = decodeConfirmationToken(held.confirmationToken);
-  const otherOffer = createConfirmationToken({ ...claims, offerId: "offer-someone-else" });
+  const claims = decodeConfirmationToken(held.confirmationToken, LOCAL_ONLY_CONDITIONAL_OFFER_KEY);
+  const otherOffer = createConfirmationToken({ ...claims, offerId: "offer-someone-else" }, LOCAL_ONLY_CONDITIONAL_OFFER_KEY);
   const next = restart(current);
   try {
     const rejected = await next.app.handleEventAsync(THREAD, { ...held.action, context: { ...held.action.context, confirmationToken: otherOffer } });
@@ -159,7 +159,7 @@ test("the token and its salt never reach the database or diagnostics; only a SHA
   try {
     const held = heldAccept(offer);
     const json = storedOfferRecord(current, held.offerId).offer_json;
-    const salt = (decodeConfirmationToken(held.confirmationToken) as unknown as { salt?: unknown }).salt;
+    const salt = (decodeConfirmationToken(held.confirmationToken, LOCAL_ONLY_CONDITIONAL_OFFER_KEY) as unknown as { salt?: unknown }).salt;
     assert.equal(json.includes(held.confirmationToken), false, "the stored offer never holds the token");
     assert.equal(typeof salt === "string" && json.includes(salt), false, "nothing persisted holds the salt that would recompute the token");
     const digest = createHash("sha256").update(held.confirmationToken).digest("hex");

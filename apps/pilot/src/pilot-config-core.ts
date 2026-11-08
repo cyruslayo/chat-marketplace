@@ -1,11 +1,13 @@
 import { loadPaystackConfiguration, type PaystackConfiguration, type PaystackEnvironmentSource } from "../../../packages/platform-core/src/payments/index.js";
 import { normalizeContactEmail } from "../../../domains/shortlet/src/index.js";
+import { validatedConditionalOfferKey } from "../../../domains/shortlet/src/index.js";
 import type { ManualTransferAccount } from "../../../domains/shortlet/src/index.js";
 import { loadConciergeConfiguration, type ConciergeConfiguration, type ConciergeEnvironmentSource } from "../../local-guest/src/assistant/concierge-configuration.js";
 import { DEFAULT_MODEL_REQUEST_QUOTA_LIMITS } from "../../../packages/platform-core/src/model-request-quota.js";
 import { modelRequestQuotaLimitsFromEnvironment } from "../../../packages/platform-core/src/model-request-quota-config.js";
 
 export interface PilotEnvironmentSource extends PaystackEnvironmentSource, ConciergeEnvironmentSource {
+  readonly SHORTLET_CONDITIONAL_OFFER_KEY?: string;
   readonly SHORTLET_PUBLIC_ORIGIN?: string;
   readonly SHORTLET_DB_PATH?: string;
   readonly SHORTLET_INVENTORY_PATH?: string;
@@ -101,6 +103,8 @@ export function pilotLimits(source: PilotEnvironmentSource): PilotLimits {
 
 export type PilotDeployment = "production" | "staging";
 export interface PilotCoreConfiguration {
+  /** Required in staging and production; never written to a descriptor or log. */
+  readonly conditionalOfferSigningKey: string;
   readonly deployment: PilotDeployment;
   /** ADR 0105: true only on staging with SHORTLET_DEMO=enabled. The invite gate is off while it is on. */
   readonly demo: boolean;
@@ -218,6 +222,7 @@ export function loadPilotCoreConfiguration(source: PilotEnvironmentSource): Pilo
     throw new Error("OpenRouter is permitted only for the staging demo (ADR 0105)");
   }
   return Object.freeze({
+    conditionalOfferSigningKey: validatedConditionalOfferKey(source.SHORTLET_CONDITIONAL_OFFER_KEY),
     deployment, demo, demoAcceptDelaySeconds: acceptDelaySeconds, betaInviteCode: inviteCode, concierge,
     limits: pilotLimits(source), notifications: notificationConfiguration(source),
     paystackTransfersEnabled: paystackTransfersEnabled(source.SHORTLET_PAYSTACK_TRANSFERS),

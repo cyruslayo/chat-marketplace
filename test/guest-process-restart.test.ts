@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
-import { decodeConfirmationToken } from "../domains/shortlet/src/conditional-offer.js";
+import { decodeConfirmationToken, LOCAL_ONLY_CONDITIONAL_OFFER_KEY } from "../domains/shortlet/src/conditional-offer.js";
 import { guestAction, proveStage, restartFixture, stages } from "./helpers/guest-restart.js";
 
 // Goal 1 Acceptance Criteria (AC1 — AC16)
@@ -267,8 +267,8 @@ test("Token test 2 — Restart does not recreate the old token from public ident
 
     assert.notEqual(postRestartToken, preRestartToken, "post-restart confirmation token must be a fresh server-issued token with unique random salt");
 
-    const preDecoded = decodeConfirmationToken(preRestartToken);
-    const postDecoded = decodeConfirmationToken(postRestartToken);
+    const preDecoded = decodeConfirmationToken(preRestartToken, LOCAL_ONLY_CONDITIONAL_OFFER_KEY);
+    const postDecoded = decodeConfirmationToken(postRestartToken, LOCAL_ONLY_CONDITIONAL_OFFER_KEY);
     assert.equal(postDecoded.offerId, preDecoded.offerId);
     assert.equal(postDecoded.totalAmountDueNowKobo, preDecoded.totalAmountDueNowKobo);
     assert.notEqual((postDecoded as any).salt, (preDecoded as any).salt, "token must contain unpredictable cryptographic salt");

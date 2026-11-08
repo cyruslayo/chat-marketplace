@@ -124,11 +124,12 @@ function workerFor(environment: PilotEnvironment) {
       // 12a: export retention and the orphaned-receipt grace period (defaults are the approved values).
       ...optionalText("SHORTLET_EXPORT_RETENTION_DAYS"),
       ...optionalText("SHORTLET_RECEIPT_ORPHAN_GRACE_HOURS"),
-      // Secrets: names declared here, values never committed (cf secret workflow or .dev.vars). The four required secrets are always
+      // Secrets: names declared here, values never committed (cf secret workflow or .dev.vars). The five required secrets are always
       // declared. GEMINI_API_KEY and RESEND_API_KEY are optional: a deployment that does not use them must not be asked for them.
       PAYSTACK_SECRET_KEY: bindings.secret(),
       LLM_API_KEY: bindings.secret(),
       SHORTLET_GUEST_CODE_HASHING_KEY: bindings.secret(),
+      SHORTLET_CONDITIONAL_OFFER_KEY: bindings.secret(),
       OPS_SHARED_SECRET: bindings.secret(),
       ...(GEMINI_CONCIERGE ? { GEMINI_API_KEY: bindings.secret() } : {}),
       ...(RESEND_CONFIGURED ? { RESEND_API_KEY: bindings.secret() } : {}),

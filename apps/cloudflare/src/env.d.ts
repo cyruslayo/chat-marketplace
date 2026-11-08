@@ -20,6 +20,7 @@ declare module "*.json?raw" {
 declare namespace Cloudflare {
   interface Env {
     SHORTLET_TENANT_ID: string;
+    SHORTLET_CONDITIONAL_OFFER_KEY: string;
     TEST_HARNESS: import("@cloudflare/workers-types").DurableObjectNamespace<
       import("./test-harness-do.js").TestHarnessDO
     >;

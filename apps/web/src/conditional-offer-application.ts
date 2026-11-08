@@ -15,6 +15,8 @@ import {
 } from "./conditional-offer-artifact.js";
 
 export interface ConditionalOfferApplicationDependencies {
+  /** Deployment-owned secret; the manager has no signing-key default. */
+  readonly signingKey: string;
   readonly bookingRequestApplication: BookingRequestApplication;
   readonly repository?: unknown;
   readonly audit?: unknown;

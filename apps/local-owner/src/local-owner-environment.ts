@@ -109,8 +109,11 @@ import { SqliteTelemetry } from "../../../packages/platform-core/src/sqlite-tele
 import type { TelemetryEvent } from "../../../packages/platform-core/src/telemetry.js";
 import { EXTENDED_STAY_POLICY, SqliteRevenueAccountingRepository, SqliteRevenueReleaseStateStore } from "../../../domains/shortlet/src/index.js";
 import { DEMO_TRUST_EXPIRES_ON } from "../../../domains/shortlet/src/index.js";
+import { LOCAL_ONLY_CONDITIONAL_OFFER_KEY, validatedConditionalOfferKey } from "../../../domains/shortlet/src/index.js";
 
 export interface LocalOwnerFixtureConfig {
+  /** Shortlet signing key shared with the guest composition for this deployment. */
+  readonly conditionalOfferSigningKey?: string;
   readonly databasePath: string;
   readonly tenantId: string;
   readonly operatorId: string;
@@ -732,6 +735,9 @@ export class LocalApartmentOwnerEnvironment {
       },
     });
     this.conditionalOfferApp = createConditionalOfferApplication({
+      signingKey: this.config.conditionalOfferSigningKey ?? (this.config.production === true
+        ? validatedConditionalOfferKey(undefined)
+        : LOCAL_ONLY_CONDITIONAL_OFFER_KEY),
       bookingRequestApplication: this.bookingRequestApp,
       repository: this.unitRepository,
       calendar: this.calendar,

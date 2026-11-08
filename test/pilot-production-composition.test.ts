@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { loadPilotConfiguration } from "../apps/pilot/src/pilot-config.js";
 import { startPilotServer } from "../apps/pilot/src/pilot-server.js";
 import { createPlatformCommandEnvelope } from "../packages/platform-core/src/index.js";
-import { SqliteOperatorRepresentativeGrantStore, SqliteOperatorSessionAuthority } from "../domains/shortlet/src/index.js";
+import { SqliteOperatorRepresentativeGrantStore, SqliteOperatorSessionAuthority, LOCAL_ONLY_CONDITIONAL_OFFER_KEY } from "../domains/shortlet/src/index.js";
 import type { PaystackClient } from "../packages/platform-core/src/payments/index.js";
 import { createTestOperatorGrantStore, createTestOperatorSessionAuthority } from "./helpers/operator-authority.js";
 import { operatorCookieFrom, postOperatorLogin } from "./helpers/operator-session.js";
@@ -303,6 +303,7 @@ test("AC14/AC15/AC16/AC17/AC28 — Production configuration rejects deterministi
 // Launch-readiness issue 22: the closed beta runs the production composition on Paystack test keys.
 const BETA_INVITE_CODE = "beta-invite-offline";
 const STAGING_ENVIRONMENT = {
+  SHORTLET_CONDITIONAL_OFFER_KEY: LOCAL_ONLY_CONDITIONAL_OFFER_KEY,
   SHORTLET_DEPLOYMENT: "staging",
   SHORTLET_BETA_INVITE_CODE: BETA_INVITE_CODE,
   PAYSTACK_SECRET_KEY: "sk_test_offline-only",
@@ -364,7 +365,7 @@ test("Any SHORTLET_DEPLOYMENT value other than production or staging fails start
   try {
     assert.equal(fixture.configuration.deployment, "production");
     assert.equal(fixture.configuration.betaInviteCode, null);
-    const base = { SHORTLET_PUBLIC_ORIGIN: PUBLIC_ORIGIN, SHORTLET_DB_PATH: fixture.configuration.databasePath, SHORTLET_INVENTORY_PATH: fixture.configuration.inventoryPath, SHORTLET_OPERATORS_PATH: fixture.configuration.operatorsPath, PAYSTACK_SECRET_KEY: "sk_live_x", PAYSTACK_ENVIRONMENT: "live" };
+    const base = { SHORTLET_PUBLIC_ORIGIN: PUBLIC_ORIGIN, SHORTLET_DB_PATH: fixture.configuration.databasePath, SHORTLET_INVENTORY_PATH: fixture.configuration.inventoryPath, SHORTLET_OPERATORS_PATH: fixture.configuration.operatorsPath, PAYSTACK_SECRET_KEY: "sk_live_x", PAYSTACK_ENVIRONMENT: "live", SHORTLET_CONDITIONAL_OFFER_KEY: LOCAL_ONLY_CONDITIONAL_OFFER_KEY };
     assert.equal(loadPilotConfiguration({ ...base, SHORTLET_DEPLOYMENT: "production" }).deployment, "production");
     for (const value of ["Staging", "stage", "beta", "dev", "test"]) {
       assert.throws(() => loadPilotConfiguration({ ...base, SHORTLET_DEPLOYMENT: value }), /SHORTLET_DEPLOYMENT must be production or staging/, value);

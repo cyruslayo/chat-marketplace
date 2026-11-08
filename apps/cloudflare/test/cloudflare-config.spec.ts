@@ -7,6 +7,7 @@ import { DurableObjectSqlDatabase } from "../src/do-sql-database.js";
 const source = {
   SHORTLET_PUBLIC_ORIGIN: "https://pilot.example.test", SHORTLET_TENANT_ID: "tenant-synthetic",
   PAYSTACK_SECRET_KEY: "sk_test_synthetic", PAYSTACK_ENVIRONMENT: "test",
+  SHORTLET_CONDITIONAL_OFFER_KEY: "local-only-conditional-offer-key-00000000",
   SHORTLET_DEPLOYMENT: "staging", SHORTLET_BETA_INVITE_CODE: "synthetic-invite",
   SHORTLET: env.TEST_HARNESS, RECEIPTS: env.RECEIPTS, EXPORTS: env.EXPORTS,
   ASSETS: { fetch: async () => new Response("not used") },

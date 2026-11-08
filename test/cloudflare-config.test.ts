@@ -13,8 +13,9 @@ import { SqliteOperatorRepository } from "../domains/shortlet/src/sqlite-operato
 import { JsonUnitRepository } from "../domains/shortlet/src/browse.js";
 import { JsonOperatorRepository } from "../domains/shortlet/src/operator.js";
 import { productionFixture, PUBLIC_ORIGIN } from "./helpers/pilot-fixture.js";
+import { LOCAL_ONLY_CONDITIONAL_OFFER_KEY } from "../domains/shortlet/src/index.js";
 
-const valid = { SHORTLET_PUBLIC_ORIGIN: PUBLIC_ORIGIN, SHORTLET_TENANT_ID: "tenant-pilot", PAYSTACK_SECRET_KEY: "sk_live_test-only", PAYSTACK_ENVIRONMENT: "live" };
+const valid = { SHORTLET_PUBLIC_ORIGIN: PUBLIC_ORIGIN, SHORTLET_TENANT_ID: "tenant-pilot", PAYSTACK_SECRET_KEY: "sk_live_test-only", PAYSTACK_ENVIRONMENT: "live", SHORTLET_CONDITIONAL_OFFER_KEY: LOCAL_ONLY_CONDITIONAL_OFFER_KEY };
 // These tests exercise configuration, not bindings; no Cloudflare service is invoked.
 const env = (source: PilotEnvironmentSource): CloudflareEnv => source as CloudflareEnv;
 
@@ -217,11 +218,16 @@ test("RESEND_API_KEY is declared when set at build time", () => {
   assert.equal(raw.includes(marker), false, "the descriptor must not contain the build-time value");
 });
 
-test("the four required secrets PAYSTACK_SECRET_KEY, LLM_API_KEY, SHORTLET_GUEST_CODE_HASHING_KEY, OPS_SHARED_SECRET are always declared", () => {
-  const required = ["LLM_API_KEY", "OPS_SHARED_SECRET", "PAYSTACK_SECRET_KEY", "SHORTLET_GUEST_CODE_HASHING_KEY"];
-  const builds: Record<string, string>[] = [{}, { CONCIERGE_MODE: "openai-compatible" }, { CONCIERGE_MODE: "gemini", RESEND_API_KEY: "re_build_marker_not_a_real_key" }];
+test("AC5: The built staging descriptor lists the new secret binding and no value", () => {
+  const required = ["LLM_API_KEY", "OPS_SHARED_SECRET", "PAYSTACK_SECRET_KEY", "SHORTLET_GUEST_CODE_HASHING_KEY", "SHORTLET_CONDITIONAL_OFFER_KEY"].sort();
+  const marker = "local-descriptor-sentinel-offer-key-00000000";
+  const builds: Record<string, string>[] = [{ SHORTLET_CONDITIONAL_OFFER_KEY: marker }, { CONCIERGE_MODE: "openai-compatible", SHORTLET_CONDITIONAL_OFFER_KEY: marker }, { CONCIERGE_MODE: "gemini", RESEND_API_KEY: "re_build_marker_not_a_real_key", SHORTLET_CONDITIONAL_OFFER_KEY: marker }];
   for (const build of builds) {
-    assert.deepEqual(declaredSecrets(stagingDescriptor(build).env).filter(name => required.includes(name)), required);
+    const { env, raw } = stagingDescriptor(build);
+    assert.deepEqual(declaredSecrets(env).filter(name => required.includes(name)), required);
+    if (build.CONCIERGE_MODE !== "gemini") assert.deepEqual(declaredSecrets(env), required, "default staging declares exactly five secrets");
+    assert.deepEqual(env.SHORTLET_CONDITIONAL_OFFER_KEY, { type: "secret" });
+    assert.equal(raw.includes(marker), false);
   }
 });
 

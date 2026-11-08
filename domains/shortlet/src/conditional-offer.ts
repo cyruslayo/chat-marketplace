@@ -28,17 +28,28 @@ export interface ConfirmationTokenPayload {
  */
 export const CONFIRMATION_TOKEN_DIGEST_LIMIT = 16;
 
+/** Only local/test compositions may pass this explicitly; staging and production require their own secret binding. */
+export const LOCAL_ONLY_CONDITIONAL_OFFER_KEY = "local-only-conditional-offer-key-00000000";
+
+/** Same minimum as the existing guest-code hashing key. Never include the supplied value in an error. */
+export function validatedConditionalOfferKey(key: string | undefined): string {
+  if (typeof key !== "string" || key.trim().length < 32) {
+    throw new Error("SHORTLET_CONDITIONAL_OFFER_KEY must contain at least 32 characters");
+  }
+  return key;
+}
+
 /**
  * The 128-bit random salt makes the token unguessable, so a plain SHA-256 digest is sufficient to store it
  * (ADR 0086: restricted material "stored only as a secure hash"). No server key is needed for that.
  */
-export function createConfirmationToken(payload: ConfirmationTokenPayload): string {
+export function createConfirmationToken(payload: ConfirmationTokenPayload, signingKey: string): string {
   const data = JSON.stringify({
     ...payload,
     salt: crypto.randomBytes(16).toString("base64url")
   });
   const b64 = Buffer.from(data).toString("base64url");
-  const hmac = crypto.createHmac("sha256", "conditional_offer_secret").update(b64).digest("hex");
+  const hmac = crypto.createHmac("sha256", validatedConditionalOfferKey(signingKey)).update(b64).digest("hex");
   return `tok_${b64}.${hmac}`;
 }
 
@@ -59,7 +70,7 @@ function matchesConfirmationTokenDigest(token: string, digests: readonly string[
   return matched;
 }
 
-export function decodeConfirmationToken(token: string): ConfirmationTokenPayload {
+export function decodeConfirmationToken(token: string, signingKey: string): ConfirmationTokenPayload {
   if (!token || !token.startsWith("tok_")) {
     throw new Error("Invalid confirmation token format");
   }
@@ -67,14 +78,17 @@ export function decodeConfirmationToken(token: string): ConfirmationTokenPayload
     const parts = token.slice(4).split(".");
     if (parts.length !== 2) throw new Error("Invalid token format");
     const [b64, hmac] = parts;
-    const expectedHmac = crypto.createHmac("sha256", "conditional_offer_secret").update(b64).digest("hex");
-    if (hmac !== expectedHmac) {
+    const expectedHmac = crypto.createHmac("sha256", validatedConditionalOfferKey(signingKey)).update(b64).digest();
+    // Buffer.from(hex) silently ignores a trailing non-hex suffix; require the exact SHA-256 hex encoding.
+    if (!/^[a-f0-9]{64}$/.test(hmac)) throw new Error("Token signature verification failed");
+    const presentedHmac = Buffer.from(hmac, "hex");
+    if (presentedHmac.length !== expectedHmac.length || !crypto.timingSafeEqual(presentedHmac, expectedHmac)) {
       throw new Error("Token signature verification failed");
     }
     const json = Buffer.from(b64, "base64url").toString("utf8");
     return JSON.parse(json);
-  } catch (e: any) {
-    if (e.message === "Token signature verification failed") throw e;
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message === "Token signature verification failed") throw error;
     throw new Error("Invalid confirmation token payload");
   }
 }
@@ -138,6 +152,7 @@ export interface ConditionalBookingOffer {
 }
 
 export class ConditionalOfferManager {
+  readonly #signingKey: string;
   #repository: any;
   #audit: any;
   #calendar: any;
@@ -156,7 +171,8 @@ export class ConditionalOfferManager {
     operatorAuthority = undefined,
     store = null,
     extendedStayPolicy,
-    demoTerms = false
+    demoTerms = false,
+    signingKey
   }: {
     repository?: any;
     audit?: any;
@@ -166,7 +182,9 @@ export class ConditionalOfferManager {
     store?: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
     extendedStayPolicy?: ExtendedStayPolicy;
     demoTerms?: boolean;
-  } = {}) {
+    signingKey: string;
+  }) {
+    this.#signingKey = validatedConditionalOfferKey(signingKey);
     this.#repository = repository;
     this.#audit = audit;
     this.#calendar = calendar;
@@ -295,7 +313,7 @@ export class ConditionalOfferManager {
       quoteVersion: freshQuote.quoteVersion,
       totalAmountDueNowKobo: freshQuote.totalAmountDueNowKobo,
       expiresAt: paymentWindowExpiresAt
-    });
+    }, this.#signingKey);
 
     const disclosures = [
       ...freshQuote.disclosures,
@@ -410,7 +428,7 @@ export class ConditionalOfferManager {
       quoteVersion: offer.aggregateVersions.quoteVersion,
       totalAmountDueNowKobo: offer.totalAmountDueNowKobo,
       expiresAt: offer.paymentWindow.expiresAt
-    });
+    }, this.#signingKey);
     offer.confirmationToken = token;
     offer.confirmationTokenDigests = [...(offer.confirmationTokenDigests ?? []), confirmationTokenDigest(token)].slice(-CONFIRMATION_TOKEN_DIGEST_LIMIT);
   }
@@ -527,7 +545,7 @@ export class ConditionalOfferManager {
     // Decode and verify token contents
     let tokenPayload: ConfirmationTokenPayload;
     try {
-      tokenPayload = decodeConfirmationToken(confirmationToken);
+      tokenPayload = decodeConfirmationToken(confirmationToken, this.#signingKey);
     } catch {
       throw new Error("Invalid confirmation token payload");
     }

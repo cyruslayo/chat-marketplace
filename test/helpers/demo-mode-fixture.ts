@@ -9,6 +9,7 @@ import { PUBLIC_ORIGIN } from "./pilot-fixture.js";
 import type { AssetLoader } from "../../packages/platform-core/src/asset-loader.js";
 import { createGuestRequestHandler, GUEST_COMMERCE_COMPOSITION, type GuestRequestHandler } from "../../apps/local-guest/src/guest-server.js";
 import { LocalGuestEnvironment, type LocalGuestFixtureConfig } from "../../apps/local-guest/src/fixture.js";
+import { LOCAL_ONLY_CONDITIONAL_OFFER_KEY } from "../../domains/shortlet/src/index.js";
 import { createFakeHttpRequest, createFakeHttpResponse, type CapturedResponse, type FakeRequestOptions } from "./http-like.js";
 import type { A2UIServerMessage } from "@cylayo/weaver-core";
 import assert from "node:assert/strict";
@@ -35,6 +36,7 @@ export const DEMO_STAGING_SOURCE = {
   SHORTLET_TENANT_ID: "tenant-staging-demo",
   PAYSTACK_SECRET_KEY: "sk_test_offline-only",
   PAYSTACK_ENVIRONMENT: "test",
+  SHORTLET_CONDITIONAL_OFFER_KEY: LOCAL_ONLY_CONDITIONAL_OFFER_KEY,
   SHORTLET_DEMO: "enabled",
 } as const;
 

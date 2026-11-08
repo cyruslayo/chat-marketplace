@@ -2,6 +2,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { LocalGuestEnvironment } from "../../apps/local-guest/src/fixture.js";
+import { LOCAL_ONLY_CONDITIONAL_OFFER_KEY } from "../../domains/shortlet/src/index.js";
 import { loadPilotConfiguration } from "../../apps/pilot/src/pilot-config.js";
 import type { Unit } from "../../domains/shortlet/src/index.js";
 import type { PaystackClient } from "../../packages/platform-core/src/payments/index.js";
@@ -42,6 +43,7 @@ export async function productionFixture(options: { readonly noDeposit?: boolean;
     SHORTLET_OPERATORS_PATH: operatorsPath,
     PAYSTACK_SECRET_KEY: "sk_live_test-only",
     PAYSTACK_ENVIRONMENT: "live",
+    SHORTLET_CONDITIONAL_OFFER_KEY: LOCAL_ONLY_CONDITIONAL_OFFER_KEY,
     ...options.environment,
   });
   const paystack: PaystackClient = {

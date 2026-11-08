@@ -85,6 +85,7 @@ test("10b AC2: a provisioned operator signs in and the session survives a Durabl
         propertyId,
         seedFixture: false,
         production: true,
+        conditionalOfferSigningKey: env.SHORTLET_CONDITIONAL_OFFER_KEY,
         clock: () => new Date(),
       },
       {

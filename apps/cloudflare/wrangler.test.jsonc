@@ -39,6 +39,7 @@
     "CONCIERGE_MODE": "deterministic",
     "RESEND_API_KEY": "re_test_synthetic",
     "SHORTLET_GUEST_CODE_HASHING_KEY": "synthetic-guest-code-hashing-key-at-least-32-characters",
+    "SHORTLET_CONDITIONAL_OFFER_KEY": "local-only-conditional-offer-key-00000000",
     "SHORTLET_NOTIFICATION_FROM": "Shortlet <notifications@example.test>",
     "SHORTLET_OPERATOR_ALERT_EMAILS": "alerts@example.test",
     "OPS_SHARED_SECRET": "synthetic-ops-shared-secret",

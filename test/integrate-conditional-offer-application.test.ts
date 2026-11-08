@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { WebServerEventHandoff } from "@cylayo/weaver-web";
 import { InMemoryAuditLog } from "../packages/platform-core/src/index.js";
-import { BookingRequestManager, ConditionalOfferManager, GuestVerificationService, UnitRepository, seedIssue01Units } from "../domains/shortlet/src/index.js";
+import { BookingRequestManager, ConditionalOfferManager, GuestVerificationService, UnitRepository, seedIssue01Units, LOCAL_ONLY_CONDITIONAL_OFFER_KEY } from "../domains/shortlet/src/index.js";
 import { createBookingRequestApplication, getBookingRequestManager } from "../apps/web/src/booking-request-application.js";
 import { createConditionalOfferApplication, getConditionalOfferManager } from "../apps/web/src/conditional-offer-application.js";
 import { acceptConventionalConditionalOffer } from "../apps/web/src/presentation.js";
@@ -22,7 +22,7 @@ function setup() {
   const guestVerification = new GuestVerificationService({ repository, verificationResults: { getVerificationResult: ({ tenantId, guestId }) => tenantId === "tenant-lagos" && guestId.startsWith("guest-") ? { tenantId, guestId, governmentIdVerified: true } : null } });
   const clock = () => new Date("2026-07-22T10:00:00Z");
   const bookingRequestApplication = createBookingRequestApplication({ guestContacts: { find: () => ({ guestId: "guest-101", tenantId: "tenant-lagos", phoneNumber: "+2348012345678", contactEmail: null, revision: 1 }) }, repository, audit, calendar, guestVerification, operatorAuthority, clock });
-  const application = createConditionalOfferApplication({ bookingRequestApplication, repository, audit, calendar, clock, operatorAuthority });
+  const application = createConditionalOfferApplication({ signingKey: LOCAL_ONLY_CONDITIONAL_OFFER_KEY, bookingRequestApplication, repository, audit, calendar, clock, operatorAuthority });
   return { repository, audit, calendar, bookingRequestApplication, application, unit: repository.findAll()[0], clock };
 }
 

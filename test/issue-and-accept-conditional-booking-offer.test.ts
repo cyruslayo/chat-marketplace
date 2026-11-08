@@ -13,6 +13,7 @@ import {
   RestrictedIdentityStore,
   BookingRequestManager,
   ConditionalOfferManager,
+  LOCAL_ONLY_CONDITIONAL_OFFER_KEY,
   flagMaterialUnitChange,
   createConfirmationToken,
   decodeConfirmationToken
@@ -45,6 +46,7 @@ function setup() {
       actorId === "rep-operator" && operatorId === "operator-001" && tenantId === "tenant-lagos",
   };
   const offerManager = new ConditionalOfferManager({
+    signingKey: LOCAL_ONLY_CONDITIONAL_OFFER_KEY,
     repository,
     audit,
     calendar,
@@ -474,16 +476,16 @@ test("Conditional Offer authority and token claims fail closed for invalid princ
   ]) {
     assert.throws(() => s.offerManager.acceptOffer(createPlatformCommandEnvelope({ commandName: "conditional_offer.accept", principal, payload: { offerId: offer.offerId, confirmationToken: offer.confirmationToken } }), { clock }), /guest|tenant|Cross-tenant/i);
   }
-  const original = decodeConfirmationToken(offer.confirmationToken);
+  const original = decodeConfirmationToken(offer.confirmationToken, LOCAL_ONLY_CONDITIONAL_OFFER_KEY);
   const mismatches = [
     { tenantId: "tenant-abuja", quoteVersion: original.quoteVersion },
     { tenantId: original.tenantId, quoteVersion: "quote-tampered" },
   ];
   for (const mismatch of mismatches) {
-    const token = createConfirmationToken({ ...original, ...mismatch });
+    const token = createConfirmationToken({ ...original, ...mismatch }, LOCAL_ONLY_CONDITIONAL_OFFER_KEY);
     s.offerManager.getOffer(offer.offerId).confirmationToken = token;
     assert.throws(() => s.offerManager.acceptOffer(createPlatformCommandEnvelope({ commandName: "conditional_offer.accept", principal: { id: "guest-101", role: "guest", tenantId: "tenant-lagos" }, payload: { offerId: offer.offerId, confirmationToken: token } }), { clock }), /claim validation/i);
-    s.offerManager.getOffer(offer.offerId).confirmationToken = createConfirmationToken(original);
+    s.offerManager.getOffer(offer.offerId).confirmationToken = createConfirmationToken(original, LOCAL_ONLY_CONDITIONAL_OFFER_KEY);
   }
 });
 

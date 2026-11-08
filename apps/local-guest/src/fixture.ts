@@ -29,6 +29,8 @@ import {
   GuestAccountContacts,
   UnitDiscoveryQuery,
   EXTENDED_STAY_POLICY,
+  LOCAL_ONLY_CONDITIONAL_OFFER_KEY,
+  validatedConditionalOfferKey,
   UnitRepository,
   JsonUnitRepository,
   type UnitRepositoryContract,
@@ -81,6 +83,8 @@ export interface DemoRequestAcceptor {
 }
 
 export interface LocalGuestFixtureConfig {
+  /** Signed offer tokens: a deployment-owned secret on production compositions; local fixtures use an explicit local key. */
+  readonly conditionalOfferSigningKey?: string;
   readonly databasePath: string;
   /** Optional durable pilot inventory. When set, deterministic fixture seeding is disabled. */
   readonly inventoryPath?: string | null;
@@ -497,6 +501,9 @@ export class LocalGuestEnvironment {
     });
 
     this.conditionalOfferApp = createConditionalOfferApplication({
+      signingKey: this.config.conditionalOfferSigningKey ?? (this.config.production === true
+        ? validatedConditionalOfferKey(undefined)
+        : LOCAL_ONLY_CONDITIONAL_OFFER_KEY),
       bookingRequestApplication: this.bookingRequestApp,
       repository: this.unitRepository,
       audit: this.audit,

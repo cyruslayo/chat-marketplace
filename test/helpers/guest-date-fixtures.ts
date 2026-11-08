@@ -97,12 +97,13 @@ export const LIVE_LIKE_CLOCK = (): Date => new Date("2026-10-27T10:00:00Z");
  */
 export const STAGING_GUEST_CONFIG = { initialGuestPhoneNumber: null, initialGuestContactEmail: null } as const;
 
-export function datedFixture(model: AssistantModelClient, diagnostics?: AssistantDiagnosticEvent[], options: { readonly clock?: () => Date; readonly stagingGuest?: boolean; readonly paystackClient?: NonNullable<Parameters<typeof LocalGuestEnvironment.openNode>[0]>["paystackClient"]; /** The deployment composition (ADR 0105): demo off and production by default. */ readonly composition?: { readonly demo?: boolean; readonly deployment?: "production" | "staging" } } = {}): DatedFixture {
+export function datedFixture(model: AssistantModelClient, diagnostics?: AssistantDiagnosticEvent[], options: { readonly clock?: () => Date; readonly stagingGuest?: boolean; readonly conditionalOfferSigningKey?: string; readonly paystackClient?: NonNullable<Parameters<typeof LocalGuestEnvironment.openNode>[0]>["paystackClient"]; /** The deployment composition (ADR 0105): demo off and production by default. */ readonly composition?: { readonly demo?: boolean; readonly deployment?: "production" | "staging" } } = {}): DatedFixture {
   const directory = mkdtempSync(join(tmpdir(), "date-literal-"));
   const openConfig = {
     ...(options.clock ? { clock: options.clock } : {}),
     ...(options.paystackClient ? { paystackClient: options.paystackClient } : {}),
     ...(options.stagingGuest ? STAGING_GUEST_CONFIG : {}),
+    ...(options.conditionalOfferSigningKey ? { conditionalOfferSigningKey: options.conditionalOfferSigningKey } : {}),
     ...(options.composition ?? {}),
   };
   const databasePath = join(directory, "guest.sqlite");
