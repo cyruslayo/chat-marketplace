@@ -67,6 +67,7 @@ import {
   OwnerRecoveryError,
   SqliteOwnerPayableLedger,
   NoticeToEndManager,
+  ExtendedStayExtensionManager,
   checkInNoticePorts,
   recordedNoticeRefundPort,
   type OwnerPayableProjection,
@@ -111,7 +112,7 @@ import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit
 import { SqliteTelemetry } from "../../../packages/platform-core/src/sqlite-telemetry.js";
 import type { TelemetryEvent } from "../../../packages/platform-core/src/telemetry.js";
 import { EXTENDED_STAY_POLICY, SqliteRevenueAccountingRepository, SqliteRevenueReleaseStateStore } from "../../../domains/shortlet/src/index.js";
-import { DEMO_TRUST_EXPIRES_ON } from "../../../domains/shortlet/src/index.js";
+import { DEMO_TRUST_EXPIRES_ON, ExtensionRefusedError, extensionStatusAt, type ExtensionRequestRecord, type ExtensionStatus } from "../../../domains/shortlet/src/index.js";
 
 export interface LocalOwnerFixtureConfig {
   readonly databasePath: string;
@@ -597,6 +598,8 @@ export class LocalApartmentOwnerEnvironment {
   readonly ownerPayableLedger: SqliteOwnerPayableLedger;
   /** ADR 0092 Notice to End (monthly-stays issue 17): the same manager as the guest composition, over the shared tables. */
   readonly noticeToEnd: NoticeToEndManager;
+  /** Monthly-stays issue 09: the Operator approves or declines extension requests in the back office (ADR 0092). */
+  readonly extensions: ExtendedStayExtensionManager;
 
   #demoRequests: string[] = [];
 
@@ -776,6 +779,21 @@ export class LocalApartmentOwnerEnvironment {
           revision: 1,
         }),
       },
+    });
+    this.extensions = new ExtendedStayExtensionManager({
+      contracts: {
+        getContract: (contractId: string) => {
+          const contract = this.#bookingState.findContractById(contractId);
+          if (!contract) throw new Error("Booking Contract is not found");
+          return contract;
+        },
+        mutateContract: (contractId, expectedVersion, mutation) => this.#bookingState.mutateContract(contractId, expectedVersion, mutation),
+      },
+      units: this.unitRepository,
+      calendar: this.calendar,
+      continuousOccupancy: this.bookingRequestApp.continuousOccupancy,
+      extendedStayPolicy: this.config.extendedStayPolicy ?? EXTENDED_STAY_POLICY,
+      clock: this.clock,
     });
     this.conditionalOfferApp = createConditionalOfferApplication({
       bookingRequestApplication: this.bookingRequestApp,
@@ -1103,6 +1121,50 @@ export class LocalApartmentOwnerEnvironment {
         ? unitRecord.title
         : "Apartment name not on file";
     return Object.freeze({ ownerName, apartmentTitle });
+  }
+
+  /**
+   * Monthly-stays issue 09 (ADR 0092 Extensions): the extension requests this operator can decide, for this operator's tenant only.
+   * Each confirmed Booking Request's offer leads to its contract; a request still awaiting its response at the clock is listed.
+   */
+  listExtensionRequests(principal: CommandPrincipal): readonly { readonly contractId: string; readonly reservationId: string; readonly unitId: string; readonly request: ExtensionRequestRecord; readonly status: ExtensionStatus }[] {
+    const now = this.clock();
+    return this.listOperatorRequestArtifacts(principal).flatMap((artifact) => {
+      if (artifact.facts.status !== "confirmed") return [];
+      const stored = this.interactionStore.findConditionalOfferByRequestId(artifact.facts.requestId);
+      if (!stored) return [];
+      const offer = offerRecordFromJson(stored.offerJson);
+      if (!offer) return [];
+      const snapshot = this.interactionStore.findBookingSnapshotByOfferId(offer.offerId);
+      if (!snapshot) return [];
+      const contract = this.#bookingState.findContractById(snapshot.contractId);
+      if (!contract || contract.tenantId !== principal.tenantId || contract.extensionRequest === undefined) return [];
+      const status = extensionStatusAt(contract.extensionRequest, now);
+      if (status !== "awaiting_operator") return [];
+      return [{ contractId: contract.contractId, reservationId: contract.reservationId, unitId: contract.unitId, request: contract.extensionRequest, status }];
+    });
+  }
+
+  /**
+   * The Operator's approval of an extension request (ADR 0092, ADR 0082). The principal must hold an active representative grant
+   * for the contract's Operator (fail closed), and the domain re-checks the tenant and the request's state.
+   */
+  approveExtensionRequest(contractId: string, principal: CommandPrincipal, extensionId: string): ExtensionRequestRecord {
+    this.#assertActsForContractOperator(contractId, principal);
+    return this.extensions.approveExtension(contractId, principal, extensionId);
+  }
+
+  /** The Operator's decline of an extension request (ADR 0092, ADR 0082). Nothing changes except the recorded decision. */
+  declineExtensionRequest(contractId: string, principal: CommandPrincipal, extensionId: string): ExtensionRequestRecord {
+    this.#assertActsForContractOperator(contractId, principal);
+    return this.extensions.declineExtension(contractId, principal, extensionId);
+  }
+
+  #assertActsForContractOperator(contractId: string, principal: CommandPrincipal): void {
+    const contract = this.#bookingState.findContractById(contractId);
+    const actsFor = contract !== null && principal.role === "operator" && !!principal.id && !!principal.tenantId
+      && this.grantStore.canActForOperator({ actorId: principal.id, operatorId: contract.parties.operator.id, tenantId: principal.tenantId });
+    if (!actsFor) throw new ExtensionRefusedError("NOT_OPERATOR", "Only the Operator can decide an extension");
   }
 
   listOperatorRequestArtifacts(

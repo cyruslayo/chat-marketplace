@@ -6,6 +6,8 @@ import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_NOTICE_COPY, accommodationProv
 
 /** Issue 18: the chat event a booking surface sends to open the Notice to End card. The platform routes it by name. */
 export const NOTICE_OPEN_EVENT = "shortlet.assistant.open-notice";
+/** Monthly-stays issue 09: the closed event the "Extend your stay" button sends (routed by name, ADR 0074). */
+export const EXTENSION_OPEN_EVENT = "shortlet.assistant.open-extension";
 
 export function bookingContractArtifactToA2UI({ artifact, surfaceId }: { readonly artifact: BookingContractArtifact; readonly surfaceId: string }): readonly A2UIServerMessage[] {
   const { facts } = artifact;

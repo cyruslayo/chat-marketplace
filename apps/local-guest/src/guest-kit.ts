@@ -15,8 +15,10 @@ import {
   GUEST_TASK_RAIL,
   GUEST_VERTICALS,
   UNIT_DETAIL_ABOUT_HEADING,
+  GUEST_EXTENSION_COPY,
   GUEST_NOTICE_COPY,
   commerceSoldBy,
+  extensionFactRows,
   formatGuestDate,
   noticeFactRows,
   type NoticeFactsInput,
@@ -400,6 +402,24 @@ export function stepsHtml(items: readonly string[]): string {
  * Issue 18 (ADR 0060, 0077, 0080): the Notice to End block on a confirmed booking in the chat. A recorded notice shows the page's
  * facts; otherwise the button opens the notice card through the assistant (the client wires `data-notice-open`).
  */
+/**
+ * Monthly-stays issue 09 (ADR 0092 Extensions, ADR 0077, 0080): the extension block on a confirmed booking in the chat. The button
+ * opens the card through the assistant; a request awaiting the Operator shows the same facts the card showed, and its reply time.
+ */
+export function confirmationExtensionHtml(extension: NonNullable<ConfirmationContent["extension"]>): string {
+  const outcome = extension.outcome === undefined ? "" : `<p data-extension-outcome="${escapeHtml(extension.outcome)}">${escapeHtml(GUEST_EXTENSION_COPY[extension.outcome])}</p>`;
+  if (extension.requested) {
+    const rows = extensionFactRows(extension.requested.facts, formatNgnKobo, formatWAT(extension.requested.respondBy));
+    return `<section class="ui-panel" aria-labelledby="extension-requested-heading" data-extension-requested><h2 id="extension-requested-heading">${escapeHtml(GUEST_EXTENSION_COPY.heading)}</h2><p>${escapeHtml(GUEST_EXTENSION_COPY.requested)}</p>${extensionFactsDlHtml(rows)}</section>`;
+  }
+  const button = extension.offered ? `<div class="request-actions"><button class="ui-button ui-button--secondary ui-button--block" type="button" data-extension-open>${escapeHtml(GUEST_EXTENSION_COPY.action)}</button></div>` : "";
+  return `<section class="ui-panel" aria-labelledby="extension-heading" data-extension-step><h2 id="extension-heading">${escapeHtml(GUEST_EXTENSION_COPY.heading)}</h2>${outcome}${button}</section>`;
+}
+
+function extensionFactsDlHtml(rows: readonly { readonly key: string; readonly label: string; readonly value: string }[]): string {
+  return `<dl class="ui-facts ui-facts--stacked">${rows.map((row) => `<dt>${escapeHtml(row.label)}</dt><dd data-extension-fact="${escapeHtml(row.key)}">${escapeHtml(row.value)}</dd>`).join("")}</dl>`;
+}
+
 export function confirmationNoticeHtml(notice: NonNullable<ConfirmationContent["notice"]>): string {
   if (notice.kind === "action") return `<div class="request-actions"><button class="ui-button ui-button--secondary ui-button--block" type="button" data-notice-open>${escapeHtml(GUEST_NOTICE_COPY.action)}</button></div>`;
   return `<section class="ui-panel" aria-labelledby="notice-recorded-heading" data-notice-recorded><h2 id="notice-recorded-heading">${escapeHtml(GUEST_NOTICE_COPY.recordedHeading)}</h2><p>${escapeHtml(GUEST_NOTICE_COPY.recordedLead)}</p>${noticeFactsDlHtml(notice.facts)}</section>`;
@@ -410,7 +430,7 @@ export function confirmationScreenHtml(
   ticket: string,
   breakdown: string,
 ): string {
-  return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}${content.notice ? confirmationNoticeHtml(content.notice) : ""}<div class="confirmation-reference"><dl class="ui-facts ui-facts--stacked"><dt>Booking reference</dt><dd>${escapeHtml(content.bookingReference)}</dd></dl></div><section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}<a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Ask about arrival</a></section><div class="request-actions">${content.scheduleHref ? `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.scheduleHref)}">View payment schedule</a>` : ""}</div><details class="ui-panel booking-details" id="booking-details"><summary class="ui-button ui-button--secondary ui-button--block">Full contract terms</summary><p>${escapeHtml(content.details)}</p></details></section>`;
+  return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}${content.notice ? confirmationNoticeHtml(content.notice) : ""}${content.extension ? confirmationExtensionHtml(content.extension) : ""}<div class="confirmation-reference"><dl class="ui-facts ui-facts--stacked"><dt>Booking reference</dt><dd>${escapeHtml(content.bookingReference)}</dd></dl></div><section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}<a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Ask about arrival</a></section><div class="request-actions">${content.scheduleHref ? `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.scheduleHref)}">View payment schedule</a>` : ""}</div><details class="ui-panel booking-details" id="booking-details"><summary class="ui-button ui-button--secondary ui-button--block">Full contract terms</summary><p>${escapeHtml(content.details)}</p></details></section>`;
 }
 
 /** Issue 08: the sign-in offer. The email is the contact already given, and `returnPath` is the screen to come back to. */

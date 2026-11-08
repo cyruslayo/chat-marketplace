@@ -660,6 +660,62 @@ export const GUEST_NOTICE_COPY = Object.freeze({
   recordedLead: "Your stay now ends on the new last night below. Refunds are paid by hand, as the terms say.",
 });
 
+/**
+ * Monthly-stays issue 09 (ADR 0092 Extensions). Labels "Extend your stay" and "Request extension" are proposed for owner
+ * confirmation (8 Nov 2026); every other string here is new and listed in the issue's Comments for the owner.
+ */
+export const GUEST_EXTENSION_COPY = Object.freeze({
+  action: "Extend your stay",
+  heading: "Extend your stay",
+  confirm: "Request extension",
+  back: "Not now",
+  /** Refusals (a guest refusal, never an error): the reason names the one thing that stops the extension. */
+  notExtended: "Extending applies to an Extended Stay. A Short Stay cannot be extended to 30 nights or more from here.",
+  noticeInForce: "A Notice to End is in force, so this stay cannot be extended.",
+  pending: "An extension request is already waiting for the Operator.",
+  unavailable: "The unit is not available for every added night, so the stay cannot be extended.",
+  inspection: "The inspection or Management Authority does not cover the new checkout, so the stay cannot be extended.",
+  tooLong: "An Extended Stay is at most 180 nights in total, so the stay cannot be extended further.",
+  notAvailable: "This stay cannot be extended right now.",
+  cardOpened: "Here is the extension and what it adds. Press Request extension on the card to send it to the Operator. Nothing is agreed until the Operator approves.",
+  requested: "Extension requested. The Operator will reply by the time shown below. Nothing is added until they approve.",
+  approved: "Extension agreed. Your stay now ends on the new checkout.",
+  declined: "The Operator could not extend your stay. Nothing has changed.",
+  expired: "The Operator did not reply in time, so the extension was not made. Nothing has changed.",
+  stale: "The extension terms have changed. Ask again to see the current terms.",
+  addedNights: "Added nights",
+  newCheckOut: "New checkout",
+  addedAmount: "Added amount (paid as each period falls due)",
+  dueDate: "Due date for the added period",
+  respondBy: "Operator replies by",
+});
+
+export interface ExtensionFactsInput {
+  readonly addedNights: number;
+  readonly newCheckOut: string;
+  readonly addedAmountKobo: number;
+  /** The added period's due date: its Period Payment falls due 7 days before its first night (ADR 0092). */
+  readonly periodDueDate: string;
+}
+
+export interface ExtensionFactRow {
+  readonly key: "addedNights" | "newCheckOut" | "addedAmount" | "dueDate" | "respondBy";
+  readonly label: string;
+  readonly value: string;
+  readonly raw: string;
+}
+
+/** The extension facts in one order for the page and the chat card (ADR 0077, 0080). `money` formats kobo for the surface. */
+export function extensionFactRows(facts: ExtensionFactsInput, money: (kobo: number) => string, respondBy?: string): readonly ExtensionFactRow[] {
+  return [
+    { key: "addedNights", label: GUEST_EXTENSION_COPY.addedNights, value: `${facts.addedNights} ${facts.addedNights === 1 ? "night" : "nights"}`, raw: String(facts.addedNights) },
+    { key: "newCheckOut", label: GUEST_EXTENSION_COPY.newCheckOut, value: formatGuestDate(facts.newCheckOut) ?? facts.newCheckOut, raw: facts.newCheckOut },
+    { key: "addedAmount", label: GUEST_EXTENSION_COPY.addedAmount, value: money(facts.addedAmountKobo), raw: String(facts.addedAmountKobo) },
+    { key: "dueDate", label: GUEST_EXTENSION_COPY.dueDate, value: formatGuestDate(facts.periodDueDate) ?? facts.periodDueDate, raw: facts.periodDueDate },
+    ...(respondBy === undefined ? [] : [{ key: "respondBy" as const, label: GUEST_EXTENSION_COPY.respondBy, value: respondBy, raw: respondBy }]),
+  ];
+}
+
 /** The Notice to End facts as the domain calculated them (issue 18 AC1): one helper for the page and the chat card. */
 export interface NoticeFactsInput {
   readonly newLastNight: string;

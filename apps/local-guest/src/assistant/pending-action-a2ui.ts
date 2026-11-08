@@ -4,7 +4,7 @@ import {
   type A2UIServerMessage,
 } from "@cylayo/weaver-core";
 import type { PendingAssistantAction } from "./pending-actions.js";
-import { GUEST_NOTICE_COPY, noticeFactRows, type NoticeFactRow } from "../../../web-agent/src/guest-content.js";
+import { GUEST_EXTENSION_COPY, GUEST_NOTICE_COPY, extensionFactRows, noticeFactRows, type ExtensionFactRow, type NoticeFactRow } from "../../../web-agent/src/guest-content.js";
 import { formatMoney } from "../../../web/src/ui-kit.js";
 
 export const ASSISTANT_CONFIRM_ACTION_EVENT = "shortlet.assistant.confirm-action";
@@ -45,13 +45,24 @@ function noticeCardRows(action: PendingAssistantAction): readonly NoticeFactRow[
   return noticeFactRows({ newLastNight: refs.newLastNight, newCheckOut: refs.newCheckOut, refundKobo: refs.refundKobo, owedKobo: refs.owedKobo }, formatMoney);
 }
 
+/** Monthly-stays issue 09: the extension card's facts, from the references the card was built with (ADR 0060). */
+function extensionCardRows(action: PendingAssistantAction): readonly ExtensionFactRow[] {
+  const refs = action.authoritativeReferences;
+  if (refs.addedNights === undefined || refs.newCheckOut === undefined || refs.addedAmountKobo === undefined || refs.periodDueDate === undefined) {
+    throw new Error("An extension card needs its extension facts");
+  }
+  return extensionFactRows({ addedNights: refs.addedNights, newCheckOut: refs.newCheckOut, addedAmountKobo: refs.addedAmountKobo, periodDueDate: refs.periodDueDate }, formatMoney);
+}
+
 export function pendingActionToA2UI({
   action,
   surfaceId,
 }: PendingActionToA2UIInput): readonly A2UIServerMessage[] {
   const prefix = `pending-action-${action.id}`;
   const isNotice = action.type === "give_notice";
+  const isExtension = action.type === "request_extension";
   const noticeRows = isNotice ? noticeCardRows(action) : [];
+  const extensionRows = isExtension ? extensionCardRows(action) : [];
   const title =
     action.type === "request_to_book"
       ? "Confirm Booking Request"
@@ -59,9 +70,11 @@ export function pendingActionToA2UI({
         ? "Confirm Offer Acceptance"
         : isNotice
           ? GUEST_NOTICE_COPY.heading
-          : "Confirm Secure Checkout";
-  const confirmLabel = isNotice ? GUEST_NOTICE_COPY.confirm : "Confirm";
-  const cancelLabel = isNotice ? GUEST_NOTICE_COPY.back : "Cancel";
+          : isExtension
+            ? GUEST_EXTENSION_COPY.heading
+            : "Confirm Secure Checkout";
+  const confirmLabel = isNotice ? GUEST_NOTICE_COPY.confirm : isExtension ? GUEST_EXTENSION_COPY.confirm : "Confirm";
+  const cancelLabel = isNotice ? GUEST_NOTICE_COPY.back : isExtension ? GUEST_EXTENSION_COPY.back : "Cancel";
 
   const components: A2UIComponent[] = [
     {
@@ -83,6 +96,7 @@ export function pendingActionToA2UI({
         `${prefix}-title`,
         `${prefix}-summary`,
         ...noticeRows.map((row) => `${prefix}-fact-${row.key}`),
+        ...extensionRows.map((row) => `${prefix}-fact-${row.key}`),
         ...(action.authoritativeReferences.stayTotalKobo !== undefined
           ? [`${prefix}-total`]
           : []),
@@ -96,6 +110,7 @@ export function pendingActionToA2UI({
     { id: `${prefix}-title`, component: "Text", text: title, variant: "h3" },
     { id: `${prefix}-summary`, component: "Text", text: action.summary },
     ...noticeRows.map((row) => ({ id: `${prefix}-fact-${row.key}`, component: "Text" as const, text: `${row.label}: ${row.value}` })),
+    ...extensionRows.map((row) => ({ id: `${prefix}-fact-${row.key}`, component: "Text" as const, text: `${row.label}: ${row.value}` })),
     ...(action.authoritativeReferences.stayTotalKobo !== undefined
       ? [
           {

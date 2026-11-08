@@ -28,7 +28,7 @@ export class BookingContractApplication {
     const trustedEnvelope = { ...envelope, timestamp: this.#clock().toISOString() };
     const view = this.#manager.getBookingContractView(trustedEnvelope);
     const contract = this.#manager.getAuthorizedContractForApplication(trustedEnvelope);
-    return bookingContractArtifactFromView(view, contract, trustedViewer, { demoTerms: this.#demoTerms });
+    return bookingContractArtifactFromView(view, contract, trustedViewer, { demoTerms: this.#demoTerms, now: this.#clock() });
   }
 
   getProtectedArrivalView(contractId: string, trustedViewer: CommandPrincipal): ProtectedArrivalView {

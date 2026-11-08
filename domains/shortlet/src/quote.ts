@@ -2,7 +2,7 @@ import { generatePlatformId } from "../../../packages/platform-core/src/index.js
 import { StayDateRange } from "./browse.js";
 import { guestPriceFromOwnerTerms, marginOnKobo, ownerSettlementFor, unitOwnerTerms } from "./owner-terms.js";
 import type { OwnerSettlementSnapshot } from "./owner-terms.js";
-import { EXTENDED_CANCELLATION_POLICY_VERSION, assertStayLength, extendedCancellationTerms, monthlyAmountsAreValid, utilitiesStatementIsValid, type ExtendedStayPolicy } from "./extended-stay.js";
+import { EXTENDED_CANCELLATION_POLICY_VERSION, assertStayLength, extendedCancellationTerms, monthlyAmountsAreValid, utilitiesStatementIsValid, type ExtendedStayPolicy, type MonthlyAgreedAmounts, type UtilitiesAndServicingStatement } from "./extended-stay.js";
 import { calculateSecurityDepositPolicySnapshot, calculateRefundableSecurityDeposit, SECURITY_DEPOSIT_POLICY_VERSION, type SecurityDepositPolicySnapshot } from "./security-deposit.js";
 
 export interface OptionalServiceCatalogueItem {
@@ -169,6 +169,121 @@ export function classifyRevenue({
   });
 }
 
+/** ADR 0092 Billing Period pricing for one Extended Stay unit; the same refusal as the quote when it is not configured. */
+function extendedTermsOf(unit: { readonly extendedStay?: unknown }): { readonly monthlyAgreedAmounts: MonthlyAgreedAmounts; readonly utilitiesAndServicing: UtilitiesAndServicingStatement } {
+  const terms = unit.extendedStay as { readonly optedIn?: unknown; readonly monthlyAgreedAmounts?: MonthlyAgreedAmounts; readonly utilitiesAndServicing?: UtilitiesAndServicingStatement } | undefined;
+  if (terms?.optedIn !== true || !monthlyAmountsAreValid(terms.monthlyAgreedAmounts) || !utilitiesStatementIsValid(terms.utilitiesAndServicing)) {
+    throw new Error("Unit is not configured for Extended Stay pricing and servicing");
+  }
+  return { monthlyAgreedAmounts: terms.monthlyAgreedAmounts!, utilitiesAndServicing: terms.utilitiesAndServicing! };
+}
+
+/** One Billing Period before the taxes and optional-service extras are allocated to it (ADR 0092). */
+export interface ExtendedPeriodBase {
+  readonly index: number;
+  readonly checkIn: string;
+  readonly checkOut: string;
+  readonly nights: number;
+  readonly baseAmountKobo: number;
+  readonly ownerPayableKobo: number;
+  readonly dueDate: string;
+}
+
+export interface ExtendedPeriodPlan {
+  readonly periods: readonly ExtendedPeriodBase[];
+  readonly accommodationKobo: number;
+  readonly mandatoryFeesKobo: number;
+  readonly ownerPayableKobo: number;
+}
+
+/**
+ * ADR 0092: consecutive Billing Periods of the policy's length from `startDate`, the last one shorter when the nights do not
+ * divide. A full period prices at the Monthly Agreed Amounts; a shorter period prices each night at the Short Stay nightly
+ * guest price. `firstIndex` numbers the first period (an extension continues the contract's numbering).
+ */
+export function planExtendedBillingPeriods(input: {
+  readonly ownerTerms: ReturnType<typeof unitOwnerTerms>;
+  readonly monthly: MonthlyAgreedAmounts;
+  readonly startDate: string;
+  readonly nights: number;
+  readonly policy: ExtendedStayPolicy;
+  readonly firstIndex: number;
+}): ExtendedPeriodPlan {
+  const { ownerTerms, monthly, nights, policy } = input;
+  const periods: ExtendedPeriodBase[] = [];
+  let accommodationKobo = 0;
+  let mandatoryFeesKobo = 0;
+  let ownerPayableKobo = 0;
+  for (let offset = 0, step = 0; offset < nights; offset += policy.billingPeriodNights, step += 1) {
+    const periodNights = Math.min(policy.billingPeriodNights, nights - offset);
+    const checkInDate = new Date(Date.parse(`${input.startDate}T00:00:00Z`) + offset * 86_400_000);
+    const checkOutDate = new Date(checkInDate.getTime() + periodNights * 86_400_000);
+    const isFullPeriod = periodNights === policy.billingPeriodNights;
+    const ownerAccommodation = isFullPeriod ? monthly.accommodationKobo : ownerTerms.agreed.nightlyKobo * periodNights;
+    const ownerCharges = isFullPeriod ? monthly.mandatoryChargesKobo : ownerTerms.agreed.mandatoryChargesKobo;
+    // ADR 0092: a shorter final period is each of its nights at the Short Stay nightly guest price (ADR 0089), so it
+    // carries no monthly discount and no rounding drift from pricing its nights as one block.
+    const guestPrice = guestPriceFromOwnerTerms(ownerTerms);
+    const guestAccommodation = isFullPeriod
+      ? ownerAccommodation + marginOnKobo(ownerAccommodation, ownerTerms.marginBasisPoints)
+      : guestPrice.nightlyKobo * periodNights;
+    const guestCharges = isFullPeriod
+      ? ownerCharges + marginOnKobo(ownerCharges, ownerTerms.marginBasisPoints)
+      : guestPrice.mandatoryFeesKobo;
+    const baseAmountKobo = guestAccommodation + guestCharges;
+    accommodationKobo += guestAccommodation;
+    mandatoryFeesKobo += guestCharges;
+    const periodOwnerPayableKobo = ownerAccommodation + ownerCharges;
+    ownerPayableKobo += periodOwnerPayableKobo;
+    const dueDate = new Date(checkInDate.getTime() - 7 * 86_400_000).toISOString().slice(0, 10);
+    periods.push({ index: input.firstIndex + step, checkIn: checkInDate.toISOString().slice(0, 10), checkOut: checkOutDate.toISOString().slice(0, 10), nights: periodNights, baseAmountKobo, ownerPayableKobo: periodOwnerPayableKobo, dueDate });
+  }
+  return { periods, accommodationKobo, mandatoryFeesKobo, ownerPayableKobo };
+}
+
+/**
+ * The Billing Period allocation of the taxes and optional-service extras, with each period's amount, margin and nightly
+ * contracted values fixed (ADR 0092, ADR 0089). The last period takes the rounding remainder.
+ */
+export function periodsWithExtras(rawPeriods: readonly ExtendedPeriodBase[], extrasKobo: number, taxableBaseKobo: number): readonly BillingPeriodQuote[] {
+  let allocatedExtras = 0;
+  return Object.freeze(rawPeriods.map((period, index) => {
+    const extras = index === rawPeriods.length - 1
+      ? extrasKobo - allocatedExtras
+      : Math.floor((extrasKobo) * period.baseAmountKobo / taxableBaseKobo);
+    allocatedExtras += extras;
+    const amountKobo = period.baseAmountKobo + extras;
+    const nightlyBase = Math.floor(amountKobo / period.nights);
+    const nightlyContractedValuesKobo = Array.from({ length: period.nights }, (_unused, day) => nightlyBase + (day === period.nights - 1 ? amountKobo - nightlyBase * period.nights : 0));
+    // Demo-launch issue 11 (ADR 0089, ADR 0092): each period's owner payable and margin are captured with the quote.
+    // The margin is the period's accommodation and charges less its owner payable; taxes and optional services are
+    // not owner money, so they stay out of the margin, as they do in the stay-level ownerSettlement.
+    return Object.freeze({ index: period.index, checkIn: period.checkIn, checkOut: period.checkOut, nights: period.nights, amountKobo, ownerPayableKobo: period.ownerPayableKobo, marginKobo: period.baseAmountKobo - period.ownerPayableKobo, dueDate: period.dueDate, nightlyContractedValuesKobo: Object.freeze(nightlyContractedValuesKobo) });
+  }));
+}
+
+/**
+ * ADR 0092 Extensions: the Billing Periods an extension appends, priced with the same rules as the contract quote. The
+ * segment starts at the current checkout, so the contract's existing periods keep their dates, amounts and payables.
+ * Its taxes are allocated as in the contract quote; an extension sells no optional services.
+ */
+export function extendedStayExtensionPeriods(input: { readonly unit: { readonly id?: unknown; readonly extendedStay?: unknown; readonly price: { readonly taxConfig?: unknown; readonly nightlyKobo?: number; readonly mandatoryFeesKobo?: number } }; readonly checkIn: string; readonly checkOut: string; readonly firstIndex: number; readonly policy: ExtendedStayPolicy }): { readonly periods: readonly BillingPeriodQuote[]; readonly amountKobo: number; readonly ownerPayableKobo: number; readonly marginKobo: number; readonly monthlyAgreedAmountsVersion: string } {
+  const nights = Math.round((Date.parse(`${input.checkOut}T00:00:00Z`) - Date.parse(`${input.checkIn}T00:00:00Z`)) / 86_400_000);
+  if (!Number.isInteger(nights) || nights < 1) throw new RangeError("An extension adds at least one night");
+  const terms = extendedTermsOf(input.unit);
+  const plan = planExtendedBillingPeriods({ ownerTerms: unitOwnerTerms(input.unit as never), monthly: terms.monthlyAgreedAmounts, startDate: input.checkIn, nights, policy: input.policy, firstIndex: input.firstIndex });
+  const taxableBaseKobo = plan.accommodationKobo + plan.mandatoryFeesKobo;
+  const taxesKobo = calculateTaxKobo((input.unit.price as { taxConfig?: unknown }).taxConfig, taxableBaseKobo);
+  const periods = periodsWithExtras(plan.periods, taxesKobo, taxableBaseKobo);
+  return Object.freeze({
+    periods,
+    amountKobo: periods.reduce((sum, period) => sum + period.amountKobo, 0),
+    ownerPayableKobo: periods.reduce((sum, period) => sum + period.ownerPayableKobo, 0),
+    marginKobo: periods.reduce((sum, period) => sum + period.marginKobo, 0),
+    monthlyAgreedAmountsVersion: terms.monthlyAgreedAmounts.version,
+  });
+}
+
 export interface CreateStayQuoteOptions {
   unit: any;
   checkIn: any;
@@ -251,40 +366,14 @@ export function createStayQuote({
   let monthlyAgreedAmountsVersion: string | undefined;
   let periodOwnerPayableKobo = 0;
   if (stayType === "extended") {
-    const terms = unit.extendedStay;
-    if (terms?.optedIn !== true || !monthlyAmountsAreValid(terms.monthlyAgreedAmounts) || !utilitiesStatementIsValid(terms.utilitiesAndServicing)) {
-      throw new Error("Unit is not configured for Extended Stay pricing and servicing");
-    }
+    const terms = extendedTermsOf(unit);
     const monthly = terms.monthlyAgreedAmounts;
     monthlyAgreedAmountsVersion = monthly.version;
-    const periods: { index: number; checkIn: string; checkOut: string; nights: number; baseAmountKobo: number; ownerPayableKobo: number; dueDate: string }[] = [];
-    accommodationKobo = 0;
-    mandatoryFeesKobo = 0;
-    for (let offset = 0, index = 0; offset < nights; offset += extendedStayPolicy!.billingPeriodNights, index += 1) {
-      const periodNights = Math.min(extendedStayPolicy!.billingPeriodNights, nights - offset);
-      const checkInDate = new Date(Date.parse(`${dateRange.checkIn}T00:00:00Z`) + offset * 86_400_000);
-      const checkOutDate = new Date(checkInDate.getTime() + periodNights * 86_400_000);
-      const isFullPeriod = periodNights === extendedStayPolicy!.billingPeriodNights;
-      const ownerAccommodation = isFullPeriod ? monthly.accommodationKobo : ownerTerms.agreed.nightlyKobo * periodNights;
-      const ownerCharges = isFullPeriod ? monthly.mandatoryChargesKobo : ownerTerms.agreed.mandatoryChargesKobo;
-      // ADR 0092: a shorter final period is each of its nights at the Short Stay nightly guest price (ADR 0089), so it
-      // carries no monthly discount and no rounding drift from pricing its nights as one block.
-      const guestPrice = guestPriceFromOwnerTerms(ownerTerms);
-      const guestAccommodation = isFullPeriod
-        ? ownerAccommodation + marginOnKobo(ownerAccommodation, ownerTerms.marginBasisPoints)
-        : guestPrice.nightlyKobo * periodNights;
-      const guestCharges = isFullPeriod
-        ? ownerCharges + marginOnKobo(ownerCharges, ownerTerms.marginBasisPoints)
-        : guestPrice.mandatoryFeesKobo;
-      const periodAmount = guestAccommodation + guestCharges;
-      accommodationKobo += guestAccommodation;
-      mandatoryFeesKobo += guestCharges;
-      const ownerPayableKobo = ownerAccommodation + ownerCharges;
-      periodOwnerPayableKobo += ownerPayableKobo;
-      const dueDate = new Date(checkInDate.getTime() - 7 * 86_400_000).toISOString().slice(0, 10);
-      periods.push({ index: index + 1, checkIn: checkInDate.toISOString().slice(0, 10), checkOut: checkOutDate.toISOString().slice(0, 10), nights: periodNights, baseAmountKobo: periodAmount, ownerPayableKobo, dueDate });
-    }
-    baseBillingPeriods = Object.freeze(periods);
+    const plan = planExtendedBillingPeriods({ ownerTerms, monthly, startDate: dateRange.checkIn, nights, policy: extendedStayPolicy!, firstIndex: 1 });
+    accommodationKobo = plan.accommodationKobo;
+    mandatoryFeesKobo = plan.mandatoryFeesKobo;
+    periodOwnerPayableKobo = plan.ownerPayableKobo;
+    baseBillingPeriods = plan.periods;
     ownerSettlement = Object.freeze({
       ownerPayableKobo: periodOwnerPayableKobo,
       marginKobo: accommodationKobo + mandatoryFeesKobo - periodOwnerPayableKobo,
@@ -309,21 +398,7 @@ export function createStayQuote({
   const taxesKobo = calculateTaxKobo(unit.price.taxConfig, taxableBaseKobo);
   const allInStayTotalKobo = accommodationKobo + mandatoryFeesKobo + taxesKobo + optionalServicesTotalKobo;
   if (stayType === "extended") {
-    const rawPeriods = baseBillingPeriods;
-    let allocatedExtras = 0;
-    billingPeriods = Object.freeze(rawPeriods.map((period, index) => {
-      const extras = index === rawPeriods.length - 1
-        ? taxesKobo + optionalServicesTotalKobo - allocatedExtras
-        : Math.floor((taxesKobo + optionalServicesTotalKobo) * period.baseAmountKobo / (accommodationKobo + mandatoryFeesKobo));
-      allocatedExtras += extras;
-      const amountKobo = period.baseAmountKobo + extras;
-      const nightlyBase = Math.floor(amountKobo / period.nights);
-      const nightlyContractedValuesKobo = Array.from({ length: period.nights }, (_unused, day) => nightlyBase + (day === period.nights - 1 ? amountKobo - nightlyBase * period.nights : 0));
-      // Demo-launch issue 11 (ADR 0089, ADR 0092): each period's owner payable and margin are captured with the quote.
-      // The margin is the period's accommodation and charges less its owner payable; taxes and optional services are
-      // not owner money, so they stay out of the margin, as they do in the stay-level ownerSettlement.
-      return Object.freeze({ index: period.index, checkIn: period.checkIn, checkOut: period.checkOut, nights: period.nights, amountKobo, ownerPayableKobo: period.ownerPayableKobo, marginKobo: period.baseAmountKobo - period.ownerPayableKobo, dueDate: period.dueDate, nightlyContractedValuesKobo: Object.freeze(nightlyContractedValuesKobo) });
-    }));
+    billingPeriods = periodsWithExtras(baseBillingPeriods, taxesKobo + optionalServicesTotalKobo, accommodationKobo + mandatoryFeesKobo);
   }
   // ADR 0092: Extended Stays have a zero Refundable Security Deposit, including demo periods.
   const configuredDepositKobo = stayType === "extended" ? 0 : (unit.price.refundableSecurityDepositKobo ?? 0);

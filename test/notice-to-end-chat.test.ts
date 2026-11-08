@@ -18,6 +18,7 @@ import {
   recordVerifiedAccess,
   buttonNamed,
   cardOpen,
+  coldRecording,
 } from "./helpers/notice-chat-journey.js";
 import type { AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 import { ASSISTANT_CONTROL_COPY } from "../apps/local-guest/src/assistant/control-copy.js";
@@ -142,11 +143,6 @@ test("AC4: A guest asking in chat to end early is offered the card through the p
 });
 
 /** A cold restore (a new app over the same store) that records diagnostics, for the tests that assert tool calls (ADR 0106). */
-function coldRecording(f: DatedFixture, threadId: string, diagnostics: AssistantDiagnosticEvent[]) {
-  const restored = restartedDatedApp(f, model(), diagnostics);
-  restored.app.getState(threadId);
-  return restored;
-}
 
 test("A support request such as \"the water is off\" never offers the notice card", async () => {
   // Issue 18 safety: support has no notice tool. The planner gets the support guidance reply, and no card or notice can result.

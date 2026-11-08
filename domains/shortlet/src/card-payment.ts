@@ -114,6 +114,8 @@ export interface BookingContract {
   /** ADR 0092 Notice to End, recorded by its Booking Amendment (ADR 0060). `refundKobo` is the paid nights refunded after the new last night; `owedKobo` the unpaid nights owed up to it. */
   readonly noticeToEnd?: { readonly amendmentId: string; readonly noticeDate: string; readonly effectiveDate: string; readonly newLastNight: string; readonly refundKobo?: number; readonly owedKobo?: number };
   /** ADR 0031: the Contractual Check-In Window captured from the offer. */
+  /** ADR 0092 Extensions (monthly-stays issue 09): the latest extension request, recorded as a versioned Booking Amendment (ADR 0060). */
+  readonly extensionRequest?: import("./extended-stay-extension.js").ExtensionRequestRecord;
   readonly checkInWindow?: import("./checkin-support.js").ContractualCheckInWindow;
   readonly checkout?: { readonly time: "11:00" | "12:00" | "13:00" | "14:00"; readonly timezone: "Africa/Lagos"; readonly source: "contractual" | "checkout_amendment"; readonly amendmentId?: string; readonly amendmentVersion?: number | string };
   readonly financialSummary?: { readonly originalBookingTotalKobo: number; readonly currentContractTotalKobo: number; readonly currency: "NGN"; readonly amendmentAdjustments: readonly { readonly amendmentId: string; readonly type: "additional_collection" | "refund" | "none"; readonly amountKobo: number; readonly currency: "NGN"; readonly settlementId?: string; readonly settledAt?: string; readonly quoteId: string; readonly quoteVersion: string | number }[] };

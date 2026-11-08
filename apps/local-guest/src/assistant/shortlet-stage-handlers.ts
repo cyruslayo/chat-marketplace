@@ -4,10 +4,11 @@ import { pendingProposalAuthorised } from "./assistant-platform.js";
 import type { PendingAssistantAction } from "./pending-actions.js";
 import { AssistantStaleProposalError, PENDING_ACTION_STAGE, retireOwnStages, type AssistantStageHandler, type StageTurnContext } from "./assistant-stage-handler.js";
 import { ContinuousOccupancyError, UnitUnavailableError, type NoticePreview } from "../../../../domains/shortlet/src/index.js";
-import { GUEST_NOTICE_COPY } from "../../../web-agent/src/guest-content.js";
+import { GUEST_EXTENSION_COPY, GUEST_NOTICE_COPY } from "../../../web-agent/src/guest-content.js";
 import { AssistantGuestRefusalError } from "./date-tokens.js";
 import { proposeDraftRevision } from "./shortlet-draft-revision.js";
 import { projectContractArtifact } from "./contract-artifact-projection.js";
+import { extensionRefusal } from "./extension-proposal.js";
 
 /**
  * Issue 04: the shortlet pack's stage handlers. Each handler owns one stage name, the stages it retires, the copy a failed
@@ -482,6 +483,44 @@ const noticeHandler: AssistantStageHandler = {
   },
 };
 
+export const EXTENSION_STAGE = "extension";
+
+/**
+ * Monthly-stays issue 09 (ADR 0092 Extensions, ADR 0060): the card's "Request extension" button records the request, a versioned
+ * contract step the Operator decides in the back office. The request is bound to the contract version and the new checkout the
+ * card showed; anything else is STALE_SURFACE and changes nothing. The booking surface is re-presented with the request's state.
+ */
+const extensionHandler: AssistantStageHandler = {
+  stage: EXTENSION_STAGE,
+  supersedes: [EXTENSION_STAGE],
+  confirms: "request_extension",
+  confirm(action, turn: StageTurnContext) {
+    const { tx, environment } = turn;
+    const refs = action.authoritativeReferences;
+    tx.clearPendingAction();
+    if (!refs.contractId || refs.contractVersion === undefined || refs.newCheckOut === undefined) {
+      return { ok: false, code: "STALE_SURFACE", message: GUEST_EXTENSION_COPY.stale };
+    }
+    try {
+      environment.extensions.requestExtension(refs.contractId, environment.guestPrincipal(), { newCheckOut: refs.newCheckOut, contractVersion: refs.contractVersion });
+    } catch (error) {
+      const refusal = extensionRefusal(error);
+      if (refusal) return { ok: false, code: "STALE_SURFACE", message: refusal.message };
+      throw error;
+    }
+    retireOwnStages(extensionHandler, turn);
+    const bookingSurfaceId = `thread-${turn.threadId}:booking:${refs.contractId}`;
+    tx.place(BOOKING_STAGE, bookingSurfaceId);
+    try {
+      const contractArtifact = projectContractArtifact(environment, refs.contractId);
+      return { ok: true, message: GUEST_EXTENSION_COPY.requested, surfaces: [{ surfaceId: bookingSurfaceId, a2uiMessages: turn.pack.bookingContractSurface(contractArtifact, bookingSurfaceId) }] };
+    } catch {
+      // The request is recorded; a presentation failure keeps the recorded state and returns the message alone.
+      return { ok: true, message: GUEST_EXTENSION_COPY.requested, surfaces: [] };
+    }
+  },
+};
+
 export const SHORTLET_STAGE_HANDLERS: readonly AssistantStageHandler[] = [
   discoveryHandler,
   draftReplacementHandler,
@@ -491,4 +530,5 @@ export const SHORTLET_STAGE_HANDLERS: readonly AssistantStageHandler[] = [
   acceptOfferHandler,
   startCheckoutHandler,
   noticeHandler,
+  extensionHandler,
 ];

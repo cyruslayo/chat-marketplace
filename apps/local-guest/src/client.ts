@@ -43,7 +43,7 @@ import {
   type StayCardParts,
 } from "./guest-kit.js";
 import type { ConfirmationContent } from "../../web-agent/src/confirmation-presentation.js";
-import { NOTICE_OPEN_EVENT } from "../../web-agent/src/booking-contract-a2ui.js";
+import { EXTENSION_OPEN_EVENT, NOTICE_OPEN_EVENT } from "../../web-agent/src/booking-contract-a2ui.js";
 import type { OfferScreenContent } from "../../web-agent/src/offer-presentation.js";
 import type { PaymentScreenContent } from "../../web-agent/src/payment-presentation.js";
 import type { RequestScreenContent } from "../../web-agent/src/request-presentation.js";
@@ -640,6 +640,11 @@ function organizeConfirmation(
   root.querySelector<HTMLButtonElement>("[data-notice-open]")?.addEventListener("click", () => {
     if (bookingSurfaceId === undefined) return;
     void sendEvent({ name: NOTICE_OPEN_EVENT, surfaceId: bookingSurfaceId, sourceComponentId: "booking-contract-notice-action", timestamp: new Date().toISOString(), context: { surfaceId: bookingSurfaceId } });
+  });
+  // Monthly-stays issue 09: "Extend your stay" opens the extension card through the same routed event (ADR 0074).
+  root.querySelector<HTMLButtonElement>("[data-extension-open]")?.addEventListener("click", () => {
+    if (bookingSurfaceId === undefined) return;
+    void sendEvent({ name: EXTENSION_OPEN_EVENT, surfaceId: bookingSurfaceId, sourceComponentId: "booking-contract-extension-action", timestamp: new Date().toISOString(), context: { surfaceId: bookingSurfaceId } });
   });
   root
     .querySelector<HTMLAnchorElement>(".request-next a")

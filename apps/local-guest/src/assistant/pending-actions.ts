@@ -7,7 +7,7 @@
 
 import type { ConditionalBookingOffer } from "../../../../domains/shortlet/src/index.js";
 
-export type PendingActionType = "request_to_book" | "accept_offer" | "start_checkout" | "give_notice";
+export type PendingActionType = "request_to_book" | "accept_offer" | "start_checkout" | "give_notice" | "request_extension";
 
 export interface PendingActionAuthoritativeReferences {
   readonly stayRef?: string;
@@ -31,6 +31,10 @@ export interface PendingActionAuthoritativeReferences {
   readonly newCheckOut?: string;
   readonly refundKobo?: number;
   readonly owedKobo?: number;
+  /** Monthly-stays issue 09: the extension the card previews, bound to the contract version and new checkout it was shown with (ADR 0060). */
+  readonly addedNights?: number;
+  readonly addedAmountKobo?: number;
+  readonly periodDueDate?: string;
 }
 
 export interface PendingAssistantAction {

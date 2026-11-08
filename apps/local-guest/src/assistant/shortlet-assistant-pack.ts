@@ -32,7 +32,9 @@ import type { ConciergeIntent, ScopeAssessment } from "./scope-classifier.js";
 import { pendingActionToA2UI } from "./pending-action-a2ui.js";
 import { BOOKING_STAGE, SHORTLET_STAGE_HANDLERS, proposalStillAuthorised } from "./shortlet-stage-handlers.js";
 import { GUEST_NOTICE_COPY } from "../../../web-agent/src/guest-content.js";
-import { NOTICE_OPEN_EVENT } from "../../../web-agent/src/booking-contract-a2ui.js";
+import { EXTENSION_OPEN_EVENT, NOTICE_OPEN_EVENT } from "../../../web-agent/src/booking-contract-a2ui.js";
+import { GUEST_EXTENSION_COPY } from "../../../web-agent/src/guest-content.js";
+import { proposeExtension } from "./extension-proposal.js";
 import type { NoticePreview } from "../../../../domains/shortlet/src/index.js";
 import {
   ASSISTANT_PLATFORM_PREAMBLE,
@@ -202,6 +204,14 @@ export const ASSISTANT_TOOL_DEFINITIONS: readonly AssistantToolDefinition[] = [
     parametersSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
   },
   {
+    // Monthly-stays issue 09 (ADR 0092 Extensions): a preview only; the card's own button sends the request. It takes no nights from
+    // the model: the card adds one Billing Period (or the nights left under the maximum), so the guest sees the exact dates first.
+    name: "propose_extension",
+    description: "Offer the extension card for the confirmed Extended Stay when the Guest asks to stay longer. It previews one added Billing Period with its amount and due date. This only previews the card; the Guest sends the request with the card's own button, and the Operator decides. Nothing is requested by this tool.",
+    category: "proposal",
+    parametersSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
+  },
+  {
     name: "propose_accept_offer",
     description: "Propose accepting the active Conditional Booking Offer. Requires guest confirmation.",
     category: "proposal",
@@ -252,6 +262,8 @@ export function assistantToolsForState(taskState: AssistantTaskState, policy?: E
       case "propose_start_payment":
         return taskState.currentOfferId !== undefined;
       case "propose_notice_to_end":
+        return taskState.currentOfferId !== undefined;
+      case "propose_extension":
         return taskState.currentOfferId !== undefined;
       default:
         return true;
@@ -1257,6 +1269,20 @@ export function executeAssistantTool(
       };
     }
 
+    case "propose_extension": {
+      // Monthly-stays issue 09 (ADR 0106, 0080): a preview only. The card's Request extension button records the request.
+      const offerId = taskState.currentOfferId;
+      const contractId = offerId === undefined ? undefined : context.environment.cardPaymentApp.getBookingContract(offerId)?.contractId;
+      if (contractId === undefined) throw new AssistantGuestRefusalError(GUEST_EXTENSION_COPY.notExtended);
+      const pendingAction = proposeExtension({ environment: context.environment, contractId, threadId: context.threadId, now: context.now });
+      taskState.pendingAction = pendingAction;
+      return {
+        result: { actionId: pendingAction.id, proposedAction: "request_extension", summary: pendingAction.summary, requiresConfirmation: true, message: GUEST_EXTENSION_COPY.cardOpened },
+        updatedTaskState: taskState,
+        pendingActionCreated: pendingAction,
+      };
+    }
+
     case "propose_accept_offer": {
       if (!taskState.currentOfferId) {
         throw new Error("No active Conditional Offer to accept.");
@@ -1397,7 +1423,7 @@ function renderShortletReplyBody(plan: AssistantReplyPlan | undefined, results: 
   const kindForTool: Readonly<Record<string, string>> = {
     search_stays: "show_results", get_unit_details: "show_details", compare_stays: "compare",
     explain_stay_price: "explain_price", get_booking_status: "show_status", get_offer_status: "show_status",
-    prepare_request_draft: "propose_action", propose_request_to_book: "propose_action", propose_accept_offer: "propose_action", propose_start_payment: "propose_action", propose_notice_to_end: "propose_action",
+    prepare_request_draft: "propose_action", propose_request_to_book: "propose_action", propose_accept_offer: "propose_action", propose_start_payment: "propose_action", propose_notice_to_end: "propose_action", propose_extension: "propose_action",
   };
   const selected = plan ? successfulResults.find((result) => plan.references.includes(result.name) && kindForTool[result.name] === plan.kind) : undefined;
   const operation = selected ?? successfulResults[0];
@@ -1421,7 +1447,7 @@ function renderShortletReplyBody(plan: AssistantReplyPlan | undefined, results: 
     const money = (value: unknown) => `₦${(Number(value) / 100).toLocaleString("en-NG")}`;
     return GUEST_ASSISTANT_COPY.offerAmount(...amounts.map(money) as [string, string, string]);
   }
-  if (typeof data.message === "string" && ["propose_request_to_book", "propose_accept_offer", "propose_start_payment", "propose_notice_to_end", "get_offer_status"].includes(operation.name)) return data.message;
+  if (typeof data.message === "string" && ["propose_request_to_book", "propose_accept_offer", "propose_start_payment", "propose_notice_to_end", "propose_extension", "get_offer_status"].includes(operation.name)) return data.message;
   if (operation.name === "search_stays") {
     if (typeof data.resultCount !== "number" || typeof data.neighbourhood !== "string" && typeof data.location !== "string") return GUEST_ASSISTANT_COPY.safeClarification;
     const count = data.resultCount;
@@ -1607,6 +1633,8 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
       // Issue 18: a guest who asks to end a confirmed stay early is offered the notice card only (the tool previews and records nothing).
       // A support request (for example "the water is off") has no tool; it is not a notice request.
       end_booking: ["propose_notice_to_end"],
+      // Monthly-stays issue 09: a guest who asks to stay longer is offered the extension card only. Never a support request.
+      extend_booking: ["propose_extension"],
     },
     // ADR 0005, 0060, 0080, 0106 (issue 12): a sent Booking Request, offer, payment or Reservation answers a change with its explanation
     // and no planner call. Before anything is sent this returns undefined and the turn goes to the planner as a search.
@@ -1698,8 +1726,9 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     conditionalOfferSurface: (artifact, surfaceId) => conditionalOfferArtifactToA2UI({ artifact: artifact as never, surfaceId }),
     cardPaymentSurface: (artifact, surfaceId) => cardPaymentArtifactToA2UI({ artifact: artifact as never, surfaceId }),
     bookingContractSurface: (artifact, surfaceId) => bookingContractArtifactToA2UI({ artifact: artifact as never, surfaceId }),
-    openActionNames: [NOTICE_OPEN_EVENT],
-    handleOpenAction: ({ context: openContext, threadId, now }) => {
+    openActionNames: [NOTICE_OPEN_EVENT, EXTENSION_OPEN_EVENT],
+    handleOpenAction: ({ actionName, context: openContext, threadId, now }) => {
+      const extension = actionName === EXTENSION_OPEN_EVENT;
       // Issue 18 AC6 (ADR 0074): the press must name a booking surface of this thread whose contract this guest can read. The id is
       // `thread-<thread>:booking:<contract>` (shortlet-stage-handlers.ts), so it survives a cold restore; a forged, superseded or
       // unknown id is stale and nothing is previewed.
@@ -1713,10 +1742,12 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
         return { ok: false, code: "STALE_SURFACE", message: "That action is no longer active." };
       }
       try {
+        // Monthly-stays issue 09: the extension card is opened by its own event, through the same guards and refusals.
+        if (extension) return { ok: true, pendingAction: proposeExtension({ environment, contractId, threadId, now }), message: GUEST_EXTENSION_COPY.cardOpened };
         const pendingAction = proposeNoticeToEnd({ environment, contractId, threadId, now });
         return { ok: true, pendingAction, message: GUEST_NOTICE_COPY.cardOpened };
       } catch (error) {
-        if (error instanceof AssistantGuestRefusalError) return { ok: false, code: "NOTICE_NOT_AVAILABLE", message: error.message };
+        if (error instanceof AssistantGuestRefusalError) return { ok: false, code: extension ? "EXTENSION_NOT_AVAILABLE" : "NOTICE_NOT_AVAILABLE", message: error.message };
         throw error;
       }
     },

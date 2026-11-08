@@ -38,6 +38,8 @@ import {
   type ContractRepository,
   type ReservationLike,
   NoticeToEndManager,
+  ExtendedStayExtensionManager,
+  type ExtendedStayExtensionOptions,
   checkInNoticePorts,
   recordedNoticeRefundPort,
   SqliteCheckInSupportStore,
@@ -346,6 +348,7 @@ export class LocalGuestEnvironment {
   readonly cardPaymentApp: CardPaymentApplication;
   /** ADR 0092 Notice to End (monthly-stays issue 17): constructed in every deployment; the policy is the Extended Stay policy. */
   readonly noticeToEnd: NoticeToEndManager;
+  readonly extensions: ExtendedStayExtensionManager;
   /** The platform Payments module this environment composed (ADR 0099 rule 2); undefined when hosted checkout is off. */
   readonly payments?: Payments;
   /**
@@ -599,21 +602,24 @@ export class LocalGuestEnvironment {
     // Monthly-stays issue 17 (ADR 0092 amended, ADR 0060, ADR 0061, ADR 0089): the Notice to End manager in every deployment.
     // Verified Access and open failures are read from the shared check-in store; refunds are recorded, not paid out.
     const noticeCheckIn = checkInNoticePorts(new SqliteCheckInSupportStore(sqlDatabase));
+    // Every amended contract is written to the contract repository and the card-payment cache (issue 18 AC2), so the booking
+    // artifact and the payment flow read the same terms (monthly-stays issues 17 and 09).
+    const mutateBookingContract: ExtendedStayExtensionOptions["contracts"]["mutateContract"] = (contractId, expectedVersion, mutation) => {
+      const next = bookingState.mutateContract(contractId, expectedVersion, mutation);
+      const reservation = this.contractRepository.findReservationById(next.reservationId);
+      if (reservation) this.contractRepository.recordConfirmedOutcome(reservation, next);
+      this.cardPaymentApp.replaceBookingContract(next);
+      return next;
+    };
+    const contractById = (contractId: string) => {
+      const contract = bookingState.findContractById(contractId);
+      if (!contract) throw new Error("Booking Contract is not found");
+      return contract;
+    };
     this.noticeToEnd = new NoticeToEndManager({
       contracts: {
-        getContract: (contractId: string) => {
-          const contract = bookingState.findContractById(contractId);
-          if (!contract) throw new Error("Booking Contract is not found");
-          return contract;
-        },
-        mutateContract: (contractId, expectedVersion, mutation) => {
-          const next = bookingState.mutateContract(contractId, expectedVersion, mutation);
-          // The booking artifact reads the contract repository, so the amended contract is written there too (issue 18 AC2).
-          const reservation = this.contractRepository.findReservationById(next.reservationId);
-          if (reservation) this.contractRepository.recordConfirmedOutcome(reservation, next);
-          this.cardPaymentApp.replaceBookingContract(next);
-          return next;
-        },
+        getContract: contractById,
+        mutateContract: mutateBookingContract,
       },
       // Period 1 is paid once the contract exists; a later period is paid when its Period Payment row is recorded (the same
       // rows the owner composition reads). Independent of the card-payment contract cache, so every composition agrees.
@@ -630,6 +636,17 @@ export class LocalGuestEnvironment {
       refunds: recordedNoticeRefundPort(),
       extendedStayPolicy,
       demoTerms,
+      clock: this.clock,
+    });
+
+    // Monthly-stays issue 09 (ADR 0092 Extensions, ADR 0060): the extension manager reads the unit's trust records and the
+    // same counted-stay ledger as the booking path, and records every step as a versioned contract amendment.
+    this.extensions = new ExtendedStayExtensionManager({
+      contracts: { getContract: contractById, mutateContract: mutateBookingContract },
+      units: this.unitRepository,
+      calendar: this.calendar,
+      continuousOccupancy: this.bookingRequestApp.continuousOccupancy,
+      extendedStayPolicy,
       clock: this.clock,
     });
 

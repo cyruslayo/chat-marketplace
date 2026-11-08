@@ -211,6 +211,13 @@ function reminderLabel(reminder: number, left: number): string {
  */
 const REMINDER_ANNOUNCER = `(() => { const region = document.getElementById("bo-reminders"); if (!region) return; const announceKey = region.dataset.announceKey; const text = region.dataset.announce; if (!announceKey || !text) return; let spoken = []; try { spoken = JSON.parse(sessionStorage.getItem("bo-reminders-spoken") || "[]"); } catch { spoken = []; } const fresh = announceKey.split(" ").filter((key) => !spoken.includes(key)); if (fresh.length === 0) return; setTimeout(() => { region.textContent = text; }, 250); try { sessionStorage.setItem("bo-reminders-spoken", JSON.stringify([...spoken, ...fresh].slice(-200))); } catch { /* storage may be unavailable */ } })();`;
 
+/** Monthly-stays issue 09: one extension request with its facts and its Approve and Decline forms (the Booking Request pattern). */
+function extensionRequestHtml(item: { readonly contractId: string; readonly reservationId: string; readonly request: { readonly extensionId: string; readonly addedNights: number; readonly newCheckOut: string; readonly addedAmountKobo: number; readonly addedPeriods: readonly { readonly dueDate: string }[]; readonly responseDeadlineAt: string } }): string {
+  const { request } = item;
+  const action = (kind: "approve" | "decline") => `/operator/extensions/${encodeURIComponent(item.contractId)}/${encodeURIComponent(request.extensionId)}/${kind}`;
+  return `<li class="bo-request" data-contract-id="${escapeHtml(item.contractId)}" data-extension-id="${escapeHtml(request.extensionId)}"><div class="ui-stack"><p><strong>Extend by ${request.addedNights} ${request.addedNights === 1 ? "night" : "nights"}</strong> to checkout ${escapeHtml(request.newCheckOut)} · ${escapeHtml(formatMoney(request.addedAmountKobo))} · due ${escapeHtml(request.addedPeriods[0]?.dueDate ?? "")}</p><p class="bo-request__deadline">Respond by ${watTime(request.responseDeadlineAt)}</p><div class="request-actions"><form method="post" action="${action("approve")}"><button class="ui-button" type="submit">Approve extension</button></form><form method="post" action="${action("decline")}"><button class="ui-button ui-button--secondary" type="submit">Decline extension</button></form></div></div></li>`;
+}
+
 function operatorInboxHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal): string {
   // Read time is server time from the injected clock (ADR 0077); the list read also resolves expiry lazily.
   const requests = env.listOperatorRequestArtifacts(commandPrincipal(principal));
@@ -237,12 +244,15 @@ function operatorInboxHtml(env: LocalApartmentOwnerEnvironment, principal: Opera
   const list = rows
     ? `<ul class="ui-list">${rows}</ul>`
     : `<section class="ui-panel ui-empty"><div class="ui-empty__art">${icon("inbox")}</div><h2>No Booking Requests yet</h2><p>No Booking Requests are visible to this representative. New requests appear here as soon as a Guest sends one.</p></section>`;
+  // Monthly-stays issue 09 (ADR 0092 Extensions): the extension requests awaiting this operator's decision, decided like a Booking Request.
+  const extensions = env.listExtensionRequests(commandPrincipal(principal));
+  const extensionSection = extensions.length === 0 ? "" : `<section class="ui-panel" aria-labelledby="extension-requests-heading" data-extension-requests><h2 id="extension-requests-heading">Extension requests</h2><ul class="ui-list">${extensions.map((item) => extensionRequestHtml(item)).join("")}</ul></section>`;
   return backOfficePage({
     title: "Requests",
     viewer: viewer(env, principal),
     current: "requests",
     style: ".bo-request__deadline{grid-column:1/-1;color:var(--color-text-secondary)}.bo-request[data-reminder] .bo-request__reminder{color:var(--color-warning)}",
-    body: `<header class="ui-page__header"><h1>Booking Requests</h1>${summary}</header>${liveRegion}<h2 class="ui-sr-only">Requests</h2>${list}<script>${REMINDER_ANNOUNCER}</script>`,
+    body: `<header class="ui-page__header"><h1>Booking Requests</h1>${summary}</header>${liveRegion}<h2 class="ui-sr-only">Requests</h2>${list}${extensionSection}<script>${REMINDER_ANNOUNCER}</script>`,
   });
 }
 
@@ -1525,6 +1535,26 @@ export function createOwnerRequestHandler(
         catch { if (!res.headersSent) { res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" }); res.end(bookingNotFoundHtml(env, principal)); } return; }
         const statusCode = error instanceof CheckInInputError || error instanceof DecisionFormError ? 400 : 409;
         if (!res.headersSent) { res.writeHead(statusCode, { "Content-Type": "text/html; charset=utf-8" }); res.end(body); }
+      }
+      return;
+    }
+    // Monthly-stays issue 09 (ADR 0092): the Operator approves or declines an extension request from the inbox (fail closed: the domain
+    // refuses anyone but this contract's Operator, and a request past its response window expires and changes nothing).
+    const extensionMatch = url.pathname.match(/^\/operator\/extensions\/([^/]+)\/([^/]+)\/(approve|decline)$/);
+    if (req.method === "POST" && extensionMatch) {
+      if (!browserOriginAccepted(req)) { res.writeHead(403); res.end("Origin rejected"); return; }
+      const principal = operatorPrincipal(req, env);
+      if (!principal) { res.writeHead(401); res.end("Authentication required"); return; }
+      const contractId = pathSegment(extensionMatch[1]!);
+      const extensionId = pathSegment(extensionMatch[2]!);
+      if (contractId === null || extensionId === null) { res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" }); res.end("Not found"); return; }
+      try {
+        if (extensionMatch[3] === "approve") env.approveExtensionRequest(contractId, commandPrincipal(principal), extensionId);
+        else env.declineExtensionRequest(contractId, commandPrincipal(principal), extensionId);
+        res.writeHead(303, { Location: "/operator/requests" }); res.end();
+      } catch {
+        // A refused decision changes nothing; the inbox re-renders with the current requests.
+        res.writeHead(409, { "Content-Type": "text/plain; charset=utf-8" }); res.end("Extension request action rejected");
       }
       return;
     }

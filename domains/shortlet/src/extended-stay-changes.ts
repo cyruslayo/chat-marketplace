@@ -1,4 +1,5 @@
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import { extensionAwaitingOperator } from "./extended-stay-extension.js";
 import type { BookingContract } from "./card-payment.js";
 import type { CancellationEconomics } from "./cancellation-noshow.js";
 import type { CheckInSupportStore } from "./checkin-support.js";
@@ -317,6 +318,8 @@ export class NoticeToEndManager {
     if (!guestAuthorized(contract, principal)) throw new Error("Notice to End is not authorized for this principal");
     billingPeriodsOf(contract);
     if (contract.noticeToEnd) throw new Error("A Notice to End is already recorded for this contract");
+    // Monthly-stays issue 09 (ADR 0092 Extensions): a Notice to End and an extension request exclude each other while the request awaits the Operator.
+    if (extensionAwaitingOperator(contract, this.#o.clock())) throw new Error("An extension request is awaiting the Operator; a Notice to End is not available until it is decided");
     if (this.#o.failures.hasOpenFailure(contract.reservationId)) {
       throw new Error("An operator or platform failure applies its ADR 0061 remedy; a voluntary Notice to End is not available");
     }

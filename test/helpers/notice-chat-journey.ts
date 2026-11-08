@@ -6,7 +6,7 @@ import type { BookingContract } from "../../domains/shortlet/src/card-payment.js
 import { openNodeSqliteDatabase } from "../../packages/platform-core/src/node-sqlite-database.js";
 import { coldApp, EMAIL, JOURNEY_SCRIPT, PHONE, successOf, tap, type Surface } from "./assistant-stage-journey.js";
 import { extendUnit } from "./demo-extended-journey.js";
-import { datedFixture, firstButtonAction, LIVE_LIKE_CLOCK, scriptedPlanner, type DatedFixture, type ScriptedTurn } from "./guest-date-fixtures.js";
+import { datedFixture, firstButtonAction, LIVE_LIKE_CLOCK, restartedDatedApp, scriptedPlanner, type DatedFixture, type ScriptedTurn } from "./guest-date-fixtures.js";
 
 // Issue 18: the Extended Stay chat journey and its cold-restore helpers, shared by test/notice-to-end-chat.test.ts and the chat
 // captures (.scratch/guest-ui-consistency/capture-18.ts). Every event runs on a new app over the same store (ADR 0106).
@@ -21,6 +21,9 @@ export const SUPPORT_TEXT = "the water is off";
 export const OPEN_EVENT = "shortlet.assistant.open-notice";
 export const TYPED_CONFIRMATIONS = ["yes", "ok", "confirm", "go ahead"] as const;
 export const PLANNER_TOOL = { name: "propose_notice_to_end", args: {} } as const;
+// Monthly-stays issue 09: a guest who asks to stay longer is offered the extension card through the preview-only planner tool.
+export const STAY_LONGER_TEXT = "I want to stay a bit longer";
+export const EXTENSION_TOOL = { name: "propose_extension", args: {} } as const;
 
 export const SCRIPT: Record<string, ScriptedTurn> = {
   ...JOURNEY_SCRIPT,
@@ -28,6 +31,7 @@ export const SCRIPT: Record<string, ScriptedTurn> = {
   [NOTICE_TEXT]: { slots: {}, intents: ["end_booking"], tool: PLANNER_TOOL, replyAfterTool: { kind: "propose_action", references: ["propose_notice_to_end"] } },
   // The planner is scripted to try the notice tool on a support request: the pack must not offer it under support (ADR 0106).
   [SUPPORT_TEXT]: { slots: {}, intents: ["support"], tool: PLANNER_TOOL, replyAfterTool: { kind: "support_guidance", references: [] } },
+  [STAY_LONGER_TEXT]: { slots: {}, intents: ["extend_booking"], tool: EXTENSION_TOOL, replyAfterTool: { kind: "propose_action", references: ["propose_extension"] } },
   ...Object.fromEntries(TYPED_CONFIRMATIONS.map((text) => [text, { slots: {}, intents: ["support"], reply: "support_guidance" as const }])),
 };
 
@@ -102,6 +106,13 @@ export function buttonNamed(surface: Surface, name: string): { readonly name: st
   walk(surface.a2uiMessages);
   assert.ok(found[0], `the surface has a button for ${name}`);
   return found[0]!;
+}
+
+/** A restored app that reads the thread once first, so the diagnostics of the next turn are recorded on a cold restore (ADR 0106). */
+export function coldRecording(f: DatedFixture, threadId: string, diagnostics: AssistantDiagnosticEvent[]) {
+  const restored = restartedDatedApp(f, model(), diagnostics);
+  restored.app.getState(threadId);
+  return restored;
 }
 
 export function cardOpen(f: DatedFixture, threadId: string): boolean {
