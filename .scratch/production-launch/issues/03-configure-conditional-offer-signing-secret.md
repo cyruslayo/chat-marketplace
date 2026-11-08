@@ -1,6 +1,6 @@
 # Sign Conditional Offer tokens with a configured secret
 
-Status: claimed
+Status: resolved
 Type: AFK
 Blocked by: none
 Requested: 8 Nov 2026
@@ -64,3 +64,7 @@ Exact commands (each prefixed with `C:\Program Files\Git\usr\bin\env.exe -u LLM_
 - `npm run check`: exit 0, no TypeScript errors and Worker bundle guard clean. An earlier run found the test-only `Cloudflare.Env` declaration missing the new binding; corrected it before this passing run.
 
 Definition of Done review: (1) AC1–AC5 have separate named tests, including the descriptor test in `test/cloudflare-config.test.ts`; (2) key mismatch, malformed signature, missing/short key and replay failure paths are asserted; (3) ADR table above was rechecked against the guest/owner composition and digest path; (4) key is injected through the existing config/manager factory, not ambient domain state; (5) 32-character minimum follows the existing guest-code precedent; (6) no secret value appears in any descriptor or log; (7) affected tests, Worker specs and type check pass. Full-suite batch gate remains issue 12. Wrapped review `shortlet-concierge-launch/49` stays `needs-triage`: its proposed token-in-interaction-projection criterion and owner triage decision go beyond this signing-key issue.
+
+## Answer
+
+Committed signing-key injection and fail-closed configuration as `e9f109f`. All five criteria are covered: 88/88 affected Node tests, 7/7 Worker tests, clean `npm run check`. The wrapped security review remains open for its broader projection and triage decisions.

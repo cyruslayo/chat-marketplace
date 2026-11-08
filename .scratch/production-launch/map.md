@@ -31,7 +31,7 @@ Start now: agents **01, 03, 04, 10, 11**; owner **02, 13, 16, 17** (and start 14
 |---|---|---|---|---|
 | 01 | [Reconcile issue statuses and the work map](issues/01-reconcile-tracker-statuses.md) | AFK | resolved | none |
 | 02 | [Confirm the launch decisions](issues/02-confirm-launch-decisions.md) | grilling | ready-for-human | none |
-| 03 | [Conditional Offer signing secret](issues/03-configure-conditional-offer-signing-secret.md) | AFK | ready-for-agent | none |
+| 03 | [Conditional Offer signing secret](issues/03-configure-conditional-offer-signing-secret.md) | AFK | resolved | none |
 | 04 | [Remove back-office stubs](issues/04-remove-back-office-stubs.md) | AFK | ready-for-agent | none |
 | 05 | [Record and refund every success on a minted reference](issues/05-close-late-payment-gap.md) | AFK | ready-for-agent | 02 |
 | 06 | [Extended Stays off in production until counsel text](issues/06-gate-extended-stays-until-counsel-text.md) | AFK | ready-for-agent | 02 |
@@ -61,3 +61,4 @@ Start now: agents **01, 03, 04, 10, 11**; owner **02, 13, 16, 17** (and start 14
 ## Context pointers (append as issues resolve)
 
 - 01: [Reconciliation](issues/01-reconcile-tracker-statuses.md) audited 27 hardening/controls/demo issues against main, retained uncertain statuses with evidence, rebuilt the 356-issue [work map](../WORK-MAP.md), and corrected the tester-facing 119-day note. Evidence commit `71ccf94`; 4/4 criterion tests and clean type check.
+- 03: [Signing-key implementation](issues/03-configure-conditional-offer-signing-secret.md) at `e9f109f`: one configured key in Node/Worker guest and owner, five secret descriptor bindings, true cold restore and wrong-key refusal. 88/88 scoped Node and 7/7 scoped Worker tests; clean type check. Wrapped review 49 retains its separate triage items.
