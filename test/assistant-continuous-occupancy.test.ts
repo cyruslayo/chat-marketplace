@@ -65,7 +65,7 @@ test("AC8: With the assistant runtime enabled and a cold restore before every ev
     const outcome = await wireDatedApp(environment, model, diagnostics).app.handleEventAsync(threadId, firstButtonAction(detail.surfaces[0]!));
     assert.equal(outcome.ok, false, "the refusal is a refusal");
     assert.equal(outcome.ok === false ? outcome.code : undefined, "CONTINUOUS_OCCUPANCY_REFUSED", "the refusal is not CONCIERGE_UNAVAILABLE");
-    assert.equal(outcome.ok === false ? outcome.message : undefined, "These dates join another stay of yours at this property, making 30 nights. A stay of 30 nights or more must be booked as one Extended Stay.", "the refusal names the 30-night total");
+    assert.equal(outcome.ok === false ? outcome.message : undefined, "These dates run straight on from your other stay at this property, making 30 nights in a row. For 30 nights or more, book one stay for the whole time instead.", "the refusal names the 30-night total");
     assert.notEqual(outcome.ok === false ? outcome.message : "", ASSISTANT_CONTROL_COPY.unavailable, "the control copy is not shown");
   } finally {
     f.close();
@@ -139,7 +139,7 @@ test("AC8 (planner): a planner prepare_request_draft that would breach Continuou
     const draft = successOf(await wireDatedApp(environment, model, diagnostics).app.handleTurn(threadId, DRAFT_TEXT), "prepare the request draft");
 
     // The planner's tool call was rejected with the server's own sentence: no draft surface, no new request, no hold.
-    assert.deepEqual(draft.messages, ["These dates join another stay of yours at this property, making 30 nights. A stay of 30 nights or more must be booked as one Extended Stay."], "the refusal sentence reaches the guest");
+    assert.deepEqual(draft.messages, ["These dates run straight on from your other stay at this property, making 30 nights in a row. For 30 nights or more, book one stay for the whole time instead."], "the refusal sentence reaches the guest");
     assert.equal(draft.surfaces.length, 0, "no Request Draft surface is created");
     assert.equal(draft.messages.includes(ASSISTANT_CONTROL_COPY.unavailable), false, "the control copy is not shown");
     // The prepare_request_draft call failed in its application operation, and the turn stopped as a tool_denial (ADR 0106).

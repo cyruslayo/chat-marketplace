@@ -13,7 +13,7 @@ Work top to bottom. The frontier is the first issue that is open, unblocked and 
 | 03 | [Landing chip validator follows the Short Stay limit](issues/03-landing-chip-validator-follows-short-stay-limit.md) | task | resolved | 01 |
 | 04 | [Decide how Continuous Occupancy is enforced](issues/04-decide-continuous-occupancy-enforcement.md) | grilling | resolved | none |
 | 05 | [Turn on Extended Stays in every deployment, including production](issues/05-turn-on-extended-stays-in-every-deployment.md) | task | resolved | 01 |
-| 07 | [Use the owner-approved refusal wording](issues/07-approved-refusal-wording.md) | task | ready-for-agent | none |
+| 07 | [Use the owner-approved refusal wording](issues/07-approved-refusal-wording.md) | task | resolved | none |
 | 06 | [Enforce Continuous Occupancy across back-to-back stays](issues/06-enforce-continuous-occupancy.md) | task | resolved | 04 |
 
 ## Not in this effort

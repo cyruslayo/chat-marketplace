@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative } from "node:path";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -202,7 +204,7 @@ test("AC6: A chain that includes an Extended Stay may reach 180 nights and is re
       assert.ok(error instanceof ContinuousOccupancyError);
       assert.equal(error.total, 181);
       assert.equal(error.limit, 180);
-      assert.match(error.message, /making 181 nights, more than the 180-night maximum\./);
+      assert.equal(error.message, "These dates run straight on from your other stay at this property, making 181 nights in a row. The longest stay we can book is 180 nights.");
       return true;
     }, "151 more nights make 181 in total and are refused");
     // 150 more nights make exactly 180 in total and are allowed.
@@ -301,7 +303,7 @@ test("the refusal wording is the owner-confirmed short and extended chain senten
   // Short chain: 9 nights before and 21 candidate nights make 30, which is over the 29-night Short Stay limit.
   const shortAssessment = assessContinuousOccupancy(stay("candidate", "2026-08-10", "2026-08-31"), [stay("before", "2026-08-01", "2026-08-10")], undefined);
   assert.equal(shortAssessment.allowed, false);
-  assert.equal(continuousOccupancyRefusal(shortAssessment).message, "These dates join another stay of yours at this property, making 30 nights. A stay of 30 nights or more must be booked as one Extended Stay.");
+  assert.equal(continuousOccupancyRefusal(shortAssessment).message, "These dates run straight on from your other stay at this property, making 30 nights in a row. For 30 nights or more, book one stay for the whole time instead.");
 
   // Extended chain: 40 nights before and 40 candidate nights make 80, over a 70-night policy maximum.
   const extendedAssessment = assessContinuousOccupancy(
@@ -311,7 +313,7 @@ test("the refusal wording is the owner-confirmed short and extended chain senten
   );
   assert.equal(extendedAssessment.allowed, false);
   assert.equal(extendedAssessment.limit, 70);
-  assert.equal(continuousOccupancyRefusal(extendedAssessment).message, "These dates join another stay of yours at this property, making 80 nights, more than the 70-night maximum.");
+  assert.equal(continuousOccupancyRefusal(extendedAssessment).message, "These dates run straight on from your other stay at this property, making 80 nights in a row. The longest stay we can book is 70 nights.");
   assert.doesNotMatch(continuousOccupancyRefusal(extendedAssessment).message, /synthetic|guest-occupancy|ctr-|req-/);
 });
 
@@ -340,7 +342,7 @@ test("Continuous Occupancy never reads another tenant's stays: a same-guest-id s
 test("A stay with no resolvable tenant is refused, not checked across tenants", () => {
   const repository = occupancyUnits();
   const stores = openOccupancyStores();
-  const refusal = "These dates cannot be checked against your other stays at this property.";
+  const refusal = "We couldn’t check these dates against your other stays at this property. Please try again, or ask us for help.";
   try {
     const { manager } = occupancyManager({ repository, clock, stores });
     confirmedStayFor(stores, manager, clock, { unitId: UNIT_A, checkIn: "2026-08-01", checkOut: "2026-08-21" });
@@ -396,5 +398,66 @@ test("A stay with no resolvable tenant is refused, not checked across tenants", 
     }), (error: unknown) => error instanceof ContinuousOccupancyError && error.message === refusal, "the guard refuses an unresolved tenant");
   } finally {
     stores.close();
+  }
+});
+
+test("AC1: Each of the three Continuous Occupancy cases shows its approved sentence exactly (issue 07, owner-approved 8 Nov 2026)", () => {
+  // Case 1: a chain of Short Stays over 29 nights.
+  const shortAssessment = assessContinuousOccupancy(stay("candidate", "2026-08-10", "2026-08-31"), [stay("before", "2026-08-01", "2026-08-10")], undefined);
+  assert.equal(continuousOccupancyRefusal(shortAssessment).message, "These dates run straight on from your other stay at this property, making 30 nights in a row. For 30 nights or more, book one stay for the whole time instead.");
+  // Case 2: a chain with an Extended Stay over the policy maximum.
+  const extendedAssessment = assessContinuousOccupancy(
+    stay("candidate", "2026-08-10", "2026-09-19", { stayType: "extended" }),
+    [stay("before", "2026-07-01", "2026-08-10", { stayType: "extended" })],
+    { ...EXTENDED_STAY_POLICY, maximumNights: 70 },
+  );
+  assert.equal(continuousOccupancyRefusal(extendedAssessment).message, "These dates run straight on from your other stay at this property, making 80 nights in a row. The longest stay we can book is 70 nights.");
+  // Case 3: the check could not run (fail closed).
+  const ledger = new ContinuousOccupancyLedger({
+    store: null,
+    bookingState: null,
+    unitPropertyId: () => undefined,
+    listBookingRequests: () => [],
+  });
+  assert.throws(() => ledger.propertyIdFor(UNIT_A), (error: unknown) => error instanceof ContinuousOccupancyError && error.message === "We couldn’t check these dates against your other stays at this property. Please try again, or ask us for help.", "an unresolved Property refuses with the approved fail-closed sentence");
+});
+
+test("AC2: No old refusal sentence remains in apps/, domains/ or test/ (issue 07)", () => {
+  const root = process.cwd();
+  // The retired sentences, assembled from parts so this file does not contain them verbatim.
+  const retired = [
+    ["These dates join another stay", " of yours at this property"].join(""),
+    ["These dates cannot be checked against", " your other stays at this property."].join(""),
+    ["must be booked as one", " Extended Stay."].join(""),
+    ["more than the ", "${limit}-night maximum"].join(""),
+  ];
+  const offenders: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir)) {
+      if (entry === "node_modules" || entry === "dist" || entry.startsWith(".")) continue;
+      const path = join(dir, entry);
+      if (statSync(path).isDirectory()) walk(path);
+      else if (/\.(ts|tsx)$/.test(entry) && relative(root, path) !== relative(root, new URL(import.meta.url).pathname)) {
+        const text = readFileSync(path, "utf8");
+        if (retired.some((sentence) => text.includes(sentence))) offenders.push(relative(root, path));
+      }
+    }
+  };
+  for (const dir of ["apps", "domains", "test"]) walk(join(root, dir));
+  assert.deepEqual(offenders, [], "no retired refusal sentence remains");
+});
+
+test("AC3: No guest, request or contract identifier appears in any Continuous Occupancy sentence (ADR 0075)", () => {
+  const sentences = [
+    continuousOccupancyRefusal(assessContinuousOccupancy(stay("candidate", "2026-08-10", "2026-08-31"), [stay("request:req-private-1", "2026-08-01", "2026-08-10", { contractId: "ctr-private-1", offerId: "off-private-1" })], undefined)).message,
+    continuousOccupancyRefusal(assessContinuousOccupancy(
+      stay("candidate", "2026-08-10", "2026-09-19", { stayType: "extended" }),
+      [stay("contract:ctr-private-2", "2026-07-01", "2026-08-10", { stayType: "extended", contractId: "ctr-private-2" })],
+      { ...EXTENDED_STAY_POLICY, maximumNights: 70 },
+    )).message,
+    "We couldn\u2019t check these dates against your other stays at this property. Please try again, or ask us for help.",
+  ];
+  for (const sentence of sentences) {
+    assert.doesNotMatch(sentence, /req-|ctr-|off-|request:|contract:|candidate|before/, `no identifier in: ${sentence}`);
   }
 });
