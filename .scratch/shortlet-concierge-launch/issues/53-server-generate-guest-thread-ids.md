@@ -1,6 +1,6 @@
 # Server-generate guest thread ids so the client cannot choose them
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 Blocked by: none
 Requested: 11 Oct 2026
@@ -29,12 +29,12 @@ The guest thread id is partly client-chosen, which costs audit correlation and b
 
 ## Acceptance criteria
 
-- [ ] AC1: A guest conversation form submitted with a client-chosen `threadId` is refused and creates no thread.
-- [ ] AC1 failure path: a `threadId` that matches the old pattern but was not issued by the server is refused, with no audit row written.
-- [ ] AC2: Every guest thread id issued by the server is `g-` plus a v4 UUID generated with `crypto.randomUUID()` on the server.
-- [ ] AC3: The client never generates a thread id; the client flow in `client.ts` obtains it from the server response.
-- [ ] AC4: After the change, a `g-<uuid>` thread id under `threadId` is exempt in the redactor (test at `test/redact-platform-ids.test.ts:295` is updated to assert the exemption); a card number placed in a `threadId` value is still masked.
-- [ ] AC5: The human-handoff audit rows for a guest thread keep the thread id intact (regression test in the handoff audit suite).
+- [x] AC1: A guest conversation form submitted with a client-chosen `threadId` is refused and creates no thread.
+- [x] AC1 failure path: a `threadId` that matches the old pattern but was not issued by the server is refused, with no audit row written.
+- [x] AC2: Every guest thread id issued by the server is `g-` plus a v4 UUID generated with `crypto.randomUUID()` on the server.
+- [x] AC3: The client never generates a thread id; the client flow in `client.ts` obtains it from the server response.
+- [x] AC4: After the change, a `g-<uuid>` thread id under `threadId` is exempt in the redactor (test at `test/redact-platform-ids.test.ts:295` is updated to assert the exemption); a card number placed in a `threadId` value is still masked.
+- [x] AC5: The human-handoff audit rows for a guest thread keep the thread id intact (regression test in the handoff audit suite).
 
 ## ADR compliance
 
@@ -50,3 +50,4 @@ The guest thread id is partly client-chosen, which costs audit correlation and b
 
 - 11 Oct 2026, filed from issue 50 (follow-up "THREAD_ID_PATTERN", and the consciously-excluded row). The reference line in `redaction.ts:75` is stale: `THREAD_ID_PATTERN` is at `guest-server.ts:585` on `origin/main` 8b23923, not 578. Submitted-id handling is at `guest-server.ts:9270-9281`, not 9178-9189.
 - Behaviour change flagged for review: a client-chosen `threadId` will be refused. The reviewer must confirm before merge.
+- 2026-11-08 (agent): Resolved by [production-launch/11](../production-launch/issues/11-server-generated-guest-thread-ids.md) at commit `120e356`. The form refusal is in place, the client mints nothing, the `g` exemption is added and the handoff audit keeps its thread id. Still flagged: the JSON `/api/turn` and `/api/event` contract is unchanged, so a hand-crafted request can still supply and be bound to a pattern-valid id. That path needs its own reviewed change; the shipped client always uses the server-issued id.
