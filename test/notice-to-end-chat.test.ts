@@ -110,6 +110,23 @@ test("AC3: Typed confirmations (yes, ok, confirm, go ahead) with a give_notice c
   }
 });
 
+test("A notice card proposed in chat survives a cold restore and its Give notice records one amendment", async () => {
+  const threadId = "g-0cc1000e01";
+  const f = extendedFixture();
+  try {
+    const { offerId } = await extendedToReservation(f, threadId);
+    recordVerifiedAccess(f, contractOf(f, offerId).reservationId);
+    const offered = successOf(await coldApp(f, threadId, model()).app.handleTurn(threadId, NOTICE_TEXT), "ask to end early").surfaces.find((surface) => surface.surfaceId.includes(":pending-action:"));
+    assert.ok(offered, "the planner offers the card");
+    const confirmed = successOf(await coldApp(f, threadId).app.handleEventAsync(threadId, buttonNamed(offered!, ASSISTANT_CONFIRM_ACTION_EVENT)), "give notice on the planner's card");
+    assert.equal(contractOf(f, offerId).contractVersion, 2, "one versioned Booking Amendment");
+    assert.ok(contractOf(f, offerId).noticeToEnd, "the notice is recorded");
+    assert.ok(confirmed.surfaces.some((surface) => surface.surfaceId.includes(":booking:")), "the booking is re-presented with the recorded notice");
+  } finally {
+    f.close();
+  }
+});
+
 test("AC4: A guest asking in chat to end early is offered the card through the planner tool, which never records notice itself", async () => {
   const threadId = "g-0cc1000401";
   const f = extendedFixture();
@@ -159,8 +176,12 @@ test("An end_booking request offers the notice card and records nothing", async 
     const { offerId } = await extendedToReservation(f, threadId);
     recordVerifiedAccess(f, contractOf(f, offerId).reservationId);
     const result = successOf(await coldRecording(f, threadId, diagnostics).app.handleTurn(threadId, NOTICE_TEXT), "ask to end early");
-    assert.ok(result.surfaces.some((surface) => surface.surfaceId.includes(":pending-action:")), "the notice card is offered");
+    const offered = result.surfaces.find((surface) => surface.surfaceId.includes(":pending-action:"));
+    assert.ok(offered, "the notice card is offered");
     assert.ok(diagnostics.some((event) => event.stage === "application_operation" && event.toolName === "propose_notice_to_end" && event.succeeded === true), "the planner's notice tool call succeeded");
+    // The card is held in the task state, so the next request (a cold restore) re-keys the same surface id (ADR 0106).
+    const restored = coldApp(f, threadId).app.getState(threadId)!.surfaces.find((surface) => surface.surfaceId.includes(":pending-action:"));
+    assert.equal(restored?.surfaceId, offered!.surfaceId, "the offered card is restored with the same surface id");
     assert.equal(contractOf(f, offerId).contractVersion, 1, "the contract is unchanged");
     assert.equal(contractOf(f, offerId).noticeToEnd, undefined, "no notice is recorded");
   } finally {
@@ -271,6 +292,35 @@ test("Before notice, the chat booking screen of a confirmed Extended Stay offers
     assert.ok(html.includes('data-notice-open'), "the chat booking screen has the Give notice action");
     assert.ok(html.includes(GUEST_NOTICE_COPY.action), "the action carries the notice label");
     assert.equal(html.includes(GUEST_NOTICE_COPY.recordedHeading), false, "no Notice given block before notice");
+  } finally {
+    f.close();
+  }
+});
+
+test("AC6 (stale notice date): a card whose notice date is no longer the current preview is refused with STALE_SURFACE and changes nothing", async () => {
+  // The card binds the notice date it showed. The clock moves a day on before the press, so the bound date is stale (ADR 0060).
+  const threadId = "g-0cc1000602";
+  let now = new Date("2026-10-27T10:00:00Z");
+  const f = extendedFixture([], () => now);
+  try {
+    const { booking, offerId } = await extendedToReservation(f, threadId);
+    const contract = contractOf(f, offerId);
+    recordVerifiedAccess(f, contract.reservationId);
+    const card = successOf(await coldApp(f, threadId, model()).app.handleEventAsync(threadId, buttonNamed(booking, OPEN_EVENT)), "open").surfaces[0]!;
+    const shownDate = f.environment.noticeToEnd.previewNotice(contract.contractId, f.environment.guestPrincipal()).noticeDate;
+    now = new Date("2026-10-28T10:00:00Z");
+    const laterDate = f.environment.noticeToEnd.previewNotice(contract.contractId, f.environment.guestPrincipal()).noticeDate;
+    assert.notEqual(laterDate, shownDate, "the current preview has a different notice date");
+    const stale = await coldApp(f, threadId).app.handleEventAsync(threadId, buttonNamed(card, ASSISTANT_CONFIRM_ACTION_EVENT));
+    assert.equal(stale.ok === false ? stale.code : "ok", "STALE_SURFACE", "a stale notice date is refused");
+    assert.equal(contractOf(f, offerId).contractVersion, 1, "nothing is amended");
+    assert.equal(contractOf(f, offerId).noticeToEnd, undefined, "no notice is recorded after a stale refusal");
+    // Owner decision (issue 18, deviation 2): the guest asks again and gets the current card, which then records one amendment.
+    const fresh = successOf(await coldApp(f, threadId, model()).app.handleTurn(threadId, NOTICE_TEXT), "ask again");
+    const freshCard = fresh.surfaces.find((surface) => surface.surfaceId.includes(":pending-action:"));
+    assert.ok(freshCard, "asking again offers the current card");
+    successOf(await coldApp(f, threadId).app.handleEventAsync(threadId, buttonNamed(freshCard, ASSISTANT_CONFIRM_ACTION_EVENT)), "give notice on the current card");
+    assert.equal(contractOf(f, offerId).contractVersion, 2, "the current card records one amendment");
   } finally {
     f.close();
   }

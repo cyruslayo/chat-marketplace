@@ -1247,6 +1247,9 @@ export function executeAssistantTool(
       const contractId = offerId === undefined ? undefined : context.environment.cardPaymentApp.getBookingContract(offerId)?.contractId;
       if (contractId === undefined) throw new AssistantGuestRefusalError(GUEST_NOTICE_COPY.notExtended);
       const pendingAction = proposeNoticeToEnd({ environment: context.environment, contractId, threadId: context.threadId, now: context.now });
+      // Issue 18 (ADR 0106): the open proposal is held in the task state, as the other proposal tools hold theirs, so it survives a
+      // cold restore. Without this line the card is shown once and then cannot be re-keyed or confirmed (STALE_SURFACE).
+      taskState.pendingAction = pendingAction;
       return {
         result: { actionId: pendingAction.id, proposedAction: "give_notice", summary: pendingAction.summary, requiresConfirmation: true, message: GUEST_NOTICE_COPY.cardOpened },
         updatedTaskState: taskState,

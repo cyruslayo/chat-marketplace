@@ -35,8 +35,8 @@ export function model() {
   return scriptedPlanner(SCRIPT).client;
 }
 
-export function extendedFixture(diagnostics: AssistantDiagnosticEvent[] = []): DatedFixture {
-  const f = datedFixture(model(), diagnostics, { clock: LIVE_LIKE_CLOCK, stagingGuest: true });
+export function extendedFixture(diagnostics: AssistantDiagnosticEvent[] = [], clock: () => Date = LIVE_LIKE_CLOCK): DatedFixture {
+  const f = datedFixture(model(), diagnostics, { clock, stagingGuest: true });
   const seeded = f.environment.unitRepository.findAll()[0]!;
   f.environment.unitRepository.save(extendUnit(seeded, {}));
   return f;
