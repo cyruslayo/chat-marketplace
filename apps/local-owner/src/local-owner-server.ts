@@ -33,6 +33,7 @@ import { escapeHtml, formatMoney, icon, pageShell, type StatusTone } from "../..
 import { OPERATOR_RESPONSE_REMINDER_MINUTES, operatorResponseReminderDue, type OperatorAuthenticatedPrincipal } from "../../../domains/shortlet/src/index.js";
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import { backOfficePage, SIGN_IN_REASONS, signInReason, watTime, type BackOfficeViewer, type SignInReason } from "./back-office-view.js";
+import { pilotMetricsPage } from "./back-office-metrics.js";
 import { formatStayDates } from "../../web-agent/src/booking-presentation.js";
 
 const OPERATOR_SESSION_COOKIE = "shortlet_operator_session";
@@ -1302,7 +1303,9 @@ export function createOwnerRequestHandler(
     if (req.method === "GET" && (url.pathname === "/operator" || url.pathname === "/operator/")) {
       page((principal) => operatorHomeHtml(env, principal)); return;
     }
-    if (req.method === "GET" && (url.pathname === "/operator/requests" || url.pathname === "/operator/requests/")) {
+    if (req.method === "GET" && (url.pathname === "/operator/metrics" || url.pathname === "/operator/metrics/")) {
+      page((principal) => pilotMetricsPage(viewer(env, principal), env.pilotMetrics(commandPrincipal(principal)))); return;
+    }    if (req.method === "GET" && (url.pathname === "/operator/requests" || url.pathname === "/operator/requests/")) {
       page((principal) => operatorInboxHtml(env, principal)); return;
     }
     const detailMatch = url.pathname.match(/^\/operator\/requests\/([^/]+)$/);

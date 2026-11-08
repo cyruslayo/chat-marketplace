@@ -433,3 +433,75 @@ _Avoid_: Imported testimonial, operator endorsement, unverified rating
 **Instant Book**:
 A booking mode in which authoritative availability permits a timed hold and automatic confirmation after verified payment.
 _Avoid_: Request to book
+
+## Pilot metrics
+
+The names the pilot metrics report uses (production-launch issue 09, pilot-launch-readiness/13). Each is read from the durable store; one with no durable source is reported as unavailable, never as zero.
+
+**Requests received**:
+Booking Requests disclosed to an owner the signed-in Operator representative acts for, whatever their later outcome (`guest_booking_requests`).
+_Avoid_: Enquiries, drafts, sessions
+
+**Confirmed share**:
+Confirmed Booking Requests divided by Requests received. A request is confirmed when its stored status is confirmed and it carries a confirmation time.
+_Avoid_: Conversion rate, acceptance rate
+
+**Median time to confirm**:
+The median of each confirmed request's confirmation time minus its disclosure time. Shown as "No data yet" until a request is confirmed.
+_Avoid_: Average response time, response deadline
+
+**Payment started**:
+One payment attempt for a stay, by payment method: a card checkout session, a manual bank-transfer attempt, or a Paystack bank-transfer session.
+_Avoid_: Checkout tab, retry, payment method selection
+
+**Payment completed**:
+A Payment started whose durable status records the money as received and the booking as proceeding (card `completed`, manual transfer `confirmed`, Paystack transfer `completed`).
+_Avoid_: Verified payment, settled booking
+
+**Payment expired**:
+A Payment started whose durable status records its Payment Window passing without completion.
+_Avoid_: Abandoned cart, declined
+
+**Payment failed**:
+A Payment started whose durable status records a terminal failure (`failed` for card, `rejected` for manual transfer).
+_Avoid_: Expired, retried
+
+**Payment refunded**:
+A refund recorded against a payment method's money (a settled compensation record, a Paystack transfer session marked refunded, or a manual-transfer late credit). A pending refund is counted separately and never presented as received (ADR 0045).
+_Avoid_: Refund promised, charged back
+
+**Verified Access check-in**:
+A Reservation whose check-in state records Verified Access, either a verified access result or a valid late voluntary arrival (ADR 0022).
+_Avoid_: Arrival, operator confirmation
+
+**Incident**:
+A Blocking Fulfilment Complaint recorded against a Reservation (ADR 0030).
+_Avoid_: Support request, preference complaint
+
+**Incidents per stay**:
+Incidents divided by the Reservations in scope.
+_Avoid_: Failure rate
+
+**Relocation outcome**:
+A guest-approved Relocation Remedy or Refund Fallback after an eligible operator failure, with its amounts (ADR 0028, ADR 0029). The pilot report reports it unavailable because the relocation remedy runs in memory and has no durable production record; it is never shown as zero.
+_Avoid_: Forced substitution, automatic upgrade
+
+**Refund amount paid to Guests**:
+Money the back office recorded as paid to a Guest against a Reservation (`guest_refunds`).
+_Avoid_: Refund decided, amount owed
+
+**Refund decided under a cancellation policy**:
+The refund a cancellation policy outcome determined (`owner_payable_cancellations.refund_kobo`). It may be partly or wholly unpaid; paid amounts are the separate "paid to Guests" figure.
+_Avoid_: Refund paid, total refunds
+
+**Refund recorded for refund**:
+Money recorded for reversal by the later-period payment path or by a manual-transfer late credit (ADR 0045, ADR 0092). It is recorded, not proven received.
+_Avoid_: Refund settled, money returned
+
+**Margin earned**:
+The Margin of an Owner Payable that has become due, or of a Billing Period that has earned its margin (ADR 0089, ADR 0092).
+_Avoid_: Commission earned, revenue recognised
+
+**Owner payables due / paid / not yet due**:
+Owner Payables in scope by their current projection: outstanding and due, recorded as paid, or not yet due (including paused). Each figure is from the ledger and the booking snapshot (ADR 0089).
+_Avoid_: Balance, settlement total

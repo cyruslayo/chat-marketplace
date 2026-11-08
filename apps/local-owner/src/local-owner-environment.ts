@@ -69,6 +69,7 @@ import {
   type OwnerPayableProjection,
   type AccessStatus,
   type CheckInSupportState,
+  type PilotMetricsReport,
   type ComplaintCategory,
   type ComplaintDismissalReason,
   isComplaintDismissalReason,
@@ -91,6 +92,7 @@ import {
   type BookingStage,
   type BookingStageProjection,
 } from "./booking-projection.js";
+import { readPilotMetrics } from "./pilot-metrics-reader.js";
 import {
   createBookingRequestApplication,
   createConditionalOfferApplication,
@@ -2088,6 +2090,20 @@ export class LocalApartmentOwnerEnvironment {
     return this.ownerPayable(requestId, principal);
   }
 
+  /**
+   * Pilot metrics from the authoritative store (production-launch issue 09), scoped to the owners you act for
+   * (ADR 0082). Read-only: no command is issued and nothing is cached.
+   */
+  pilotMetrics(principal: CommandPrincipal): PilotMetricsReport {
+    return readPilotMetrics({
+      database: this.#sqlDatabase,
+      principal,
+      clock: this.clock,
+      grantStore: this.grantStore,
+      checkInStore: this.#checkInStore,
+      ownerPayables: this.listOwnerPayables(principal),
+    });
+  }
   #ownerPayableFor(
     booking: OperatorBooking,
     now: Date,
