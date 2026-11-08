@@ -153,3 +153,26 @@ renamed to carry issue 19 AC6), `test/landing-chip-limit.test.ts` (the approved-
 5. No invented policy: months 1 to 12 is the issue's range; the rest is ADR-sourced.
 6. No credentials or identity in logs: no logging added.
 7. `npm run check` passes (exit 0). The full `npm test` runs at the batch pre-merge gate (CLAUDE.md), not here.
+
+### Follow-up (8 Nov 2026): owner wording and two corrections
+
+- Denial sentence (owner decision, 8 Nov 2026). `GUEST_ASSISTANT_COPY.statedStay` (`apps/web-agent/src/guest-content.ts`) now reads
+  "Just to check: you’d like 60 nights (2 months). Shall I search for that?" (typographic apostrophe). A weeks or nights length reads
+  "Just to check: you’d like 21 nights. Shall I search for that?". This replaces the sentence in "New guest wording" item 3 above.
+  Still one source. Tests: `test/stay-length-assistant.test.ts`, "AC3 a planner call with 61 nights ..." asserts the exact sentence.
+  Requested tests for this change: `npx tsx --test test/stay-length-reader.test.ts test/stay-length-months.test.ts
+  test/stay-length-assistant.test.ts test/assistant-runtime-boundary.test.ts test/assistant-pack-registry.test.ts
+  test/assistant-cold-journey.test.ts test/guest-criteria-strip.test.ts`: 32 tests, 32 pass, 0 fail.
+  `apps/local-guest/dist/client.js` regenerated (`npm run build`: exit 0; +2/-1, the new sentence only).
+- Correction to the earlier claim. The Comments above said an earlier guest length is "re-derived from the canonical history" and
+  "carries earlier words across a cold restore". That is wrong. `userTextHistory` is the canonical ISO dates plus the current turn only
+  (`apps/local-guest/src/assistant/assistant-runtime.ts:1157`). `canonicalUserFactHistory` is filtered to ISO dates
+  (assistant-runtime.ts:778 and 817), and `restoreShortletState` clears `conversationHistory`, so earlier guest words do not survive a
+  cold restore. The earlier-length branch of `guestStatedStay` (`shortlet-assistant-pack.ts`) therefore never fires in practice. The
+  pack comment is corrected to say so. Only a length stated in the current turn is authoritative.
+- Assistant-path criteria strip: NOT DONE, blocked. Requested: on assistant responses and getState, the strip shows "60 nights (2 months)"
+  when the guest's latest stated length (re-derived from canonical guest text) is in months and equals the strip's nights. That
+  re-derivation is impossible under the no-new-persisted-record rule (ADR 0106, 27 Oct 2026, Projection): the words are not kept
+  across a cold restore (see the correction above). The two requested strip tests were not written, since they cannot pass as specified.
+  Owner decision needed: (a) keep the stated length in the task state or canonical facts (a new persisted field, which needs an ADR
+  amendment), or (b) keep the strip on nights only on the assistant path, with months shown only on the deterministic path.
