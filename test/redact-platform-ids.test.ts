@@ -292,9 +292,9 @@ test("Non-string values under a platform-id key are returned unchanged, as on ma
   assert.deepEqual(redactSensitiveData({ requestId: 5555555555554444 }), { requestId: 5555555555554444 });
 });
 
-test("Guest thread ids (g-<uuid>) are not exempt under threadId, because the client chooses them (follow-up in issue 50)", () => {
+test("Guest thread ids (g-<uuid>) under threadId are exempt because the server mints them; a card number in a threadId is still masked", () => {
   const value = findV4IdWithDigits("g", 16, 0, (_digits, candidate) => !containsLuhnValidCardShape(candidate));
-  const output = redactOne("threadId", value);
-  assert.notEqual(output, value);
-  assert.match(String(output), /\[REDACTED\]/);
+  assert.equal(redactOne("threadId", value), value);
+  const pan = encodePanAsPlatformId("g", TEST_PANS.visa);
+  assert.equal(redactOne("threadId", pan), REDACTED);
 });

@@ -325,12 +325,22 @@ import {
   THREAD_ID_PATTERN,
 } from "./shortlet-app.js";
 
-export function renderGuestShellHtml(): string {
+/**
+ * Pilot issue 53: the guest thread id is an interaction identity minted only by the server (ADR 0070, ADR 0075).
+ * The client learns it from this server's page or response and never creates one.
+ */
+function mintThreadId(): string {
+  const threadId = `g-${crypto.randomUUID()}`;
+  return threadId;
+}
+
+export function renderGuestShellHtml(threadId?: string): string {
   return `<!DOCTYPE html>
 <html lang="en-NG" data-theme="system">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  ${threadId ? `<meta name="shortlet-thread-id" content="${escapeHtml(threadId)}">` : ""}
   <title>Shortlet Concierge</title>
   <link rel="stylesheet" href="/shortlet-foundations.css">
   <style>
@@ -603,7 +613,7 @@ export function renderGuestShellHtml(): string {
         <p id="criteria-status" class="criteria-status" role="alert"></p>
       </section>
       <form id="composer" method="post" action="/conversation" aria-label="Message the concierge">
-        <input type="hidden" name="threadId" value="" />
+        <input type="hidden" name="threadId" value="${escapeHtml(threadId ?? "")}" />
         <label id="composer-label" for="composer-input">Your message</label>
         <input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send"
                placeholder="Area, dates, guests" aria-describedby="composer-hint" />
@@ -3587,7 +3597,7 @@ export function createGuestRequestHandler(
         res.writeHead(400, LANDING_START_HTML_HEADERS);
         res.end(
           renderNoScriptConversationHtml({
-            threadId: `g-${crypto.randomUUID()}`,
+            threadId: mintThreadId(),
             timeline: [],
             surfaces: [],
             error: "Type a short message to send.",
@@ -3639,7 +3649,7 @@ export function createGuestRequestHandler(
           }
         }
       }
-      const threadId = `g-${crypto.randomUUID()}`;
+      const threadId = mintThreadId();
       session.threadIds.add(threadId);
       let failure: string | null = null;
       try {
@@ -3682,6 +3692,7 @@ export function createGuestRequestHandler(
         res.end("Unauthorized");
         return;
       }
+      let shellSession: BrowserSession | null = null;
       if (requestSession === null) {
         // No cookie, or a well-formed cookie with no binding (retired by sign-out or sign-out everywhere, D3): a fresh,
         // unlinked session starts. Staging beta: no Guest session starts without the invite code (issue 22).
@@ -3706,6 +3717,7 @@ export function createGuestRequestHandler(
           principalId,
         );
         if (sessionScopedGuestPrincipals) runtimeForSession(registered);
+        shellSession = registered;
         if (options.betaInviteCode !== undefined) {
           // Drop the code from the address bar and history once the session exists.
           res.writeHead(303, { Location: "/", "Cache-Control": "no-store" });
@@ -3730,9 +3742,18 @@ export function createGuestRequestHandler(
           res.end("Unauthorized");
           return;
         }
+        shellSession = resolved;
       }
+      const requestedThreadId = url.searchParams.get("threadId");
+      const threadId =
+        requestedThreadId !== null &&
+        THREAD_ID_PATTERN.test(requestedThreadId) &&
+        shellSession?.threadIds.has(requestedThreadId)
+          ? requestedThreadId
+          : mintThreadId();
+      shellSession?.threadIds.add(threadId);
       res.writeHead(200, GUEST_HTML_HEADERS);
-      res.end(renderGuestShellHtml());
+      res.end(renderGuestShellHtml(threadId));
       return;
     }
 
@@ -5383,14 +5404,17 @@ export function createGuestRequestHandler(
         // Issue 13a: no thread id starts a new, empty conversation. Only an id
         // is minted; nothing is written and no earlier work changes (ADR-0079).
         if (!url.searchParams.has("threadId")) {
+          const minted = mintThreadId();
+          session.threadIds.add(minted);
           res.writeHead(303, {
-            Location: `/conversation?threadId=${encodeURIComponent(`g-${crypto.randomUUID()}`)}`,
+            Location: `/conversation?threadId=${encodeURIComponent(minted)}`,
           });
           res.end();
           return;
         }
         const threadId = url.searchParams.get("threadId") ?? "";
-        if (!THREAD_ID_PATTERN.test(threadId)) {
+        // Pilot issue 53: a thread id is usable only when this server issued it to this browser session.
+        if (!THREAD_ID_PATTERN.test(threadId) || !session.threadIds.has(threadId)) {
           sendPageError(req, res, 400, "INVALID_CONVERSATION");
           return;
         }
@@ -5432,17 +5456,20 @@ export function createGuestRequestHandler(
         return;
       }
       const submittedThreadId = form.get("threadId") ?? "";
+      // Pilot issue 53: the server mints every guest thread id. A submitted id is accepted only when this server
+      // issued it to this browser session; a client-chosen id that merely matches the old pattern is refused and
+      // no thread is created.
       if (
         submittedThreadId !== "" &&
-        !THREAD_ID_PATTERN.test(submittedThreadId)
+        (!THREAD_ID_PATTERN.test(submittedThreadId) ||
+          !session ||
+          !session.threadIds.has(submittedThreadId))
       ) {
         sendPageError(req, res, 400, "INVALID_CONVERSATION");
         return;
       }
-      const threadId =
-        submittedThreadId === ""
-          ? `g-${crypto.randomUUID()}`
-          : submittedThreadId;
+      const threadId = submittedThreadId === "" ? mintThreadId() : submittedThreadId;
+      if (submittedThreadId === "" && session) session.threadIds.add(threadId);
       if (
         !session ||
         !(await bindBrowserThread(

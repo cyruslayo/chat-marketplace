@@ -32,7 +32,7 @@ const idPrefixesByKey: Readonly<Record<string, readonly string[]>> = {
   commandEnvelopeId: ["cmd"],
   offerId: ["offer"],
   draftId: ["draft"],
-  threadId: ["thread"],
+  threadId: ["thread", "g"],
   runId: ["run", "turn"],
   surfaceId: ["surf"],
   actionId: ["pa"],
@@ -70,12 +70,6 @@ export const PLATFORM_ID_CONSCIOUSLY_EXCLUDED: ReadonlyArray<{
   readonly files: readonly string[];
   readonly reason: string;
 }> = [
-  {
-    key: "threadId",
-    prefix: "g",
-    files: ["apps/local-guest/src/guest-server.ts", "apps/local-guest/src/client.ts"],
-    reason: "Guest thread ids (g-<uuid>) are chosen by the client: THREAD_ID_PATTERN in apps/local-guest/src/guest-server.ts:578 lets the client set them, so exempting them would let a client carry a card number under an exempt key. Follow-up: constrain the source first."
-  },
   {
     key: "sessionId",
     prefix: "gs",

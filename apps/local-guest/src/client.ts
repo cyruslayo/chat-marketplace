@@ -198,8 +198,17 @@ const newConversationCancel = requiredElement<HTMLButtonElement>(
   "new-conversation-cancel",
 );
 
-function getThreadId(): string {
+function getThreadId(): string | null {
   try {
+    // Pilot issue 53: the server mints the id and puts it in this page (and in the URL on the next load).
+    // The client never creates a thread id.
+    const meta = document.querySelector('meta[name="shortlet-thread-id"]')?.getAttribute("content");
+    if (meta && /^g-[a-f0-9-]{6,64}$/.test(meta)) {
+      window.sessionStorage.setItem("shortlet-concierge-thread", meta);
+      const current = new URLSearchParams(window.location.search).get("threadId");
+      if (current !== meta) window.history.replaceState(null, "", `/?threadId=${encodeURIComponent(meta)}`);
+      return meta;
+    }
     const urlParam = new URLSearchParams(window.location.search).get(
       "threadId",
     );
@@ -212,13 +221,7 @@ function getThreadId(): string {
   } catch {
     /* Storage is optional; the server remains authoritative. */
   }
-  const created = `g-${crypto.randomUUID()}`;
-  try {
-    window.sessionStorage.setItem("shortlet-concierge-thread", created);
-  } catch {
-    /* Page-lifetime fallback. */
-  }
-  return created;
+  return null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1507,7 +1510,7 @@ function readGuestResponse(value: unknown): GuestResponse {
   return value as unknown as GuestResponse;
 }
 
-const threadId = getThreadId();
+const threadId = getThreadId() ?? "";
 let shellState: ConversationShellState = createConversationShellState();
 let activePayload: GuestSurfacePayload | undefined;
 let isLoading = false;
@@ -2862,13 +2865,12 @@ function committedWorkNote(work: GuestCommittedWork, text: string): HTMLElement 
  * offer or Reservation is never withdrawn or cancelled (ADR-0079).
  */
 function startNewConversation(): void {
-  const next = `g-${crypto.randomUUID()}`;
   try {
-    window.sessionStorage.setItem("shortlet-concierge-thread", next);
-    window.location.replace("/");
+    window.sessionStorage.removeItem("shortlet-concierge-thread");
   } catch {
-    window.location.replace(`/?threadId=${encodeURIComponent(next)}`);
+    /* Storage is optional; the server mints the next id. */
   }
+  window.location.replace("/");
 }
 
 function closeNewConversationConfirm(): void {
