@@ -117,7 +117,7 @@ test("Pages share one shell with en-NG, the foundation stylesheet and opt-in dar
   assert.match(html, /^<!doctype html><html lang="en-NG" data-theme="system">/);
   assert.match(html, /<title>A &amp; B<\/title>/);
   assert.match(html, /href="\/shortlet-foundations\.css"/);
-  assert.match(renderGuestShellHtml(), /<html lang="en-NG" data-theme="system">/);
+  assert.match(renderGuestShellHtml(), /<html lang="en-NG" data-theme="system" data-mode="stays">/);
 });
 
 test("Money has one display format across Guest and Operator", () => {

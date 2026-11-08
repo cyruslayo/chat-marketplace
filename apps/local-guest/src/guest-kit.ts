@@ -17,6 +17,7 @@ import {
   UNIT_DETAIL_ABOUT_HEADING,
   commerceSoldBy,
   stayTotalLabel,
+  type ModePresentation,
 } from "../../web-agent/src/guest-content.js";
 import { formatNgnKobo } from "../../web-agent/src/discovery-a2ui.js";
 import {
@@ -31,6 +32,7 @@ import {
   statusBadge,
 } from "../../web/src/ui-kit.js";
 export { appBarHtml, type AppBarInput } from "../../web/src/ui-kit.js";
+import { MAX_TURN_TEXT_LENGTH } from "./turn-limits.js";
 import {
   projectJourney,
   type GuestJourney,
@@ -737,4 +739,66 @@ export function verticalStartersHtml(verticals: readonly VerticalStarter[]): str
 /** The domain chip and step header for the active task, shown above the conversation. */
 export function taskStepHeaderHtml(domainLabel: string, status: string): string {
   return `<header class="ui-step-header"><span class="ui-domain-chip">${escapeHtml(domainLabel)}</span><span class="ui-step-header__status">${escapeHtml(status)}</span></header>`;
+}
+
+/**
+ * The empty state of the chat shell, rendered from the mode (ADR 0107, ADR 0077). Indentation: the first line carries none;
+ * the caller indents it to the shell's depth (8 spaces), and every inner line keeps its absolute indentation.
+ */
+export function emptyStateHtml(mode: ModePresentation): string {
+  const starters = mode.emptyState.starters
+    .map((starter) => `<button class="prompt-suggestion ui-chip" type="button" data-prompt="${escapeHtml(starter.prompt)}">${escapeHtml(starter.label)}</button>`)
+    .join("\n            ");
+  return `<section id="empty-state" aria-labelledby="empty-state-heading">
+          <h2 id="empty-state-heading">${escapeHtml(mode.emptyState.heading)}</h2>
+          <p>${escapeHtml(mode.emptyState.body)}</p>
+          <div class="prompt-suggestions">
+            ${starters}
+          </div>
+        </section>`;
+}
+
+function inputModeAttribute(mode: ModePresentation): string {
+  return mode.composer.inputMode === undefined ? "" : ` inputmode="${mode.composer.inputMode}"`;
+}
+
+/** The chat shell composer (`variant` "chat") as one block. Indentation as for emptyStateHtml: the caller indents the first line to 6 spaces. */
+function chatComposerHtml(mode: ModePresentation): string {
+  return `<form id="composer" method="post" action="/conversation" aria-label="${escapeHtml(mode.composer.ariaLabel)}">
+        <input type="hidden" name="threadId" value="" />
+        <label id="composer-label" for="composer-input">${escapeHtml(mode.composer.label)}</label>
+        <input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send"${inputModeAttribute(mode)}
+               placeholder="${escapeHtml(mode.composer.placeholder)}" aria-describedby="composer-hint" />
+        <span id="composer-hint" class="sr-only">${escapeHtml(mode.composer.hint)}</span>
+        <button id="composer-submit" class="ui-button ui-button--primary" type="submit" aria-label="Send">${icon("arrow-up")}</button>
+        <p id="working-status" hidden></p>
+      </form>`;
+}
+
+/** Options for the no-JS conversation page composer (the `/conversation` form). The server always passes the thread. */
+export interface ConversationComposerOptions {
+  /** The thread the form posts to. Omitted only by markup checks that render the composer alone. */
+  readonly threadId?: string;
+  /** The turn-length bound (defaults to MAX_TURN_TEXT_LENGTH, the bound the server enforces). */
+  readonly maxLength?: number;
+  readonly draft?: string;
+  /** Already-built `#composer-error` markup, or undefined when there is no error. */
+  readonly error?: string;
+}
+
+function pageComposerHtml(mode: ModePresentation, options: ConversationComposerOptions): string {
+  const error = options.error ?? "";
+  const maxLength = options.maxLength ?? MAX_TURN_TEXT_LENGTH;
+  return `<form id="composer" class="composer" method="post" action="/conversation" aria-label="${escapeHtml(mode.composer.ariaLabel)}"><div class="ui-field"><label class="ui-field__label" for="composer-input">${escapeHtml(mode.composer.label)}</label><p class="ui-field__hint" id="composer-hint">${escapeHtml(mode.composer.hint)}</p><input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send"${inputModeAttribute(mode)} maxlength="${maxLength}" required aria-describedby="composer-hint${error ? " composer-error" : ""}"${error ? ' aria-invalid="true"' : ""} value="${escapeHtml(options.draft ?? "")}">${error}</div><input type="hidden" name="threadId" value="${escapeHtml(options.threadId ?? "")}"><button class="ui-button ui-button--primary" type="submit">Send</button></form>`;
+}
+
+/**
+ * The composer form, rendered from the mode (ADR 0107, ADR 0080: the no-JS page and the chat shell share one copy source).
+ * "chat" returns the shell's block; "page" returns the `/conversation` form.
+ */
+export function composerHtml(mode: ModePresentation, variant: "chat"): string;
+export function composerHtml(mode: ModePresentation, variant: "page", options?: ConversationComposerOptions): string;
+export function composerHtml(mode: ModePresentation, variant: "chat" | "page", options?: ConversationComposerOptions): string {
+  if (variant === "chat") return chatComposerHtml(mode);
+  return pageComposerHtml(mode, options ?? {});
 }

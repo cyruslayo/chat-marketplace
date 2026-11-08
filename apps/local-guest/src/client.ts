@@ -16,6 +16,7 @@ import {
   GUEST_COMPARE_LABELS,
   GUEST_FACT_LABELS,
   GUEST_GLOSSARY,
+  GUEST_MODES,
   GUEST_NEW_CONVERSATION,
   GUEST_TASK_RAIL,
   GUEST_VERTICALS,
@@ -23,9 +24,11 @@ import {
   guestFactValue,
   guestNewConversationCopy,
   type GuestCommittedWorkKind,
+  type ModePresentation,
 } from "../../web-agent/src/guest-content.js";
 import { CLIENT_REQUEST_TIMEOUT_MS, CLIENT_TURN_TIMEOUT_MS, TURN_STILL_WORKING_AFTER_MS } from "./turn-budget.js";
 import { turnEntriesSince } from "./guest-turn-recovery.js";
+import { assertValidResponseMode, readResponseMode } from "./response-mode.js";
 import {
   breakdownHtml,
   confirmationScreenHtml,
@@ -149,6 +152,7 @@ interface GuestResponse {
   readonly quickReplies?: readonly string[];
   readonly tasks?: readonly GuestTask[];
   readonly verticals?: readonly GuestVertical[];
+  readonly mode?: ModePresentation;
 }
 interface GuestCommittedWork {
   readonly kind: GuestCommittedWorkKind;
@@ -1504,7 +1508,16 @@ function readGuestResponse(value: unknown): GuestResponse {
       value.verticals.some((vertical) => !isGuestVertical(vertical)))
   )
     throw new Error("Invalid response verticals");
+  assertValidResponseMode(value.mode);
   return value as unknown as GuestResponse;
+}
+
+// Slice 1 of the agent-modes effort: the applied presentation drives the shell announcements. It is only ever set from a
+// validated copy, so a raw response object never reaches the copy. Stays is the default before the first response.
+let appliedMode: ModePresentation = GUEST_MODES.stays;
+
+function applyResponseMode(response: GuestResponse): void {
+  appliedMode = readResponseMode(response.mode) ?? appliedMode;
 }
 
 const threadId = getThreadId();
@@ -1878,13 +1891,13 @@ function closeWorkspace(focusTarget: HTMLElement): void {
   workspaceOpener = target;
   syncSheetHistory();
   trackTelemetry("focused-surface-closed");
-  announce("Returned to the conversation. Your stay details are still here.");
+  announce(appliedMode.workspace.returnedAnnouncement);
 }
 
 function askShortlet(): void {
   closeWorkspace(composerInput);
   composerInput.focus({ preventScroll: true });
-  announce("Conversation ready. Your stay details are still here.");
+  announce(appliedMode.workspace.readyAnnouncement);
 }
 
 function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
@@ -2545,6 +2558,7 @@ function renderResponse(response: GuestResponse): boolean {
   renderCriteria(response.criteria);
   renderTaskRail(response.tasks);
   renderVerticalStarters(response.verticals);
+  applyResponseMode(response);
   for (const message of response.messages ?? []) addTurn("assistant", message);
   renderQuickReplies(response.quickReplies);
   if ((response.messages ?? []).length > 0) trackTelemetry("text-response-rendered");
@@ -2565,6 +2579,7 @@ async function refreshServerState(preserveConversation = shellState.activeSurfac
       renderCriteria(response.criteria);
       renderTaskRail(response.tasks);
       renderVerticalStarters(response.verticals);
+      applyResponseMode(response);
     }
     if (response.ok && response.surfaces && response.surfaces.length > 0) {
       renderSurfaces(response.surfaces, preserveConversation);
@@ -2596,7 +2611,7 @@ function setLoading(next: boolean): void {
   composerForm.setAttribute("aria-busy", String(next));
   composerSubmit.textContent = next ? "Working…" : "Send";
   workingStatus.hidden = !next;
-  workingStatus.textContent = next ? "Working on your request… Your stay details will stay here." : "";
+  workingStatus.textContent = next ? appliedMode.workspace.workingStatus : "";
   if (next) announce("Message sent. The concierge is working on your request.");
 }
 
@@ -2809,6 +2824,7 @@ async function restoreServerState(): Promise<boolean> {
     if (response.tasks && response.tasks.length > 1) {
       renderTaskRail(response.tasks);
       renderVerticalStarters(response.verticals);
+      applyResponseMode(response);
       renderSurfaces(response.surfaces ?? []);
       announce("Your conversation has been restored.");
       return true;

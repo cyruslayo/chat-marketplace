@@ -1,3 +1,6 @@
+import type { IconName } from "../../web/src/ui-kit.js";
+import { ICON_NAMES } from "../../web/src/ui-kit.js";
+
 /**
  * Guest vocabulary (ADR-0077): every guest surface reads its labels from this
  * one module so wording never changes surface by surface. Domain code, types
@@ -634,3 +637,215 @@ export const GUEST_PAYMENT_COPY = {
   manualHelp: "Pay our business account and upload your receipt. Your booking confirms only after we check the money has arrived. You can't switch until this attempt expires or is declined.",
   lateReview: "A late payment needs review and does not confirm your booking. Contact Shortlet if you sent money after the deadline.",
 } as const;
+
+/**
+ * Agent Mode presentation (ADR 0107): the copy a mode gives the guest. The chat shell, the no-JS conversation page and the
+ * client announcements render from one presentation, so a second mode supplies its own copy without touching the shell.
+ */
+export interface ModePresentation {
+  readonly id: string;
+  readonly label: string;
+  readonly persona: { readonly name: string; readonly icon: IconName };
+  readonly tagline: string;
+  readonly emptyState: {
+    readonly heading: string;
+    readonly body: string;
+    readonly starters: readonly { readonly label: string; readonly prompt: string }[];
+  };
+  readonly composer: {
+    readonly label: string;
+    readonly ariaLabel: string;
+    readonly placeholder: string;
+    readonly hint: string;
+    readonly inputMode?: "text" | "search";
+  };
+  readonly workspace: {
+    readonly regionLabel: string;
+    readonly reopenLabel: string;
+    readonly returnedAnnouncement: string;
+    readonly readyAnnouncement: string;
+    readonly workingStatus: string;
+  };
+  readonly criteria?: { readonly regionLabel: string; readonly editLabel: string };
+}
+
+/** Validation bounds for presentation copy (ADR 0107). Every string is non-empty after trim and within its bound. */
+export const MODE_TEXT_MAX_LENGTH = 400;
+/** The empty-state body is a paragraph, so it may run longer than a label. */
+export const MODE_BODY_MAX_LENGTH = 600;
+/** The empty state offers between one and this many starters. */
+export const MODE_STARTERS_MAX = 4;
+const MODE_ID_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
+
+const MODE_KEYS: readonly string[] = ["id", "label", "persona", "tagline", "emptyState", "composer", "workspace", "criteria"];
+const PERSONA_KEYS: readonly string[] = ["name", "icon"];
+const EMPTY_STATE_KEYS: readonly string[] = ["heading", "body", "starters"];
+const STARTER_KEYS: readonly string[] = ["label", "prompt"];
+const COMPOSER_KEYS: readonly string[] = ["label", "ariaLabel", "placeholder", "hint", "inputMode"];
+const WORKSPACE_KEYS: readonly string[] = ["regionLabel", "reopenLabel", "returnedAnnouncement", "readyAnnouncement", "workingStatus"];
+const CRITERIA_KEYS: readonly string[] = ["regionLabel", "editLabel"];
+
+function deepFreeze(value: unknown): void {
+  if (typeof value !== "object" || value === null) return;
+  for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
+  Object.freeze(value);
+}
+
+const STAYS_PRESENTATION: ModePresentation = {
+  id: "stays",
+  label: "Stays",
+  // Naming is settled in slice 2 of the agent-modes effort; "Stays" is the placeholder persona name.
+  persona: { name: "Stays", icon: "home" },
+  tagline: GUEST_VERTICALS.staysDescription,
+  emptyState: {
+    heading: "Find a place to stay",
+    body: "Start with a city, your dates (or length of stay), and number of guests. We’ll find available entire-place stays and guide you through requesting one.",
+    starters: [
+      { label: "Explore Abuja", prompt: "I’m looking for a stay in Abuja" },
+      { label: "Explore Lagos", prompt: "I’m looking for a stay in Lagos" },
+    ],
+  },
+  composer: {
+    label: "Your message",
+    ariaLabel: "Message the concierge",
+    placeholder: "Area, dates, guests",
+    hint: "Share a city or neighbourhood, dates or nights, and number of guests.",
+  },
+  workspace: {
+    regionLabel: "Current stay details",
+    reopenLabel: "Return to your current stay details",
+    returnedAnnouncement: "Returned to the conversation. Your stay details are still here.",
+    readyAnnouncement: "Conversation ready. Your stay details are still here.",
+    workingStatus: "Working on your request… Your stay details will stay here.",
+  },
+  criteria: { regionLabel: "Your search", editLabel: "Edit search" },
+};
+deepFreeze(STAYS_PRESENTATION);
+
+export const GUEST_MODES = Object.freeze({ stays: STAYS_PRESENTATION });
+
+type PlainRecord = Record<string, unknown>;
+
+function isPlainRecord(value: unknown): value is PlainRecord {
+  if (typeof value !== "object" || value === null) return false;
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function hasOnlyKeys(record: PlainRecord, allowed: readonly string[]): boolean {
+  return Object.keys(record).every((key) => allowed.includes(key));
+}
+
+function boundedText(value: unknown, maxLength: number = MODE_TEXT_MAX_LENGTH): string | undefined {
+  if (typeof value !== "string" || value.trim() === "" || value.length > maxLength) return undefined;
+  return value;
+}
+
+function isIconName(value: unknown): value is IconName {
+  return typeof value === "string" && ICON_NAMES.some((name) => name === value);
+}
+
+function isInputMode(value: unknown): value is "text" | "search" {
+  return value === "text" || value === "search";
+}
+
+function validStarters(value: unknown): { label: string; prompt: string }[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const items: readonly unknown[] = value;
+  if (items.length < 1 || items.length > MODE_STARTERS_MAX) return undefined;
+  const starters: { label: string; prompt: string }[] = [];
+  for (const item of items) {
+    if (!isPlainRecord(item) || !hasOnlyKeys(item, STARTER_KEYS)) return undefined;
+    const label = boundedText(item.label);
+    const prompt = boundedText(item.prompt);
+    if (label === undefined || prompt === undefined) return undefined;
+    starters.push({ label, prompt });
+  }
+  return starters;
+}
+
+/**
+ * Fail-closed check of a presentation that arrives from outside the code (ADR 0107). Returns a fresh, deep-frozen copy
+ * built from the narrowed fields, or undefined for any unknown key, missing or malformed field, out-of-bound string,
+ * unknown icon, or non-object. The input object is never returned.
+ */
+export function validateModePresentation(value: unknown): ModePresentation | undefined {
+  if (!isPlainRecord(value) || !hasOnlyKeys(value, MODE_KEYS)) return undefined;
+
+  const id = value.id;
+  const label = boundedText(value.label);
+  const tagline = boundedText(value.tagline);
+  if (typeof id !== "string" || !MODE_ID_PATTERN.test(id) || label === undefined || tagline === undefined) return undefined;
+
+  const persona = value.persona;
+  if (!isPlainRecord(persona) || !hasOnlyKeys(persona, PERSONA_KEYS)) return undefined;
+  const personaName = boundedText(persona.name);
+  const personaIcon = persona.icon;
+  if (personaName === undefined || !isIconName(personaIcon)) return undefined;
+
+  const emptyState = value.emptyState;
+  if (!isPlainRecord(emptyState) || !hasOnlyKeys(emptyState, EMPTY_STATE_KEYS)) return undefined;
+  const heading = boundedText(emptyState.heading);
+  const body = boundedText(emptyState.body, MODE_BODY_MAX_LENGTH);
+  const starters = validStarters(emptyState.starters);
+  if (heading === undefined || body === undefined || starters === undefined) return undefined;
+
+  const composer = value.composer;
+  if (!isPlainRecord(composer) || !hasOnlyKeys(composer, COMPOSER_KEYS)) return undefined;
+  const composerLabel = boundedText(composer.label);
+  const ariaLabel = boundedText(composer.ariaLabel);
+  const placeholder = boundedText(composer.placeholder);
+  const hint = boundedText(composer.hint);
+  const rawInputMode = composer.inputMode;
+  let inputMode: "text" | "search" | undefined;
+  if (rawInputMode !== undefined) {
+    if (!isInputMode(rawInputMode)) return undefined;
+    inputMode = rawInputMode;
+  }
+  if (composerLabel === undefined || ariaLabel === undefined || placeholder === undefined || hint === undefined) return undefined;
+
+  const workspace = value.workspace;
+  if (!isPlainRecord(workspace) || !hasOnlyKeys(workspace, WORKSPACE_KEYS)) return undefined;
+  const regionLabel = boundedText(workspace.regionLabel);
+  const reopenLabel = boundedText(workspace.reopenLabel);
+  const returnedAnnouncement = boundedText(workspace.returnedAnnouncement);
+  const readyAnnouncement = boundedText(workspace.readyAnnouncement);
+  const workingStatus = boundedText(workspace.workingStatus);
+  if (
+    regionLabel === undefined ||
+    reopenLabel === undefined ||
+    returnedAnnouncement === undefined ||
+    readyAnnouncement === undefined ||
+    workingStatus === undefined
+  )
+    return undefined;
+
+  let criteria: { regionLabel: string; editLabel: string } | undefined;
+  const rawCriteria = value.criteria;
+  if (rawCriteria !== undefined) {
+    if (!isPlainRecord(rawCriteria) || !hasOnlyKeys(rawCriteria, CRITERIA_KEYS)) return undefined;
+    const criteriaRegion = boundedText(rawCriteria.regionLabel);
+    const editLabel = boundedText(rawCriteria.editLabel);
+    if (criteriaRegion === undefined || editLabel === undefined) return undefined;
+    criteria = { regionLabel: criteriaRegion, editLabel };
+  }
+
+  const presentation: ModePresentation = {
+    id,
+    label,
+    persona: { name: personaName, icon: personaIcon },
+    tagline,
+    emptyState: { heading, body, starters },
+    composer: {
+      label: composerLabel,
+      ariaLabel,
+      placeholder,
+      hint,
+      ...(inputMode === undefined ? {} : { inputMode }),
+    },
+    workspace: { regionLabel, reopenLabel, returnedAnnouncement, readyAnnouncement, workingStatus },
+    ...(criteria === undefined ? {} : { criteria }),
+  };
+  deepFreeze(presentation);
+  return presentation;
+}

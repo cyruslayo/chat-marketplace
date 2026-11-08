@@ -9210,6 +9210,7 @@ Known schemas:
     users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.5 3.2-5.5 6.5-5.5s5.9 2 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.8c2 .7 3.2 2.5 3.5 5.2"/>',
     x: '<path d="M6 6l12 12M18 6 6 18"/>'
   };
+  var ICON_NAMES = Object.freeze(Object.keys(ICON_PATHS));
   function icon(name) {
     return `<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${ICON_PATHS[name]}</svg>`;
   }
@@ -9853,6 +9854,152 @@ Known schemas:
     manualHelp: "Pay our business account and upload your receipt. Your booking confirms only after we check the money has arrived. You can't switch until this attempt expires or is declined.",
     lateReview: "A late payment needs review and does not confirm your booking. Contact Shortlet if you sent money after the deadline."
   };
+  var MODE_TEXT_MAX_LENGTH = 400;
+  var MODE_BODY_MAX_LENGTH = 600;
+  var MODE_STARTERS_MAX = 4;
+  var MODE_ID_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
+  var MODE_KEYS = ["id", "label", "persona", "tagline", "emptyState", "composer", "workspace", "criteria"];
+  var PERSONA_KEYS = ["name", "icon"];
+  var EMPTY_STATE_KEYS = ["heading", "body", "starters"];
+  var STARTER_KEYS = ["label", "prompt"];
+  var COMPOSER_KEYS = ["label", "ariaLabel", "placeholder", "hint", "inputMode"];
+  var WORKSPACE_KEYS = ["regionLabel", "reopenLabel", "returnedAnnouncement", "readyAnnouncement", "workingStatus"];
+  var CRITERIA_KEYS = ["regionLabel", "editLabel"];
+  function deepFreeze(value) {
+    if (typeof value !== "object" || value === null) return;
+    for (const child of Object.values(value)) deepFreeze(child);
+    Object.freeze(value);
+  }
+  var STAYS_PRESENTATION = {
+    id: "stays",
+    label: "Stays",
+    // Naming is settled in slice 2 of the agent-modes effort; "Stays" is the placeholder persona name.
+    persona: { name: "Stays", icon: "home" },
+    tagline: GUEST_VERTICALS.staysDescription,
+    emptyState: {
+      heading: "Find a place to stay",
+      body: "Start with a city, your dates (or length of stay), and number of guests. We\u2019ll find available entire-place stays and guide you through requesting one.",
+      starters: [
+        { label: "Explore Abuja", prompt: "I\u2019m looking for a stay in Abuja" },
+        { label: "Explore Lagos", prompt: "I\u2019m looking for a stay in Lagos" }
+      ]
+    },
+    composer: {
+      label: "Your message",
+      ariaLabel: "Message the concierge",
+      placeholder: "Area, dates, guests",
+      hint: "Share a city or neighbourhood, dates or nights, and number of guests."
+    },
+    workspace: {
+      regionLabel: "Current stay details",
+      reopenLabel: "Return to your current stay details",
+      returnedAnnouncement: "Returned to the conversation. Your stay details are still here.",
+      readyAnnouncement: "Conversation ready. Your stay details are still here.",
+      workingStatus: "Working on your request\u2026 Your stay details will stay here."
+    },
+    criteria: { regionLabel: "Your search", editLabel: "Edit search" }
+  };
+  deepFreeze(STAYS_PRESENTATION);
+  var GUEST_MODES = Object.freeze({ stays: STAYS_PRESENTATION });
+  function isPlainRecord(value) {
+    if (typeof value !== "object" || value === null) return false;
+    const prototype = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+  }
+  function hasOnlyKeys(record, allowed) {
+    return Object.keys(record).every((key3) => allowed.includes(key3));
+  }
+  function boundedText(value, maxLength = MODE_TEXT_MAX_LENGTH) {
+    if (typeof value !== "string" || value.trim() === "" || value.length > maxLength) return void 0;
+    return value;
+  }
+  function isIconName(value) {
+    return typeof value === "string" && ICON_NAMES.some((name) => name === value);
+  }
+  function isInputMode(value) {
+    return value === "text" || value === "search";
+  }
+  function validStarters(value) {
+    if (!Array.isArray(value)) return void 0;
+    const items = value;
+    if (items.length < 1 || items.length > MODE_STARTERS_MAX) return void 0;
+    const starters = [];
+    for (const item of items) {
+      if (!isPlainRecord(item) || !hasOnlyKeys(item, STARTER_KEYS)) return void 0;
+      const label = boundedText(item.label);
+      const prompt = boundedText(item.prompt);
+      if (label === void 0 || prompt === void 0) return void 0;
+      starters.push({ label, prompt });
+    }
+    return starters;
+  }
+  function validateModePresentation(value) {
+    if (!isPlainRecord(value) || !hasOnlyKeys(value, MODE_KEYS)) return void 0;
+    const id = value.id;
+    const label = boundedText(value.label);
+    const tagline = boundedText(value.tagline);
+    if (typeof id !== "string" || !MODE_ID_PATTERN.test(id) || label === void 0 || tagline === void 0) return void 0;
+    const persona = value.persona;
+    if (!isPlainRecord(persona) || !hasOnlyKeys(persona, PERSONA_KEYS)) return void 0;
+    const personaName = boundedText(persona.name);
+    const personaIcon = persona.icon;
+    if (personaName === void 0 || !isIconName(personaIcon)) return void 0;
+    const emptyState2 = value.emptyState;
+    if (!isPlainRecord(emptyState2) || !hasOnlyKeys(emptyState2, EMPTY_STATE_KEYS)) return void 0;
+    const heading = boundedText(emptyState2.heading);
+    const body = boundedText(emptyState2.body, MODE_BODY_MAX_LENGTH);
+    const starters = validStarters(emptyState2.starters);
+    if (heading === void 0 || body === void 0 || starters === void 0) return void 0;
+    const composer = value.composer;
+    if (!isPlainRecord(composer) || !hasOnlyKeys(composer, COMPOSER_KEYS)) return void 0;
+    const composerLabel = boundedText(composer.label);
+    const ariaLabel = boundedText(composer.ariaLabel);
+    const placeholder = boundedText(composer.placeholder);
+    const hint = boundedText(composer.hint);
+    const rawInputMode = composer.inputMode;
+    let inputMode;
+    if (rawInputMode !== void 0) {
+      if (!isInputMode(rawInputMode)) return void 0;
+      inputMode = rawInputMode;
+    }
+    if (composerLabel === void 0 || ariaLabel === void 0 || placeholder === void 0 || hint === void 0) return void 0;
+    const workspace = value.workspace;
+    if (!isPlainRecord(workspace) || !hasOnlyKeys(workspace, WORKSPACE_KEYS)) return void 0;
+    const regionLabel = boundedText(workspace.regionLabel);
+    const reopenLabel = boundedText(workspace.reopenLabel);
+    const returnedAnnouncement = boundedText(workspace.returnedAnnouncement);
+    const readyAnnouncement = boundedText(workspace.readyAnnouncement);
+    const workingStatus2 = boundedText(workspace.workingStatus);
+    if (regionLabel === void 0 || reopenLabel === void 0 || returnedAnnouncement === void 0 || readyAnnouncement === void 0 || workingStatus2 === void 0)
+      return void 0;
+    let criteria;
+    const rawCriteria = value.criteria;
+    if (rawCriteria !== void 0) {
+      if (!isPlainRecord(rawCriteria) || !hasOnlyKeys(rawCriteria, CRITERIA_KEYS)) return void 0;
+      const criteriaRegion = boundedText(rawCriteria.regionLabel);
+      const editLabel = boundedText(rawCriteria.editLabel);
+      if (criteriaRegion === void 0 || editLabel === void 0) return void 0;
+      criteria = { regionLabel: criteriaRegion, editLabel };
+    }
+    const presentation = {
+      id,
+      label,
+      persona: { name: personaName, icon: personaIcon },
+      tagline,
+      emptyState: { heading, body, starters },
+      composer: {
+        label: composerLabel,
+        ariaLabel,
+        placeholder,
+        hint,
+        ...inputMode === void 0 ? {} : { inputMode }
+      },
+      workspace: { regionLabel, reopenLabel, returnedAnnouncement, readyAnnouncement, workingStatus: workingStatus2 },
+      ...criteria === void 0 ? {} : { criteria }
+    };
+    deepFreeze(presentation);
+    return presentation;
+  }
 
   // apps/local-guest/src/turn-budget.ts
   var SCOPE_CLASSIFIER_BUDGET_MS = 8e3;
@@ -9872,6 +10019,15 @@ Known schemas:
       if (entry?.role === "user") return entry.text === text ? timeline.slice(index + 1) : void 0;
     }
     return void 0;
+  }
+
+  // apps/local-guest/src/response-mode.ts
+  function assertValidResponseMode(value) {
+    if (value === void 0) return;
+    if (validateModePresentation(value) === void 0) throw new Error("Invalid response mode");
+  }
+  function readResponseMode(value) {
+    return validateModePresentation(value);
   }
 
   // apps/web-agent/src/booking-presentation.ts
@@ -11107,7 +11263,12 @@ Known schemas:
       throw new Error("Invalid response tasks");
     if (value.verticals !== void 0 && (!Array.isArray(value.verticals) || value.verticals.some((vertical) => !isGuestVertical(vertical))))
       throw new Error("Invalid response verticals");
+    assertValidResponseMode(value.mode);
     return value;
+  }
+  var appliedMode = GUEST_MODES.stays;
+  function applyResponseMode(response) {
+    appliedMode = readResponseMode(response.mode) ?? appliedMode;
   }
   var threadId = getThreadId();
   var shellState = createConversationShellState();
@@ -11372,12 +11533,12 @@ Known schemas:
     workspaceOpener = target;
     syncSheetHistory();
     trackTelemetry("focused-surface-closed");
-    announce("Returned to the conversation. Your stay details are still here.");
+    announce(appliedMode.workspace.returnedAnnouncement);
   }
   function askShortlet() {
     closeWorkspace(composerInput);
     composerInput.focus({ preventScroll: true });
-    announce("Conversation ready. Your stay details are still here.");
+    announce(appliedMode.workspace.readyAnnouncement);
   }
   function renderSurface(surface, moveFocus = false) {
     stopCountdown();
@@ -11977,6 +12138,7 @@ Known schemas:
     renderCriteria(response.criteria);
     renderTaskRail(response.tasks);
     renderVerticalStarters(response.verticals);
+    applyResponseMode(response);
     for (const message of response.messages ?? []) addTurn("assistant", message);
     renderQuickReplies(response.quickReplies);
     if ((response.messages ?? []).length > 0) trackTelemetry("text-response-rendered");
@@ -11995,6 +12157,7 @@ Known schemas:
         renderCriteria(response.criteria);
         renderTaskRail(response.tasks);
         renderVerticalStarters(response.verticals);
+        applyResponseMode(response);
       }
       if (response.ok && response.surfaces && response.surfaces.length > 0) {
         renderSurfaces(response.surfaces, preserveConversation);
@@ -12023,7 +12186,7 @@ Known schemas:
     composerForm.setAttribute("aria-busy", String(next));
     composerSubmit.textContent = next ? "Working\u2026" : "Send";
     workingStatus.hidden = !next;
-    workingStatus.textContent = next ? "Working on your request\u2026 Your stay details will stay here." : "";
+    workingStatus.textContent = next ? appliedMode.workspace.workingStatus : "";
     if (next) announce("Message sent. The concierge is working on your request.");
   }
   async function showLandedTurn(text) {
@@ -12219,6 +12382,7 @@ Known schemas:
       if (response.tasks && response.tasks.length > 1) {
         renderTaskRail(response.tasks);
         renderVerticalStarters(response.verticals);
+        applyResponseMode(response);
         renderSurfaces(response.surfaces ?? []);
         announce("Your conversation has been restored.");
         return true;

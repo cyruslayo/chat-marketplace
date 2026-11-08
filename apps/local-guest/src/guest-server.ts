@@ -28,6 +28,7 @@ import { toDiscoveryProjection, StayDateRange, dateKeyInLagos, type ExtendedStay
 import { billingPeriodStatusText, extendedStayUnitFacts } from "../../web-agent/src/extended-stay-presentation.js";
 import { formatBookingMoney } from "../../web-agent/src/booking-presentation.js";
 import { formatGuestDate } from "../../web-agent/src/guest-content.js";
+import { GUEST_MODES, type ModePresentation } from "../../web-agent/src/guest-content.js";
 import type { BillingPeriodProjection } from "../../../domains/shortlet/src/index.js";
 import { createGuestShell, type RouteModule, type StaticAsset } from "./guest-shell.js";
 import type { GuestCommerceModule, PaymentReferenceKeys } from "./commerce-port.js";
@@ -157,7 +158,9 @@ import {
 } from "../../web-agent/src/request-presentation.js";
 import {
   appBarHtml,
+  composerHtml,
   confirmationScreenHtml,
+  emptyStateHtml,
   offerScreenHtml,
   railHtml,
   requestScreenHtml,
@@ -325,9 +328,12 @@ import {
   THREAD_ID_PATTERN,
 } from "./shortlet-app.js";
 
-export function renderGuestShellHtml(): string {
+/**
+ * The chat shell (ADR 0107): rendered from the Agent Mode presentation, stays by default. Hosts pass nothing and get stays.
+ */
+export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays): string {
   return `<!DOCTYPE html>
-<html lang="en-NG" data-theme="system">
+<html lang="en-NG" data-theme="system" data-mode="${escapeHtml(mode.id)}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -578,23 +584,16 @@ export function renderGuestShellHtml(): string {
         <h2 id="conversation-heading" class="conversation-heading">Conversation</h2>
         <header id="task-step-header" class="ui-step-header" hidden></header>
         <section id="vertical-starters" class="ui-vertical-starters" hidden></section>
-        <section id="empty-state" aria-labelledby="empty-state-heading">
-          <h2 id="empty-state-heading">Find a place to stay</h2>
-          <p>Start with a city, your dates (or length of stay), and number of guests. We’ll find available entire-place stays and guide you through requesting one.</p>
-          <div class="prompt-suggestions">
-            <button class="prompt-suggestion ui-chip" type="button" data-prompt="I’m looking for a stay in Abuja">Explore Abuja</button>
-            <button class="prompt-suggestion ui-chip" type="button" data-prompt="I’m looking for a stay in Lagos">Explore Lagos</button>
-          </div>
-        </section>
+        ${emptyStateHtml(mode)}
       </section>
-      <section id="workspace-region" aria-label="Current stay details" hidden>
+      <section id="workspace-region" aria-label="${escapeHtml(mode.workspace.regionLabel)}" hidden>
         <div id="active-workspace" hidden></div>
       </section>
-      <button id="workspace-reopen" type="button" hidden>Return to your current stay details</button>
-      <section id="criteria-strip" aria-label="Your search" hidden>
+      <button id="workspace-reopen" type="button" hidden>${escapeHtml(mode.workspace.reopenLabel)}</button>
+      <section id="criteria-strip"${mode.criteria ? ` aria-label="${escapeHtml(mode.criteria.regionLabel)}"` : ""} hidden>
         <div class="criteria-compact">
           <p id="criteria-summary" class="criteria-summary"></p>
-          <button id="criteria-toggle" class="criteria-toggle ui-button ui-button--quiet" type="button" aria-expanded="false" aria-controls="criteria-panel">Edit search</button>
+          <button id="criteria-toggle" class="criteria-toggle ui-button ui-button--quiet" type="button" aria-expanded="false" aria-controls="criteria-panel">${escapeHtml(mode.criteria?.editLabel ?? "")}</button>
         </div>
         <div id="criteria-panel">
           <div class="criteria-chips"></div>
@@ -602,15 +601,7 @@ export function renderGuestShellHtml(): string {
         </div>
         <p id="criteria-status" class="criteria-status" role="alert"></p>
       </section>
-      <form id="composer" method="post" action="/conversation" aria-label="Message the concierge">
-        <input type="hidden" name="threadId" value="" />
-        <label id="composer-label" for="composer-input">Your message</label>
-        <input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send"
-               placeholder="Area, dates, guests" aria-describedby="composer-hint" />
-        <span id="composer-hint" class="sr-only">Share a city or neighbourhood, dates or nights, and number of guests.</span>
-        <button id="composer-submit" class="ui-button ui-button--primary" type="submit" aria-label="Send">${icon("arrow-up")}</button>
-        <p id="working-status" hidden></p>
-      </form>
+      ${composerHtml(mode, "chat")}
     </main>
     <div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
     <div id="error-announcer" class="sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div>
@@ -734,7 +725,10 @@ export function renderNoScriptConversationHtml(input: {
   readonly error?: string;
   readonly draft?: string;
   readonly committedWork?: readonly GuestCommittedWork[];
+  /** ADR 0107: the Agent Mode whose composer copy the page renders. Omitted means stays. */
+  readonly mode?: ModePresentation;
 }): string {
+  const mode = input.mode ?? GUEST_MODES.stays;
   const turns = input.timeline
     .map((entry) =>
       entry.role === "receipt"
@@ -771,7 +765,7 @@ export function renderNoScriptConversationHtml(input: {
     title: "Conversation · Shortlet",
     width: "narrow",
     frame: `${appBarHtml({ backHref: "/", backLabel: "Back to your conversation", action: { href: "/conversation", label: GUEST_NEW_CONVERSATION.control, icon: "message-plus" } })}${renderJourneyRailHtml(input.journey)}${taskRailHtml(input.tasks ?? [])}`,
-    body: `<div class="guest-editorial no-js-conversation" data-page="conversation"><h1 class="ui-sr-only">Conversation</h1>${verticalStartersHtml(input.verticals ?? [])}${committed}${turns ? `<ol class="no-js-transcript" aria-label="Conversation">${turns}</ol>` : ""}${surfaces}<form id="composer" class="composer" method="post" action="/conversation" aria-label="Message the concierge"><div class="ui-field"><label class="ui-field__label" for="composer-input">Your message</label><p class="ui-field__hint" id="composer-hint">Share a city or neighbourhood, dates or nights, and number of guests.</p><input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send" maxlength="${MAX_TURN_TEXT_LENGTH}" required aria-describedby="composer-hint${error ? " composer-error" : ""}"${error ? ' aria-invalid="true"' : ""} value="${escapeHtml(input.draft ?? "")}">${error}</div><input type="hidden" name="threadId" value="${escapeHtml(input.threadId)}"><button class="ui-button ui-button--primary" type="submit">Send</button></form></div>`,
+    body: `<div class="guest-editorial no-js-conversation" data-page="conversation"><h1 class="ui-sr-only">Conversation</h1>${verticalStartersHtml(input.verticals ?? [])}${committed}${turns ? `<ol class="no-js-transcript" aria-label="Conversation">${turns}</ol>` : ""}${surfaces}${composerHtml(mode, "page", { threadId: input.threadId, draft: input.draft, error })}</div>`,
   });
 }
 

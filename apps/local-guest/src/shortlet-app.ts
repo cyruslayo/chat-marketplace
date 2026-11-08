@@ -1,5 +1,5 @@
 import { draftReplacementTerms, draftReplacementUnavailable, DRAFT_REPLACEMENT_PROPOSED_COPY, type DraftReplacementStay, type PendingDraftReplacement } from "./draft-replacement.js";
-import { GUEST_PHONE_COPY, GUEST_REQUEST_EDIT_COPY, GUEST_PAYMENT_COPY } from "../../web-agent/src/guest-content.js";
+import { GUEST_PHONE_COPY, GUEST_REQUEST_EDIT_COPY, GUEST_PAYMENT_COPY, GUEST_MODES, type ModePresentation } from "../../web-agent/src/guest-content.js";
 import {
   createServer,
   type IncomingMessage,
@@ -367,6 +367,8 @@ export interface GuestStateSnapshot {
   /** Slice 26: the shell task rail, present only when the assistant runtime has tasks. */
   readonly tasks?: readonly GuestTask[];
   readonly verticals?: readonly GuestVertical[];
+  /** ADR 0107: the active Agent Mode's presentation; every guest response carries it. Not the same as GuestSurfacePayload.mode (a surface placement). */
+  readonly mode?: ModePresentation;
 }
 
 export interface GuestTurnSuccess {
@@ -386,6 +388,8 @@ export interface GuestTurnSuccess {
   /** Slice 26: the shell task rail, present only when the assistant runtime has tasks. */
   readonly tasks?: readonly GuestTask[];
   readonly verticals?: readonly GuestVertical[];
+  /** ADR 0107: the active Agent Mode's presentation; every guest response carries it. Not the same as GuestSurfacePayload.mode (a surface placement). */
+  readonly mode?: ModePresentation;
 }
 
 /**
@@ -779,6 +783,8 @@ export class LocalGuestApp {
   readonly #modelCallBudget: ModelCallBudget | null;
   readonly #paystackCheckoutTimeoutMs: number;
   readonly #onCardCheckoutFailed: ((event: CardCheckoutFailedEvent) => void) | null;
+  /** ADR 0107: the composition root's default Agent Mode. Stays for every host today; not read from task state (one pack). */
+  readonly #defaultMode: ModePresentation = GUEST_MODES.stays;
 
   constructor(
     environment: LocalGuestEnvironment,
@@ -2091,6 +2097,7 @@ export class LocalGuestApp {
       surfaces: this.#withWaiting(thread, this.#withOpenProposalCard(threadId, normalized.surfaces)),
       ...(journey === undefined ? {} : { journey }),
       ...(criteria === undefined ? {} : { criteria }),
+      mode: this.#defaultMode,
       ...(this.#assistantRuntime?.hasThread(threadId) ? { tasks: this.#assistantRuntime.getTaskRail(threadId), verticals: this.#verticals() } : {}),
     };
   }
@@ -2101,15 +2108,19 @@ export class LocalGuestApp {
    */
   #withJourney(threadId: string, result: GuestTurnResult): GuestTurnResult {
     if (!result.ok) return result;
+    // ADR 0107: every successful response carries the mode, on the assistant and non-assistant paths alike. Set before any
+    // early return below, so a thread missing from the map still returns it.
+    const mode = this.#defaultMode;
     const thread = this.#threads.get(threadId);
-    if (!thread) return result;
+    if (!thread) return { ...result, mode };
     // Issue 03a AC1 applies to assistant responses too: a chip edit must return the strip it just changed.
     const criteria = this.#criteriaFor(thread);
-    if (this.#assistantRuntime) return criteria === undefined ? result : { ...result, criteria };
+    if (this.#assistantRuntime) return { ...result, mode, ...(criteria === undefined ? {} : { criteria }) };
     const journey = this.#journeyFor(thread);
     const surfaces = this.#withWaiting(thread, result.surfaces);
     return {
       ...result,
+      mode,
       surfaces,
       ...(journey === undefined ? {} : { journey }),
       ...(criteria === undefined ? {} : { criteria }),

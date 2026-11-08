@@ -89,3 +89,7 @@ _Avoid_: UI callback, tool permission, direct state mutation
 **Interactive-Client Adapter**:
 A replaceable translation layer between a client surface and trusted platform/application boundaries; it does not require or define one mandatory agent-interaction protocol.
 _Avoid_: Domain interface, application service, permanent framework dependency
+
+**Agent Mode**:
+the guest-facing presentation of the Domain Pack that owns the thread's active task: its persona, starters, composer copy and accent tokens. It is derived on the server from the active task and never set by the client.
+_Avoid_: vertical, theme, persona (on their own)
