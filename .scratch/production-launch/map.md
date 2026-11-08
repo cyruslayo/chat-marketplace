@@ -40,7 +40,7 @@ Start now: agents **01, 03, 04, 10, 11**; owner **02, 13, 16, 17** (and start 14
 | 09 | [Pilot metrics operators can see](issues/09-pilot-metrics-for-operators.md) | AFK | resolved | 04 |
 | 10 | [Request and assistant logging](issues/10-request-and-assistant-logging.md) | AFK | resolved | none |
 | 11 | [Server-generated guest thread ids](issues/11-server-generated-guest-thread-ids.md) | AFK | resolved | none |
-| 12 | [Batch gate and merge](issues/12-batch-gate-and-merge.md) | task | ready-for-agent | 01, 03-09 |
+| 12 | [Batch gate and merge](issues/12-batch-gate-and-merge.md) | task | claimed | 01, 03-09 |
 | 13 | [Counsel pack and recorded text](issues/13-counsel-pack-and-recorded-text.md) | task | ready-for-human | none |
 | 14 | [Paystack live account](issues/14-paystack-live-account.md) | task | ready-for-human | 13 |
 | 15 | [Sign and inspect first units](issues/15-sign-and-inspect-first-units.md) | task | ready-for-human | 13 |
