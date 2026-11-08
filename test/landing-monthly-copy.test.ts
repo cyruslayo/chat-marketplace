@@ -58,7 +58,7 @@ test("AC1: Every slot in the table renders exactly the approved text, within its
       "heroLede",
       LANDING_LENGTH_LIMITS.heroLede,
     ],
-    ["Where, for how long, and who’s coming?", "composerPlaceholder", LANDING_LENGTH_LIMITS.composerPlaceholder],
+    ["Where, how long, how many?", "composerPlaceholder", LANDING_LENGTH_LIMITS.composerPlaceholder],
     ["How it works · one stay, five screens", "howEyebrow", LANDING_LENGTH_LIMITS.howEyebrow],
     ["Start with the stay, not the form.", "closingHeading", LANDING_LENGTH_LIMITS.closingHeading],
     ["Shortlet · Lagos and Abuja apartments, nights or months", "pageTitle", LANDING_LENGTH_LIMITS.pageTitle],
@@ -81,7 +81,7 @@ test("AC1: Every slot in the table renders exactly the approved text, within its
   assert.equal(LANDING_COPY.pageTitle, approved[5]![0]);
   assert.equal(LANDING_COPY.moneyCards[2]!.body, approved[6]![0]);
   assert.ok(
-    html.includes(`placeholder="${escapeHtml("Where, for how long, and who’s coming?")}"`),
+    html.includes(`placeholder="${escapeHtml("Where, how long, how many?")}"`),
     "the composer placeholder attribute carries the approved text",
   );
   assert.ok(html.includes(`<title>${escapeHtml(approved[5]![0])}</title>`), "the page title carries the approved text");
@@ -212,6 +212,14 @@ test("AC4: The 60-night chip, sent through the landing handoff, produces a 60-ni
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("The composer placeholder fits a 320px phone without truncation", () => {
+  // Owner decision (8 Nov 2026): the approved line "Where, for how long, and who’s coming?" was cut off at 320px, where
+  // about 26 characters fit (issue 16 Comments; screenshots/16 320px captures). Length is a non-browser proxy for that fit.
+  const placeholder = LANDING_COPY.composerPlaceholder;
+  assert.equal(placeholder, "Where, how long, how many?");
+  assert.ok([...placeholder].length <= 26, `the composer placeholder is ${[...placeholder].length} characters, over 26`);
 });
 
 test("AC5: No landing copy contains a forbidden term, including the five new ones", () => {

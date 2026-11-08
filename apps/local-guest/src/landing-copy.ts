@@ -37,7 +37,7 @@ export const LANDING_COPY = Object.freeze({
   /** The visible label of the hero composer's text field (direction doc, Accessibility). */
   composerLabel: "Describe your stay",
   /** S04: composer placeholder, hero and closing composer. */
-  composerPlaceholder: "Where, for how long, and who’s coming?",
+  composerPlaceholder: "Where, how long, how many?",
   /** S05: primary button of the composer: hero, beat 5 and closing composer. */
   primaryAction: "See what you can book",
   /** Example chips under the hero composer (issue 06 item 6). Each chip fills the field; its nights are checked below. */

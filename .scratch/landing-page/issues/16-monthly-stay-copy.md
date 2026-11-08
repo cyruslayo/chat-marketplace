@@ -86,3 +86,5 @@ See `docs/agents/issue-tracker.md` and AGENTS.md "Guest UI work". Record command
 - The build regenerated `apps/local-guest/dist/client.js` and some existing `.scratch/landing-page/screenshots/11/*` files. Neither is committed; they remain unstaged in the worktree.
 - Full `npm test` is not run (per-issue scope; it runs in the batch gate).
 - Owner items: the 70 vs 75 fact limit (above); the approved chip text reading of "(nights: 60)".
+
+8 Nov 2026: owner replaced the composer placeholder with “Where, how long, how many?” because the approved line was truncated at 320px.
