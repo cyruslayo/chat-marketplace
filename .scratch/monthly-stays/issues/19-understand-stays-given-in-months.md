@@ -1,6 +1,6 @@
 # 19 · Understand stays given in months (and weeks)
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: none
 Requested: 8 Nov 2026
@@ -53,3 +53,103 @@ Extended Stays are marketed as 1 to 6 months, but the concierge only reads a sta
 See `docs/agents/issue-tracker.md`. Record commands and pass counts in Comments. New guest wording: only "(N months)" / "(1 month)" in the show-back; list it in Comments.
 
 ## Comments
+
+### Implementation (branch feat/month-phrasing, commit b095938)
+
+Files: `domains/shortlet/src/stay-length.ts` (new reader, exported from `domains/shortlet/src/index.ts`);
+`domains/shortlet/src/stay-date-phrases.ts` (exports `NUMBER_WORDS` and `DAYS_PER_WEEK`, unchanged values);
+`apps/local-guest/src/concierge.ts` (`extractStayRequestFacts` reads the reader; `StatedStayLength` on the context and the facts;
+the search reply and the strip keep it; `NIGHTS_PATTERN` removed); `apps/local-guest/src/shortlet-app.ts` (search reply suffix,
+criteria strip label); `apps/local-guest/src/assistant/shortlet-assistant-pack.ts` (`guestStatedStay`, `guestStatedNights`, the
+`search_stays` and `prepare_request_draft` checks, and the no-operation reply fallback); `apps/web-agent/src/guest-content.ts`;
+`apps/local-guest/src/landing-copy.ts` (chip only); `apps/local-guest/dist/client.js` (regenerated: `client.ts` bundles `guest-content.ts`);
+`docs/adr/0106-enforce-concierge-agent-controls.md` (one dated line under "Chip facts", 8 Nov 2026).
+Tests: `test/stay-length-reader.test.ts` (new), `test/stay-length-months.test.ts` (new), `test/stay-length-assistant.test.ts` (new),
+`test/helpers/stay-length-fixtures.ts` (new shared helper), `test/landing-monthly-copy.test.ts` (AC4 handoff adapted to the new chip,
+renamed to carry issue 19 AC6), `test/landing-chip-limit.test.ts` (the approved-chip list).
+
+### Commands and pass counts
+
+- `env -u LLM_API_KEY npm run check` (committed tree and before commit): exit 0.
+- `env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test test/stay-length-reader.test.ts`: 5 pass, 0 fail.
+- Affected set (29 files: the three new files, every file importing `concierge.ts` or `stay-date-phrases.ts`, and the required
+  list: assistant-short-stays-29-nights, assistant-date-literals, assistant-cold-journey, assistant-scope-controls,
+  assistant-pack-registry, assistant-runtime-boundary, guest-criteria-strip, guest-discovery-reasons, guest-draft-revision,
+  landing-monthly-copy, landing-page, landing-chip-limit, landing-handoff, domain-boundary, short-stay-29-nights, continuous-occupancy):
+  `env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test <29 files>`: 255 tests, 255 pass, 0 fail.
+  (`guest-discovery-reasons`, `landing-handoff` and `domain-boundary` are in the list; their pass counts are inside the 255.)
+- `env -u LLM_API_KEY npm run build`: exit 0; only `apps/local-guest/dist/client.js` changed (+7/-1, the copy above).
+- Real Chrome, once, under the browser lock with `SHORTLET_CHROME_PATH=/usr/bin/google-chrome`:
+  `flock .../browser.lock ... npx tsx --test test/guest-criteria-strip-chromium.test.ts`: 2 pass, 0 fail (the strip label changed).
+- Full `npm test` and `npm run test:workers` were NOT run here: CLAUDE.md runs them once per batch before the merge to main.
+
+### Acceptance criteria (named tests)
+
+- AC1: `stay-length-reader.test.ts`, "AC1 the reader maps ..." (60, 60, 30, 30, 21, 14, 7, 21) and "AC1 'a few months' ... give no length"
+  (all six vague phrases give `vague`, so no length), plus "AC1 a length in months is a closed reading ..." and "AC1 an 'in N weeks' check-in phrase ...".
+- AC2: `stay-length-months.test.ts`, "AC2 On the deterministic path ...": search 5 Jan to 6 Mar 2027, reply "60 nights (2 months)".
+- AC3: `stay-length-assistant.test.ts`, "AC3 'Ikoyi for 2 months ...' yields a 60-night search ..." (cold restore before the event; persisted nights 60,
+  checkout 2027-03-06) and "AC3 a planner call with 61 nights is a tool_denial ..." (`search_stays` rejected, reply "60 nights (2 months)",
+  no 61-night stay recorded).
+- AC4: `stay-length-months.test.ts` ("AC4 ... on the deterministic path") and `stay-length-assistant.test.ts` ("AC4 ... on the assistant path"):
+  the nights question, no search; the planner's guessed 60 nights is rejected.
+- AC5: `stay-length-months.test.ts` ("AC5 ... deterministic path") and `stay-length-assistant.test.ts` ("AC5 ... assistant path"):
+  reply "Stays can be at most 180 nights. Please choose 180 nights or fewer."; no search.
+- AC6: `landing-monthly-copy.test.ts` ("AC4 (and issue 19 AC6) ..."): the handoff page shows "60 nights (2 months)". `stay-length-months.test.ts`
+  ("AC6 ..."): the chip, then "2 guests", searches 60 nights with the show-back. See the decision on the chip below.
+- AC7: `stay-length-months.test.ts`, "AC7 The criteria strip after a months request ...": "60 nights (2 months)", then the chip edit to 3 nights
+  overrides it and the label has no months.
+- AC8: `stay-length-months.test.ts`, "AC8 Existing nights-only behaviour is unchanged ...", plus the existing concierge, criteria-strip and landing suites in the 255.
+- Guard (not an AC): `stay-length-reader.test.ts`, "Guard for AC8: a money rate such as ..." (found while running the budget suite).
+
+### New guest wording (the list the brief asks for)
+
+1. "(N months)" and "(1 month)": `guestStayMonthsWords` in `apps/web-agent/src/guest-content.ts`, the only source.
+2. Show-back sentences that use it: the deterministic show-back ("arriving X and leaving Y, 60 nights (2 months), G guests in P"),
+   the search reply ("... to Sat 6 Mar 2027, 60 nights (2 months)."), the criteria strip ("... · 60 nights (2 months)") and the clarify line.
+3. One further sentence, a show-back of the stated length, for a rejected planner call: `GUEST_ASSISTANT_COPY.statedStay`
+   = "Just to check: 60 nights (2 months). Which length should I search?". It is a show-back with the same words, but it is a second
+   new sentence. The owner should confirm it or name the wording to use.
+
+### Decisions taken conservatively
+
+- Vague or conflicting lengths give no length: ranges ("2-3", "2 to 3"), "or"/"and" phrases ("2 or 3", "a month or two",
+  "a month and a half"), "a few", "a couple of", two different lengths. "in N weeks" / "in N months" are check-in phrases, so no length.
+- Only 1 to 12 months are read ("13 months" is vague and asks the nights). Weeks take up to two digits. Nights keep the old
+  aliases ("nts", "nitesc").
+- A money rate is not a length: "a/an/one" directly after an amount ("₦70,000 a night", "₦300,000 a month", "70k a night").
+- Weeks and fortnights show nights only in the show-back. Only months are bracketed.
+- A check-out date still wins over any duration (deterministic and assistant). The assistant skips the length check on those turns.
+- Assistant authority is derived each turn from the canonical guest text (`userTextHistory`), not written to the task state.
+  Reason: ADR 0106 (27 Oct 2026, Projection) allows no new persisted record, and a cold restore rebuilds the same authority from the
+  canonical history. This departs from the brief's wording "record it in the task state and the runtime facts"; the runtime facts are
+  unchanged. Owner decision if the planner must see the length as a fact.
+- Authority order: the current turn's length wins. With none this turn, an earlier guest length counts only while the task still holds
+  the nights it set, so a chip or other edit that changed the nights since then wins (ADR 0106 chip facts; AC7).
+- A vague length in the current turn lets the planner repeat only the nights the task already holds; any other nights get the nights question.
+- The planner's 7-month call is rejected by the tool schema (nights at most the policy maximum), before any application operation.
+  The reply is then the no-operation fallback, which uses the existing limit sentence. That fallback reads the deployment default
+  `EXTENDED_STAY_POLICY` (no environment in scope there). Every composition supplies that policy (`local-owner-environment.ts`).
+- The `search_stays` reply on the assistant path shows no nights today, so no months show-back was added there.
+
+### Gaps and conflicts for the owner
+
+- AC6, as written, says the chip "yields a 60-night search". The chip names no party size, and a search needs one
+  (`resolveStayRequestContext` asks "how many guests", `apps/local-guest/src/concierge.ts`). So the chip alone shows "So far I have:
+  ... 60 nights (2 months)" and asks for the guests. The test checks that, then "2 guests" gives the 60-night search. Owner decision: keep
+  the chip wording and accept the question, or add a party to the chip (its text is owner-approved).
+- The deterministic guest vocabulary does not read "2 of us" (`GUESTS_PATTERN` takes "guests", "people", "adults", "pax"...). This is
+  existing behaviour, not changed here.
+- No new `any`; no new literal 30 (the month length comes from `EXTENDED_STAY_POLICY.billingPeriodNights`). `MAX_STATED_MONTHS = 12` is the
+  issue's "1 to 12" range.
+- `apps/local-guest/src/assistant/shortlet-assistant-pack.ts:929` has a pre-existing `any` (not touched).
+
+### Definition of Done (issue-tracker.md)
+
+1. Each AC has named tests mirroring its text (see the list above); no test covers two ACs.
+2. Failure paths: AC1 negatives; AC3 tool_denial and no 61-night stay; AC4 and AC5 assert no search runs.
+3. ADRs read and cited: 0106 (full), 0092 (30-night month, 30 to 180), 0023 (1 to 29 nights), 0077 (one copy source), 0055 (horizon, via the 90-day check).
+4. No unused injected dependency: `readStayLength` takes `policy` and uses `billingPeriodNights`; `guestStatedNights` uses `policy`.
+5. No invented policy: months 1 to 12 is the issue's range; the rest is ADR-sourced.
+6. No credentials or identity in logs: no logging added.
+7. `npm run check` passes (exit 0). The full `npm test` runs at the batch pre-merge gate (CLAUDE.md), not here.
