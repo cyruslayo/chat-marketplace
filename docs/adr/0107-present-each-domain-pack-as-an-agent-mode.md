@@ -77,7 +77,8 @@ The owner wants a guest who switches domains (for example from stays to a future
 
 ADR 0004, ADR 0073, ADR 0074, ADR 0077, ADR 0078, ADR 0080, ADR 0081, ADR 0099, ADR 0101, ADR 0104, ADR 0106. Analysis, map and playground: `.scratch/agent-modes/`. Research: `reports/Agent modes web technology.md`.
 
-Still open:
+Settled by the owner on 8 Nov 2026:
 
-- Whether structured booking facts (dates, party size) may cross lanes visibly as guest input (ADR 0092, ADR 0106).
-- The research suggests presenting modes as one concierge with domain capabilities rather than separately named personas. The "<Domain> concierge" naming in the playground follows that. The wording is settled in slice 2.
+- **Naming: one concierge with domain capabilities.** Modes are presented as the same concierge changing focus ("Concierge · Stays"), not as separately named personas. The platform keeps one identity for trust and for the human handover (ADR 0076). The copy lives in `guest-content.ts`.
+- **Booking facts do not cross lanes automatically.** Decision 11 stands: only guest-authored text crosses. If a later domain can use a fact from another lane (for example party size), the new lane may offer a chip such as "Use 2 guests?". When the guest taps it, the fact counts as structured guest input (ADR 0092, ADR 0106). The chip belongs to the first second-domain slice.
+- **Sequencing.** Slices 1, 1b and 2 proceed now. Slices 3 to 5 wait for the owner's choice of the first real second domain, because ADR 0099 decision 7 shapes the pack contract against that domain. When switching ships, it starts at tier C only (decision 8).
