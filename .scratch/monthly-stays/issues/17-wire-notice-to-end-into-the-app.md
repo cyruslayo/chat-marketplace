@@ -94,3 +94,5 @@ See `docs/agents/issue-tracker.md` and the AGENTS.md capture rules. Record comma
   - **Counts for the follow-up set** (same env): `test/assistant-continuous-occupancy.test.ts test/continuous-occupancy.test.ts test/notice-to-end-wiring.test.ts test/assistant-pack-registry.test.ts test/assistant-cold-journey.test.ts test/guest-retired-classes.test.ts test/guest-kit.test.ts test/shortlet-ui-foundations.test.ts test/demo-extended-cancellation-notice.test.ts test/owner-payable-per-period.test.ts test/later-period-payment-routes.test.ts` -> 101 tests, 100 pass, 0 fail, 1 skipped by the runner. `npm run check` exit 0 on the committed tree.
   - **Strings for owner confirmation.** No new strings in this follow-up.
 
+- 8 Nov 2026, **orchestrator: scope split.** The chat half of AC2–AC4 and AC5 (assistant) move to issue 18, which needs a new confirmation kind designed against ADR 0106. Issue 17 is complete when the page path, compositions and back office (done) and **AC7 captures of the standalone notice page and recorded state** are done. The page is reachable from the chat today through "View payment schedule" on the confirmed booking.
+

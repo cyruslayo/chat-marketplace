@@ -2,7 +2,7 @@
 
 Status: ready-for-agent
 Type: task
-Blocked by: 06, 17
+Blocked by: 06, 17, 18
 
 ## What to build
 
@@ -19,7 +19,7 @@ Since this issue was written:
 - `domains/shortlet/src/booking-amendment.ts` still refuses any amended stay over `MAX_STAY_NIGHTS` (29), so no Extended Stay can be lengthened. For a contract whose stay type is Extended, the length check must use the Extended Stay policy instead; a Short Stay keeps the 29-night cap (extending a Short Stay to 30+ nights is not an extension, ADR 0023 as amended).
 - Continuous Occupancy (short-stays-29-nights issue 06) applies to extensions: the whole chain must stay within 180 nights.
 - Notice to End (issue 17) and extensions both amend the contract: an extension must refuse while a Notice to End is in force, and vice versa, unless ADR 0092 says otherwise (check; ask if unclear).
-- Guest entry point: the same confirmed-booking chat surface as issue 17, with a confirmation step that shows the added periods, their amounts and due dates before the Request to Book is sent. Proposed labels, for the owner to confirm: action "Extend your stay"; confirm button "Request extension".
+- Guest entry point: the same confirmed-booking chat surface and button-only confirmation pattern as issue 18, with a confirmation step that shows the added periods, their amounts and due dates before the Request to Book is sent. Proposed labels, for the owner to confirm: action "Extend your stay"; confirm button "Request extension".
 
 ## Acceptance criteria
 
