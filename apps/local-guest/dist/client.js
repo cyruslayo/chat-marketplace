@@ -10021,6 +10021,15 @@ Known schemas:
     return void 0;
   }
 
+  // apps/local-guest/src/response-mode.ts
+  function assertValidResponseMode(value) {
+    if (value === void 0) return;
+    if (validateModePresentation(value) === void 0) throw new Error("Invalid response mode");
+  }
+  function readResponseMode(value) {
+    return validateModePresentation(value);
+  }
+
   // apps/web-agent/src/booking-presentation.ts
   function formatBookingDateTime(iso) {
     return formatWatDateTime(iso);
@@ -11254,13 +11263,12 @@ Known schemas:
       throw new Error("Invalid response tasks");
     if (value.verticals !== void 0 && (!Array.isArray(value.verticals) || value.verticals.some((vertical) => !isGuestVertical(vertical))))
       throw new Error("Invalid response verticals");
-    if (value.mode !== void 0 && validateModePresentation(value.mode) === void 0)
-      throw new Error("Invalid response mode");
+    assertValidResponseMode(value.mode);
     return value;
   }
   var appliedMode = GUEST_MODES.stays;
   function applyResponseMode(response) {
-    appliedMode = validateModePresentation(response.mode) ?? appliedMode;
+    appliedMode = readResponseMode(response.mode) ?? appliedMode;
   }
   var threadId = getThreadId();
   var shellState = createConversationShellState();

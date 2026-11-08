@@ -23,12 +23,12 @@ import {
   UNIT_DETAIL_ABOUT_HEADING,
   guestFactValue,
   guestNewConversationCopy,
-  validateModePresentation,
   type GuestCommittedWorkKind,
   type ModePresentation,
 } from "../../web-agent/src/guest-content.js";
 import { CLIENT_REQUEST_TIMEOUT_MS, CLIENT_TURN_TIMEOUT_MS, TURN_STILL_WORKING_AFTER_MS } from "./turn-budget.js";
 import { turnEntriesSince } from "./guest-turn-recovery.js";
+import { assertValidResponseMode, readResponseMode } from "./response-mode.js";
 import {
   breakdownHtml,
   confirmationScreenHtml,
@@ -1508,8 +1508,7 @@ function readGuestResponse(value: unknown): GuestResponse {
       value.verticals.some((vertical) => !isGuestVertical(vertical)))
   )
     throw new Error("Invalid response verticals");
-  if (value.mode !== undefined && validateModePresentation(value.mode) === undefined)
-    throw new Error("Invalid response mode");
+  assertValidResponseMode(value.mode);
   return value as unknown as GuestResponse;
 }
 
@@ -1518,7 +1517,7 @@ function readGuestResponse(value: unknown): GuestResponse {
 let appliedMode: ModePresentation = GUEST_MODES.stays;
 
 function applyResponseMode(response: GuestResponse): void {
-  appliedMode = validateModePresentation(response.mode) ?? appliedMode;
+  appliedMode = readResponseMode(response.mode) ?? appliedMode;
 }
 
 const threadId = getThreadId();

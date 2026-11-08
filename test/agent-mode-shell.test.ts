@@ -9,6 +9,7 @@ import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import * as guestContent from "../apps/web-agent/src/guest-content.js";
 import type { GuestTurnSuccess } from "../apps/local-guest/src/shortlet-app.js";
 import type { A2UIServerMessage } from "@cylayo/weaver-core";
+import { assertValidResponseMode } from "../apps/local-guest/src/response-mode.js";
 import { restartFixture } from "./helpers/guest-restart.js";
 import { datedFixture, firstButtonAction, LIVE_LIKE_CLOCK, scriptedPlanner } from "./helpers/guest-date-fixtures.js";
 import { coldApp, PHONE, SCRIPT, STAY_TEXT, successOf, tap } from "./helpers/assistant-cold-journey-harness.js";
@@ -296,12 +297,30 @@ test("AC7: The mode survives a cold restore on the assistant path", async () => 
 });
 
 test("AC8: The client refuses an invalid mode", () => {
-  // STOPGAP (source-level). client.ts is a browser entry: it reads the DOM and calls getThreadId() at module scope, so
-  // readGuestResponse is not exported and cannot be imported into node. Until the validator is extracted to a module that
-  // node can import, this asserts the source: the stays validator is imported and readGuestResponse rejects a bad mode the
-  // way it rejects bad verticals (client.ts:1504-1506).
+  assert.doesNotThrow(() => assertValidResponseMode(undefined), "an absent mode is allowed");
+  assert.doesNotThrow(() => assertValidResponseMode(GUEST_MODES.stays), "the stays presentation is allowed");
+
+  const starter = { label: "Explore Abuja", prompt: "I’m looking for a stay in Abuja" };
+  const refused: readonly (readonly [string, unknown])[] = [
+    ["null", null],
+    ["a string", "x"],
+    ["a number", 42],
+    ["an array", []],
+    ["an object with an unknown key", staysVariant((copy) => { copy.surprise = "not a field"; })],
+    ["a presentation with an empty heading", staysVariant((copy) => { section(copy, "emptyState").heading = ""; })],
+    ["a presentation with zero starters", staysVariant((copy) => { section(copy, "emptyState").starters = []; })],
+    ["a presentation with an unknown icon", staysVariant((copy) => { section(copy, "persona").icon = "not-a-kit-icon"; })],
+    ["a presentation with five starters", staysVariant((copy) => { section(copy, "emptyState").starters = [starter, starter, starter, starter, starter]; })],
+  ];
+  for (const [label, candidate] of refused) {
+    assert.throws(() => assertValidResponseMode(candidate), /Invalid response mode/, `refuses ${label}`);
+  }
+});
+
+test("AC8: the client wires its response check through assertValidResponseMode", () => {
+  // The client is a browser entry (DOM and getThreadId() at module scope), so its wiring is read from source. The check
+  // itself is behavioural in the test above; this only guards against the call being dropped from readGuestResponse.
   const source = readFileSync(new URL("../apps/local-guest/src/client.ts", import.meta.url), "utf8");
-  assert.match(source, /import\s*\{[^}]*\bvalidateModePresentation\b[^}]*\}\s*from\s*"[^"]*guest-content\.js"/);
-  assert.match(source, /validateModePresentation\(value\.mode\)/);
-  assert.match(source, /throw new Error\("Invalid response mode"\)/);
+  assert.match(source, /assertValidResponseMode\(value\.mode\);/);
+  assert.match(source, /import\s*\{[^}]*\bassertValidResponseMode\b[^}]*\}\s*from\s*"\.\/response-mode\.js"/);
 });
