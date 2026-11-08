@@ -88,3 +88,4 @@ See `docs/agents/issue-tracker.md` and AGENTS.md "Guest UI work". Record command
 - Owner items: the 70 vs 75 fact limit (above); the approved chip text reading of "(nights: 60)".
 
 8 Nov 2026: owner replaced the composer placeholder with “Where, how long, how many?” because the approved line was truncated at 320px.
+8 Nov 2026: “Where, how long, how many?” still clipped at 320px (about 24 characters fit); owner chose “Where, how long, who?”.
