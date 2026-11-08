@@ -612,9 +612,14 @@ export class LocalGuestEnvironment {
           return next;
         },
       },
+      // Period 1 is paid once the contract exists; a later period is paid when its Period Payment row is recorded (the same
+      // rows the owner composition reads). Independent of the card-payment contract cache, so every composition agrees.
       periods: {
-        projectBillingPeriods: (offerId, now) => this.cardPaymentApp.projectBillingPeriods(offerId, now),
-        paymentsFor: (offerId) => this.cardPaymentApp.getPeriodPayments(offerId),
+        projectBillingPeriods: (offerId) => [
+          { periodIndex: 1, status: "paid" },
+          ...interactions.listPeriodPayments(offerId).map((record) => ({ periodIndex: record.periodIndex, status: "paid" })),
+        ],
+        paymentsFor: (offerId) => interactions.listPeriodPayments(offerId).map((record) => ({ periodIndex: record.periodIndex, pspReference: record.pspReference })),
       },
       owners: new SqliteOwnerPayableLedger(sqlDatabase, this.clock),
       arrival: noticeCheckIn.arrival,

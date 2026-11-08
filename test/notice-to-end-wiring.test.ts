@@ -9,6 +9,10 @@ import { addDays, extendUnit, withDemoExtendedJourney, type DemoJourneyContext }
 import { cookieOf, locationOf, sendGuest } from "./helpers/guest-route-harness.js";
 import type { Unit } from "../domains/shortlet/src/browse.js";
 import { openNodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
+import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
+import { createStayQuote } from "../domains/shortlet/src/quote.js";
+import { SqliteBookingStateRepository } from "../domains/shortlet/src/booking-state.js";
+import { demoDatabase, removeDemoDatabase } from "./helpers/demo-mode-fixture.js";
 
 // Monthly-stays issue 17 (ADR 0092 amended, ADR 0060, ADR 0106, ADR 0077/0080, ADR 0089). Notice to End is reachable from
 // the guest's confirmed Extended Stay through the real guest HTTP handler, and recorded as a versioned Booking Amendment.
@@ -212,4 +216,48 @@ test("AC6: The back office shows the notice (date given, new last night, refund 
     const period = payable.periods?.find((entry) => entry.periodIndex === 1);
     assert.equal(period?.ownerPayableKobo, result.ownerAdjustments[0]?.ownerPayableKobo, "the reduced owner payable for period 1 is shown");
   });
+});
+
+test("AC1 non-demo: a production composition with demo off records a Notice to End for a confirmed Extended Stay", () => {
+  const files = demoDatabase();
+  const clock = () => new Date(PERIOD_1_STARTED);
+  const guest = LocalGuestEnvironment.openNode({ databasePath: files.path, demo: false, deployment: "production", clock });
+  try {
+    assert.equal(guest.config.demo === true, false, "the composition is not the demo");
+    const unit = extendUnit(guest.unitRepository.findAll()[0]!, { claimsThrough: CHECK_OUT });
+    guest.unitRepository.save(unit);
+    const quote = createStayQuote({ unit, checkIn: CHECK_IN, checkOut: CHECK_OUT, clock, extendedStayPolicy: EXTENDED_STAY_POLICY });
+    const first = quote.billingPeriods![0]!;
+    const contract = {
+      contractId: "contract-production-notice",
+      contractVersion: 1,
+      reservationId: "reservation-production-notice",
+      offerId: "offer-production-notice",
+      tenantId: guest.config.tenantId,
+      unitId: unit.id,
+      parties: { primaryGuest: { id: guest.config.guestId, name: guest.config.guestName } },
+      dates: { checkIn: CHECK_IN, checkOut: CHECK_OUT, nights: 180 },
+      quote,
+      paymentDetails: { paymentMethod: "fresh_card", pspReference: "psp-ref-production-notice", amountKobo: first.amountKobo, currency: "NGN", paidAt: PERIOD_1_STARTED },
+    } as unknown as BookingContract;
+    const database = openNodeSqliteDatabase(files.path);
+    try {
+      new SqliteBookingStateRepository(database).saveContract(contract);
+      new SqliteCheckInSupportStore(database).save(contract.reservationId, {
+        schedule: null,
+        window: null,
+        evidence: [],
+        result: { reservationId: contract.reservationId, status: "verified_access", verifiedAt: PERIOD_1_STARTED, protectionWindowStartsAt: PERIOD_1_STARTED },
+        complaints: [],
+      });
+    } finally {
+      database.close();
+    }
+    const result = guest.noticeToEnd.giveNotice(contract.contractId, guest.guestPrincipal());
+    assert.equal(result.newVersion, 2, "the production notice commits one versioned amendment");
+    assert.equal(result.newLastNight, NEW_LAST_NIGHT, "the production notice uses the same domain calculation");
+  } finally {
+    guest.close();
+    removeDemoDatabase(files.dir);
+  }
 });
