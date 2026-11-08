@@ -203,3 +203,13 @@ Gaps for the owner:
 1. A months-only first turn is not persisted. A clarification turn commits no task state (ADR 0106 `tool_denial`, assistant-runtime.ts:87), and the persisted context needs a city and a check-in. In a scripted reproduction, "Ikoyi for 2 months from 5 Jan" then "2 of us" persisted no assistant context, and the second turn asked for the dates instead of searching. So the new tests carry the party in the first turn. The two-turn example in the brief needs a decision on whether a clarification turn may persist location and check-in (this changes the `tool_denial` rule). Until then, a months-only first turn binds only while the process stays warm.
 2. The check-out rule (a check-out the guest gave sets unit night) is implemented but has no dedicated test. The phrasings I tried ("Ikoyi 5 Jan to 6 Mar for 2 guests", "check-in ... and checkout ...") were refused by the existing date rules before reaching it.
 3. The pre-existing `any` at `apps/local-guest/src/assistant/shortlet-assistant-pack.ts:943` (`results.map((unit: any, ...)`) is untouched.
+
+### Follow-up (8 Nov 2026): partial facts across two turns (gap 1 checked)
+
+Test: `test/assistant-partial-facts-across-turns.test.ts` (new). Turn 1 gives the place, the date and the length with no party (the planner asks); turn 2 gives "2 of us" and the planner searches with the facts from both turns.
+- (a) "Ikoyi from 5 Jan for 3 nights" then "2 of us": warm PASS; cold FAIL ("I need your check-in and checkout dates").
+- (b) "Ikoyi, 2 months from 5 Jan" then "2 of us": warm PASS (60 nights); cold FAIL (same reply).
+
+Cause (pre-existing, not issue 19's): a clarification turn leaves no city or check-in in the runtime state. After turn 1 the runtime holds only `statedStay` (checked directly). The assistant context is persisted only with a city (`apps/local-guest/src/shortlet-app.ts:3118-3119`, synced at `:3494`), so nothing is stored. `restoreShortletState` also clears the conversation history (`apps/local-guest/src/assistant/assistant-runtime.ts:779`), which is where the planner's check-in text was held in the warm run. In (b) the stated length is in the same position, so it is lost with the check-in. Fixing this means persisting a clarification turn's location and check-in, which changes the ADR 0106 `tool_denial` rule: an owner decision, not made here.
+
+The two cold cases are marked `todo` in the file with this reason. Counts: `test/assistant-partial-facts-across-turns.test.ts`, `test/stay-length-persisted.test.ts`, `test/assistant-cold-journey.test.ts`: 13 tests, 11 pass, 0 fail, 2 todo; `npm run check`: exit 0.
