@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LocalApartmentOwnerEnvironment, startLocalOwnerServer, type LocalOwnerFixtureConfig } from "../../apps/local-owner/src/index.js";
+import { LOCAL_ONLY_CONDITIONAL_OFFER_KEY } from "../../domains/shortlet/src/index.js";
 import type { OperatorRepresentativeGrant } from "../../domains/shortlet/src/index.js";
 import { createPlatformCommandEnvelope } from "../../packages/platform-core/src/index.js";
 
@@ -25,7 +26,7 @@ export interface OperatorServer extends OperatorTarget {
 
 /** Starts `startLocalOwnerServer` over a fresh environment. Pass `clock` to test deadlines and session expiry. */
 export async function startOperatorServer(config: Partial<LocalOwnerFixtureConfig> & { readonly databasePath: string }): Promise<OperatorServer> {
-  const environment = LocalApartmentOwnerEnvironment.openNode(config);
+  const environment = LocalApartmentOwnerEnvironment.openNode({ conditionalOfferSigningKey: process.env.SHORTLET_CONDITIONAL_OFFER_KEY ?? LOCAL_ONLY_CONDITIONAL_OFFER_KEY, ...config });
   const server = startLocalOwnerServer({ port: 0, environment });
   const port = await server.listen();
   return { environment, port, base: `http://localhost:${port}`, close: () => server.close() };

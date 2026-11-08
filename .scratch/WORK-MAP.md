@@ -43,13 +43,13 @@ print('TOTAL', sum(sum(v.values()) for v in counts.values()),
 | monthly-stays | 8 | 5 | 2 | 0 | 0 | 0 | 1 | 16 |
 | multi-domain-platform | 2 | 0 | 1 | 1 | 6 | 0 | 25 | 35 |
 | operator-dashboard | 1 | 0 | 0 | 0 | 0 | 0 | 13 | 14 |
-| pilot-launch-readiness | 6 | 10 | 0 | 0 | 0 | 0 | 11 | 27 |
-| production-launch | 10 | 8 | 0 | 0 | 0 | 0 | 3 | 21 |
+| pilot-launch-readiness | 4 | 10 | 0 | 0 | 0 | 0 | 13 | 27 |
+| production-launch | 8 | 8 | 0 | 0 | 0 | 0 | 6 | 22 |
 | short-stays-29-nights | 0 | 0 | 0 | 0 | 0 | 0 | 6 | 6 |
-| shortlet-concierge-launch | 3 | 6 | 0 | 2 | 1 | 0 | 43 | 55 |
+| shortlet-concierge-launch | 2 | 6 | 0 | 2 | 1 | 0 | 44 | 55 |
 | test-runner-speed | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 1 |
 | weaver-catalogues | 6 | 0 | 0 | 0 | 0 | 0 | 2 | 8 |
-| **Total** | **59** | **41** | **4** | **7** | **14** | **4** | **227** | **356** |
+| **Total** | **54** | **41** | **4** | **7** | **14** | **4** | **233** | **357** |
 
 ## Reconciliation notes
 

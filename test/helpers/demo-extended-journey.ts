@@ -2,7 +2,7 @@
  * Shared composition for the staging demo Extended Stay tests (demo-launch issues 08 and 09, ADR 0092 and ADR 0105).
  * Every value is synthetic: the Unit, operator and guest are seeded fixtures, and Paystack is a stubbed TEST fetcher.
  */
-import { UnitRepository, seedIssue01Units } from "../../domains/shortlet/src/index.js";
+import { UnitRepository, seedIssue01Units, LOCAL_ONLY_CONDITIONAL_OFFER_KEY } from "../../domains/shortlet/src/index.js";
 import type { Unit } from "../../domains/shortlet/src/browse.js";
 import { unitPriceFromOwnerTerms } from "../../domains/shortlet/src/owner-terms.js";
 import type { MonthlyAgreedAmounts, UtilitiesAndServicingStatement } from "../../domains/shortlet/src/extended-stay.js";
@@ -128,7 +128,7 @@ export async function withDemoGuest(options: DemoGuestOptions, run: (context: De
   const clock = () => new Date(nowRef.now);
   const database = openNodeSqliteDatabase(files.path);
   const unitRepository = new UnitRepository();
-  const owner = new LocalApartmentOwnerEnvironment({ databasePath: files.path, clock, production: true, demo: true, deployment: "staging", seedFixture: false }, { database, unitRepository, operatorRepository: null });
+  const owner = new LocalApartmentOwnerEnvironment({ databasePath: files.path, clock, production: true, demo: true, deployment: "staging", seedFixture: false, conditionalOfferSigningKey: process.env.SHORTLET_CONDITIONAL_OFFER_KEY ?? LOCAL_ONLY_CONDITIONAL_OFFER_KEY }, { database, unitRepository, operatorRepository: null });
   let currentAmount = 0;
   let currentPayer = "";
   const paystackFetcher: PaystackHttpFetcher = async (url, init) => {
@@ -147,7 +147,7 @@ export async function withDemoGuest(options: DemoGuestOptions, run: (context: De
     return { status: 200, async json() { return { status: true, data: { reference: result.providerReference, amount: result.amountKobo, currency: result.currency, status: result.status, domain: "test", metadata: { shortlet_guest_id: result.payerId } } }; } };
   };
   const paystack = new PaystackPayments({ card: new DirectPaystackClient({ secretKey: "sk_test_synthetic_fixture", environment: "test", callbackBaseUrl: "https://demo.example.test" }, paystackFetcher) });
-  const guest = new LocalGuestEnvironment({ databasePath: files.path, clock, production: true, demo: true, deployment: "staging", payments: paystack, demoRequestAcceptor: createDemoRequestAcceptor(owner, 0) }, { database, unitRepository, seedDemoUnits: true });
+  const guest = new LocalGuestEnvironment({ databasePath: files.path, clock, production: true, demo: true, deployment: "staging", payments: paystack, demoRequestAcceptor: createDemoRequestAcceptor(owner, 0), conditionalOfferSigningKey: process.env.SHORTLET_CONDITIONAL_OFFER_KEY ?? LOCAL_ONLY_CONDITIONAL_OFFER_KEY }, { database, unitRepository, seedDemoUnits: true });
   try {
     const seeded = guest.unitRepository.findAll()[0]!;
     const target = typeof options.unit === "function"

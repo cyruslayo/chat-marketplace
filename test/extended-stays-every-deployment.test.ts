@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
+import { LOCAL_ONLY_CONDITIONAL_OFFER_KEY } from "../domains/shortlet/src/index.js";
 import { LocalApartmentOwnerEnvironment } from "../apps/local-owner/src/local-owner-environment.js";
 import {
   DEMO_EXTENDED_STAY_POLICY,
@@ -25,7 +26,7 @@ const CHECK_IN = "2026-09-10";
 /** A production-shaped guest over a fresh synthetic database: no demo flag, no demo acceptor (ADR 0105). */
 function withProductionGuest(run: (guest: LocalGuestEnvironment) => void): void {
   const files = demoDatabase();
-  const guest = LocalGuestEnvironment.openNode({ databasePath: files.path, demo: false, deployment: "production", clock: () => SYNTHETIC_NOW });
+  const guest = LocalGuestEnvironment.openNode({ databasePath: files.path, demo: false, deployment: "production", clock: () => SYNTHETIC_NOW, conditionalOfferSigningKey: process.env.SHORTLET_CONDITIONAL_OFFER_KEY ?? LOCAL_ONLY_CONDITIONAL_OFFER_KEY });
   try {
     run(guest);
   } finally {
@@ -101,7 +102,7 @@ test("AC1 (owner composition): a production owner composition accepts a 30-night
   seedIssue01Units(unitRepository);
   const seeded = unitRepository.findAll()[0]!;
   unitRepository.save(extendUnit(seeded));
-  const owner = new LocalApartmentOwnerEnvironment({ databasePath: files.path, clock: () => SYNTHETIC_NOW, production: true, demo: false, deployment: "production", seedFixture: false }, { database, unitRepository, operatorRepository: null });
+  const owner = new LocalApartmentOwnerEnvironment({ databasePath: files.path, clock: () => SYNTHETIC_NOW, production: true, demo: false, deployment: "production", seedFixture: false, conditionalOfferSigningKey: process.env.SHORTLET_CONDITIONAL_OFFER_KEY ?? LOCAL_ONLY_CONDITIONAL_OFFER_KEY }, { database, unitRepository, operatorRepository: null });
   try {
     assert.equal(owner.config.demo, false, "the owner composition is not demo");
     const principal = { id: "synthetic-owner-composition-guest", role: "guest" as const, tenantId: owner.config.tenantId };

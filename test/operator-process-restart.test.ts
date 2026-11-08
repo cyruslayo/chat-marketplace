@@ -98,7 +98,7 @@ test("06d AC3: With production: true, #demoRequests is never populated", async (
   const { join } = await import("node:path");
   const { LocalApartmentOwnerEnvironment } = await import("../apps/local-owner/src/index.js");
   const directory = await mkdtemp(join(tmpdir(), "owner-production-demo-"));
-  const open = (production: boolean) => LocalApartmentOwnerEnvironment.openNode({ databasePath: join(directory, `${production ? "prod" : "demo"}.sqlite`), production });
+  const open = (production: boolean) => LocalApartmentOwnerEnvironment.openNode({ databasePath: join(directory, `${production ? "prod" : "demo"}.sqlite`), production, conditionalOfferSigningKey: process.env.SHORTLET_CONDITIONAL_OFFER_KEY ?? "local-only-test-conditional-offer-key-0123456789" });
   const demo = open(false);
   const production = open(true);
   try {
