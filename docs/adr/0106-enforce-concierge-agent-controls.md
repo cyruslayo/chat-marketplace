@@ -123,7 +123,7 @@ Owner decision of 2 Nov 2026 on issue 01 (`.scratch/assistant-concierge-parity/i
 
 ### Amendment (8 Nov 2026, issue 20): a clarification keeps the guest's own facts
 
-A clarification turn still runs no search and no tool effect, and keeps nothing the model proposed. It saves the stay facts the guest's own words give (the area, a typed check-in or a typed stay with its checkout that the date rules accept, the stated length, party size and bedrooms) into the persisted assistant context, which may be partial (no area), so the next turn can use them after a cold restore. No other field is added.
+A stay clarification (a planner reply that asks for a missing stay fact, or a search that is missing its stay details) still runs no search and no tool effect, and keeps nothing the model proposed. It saves the stay facts the guest's own words give (the area, a typed check-in or a typed stay with its checkout that the date rules accept, the stated length, party size and bedrooms) into the persisted assistant context, which may be partial (no area), so the next turn can use them after a cold restore. A refused date, budget or length call, a turn stopped by its deadline, an error, and a mixed or out-of-scope turn save nothing from the turn. No other field is added.
 
 ## Constraints retained
 

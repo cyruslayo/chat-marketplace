@@ -168,3 +168,47 @@ Code commits: `ec16505` (the issue 20 change), `54459f1` (ranges and "N of us").
 ### Status
 
 Status: resolved. AC1 to AC7 pass; AC8 passes on the coordinator decision above; the follow-up tests pass. Map row: resolved.
+
+### Gate regressions on a14d4a6 and the fix (8 Nov 2026, commit b4da196)
+
+The pre-merge gate found five failures, all passing at c2ba3bd and failing solo on a14d4a6. Causes, per test (solo runs of the same files):
+
+- `test/assistant-budget-phrase.test.ts` AC4 (line 101): the turn is a complete stay. The save completed the stay on turn start, so the pack's
+  server-chosen call searched without the planner, bypassing the refused budget (`searches.length` 1, expected 0).
+- `test/assistant-parity.test.ts` line 193, "nights changed on a Request Draft": the same early save changed the held stay on a non-clarification
+  turn (`14–17 Dec · 3 nights`, expected `14–16 Dec · 2 nights`).
+- `test/assistant-turn-stop-reasons.test.ts` (the turn_deadline test, and the tool_denial test "A planner date the guest did not give"): the
+  turn-start save changed `stayIntent` on turns that must leave the thread unchanged.
+- `test/assistant-recorded-journeys.test.ts` (line 678, first test): the early save changed the scope classifier's context on turn 1 (`hasShortlist`
+  true, from a discovery query the shell ran for the saved area), then the planner's canonical facts (`"city":"Lagos"`, recorded `null`).
+
+Fix (owner rule: a stay clarification saves; nothing else does):
+- The save moved to the two clarification points: a planner reply with `clarify_stay` and no successful operation (saved at commit), and a
+  search missing its stay details (`AssistantStayDetailsError`, saved on the refused-call path). Refused date, budget and length calls, turn
+  deadlines, errors and mixed or out-of-scope turns save nothing from the turn.
+- The shell runs no discovery query for a context with no search: the sync re-queries only a thread that already holds results, and a restore
+  rebuilds results only for a thread with a result or a search history.
+
+Changed tests (coordinator review; each explained):
+1. `test/assistant-recorded-journeys.test.ts`, `withOwnerAreaFact`: the recording `missing-information-clarification` was made before issue 20 and
+   says `"city":null` in the planner's canonical facts at step 4, after "I want somewhere in Ikoyi". That is exactly the gap the owner closed (a
+   missing-fact clarification keeps the guest's own area). The in-memory copy replaces that one fact (asserted to occur once). The recording file is
+   not edited, and every other request and turn output is still compared. All five journeys pass.
+2. `test/assistant-clarification-facts.test.ts` AC3: the assertion that the area of a refused planner date is saved is changed to "no area". A refused
+   date is not a missing-fact clarification (coordinator rule). Its `statedStay` assertion is unchanged (issue 19's settle, before issue 20).
+3. `test/stay-length-assistant.test.ts` AC3 (issue 19): my earlier edit (`nights 60`, `!== 61`) is reverted to the original assertion
+   (`nights === undefined`). Under the narrowed rule the refused 61-night turn saves no nights, so the original assertion holds again. This
+   reverts the change the coordinator accepted; AC8 "unchanged" holds again for this file.
+
+Not changed: `test/assistant-recording-clients.test.ts` (out of scope). On Linux one test fails in its cleanup (`rmdirSync` on a symlink that stands
+in for a Windows junction, ENOTDIR). The file is unchanged since ae167e8 and the failure is in the test's own teardown, not in the code it tests.
+
+Commands and counts:
+- Five failing tests plus the issue 20 files (`assistant-budget-phrase`, `assistant-parity`, `assistant-recorded-journeys`,
+  `assistant-turn-stop-reasons`, `assistant-clarification-facts`, `assistant-clarification-facts-http`, `assistant-clarification-ranges`,
+  `assistant-partial-facts-across-turns`, `stay-length-assistant`): 70 pass, 0 fail, exit 0 (before the gate fix: 5 fail).
+- Wide non-browser set (the 60 `test/assistant-*.test.ts` files, excluding the Chromium file, plus the `stay-length-*` files, `assistant-cold-journey`,
+  `assistant-scope-controls`, `assistant-date-literals`, `assistant-checkout-dates`, `guest-discovery-reasons`, and the issue 20 files):
+  `npx tsx --test <65 files>`: 514 tests, 513 pass, 1 fail. The fail is `assistant-recording-clients` (the teardown above), which is pre-existing.
+- `env -u LLM_API_KEY npm run check` on the committed tree (`b4da196`): exit 0.
+- Not run: the full `npm test`, `npm run test:workers` and the Chromium files (the batch gate).
