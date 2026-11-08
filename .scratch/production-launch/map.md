@@ -37,7 +37,7 @@ Start now: agents **01, 03, 04, 10, 11**; owner **02, 13, 16, 17** (and start 14
 | 06 | [Extended Stays off in production until counsel text](issues/06-gate-extended-stays-until-counsel-text.md) | AFK | ready-for-agent | 02 |
 | 07 | [Production configuration and descriptor check](issues/07-production-configuration-and-descriptor-check.md) | AFK | ready-for-agent | 03, 17 |
 | 08 | [14:00 check-in window at import](issues/08-enforce-14-00-check-in-window-at-import.md) | AFK | ready-for-agent | 02 |
-| 09 | [Pilot metrics operators can see](issues/09-pilot-metrics-for-operators.md) | AFK | ready-for-agent | 04 |
+| 09 | [Pilot metrics operators can see](issues/09-pilot-metrics-for-operators.md) | AFK | resolved | 04 |
 | 10 | [Request and assistant logging](issues/10-request-and-assistant-logging.md) | AFK | ready-for-agent | none |
 | 11 | [Server-generated guest thread ids](issues/11-server-generated-guest-thread-ids.md) | AFK | ready-for-agent | none |
 | 12 | [Batch gate and merge](issues/12-batch-gate-and-merge.md) | task | ready-for-agent | 01, 03-09 |
@@ -63,3 +63,4 @@ Start now: agents **01, 03, 04, 10, 11**; owner **02, 13, 16, 17** (and start 14
 - 01: [Reconciliation](issues/01-reconcile-tracker-statuses.md) audited 27 hardening/controls/demo issues against main, retained uncertain statuses with evidence, rebuilt the 356-issue [work map](../WORK-MAP.md), and corrected the tester-facing 119-day note. Evidence commit `71ccf94`; 4/4 criterion tests and clean type check.
 - 03: [Signing-key implementation](issues/03-configure-conditional-offer-signing-secret.md) at `e9f109f`: one configured key in Node/Worker guest and owner, five secret descriptor bindings, true cold restore and wrong-key refusal. 88/88 scoped Node and 7/7 scoped Worker tests; clean type check. Wrapped review 49 retains its separate triage items.
 - 04: [Back-office stub removal](issues/04-remove-back-office-stubs.md) at `8fa90f5` also resolves [pilot 20](../pilot-launch-readiness/issues/20-remove-back-office-stubs.md): stored request contact, no fabricated verification and unavailable reliability cold start under the owner decision. 97/97 scoped Node and 7/7 Worker tests; clean type check.
+- 09: [Pilot metrics](issues/09-pilot-metrics-for-operators.md) at `ad27c23`, wrapping [pilot 13](../pilot-launch-readiness/issues/13-pilot-metrics.md): `/operator/metrics` behind Operator authentication, metrics defined in `domains/shortlet/CONTEXT.md`, durable sources on Node and the Worker. 7/7 Node, 1/1 Worker, 8/8 affected back-office tests; clean type check. Relocations are reported unavailable, never zero, pending the owner's source decision.
