@@ -44,5 +44,5 @@ Work top to bottom. The frontier is the first issue that is open, unblocked and 
 
 | # | Issue | Type | Status | Blocked by |
 | --- | --- | --- | --- | --- |
-| 17 | [Wire Notice to End into the guest and owner apps](issues/17-wire-notice-to-end-into-the-app.md) | task | resolved (page path; chat and assistant in 18) | none |
-| 18 | [Give notice from the chat and the assistant](issues/18-notice-to-end-in-chat-and-assistant.md) | task | claimed (AC8 recorded-state captures open) | 17 |
+| 17 | [Wire Notice to End into the guest and owner apps](issues/17-wire-notice-to-end-into-the-app.md) | task | resolved | none |
+| 18 | [Give notice from the chat and the assistant](issues/18-notice-to-end-in-chat-and-assistant.md) | task | resolved | 17 |
