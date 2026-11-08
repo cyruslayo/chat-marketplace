@@ -74,6 +74,9 @@ const ICON_PATHS = {
 
 export type IconName = keyof typeof ICON_PATHS;
 
+/** Every kit icon name, derived from ICON_PATHS so there is no second list to keep in step (ADR 0107 presentation validation). */
+export const ICON_NAMES: readonly IconName[] = Object.freeze(Object.keys(ICON_PATHS) as IconName[]);
+
 export interface AppBarInput {
   readonly backHref: string;
   readonly backLabel: string;
