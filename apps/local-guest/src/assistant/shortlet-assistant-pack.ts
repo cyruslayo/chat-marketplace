@@ -1602,7 +1602,8 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
       accept: ["get_offer_status", "propose_accept_offer"],
       payment: ["get_offer_status", "propose_start_payment"],
       // Issue 18: a guest who asks to end a confirmed stay early is offered the notice card only (the tool previews and records nothing).
-      support: ["propose_notice_to_end"],
+      // A support request (for example "the water is off") has no tool; it is not a notice request.
+      end_booking: ["propose_notice_to_end"],
     },
     // ADR 0005, 0060, 0080, 0106 (issue 12): a sent Booking Request, offer, payment or Reservation answers a change with its explanation
     // and no planner call. Before anything is sent this returns undefined and the turn goes to the planner as a search.

@@ -16,6 +16,8 @@ export const NIGHTS = 31;
 export const EXT_TEXT = "Ikoyi for 31 nights, 2 guests from 28 October 2026";
 export const EXT_SLOTS = { city: "Lagos", neighbourhood: "Old Ikoyi", checkIn: CHECK_IN, nights: NIGHTS, guests: 2 };
 export const NOTICE_TEXT = "I want to end my stay early";
+// Issue 18 AC3 / support: a problem with the stay is support, never a notice request (ADR 0106 closed intents).
+export const SUPPORT_TEXT = "the water is off";
 export const OPEN_EVENT = "shortlet.assistant.open-notice";
 export const TYPED_CONFIRMATIONS = ["yes", "ok", "confirm", "go ahead"] as const;
 export const PLANNER_TOOL = { name: "propose_notice_to_end", args: {} } as const;
@@ -23,7 +25,9 @@ export const PLANNER_TOOL = { name: "propose_notice_to_end", args: {} } as const
 export const SCRIPT: Record<string, ScriptedTurn> = {
   ...JOURNEY_SCRIPT,
   [EXT_TEXT]: { slots: EXT_SLOTS, search: { ...EXT_SLOTS } },
-  [NOTICE_TEXT]: { slots: {}, intents: ["support"], tool: PLANNER_TOOL, replyAfterTool: { kind: "propose_action", references: ["propose_notice_to_end"] } },
+  [NOTICE_TEXT]: { slots: {}, intents: ["end_booking"], tool: PLANNER_TOOL, replyAfterTool: { kind: "propose_action", references: ["propose_notice_to_end"] } },
+  // The planner is scripted to try the notice tool on a support request: the pack must not offer it under support (ADR 0106).
+  [SUPPORT_TEXT]: { slots: {}, intents: ["support"], tool: PLANNER_TOOL, replyAfterTool: { kind: "support_guidance", references: [] } },
   ...Object.fromEntries(TYPED_CONFIRMATIONS.map((text) => [text, { slots: {}, intents: ["support"], reply: "support_guidance" as const }])),
 };
 

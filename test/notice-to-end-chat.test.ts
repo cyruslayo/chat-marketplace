@@ -6,6 +6,7 @@ import {
   EXT_TEXT,
   EXT_SLOTS,
   NOTICE_TEXT,
+  SUPPORT_TEXT,
   OPEN_EVENT,
   TYPED_CONFIRMATIONS,
   PLANNER_TOOL,
@@ -29,7 +30,7 @@ import type { BookingContract } from "../domains/shortlet/src/card-payment.js";
 import { openNodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
 import { coldApp, EMAIL, JOURNEY_SCRIPT, journeyToReservation, PHONE, successOf, tap, type Surface } from "./helpers/assistant-stage-journey.js";
 import { addDays, extendUnit } from "./helpers/demo-extended-journey.js";
-import { datedFixture, firstButtonAction, LIVE_LIKE_CLOCK, scriptedPlanner, wireDatedApp, type DatedFixture, type ScriptedTurn } from "./helpers/guest-date-fixtures.js";
+import { datedFixture, firstButtonAction, LIVE_LIKE_CLOCK, restartedDatedApp, scriptedPlanner, wireDatedApp, type DatedFixture, type ScriptedTurn } from "./helpers/guest-date-fixtures.js";
 
 // Monthly-stays issue 18 (ADR 0106, ADR 0092 amended, ADR 0060, ADR 0074, ADR 0077/0080). A Notice to End from the chat:
 // the card opens from the confirmed Extended Stay, only a structured confirmation from the card records notice, and every
@@ -115,6 +116,50 @@ test("AC4: A guest asking in chat to end early is offered the card through the p
     const result = successOf(await coldApp(f, threadId, model()).app.handleTurn(threadId, NOTICE_TEXT), "ask to end early");
     assert.ok(result.surfaces.some((surface) => surface.surfaceId.includes(":pending-action:")), "the planner offers the card");
     assert.equal(contractOf(f, offerId).contractVersion, 1, "the tool records nothing by itself");
+  } finally {
+    f.close();
+  }
+});
+
+/** A cold restore (a new app over the same store) that records diagnostics, for the tests that assert tool calls (ADR 0106). */
+function coldRecording(f: DatedFixture, threadId: string, diagnostics: AssistantDiagnosticEvent[]) {
+  const restored = restartedDatedApp(f, model(), diagnostics);
+  restored.app.getState(threadId);
+  return restored;
+}
+
+test("A support request such as \"the water is off\" never offers the notice card", async () => {
+  // Issue 18 safety: support has no notice tool. The planner gets the support guidance reply, and no card or notice can result.
+  const threadId = "g-0cc1000801";
+  const diagnostics: AssistantDiagnosticEvent[] = [];
+  const f = extendedFixture(diagnostics);
+  try {
+    const { booking, offerId } = await extendedToReservation(f, threadId);
+    recordVerifiedAccess(f, contractOf(f, offerId).reservationId);
+    const result = successOf(await coldRecording(f, threadId, diagnostics).app.handleTurn(threadId, SUPPORT_TEXT), "report a problem");
+    assert.equal(result.surfaces.some((surface) => surface.surfaceId.includes(":pending-action:")), false, "no notice card for a support request");
+    assert.equal(JSON.stringify(result.surfaces).includes("give_notice"), false, "no Give notice action for a support request");
+    assert.equal(diagnostics.some((event) => event.stage === "application_operation" && event.toolName === "propose_notice_to_end"), false, "the notice tool is not called");
+    assert.equal(cardOpen(f, threadId), false, "no card is left open");
+    assert.equal(contractOf(f, offerId).contractVersion, 1, "nothing is recorded");
+    assert.equal(contractOf(f, offerId).noticeToEnd, undefined, "no notice is recorded");
+  } finally {
+    f.close();
+  }
+});
+
+test("An end_booking request offers the notice card and records nothing", async () => {
+  const threadId = "g-0cc1000901";
+  const diagnostics: AssistantDiagnosticEvent[] = [];
+  const f = extendedFixture(diagnostics);
+  try {
+    const { offerId } = await extendedToReservation(f, threadId);
+    recordVerifiedAccess(f, contractOf(f, offerId).reservationId);
+    const result = successOf(await coldRecording(f, threadId, diagnostics).app.handleTurn(threadId, NOTICE_TEXT), "ask to end early");
+    assert.ok(result.surfaces.some((surface) => surface.surfaceId.includes(":pending-action:")), "the notice card is offered");
+    assert.ok(diagnostics.some((event) => event.stage === "application_operation" && event.toolName === "propose_notice_to_end" && event.succeeded === true), "the planner's notice tool call succeeded");
+    assert.equal(contractOf(f, offerId).contractVersion, 1, "the contract is unchanged");
+    assert.equal(contractOf(f, offerId).noticeToEnd, undefined, "no notice is recorded");
   } finally {
     f.close();
   }
