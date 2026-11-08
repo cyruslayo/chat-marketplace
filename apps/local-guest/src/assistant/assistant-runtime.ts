@@ -221,6 +221,8 @@ export interface AssistantRuntimeOptions {
   readonly onTurnRecord?: (record: AssistantTurnRecord) => void;
   /** Issue 05: the configured primary model id, written as `gen_ai.request.model`. The host supplies it. */
   readonly modelName?: string;
+  /** ADR 0079 / pilot issue 24: the provider label for `gen_ai.provider.name`; a configuration value, never a secret. */
+  readonly providerName?: string;
 }
 
 export interface AssistantShortletRestoreInput {
@@ -341,6 +343,7 @@ export class AssistantRuntime {
   readonly #onDiagnostic?: (event: AssistantDiagnosticEvent) => void;
   readonly #onTurnRecord?: (record: AssistantTurnRecord) => void;
   readonly #modelName?: string;
+  readonly #providerName?: string;
   #turnRecordDrops = 0;
   /** Issue 06: mutating runs in progress on this runtime (turns and shell runs). The host never evicts a runtime with one. */
   #runsInFlight = 0;
@@ -365,6 +368,7 @@ export class AssistantRuntime {
     this.#onDiagnostic = options.onDiagnostic;
     this.#onTurnRecord = options.onTurnRecord;
     if (options.modelName !== undefined && options.modelName.trim() !== "") this.#modelName = options.modelName.trim();
+    if (options.providerName !== undefined && options.providerName.trim() !== "") this.#providerName = options.providerName.trim();
     const maxReplyOutputTokens = options.maxReplyOutputTokens ?? DEFAULT_ASSISTANT_REPLY_MAX_OUTPUT_TOKENS;
     if (!Number.isSafeInteger(maxReplyOutputTokens) || maxReplyOutputTokens < 1 || maxReplyOutputTokens > MAX_ASSISTANT_REPLY_OUTPUT_TOKENS) {
       throw new Error(`maxReplyOutputTokens must be an integer between 1 and ${MAX_ASSISTANT_REPLY_OUTPUT_TOKENS}`);
@@ -892,7 +896,7 @@ export class AssistantRuntime {
   #writeTurnRecord(run: AssistantTurnRun, outcome: { readonly output?: AssistantTurnOutput; readonly threw: boolean }): void {
     if (!this.#onTurnRecord) return;
     try {
-      const written: unknown = this.#onTurnRecord(run.toRecord({ ...(this.#modelName === undefined ? {} : { modelName: this.#modelName }), ...outcome, endedAtMs: this.#clockMs() }));
+      const written: unknown = this.#onTurnRecord(run.toRecord({ ...(this.#modelName === undefined ? {} : { modelName: this.#modelName }), ...(this.#providerName === undefined ? {} : { providerName: this.#providerName }), ...outcome, endedAtMs: this.#clockMs() }));
       // Issue 05 review: an async sink that rejects is a dropped record too, and its rejection is handled here, never unhandled.
       if (isThenable(written)) written.then(undefined, () => { this.#turnRecordDrops += 1; });
     } catch {

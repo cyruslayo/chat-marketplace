@@ -2312,6 +2312,8 @@ export interface GuestRequestHandlerOptions {
   onAssistantTurn?: (record: AssistantTurnRecord) => void;
   /** Issue 05: the configured primary model id for `gen_ai.request.model`. Hosts that pass `modelClient` supply it. */
   assistantModelName?: string;
+  /** Pilot issue 24: the configured provider label for `gen_ai.provider.name`; a configuration value, never a secret. */
+  assistantModelProvider?: string;
   conciergeMode?:
     | "deterministic"
     | "gemini"
@@ -2470,6 +2472,7 @@ export function createGuestRequestHandler(
   let assistantModelClient: AssistantModelClient | undefined;
   // Issue 05: the model id the turn record names. A host that injects `modelClient` supplies it; otherwise it is the environment's.
   let assistantModelName: string | undefined = options.assistantModelName;
+  let assistantModelProvider: string | undefined = options.assistantModelProvider;
 
   if (mode === "assistant-offline") {
     assistantModelClient = options.modelClient ?? new ScriptedAssistantModel();
@@ -2480,6 +2483,7 @@ export function createGuestRequestHandler(
       onDiagnostic: options.onAssistantDiagnostic,
       onTurnRecord: options.onAssistantTurn,
       modelName: assistantModelName,
+      providerName: assistantModelProvider,
     });
   } else if (mode === "gemini" || mode === "openai-compatible") {
     // The production pilot passes a validated client; development commands read the same settings from the environment.
@@ -2488,6 +2492,7 @@ export function createGuestRequestHandler(
       options.modelClient ??
       (configuredConcierge && createConciergeModelClient(configuredConcierge));
     assistantModelName ??= configuredConcierge?.primary?.model;
+    assistantModelProvider ??= configuredConcierge?.primary?.provider;
     if (!assistantModelClient)
       throw new Error(`CONCIERGE_MODE=${mode} requires a model client`);
     if (production && (!modelRequestQuota || assistantModelClient.supportsProviderAttemptReservation !== true))
@@ -2504,6 +2509,7 @@ export function createGuestRequestHandler(
       onDiagnostic: options.onAssistantDiagnostic,
       onTurnRecord: options.onAssistantTurn,
       modelName: assistantModelName,
+      providerName: assistantModelProvider,
     });
   }
   const modelCallBudget = options.modelCallBudget
@@ -2632,7 +2638,7 @@ export function createGuestRequestHandler(
               assistantRuntime: new AssistantRuntime(
                 runtimeEnvironment,
                 quotaGuard(assistantModelClient, runtimeEnvironment),
-                { packs: [createShortletAssistantPack(runtimeEnvironment)], additionalPacks: options.additionalPacks, onDiagnostic: options.onAssistantDiagnostic, onTurnRecord: options.onAssistantTurn, modelName: assistantModelName },
+                { packs: [createShortletAssistantPack(runtimeEnvironment)], additionalPacks: options.additionalPacks, onDiagnostic: options.onAssistantDiagnostic, onTurnRecord: options.onAssistantTurn, modelName: assistantModelName, providerName: assistantModelProvider },
               ),
             }
           : {}),

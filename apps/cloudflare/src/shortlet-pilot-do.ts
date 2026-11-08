@@ -312,6 +312,7 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
       // Issue 05: one allow-listed record per assistant turn, written as a Workers Logs JSON line; the model id names the configured primary.
       onAssistantTurn: writeAssistantTurnRecord,
       assistantModelName: configuration.concierge.primary?.model,
+      assistantModelProvider: configuration.concierge.primary?.provider,
       // Explicit, so production never falls back to reading CONCIERGE_MODE from the process environment.
       conciergeMode: configuration.concierge.mode,
       ...(modelClient ? { modelClient } : {}),

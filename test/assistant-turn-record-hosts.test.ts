@@ -224,6 +224,7 @@ test("AC1 host contract: the Durable Object host passes onAssistantTurn and assi
   const call = handlerCallSource("apps/cloudflare/src/shortlet-pilot-do.ts");
   assert.match(call, /\bonAssistantTurn:\s*writeAssistantTurnRecord\b/, "the Durable Object writes each turn record");
   assert.match(call, /\bassistantModelName:\s*configuration\.concierge\.primary\?\.model\b/, "the record names the configured primary model");
+  assert.match(call, /\bassistantModelProvider:\s*configuration\.concierge\.primary\?\.provider\b/, "the record names the configured provider (pilot issue 24)");
 });
 
 test("AC1 host contract: the local demo CLI passes onAssistantTurn to its guest server.", () => {

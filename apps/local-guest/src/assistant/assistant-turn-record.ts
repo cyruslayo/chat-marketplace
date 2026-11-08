@@ -63,6 +63,8 @@ export interface AssistantTurnRecord {
   readonly "gen_ai.operation.name": "chat";
   /** The configured primary model id the host supplied. A fallback-served call is not distinguished. */
   readonly "gen_ai.request.model"?: string;
+  /** The configured provider label (a configuration value, never a secret or endpoint). */
+  readonly "gen_ai.provider.name"?: string;
   /** Sum over the planner and summary calls that reported a valid usage count. Absent when none did. */
   readonly "gen_ai.usage.input_tokens"?: number;
   readonly "gen_ai.usage.output_tokens"?: number;
@@ -143,7 +145,7 @@ export class AssistantTurnRun {
    * The one record of this turn. `output` is the turn's answer, or undefined when the turn threw. The duration is written
    * only when both clock readings are known.
    */
-  toRecord(input: { readonly modelName?: string; readonly output?: AssistantTurnOutput; readonly threw: boolean; readonly endedAtMs?: number }): AssistantTurnRecord {
+  toRecord(input: { readonly modelName?: string; readonly providerName?: string; readonly output?: AssistantTurnOutput; readonly threw: boolean; readonly endedAtMs?: number }): AssistantTurnRecord {
     const { output } = input;
     const refusalCode = output && output.ok === false ? output.code : undefined;
     const errorType = input.threw ? "runtime_exception" : refusalCode === undefined ? undefined : errorTypeFor(refusalCode);
@@ -155,6 +157,7 @@ export class AssistantTurnRun {
       "assistant.turn_id": this.#runId,
       "gen_ai.operation.name": "chat",
       ...(input.modelName ? { "gen_ai.request.model": input.modelName } : {}),
+      ...(input.providerName ? { "gen_ai.provider.name": input.providerName } : {}),
       ...(this.#inputTokens === undefined ? {} : { "gen_ai.usage.input_tokens": this.#inputTokens }),
       ...(this.#outputTokens === undefined ? {} : { "gen_ai.usage.output_tokens": this.#outputTokens }),
       ...(this.#toolNames.length === 0 ? {} : { "assistant.tool_names": [...this.#toolNames] }),
