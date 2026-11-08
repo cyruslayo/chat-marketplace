@@ -156,6 +156,8 @@ export interface AssistantDomainPack {
    * turn is classified. Pure over that state; the runtime calls it once per guest turn.
    */
   settlePendingGuestFacts?(text: string, taskState: AssistantTaskState, now: Date): void;
+  /** Issue 20 (ADR 0106, amended 8 Nov 2026): saves the stay facts the guest's own words give on an in-scope turn. Never a planner proposal. */
+  recordGuestFacts?(text: string, taskState: AssistantTaskState, now: Date): void;
   /** Pack-owned minimal facts for model history. Raw execution results remain local to the platform. */
   projectToolResult?(name: string, result: Record<string, unknown>, limits: { readonly maxItems: number }): Record<string, unknown>;
   /** Canonical bounded facts used when older operation pairs leave retained history. */

@@ -158,7 +158,8 @@ export interface PersistedStatedStay {
 }
 
 export interface PersistedAssistantContext {
-  readonly city: "Lagos" | "Abuja";
+  /** Issue 20 (ADR 0106 amended 8 Nov 2026): optional. A context with no area keeps only the guest's own facts that need no area. */
+  readonly city?: "Lagos" | "Abuja";
   readonly neighbourhood?: string;
   readonly checkIn?: string;
   /** Provenance for the server-selected fallback date; absent means unknown. */
@@ -239,10 +240,28 @@ function isUnitDetail(value: unknown): value is { readonly unitId: string; reado
   return isRecord(value) && typeof value.unitId === "string" && typeof value.artifactId === "string";
 }
 
+/**
+ * Issue 20 (ADR 0106 amended 8 Nov 2026; ADR 0093): a context with no area holds only the guest's own facts that need no area: a typed
+ * check-in (isDemoDate false) with its checkout and nights, the stated length, party size and bedrooms. Any other field, or a check-in that
+ * is not marked guest-typed, refuses the context (fail closed).
+ */
+function isPartialAssistantContext(value: Record<string, unknown>): boolean {
+  const keys = Object.keys(value);
+  const ownKeys = ["checkIn", "isDemoDate", "checkOut", "nights", "partySize", "bedrooms", "statedStay"];
+  if (keys.length === 0 || keys.some((key) => !ownKeys.includes(key))) return false;
+  const hasCheckIn = value.checkIn !== undefined;
+  if (hasCheckIn !== (value.isDemoDate === false)) return false;
+  return hasCheckIn || (value.checkOut === undefined && value.nights === undefined);
+}
+
 function parseAssistantContext(value: unknown): PersistedAssistantContext | null {
-  if (!isRecord(value) || (value.city !== "Lagos" && value.city !== "Abuja")) return null;
+  if (!isRecord(value)) return null;
+  // Issue 20: an absent area is a partial context (checked below); a present one must be a closed area.
+  const area = value.city === "Lagos" || value.city === "Abuja" ? value.city : undefined;
+  if (value.city !== undefined && area === undefined) return null;
   const allowed = new Set(["city", "neighbourhood", "checkIn", "isDemoDate", "checkOut", "nights", "partySize", "bedrooms", "maxBudgetKobo", "maxBudgetPer", "requiredAmenities", "selectedUnitId", "pendingLocation", "pendingDate", "statedStay"]);
   if (Object.keys(value).some((key) => !allowed.has(key))) return null;
+  if (area === undefined && !isPartialAssistantContext(value)) return null;
   if (value.neighbourhood !== undefined && (typeof value.neighbourhood !== "string" || value.neighbourhood.length > 100)) return null;
   if (value.isDemoDate !== undefined && typeof value.isDemoDate !== "boolean") return null;
   for (const key of ["checkIn", "checkOut"] as const) {
@@ -267,7 +286,7 @@ function parseAssistantContext(value: unknown): PersistedAssistantContext | null
     ? { maxBudgetKobo: value.maxBudgetKobo, maxBudgetPer: budgetPer }
     : {};
   return {
-    city: value.city,
+    ...(area === undefined ? {} : { city: area }),
     ...(typeof value.neighbourhood === "string" ? { neighbourhood: value.neighbourhood } : {}),
     ...(typeof value.checkIn === "string" ? { checkIn: value.checkIn } : {}),
     ...(typeof value.isDemoDate === "boolean" ? { isDemoDate: value.isDemoDate } : {}),

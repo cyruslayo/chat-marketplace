@@ -121,6 +121,10 @@ Owner decision of 2 Nov 2026 on issue 01 (`.scratch/assistant-concierge-parity/i
 - Support. The `support` intent offers neither tool. A support request such as a water or access problem never produces a notice or extension card.
 - Warm session runtime. A session's assistant runtime is not rebuilt between requests, so it adopts the shell's booking references (the draft, request, offer, reservation and contract the guest's thread holds) on every entry point (`getState`, `handleTurn`, `handleEvent`, `handleEventAsync`), with the same derivation a cold restore uses. History, surfaces and the pending action are kept. The offer-gated tools therefore see the same current offer on a warm and a cold runtime. The tool gates themselves are unchanged.
 
+### Amendment (8 Nov 2026, issue 20): a clarification keeps the guest's own facts
+
+A clarification turn still runs no search and no tool effect, and keeps nothing the model proposed. It saves the stay facts the guest's own words give (the area, one typed check-in that the date rules accept, the stated length, party size and bedrooms) into the persisted assistant context, which may be partial (no area), so the next turn can use them after a cold restore. No other field is added.
+
 ## Constraints retained
 
 ADRs 0015, 0068–0080, 0089, 0099, 0101, 0102, and 0105 remain in force.

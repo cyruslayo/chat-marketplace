@@ -5,6 +5,7 @@ import type { AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant
 import type { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { datedFixture, LIVE_LIKE_CLOCK, scriptedPlanner, wireDatedApp, type ScriptedTurn } from "./helpers/guest-date-fixtures.js";
 
+// Issue 20 (ADR 0106 amended 8 Nov 2026): a clarification turn saves the guest's own facts, so the cold cases pass.
 // Facts given across two turns: turn 1 gives the place, the date and the length but no party, so the planner asks for it;
 // turn 2 gives the party and the planner searches with the facts from both turns. Clock 27 Oct 2026, staging-like guest.
 // Cold runs: a NEW application over the same store before every event. Warm runs: one application for both turns.
@@ -82,7 +83,7 @@ async function runTwoTurns(first: string, second: string, nights: number, cold: 
   } finally { f.close(); }
 }
 
-test("(a) cold: 'Ikoyi from 5 Jan for 3 nights' then '2 of us' searches 3 nights in Ikoyi from 5 Jan for 2 guests", { todo: "todo: pre-existing, outside issue 19: a clarification turn leaves no city or check-in in the runtime state, so nothing is persisted (shortlet-app.ts:3118-3119 returns null without a city; shortlet-app.ts:3494 syncs only then), and restoreShortletState clears the conversation history that the planner's check-in needed (assistant-runtime.ts:779)" }, async () => {
+test("(a) cold: 'Ikoyi from 5 Jan for 3 nights' then '2 of us' searches 3 nights in Ikoyi from 5 Jan for 2 guests", async () => {
   await runTwoTurns(A_TURN_1, A_TURN_2, 3, true);
 });
 
@@ -90,7 +91,7 @@ test("(a) warm: the same two turns in one running application searches 3 nights 
   await runTwoTurns(A_TURN_1, A_TURN_2, 3, false);
 });
 
-test("(b) cold: 'Ikoyi, 2 months from 5 Jan' then '2 of us' searches 60 nights", { todo: "todo: pre-existing, outside issue 19: a clarification turn leaves no city or check-in in the runtime state, so nothing is persisted (shortlet-app.ts:3118-3119 returns null without a city; shortlet-app.ts:3494 syncs only then), and restoreShortletState clears the conversation history that the planner's check-in needed (assistant-runtime.ts:779); the stated length also stays only in the runtime state (stayIntent.statedStay), which is not persisted without the same city" }, async () => {
+test("(b) cold: 'Ikoyi, 2 months from 5 Jan' then '2 of us' searches 60 nights", async () => {
   await runTwoTurns(B_TURN_1, B_TURN_2, 60, true);
 });
 

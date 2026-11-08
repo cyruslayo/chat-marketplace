@@ -1155,6 +1155,12 @@ export class AssistantRuntime {
     validatedTurnToolNames = toolNamesForValidatedIntents(packForScope, assessment.intents);
     taskSwitchPermitted = assessment.intents.includes("task_switch");
     candidateHistory.push({ role: "user", text: redactSensitiveData(discardUserInput ? text : originalUserText) as string });
+    // Issue 20 (ADR 0106, amended 8 Nov 2026): the guest's own stay facts are saved on this in-scope turn, on the committed state and the
+    // candidate alike, so a clarification that commits keeps them across a cold restore. A mixed turn carries scoped text, so it records nothing.
+    if (!discardUserInput) {
+      candidatePack().recordGuestFacts?.(originalUserText, thread.taskState, this.#environment.clock());
+      candidatePack().recordGuestFacts?.(originalUserText, tx.taskState, this.#environment.clock());
+    }
 
     const userTextHistory: string[] = [...(thread.canonicalUserFactHistory ?? []), ...candidateHistory
       .filter((s): s is Extract<AssistantConversationStep, { role: "user" }> => s.role === "user")

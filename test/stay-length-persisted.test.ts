@@ -1,10 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { GuestTurnResult } from "../apps/local-guest/src/shortlet-app.js";
-import { CRITERIA_EDIT_EVENT, criteriaSurfaceId } from "../apps/local-guest/src/shortlet-app.js";
 import type { AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 import type { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { datedFixture, LIVE_LIKE_CLOCK, scriptedPlanner, wireDatedApp, type ScriptedTurn } from "./helpers/guest-date-fixtures.js";
+import { criteriaEditEvent } from "./helpers/stay-length-fixtures.js";
 
 // Issue 19, owner decision (8 Nov 2026): the guest's stated stay length is persisted with the assistant context as `statedStay`,
 // so it binds every later search and draft after a cold restore (ADR 0106 Projection, amended 8 Nov 2026). The assistant is enabled,
@@ -73,16 +73,6 @@ function coldTurn(environment: LocalGuestEnvironment, model: Planner, threadId: 
   return app.handleTurn(threadId, text);
 }
 
-function criteriaEdit(threadId: string, basedOn: string, nights: number) {
-  return {
-    name: CRITERIA_EDIT_EVENT,
-    surfaceId: criteriaSurfaceId(threadId),
-    sourceComponentId: "criteria-chip",
-    timestamp: LIVE_LIKE_CLOCK().toISOString(),
-    context: { field: "when", checkIn: CHECK_IN, nights, basedOn },
-  };
-}
-
 test("A length stated in months binds the next turn after a cold restore: '2 months from 5 Jan' then '2 of us' searches 60 nights, and a planner 61 is a tool_denial", async () => {
   const model60 = plannerFor(60);
   const diagnostics: AssistantDiagnosticEvent[] = [];
@@ -139,7 +129,7 @@ test("A nights chip edit replaces the stated length and drops the months show-ba
     // The chip edit is structured guest input, sent through a cold restore as the page does.
     const editing = wireDatedApp(f.environment, model, diagnostics).app;
     editing.getState(threadId);
-    const edit = okOf(await editing.handleEventAsync(threadId, criteriaEdit(threadId, key, 25)));
+    const edit = okOf(await editing.handleEventAsync(threadId, criteriaEditEvent(threadId, key, CHECK_IN, 25, LIVE_LIKE_CLOCK())));
     const label = edit.criteria?.when?.label ?? "";
     assert.match(label, /25 nights/, "the strip shows 25 nights");
     assert.doesNotMatch(label, /month/, "the months show-back is dropped");

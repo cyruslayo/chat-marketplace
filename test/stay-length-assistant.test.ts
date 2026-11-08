@@ -68,7 +68,9 @@ test("AC3 a planner call with 61 nights is a tool_denial and no 61-night search 
     assert.equal(result.ok, true, `a rejected tool call is not a failed turn: ${messageOf(result)}`);
     assert.equal(messageOf(result), "Just to check: you’d like 60 nights (2 months). Shall I search for that?", "the reply shows the guest's length back");
     assert.deepEqual(searchOutcomes(diagnostics), [false], "the 61-night search_stays call is rejected");
-    assert.equal(persistedStay(f.environment, "g-1f1900000061")?.nights, undefined, "no 61-night stay is recorded");
+    // Issue 20: the guest's own 60 nights (from 5 Jan, a guest check-in) are kept; the planner's 61 is never recorded.
+    assert.equal(persistedStay(f.environment, "g-1f1900000061")?.nights, 60, "the guest's own 60 nights are kept");
+    assert.notEqual(persistedStay(f.environment, "g-1f1900000061")?.nights, 61, "no 61-night stay is recorded");
   } finally { f.close(); }
 });
 

@@ -1,9 +1,10 @@
 import { draftRevisionRequest } from "./shortlet-draft-revision.js";
 import { generatePlatformId } from "../../../../packages/platform-core/src/index.js";
-import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantGuestRefusalError, AssistantStayDetailsError, containsGuestDate } from "./date-tokens.js";
+import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantGuestRefusalError, AssistantStayDetailsError, containsGuestDate, isDateGovernedByCheckOut, mentionsCheckOut } from "./date-tokens.js";
 import { ContinuousOccupancyError, StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, MAX_STAY_NIGHTS, BOOKING_HORIZON_DAYS, dateKeyInLagos, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
-import { SEARCH_AREAS, formatGuestDay, locationConflictQuestion, quickRepliesFor, resolveLocationMention, stayBudgetKobo, stayCriteriaGap, unsupportedPreferenceNote, viewResultIntent, type PendingLocationChange } from "../concierge.js";
+import { SEARCH_AREAS, extractStayRequestFacts, formatGuestDay, locationConflictQuestion, quickRepliesFor, resolveLocationMention, stayBudgetKobo, stayCriteriaGap, unsupportedPreferenceNote, viewResultIntent, type PendingLocationChange } from "../concierge.js";
 import { phraseIsGuestAuthored, readCheckInPhrase, type CheckInPhraseReading } from "./date-phrases.js";
+import { guestDateLiterals } from "./date-literals.js";
 import { isExplicitConfirmation } from "./pending-actions.js";
 import { extractBudget, type StayBudget } from "../stay-budget.js";
 import { EXTENDED_STAY_POLICY, readStayLength, type StayLengthUnit } from "../../../../domains/shortlet/src/index.js";
@@ -368,6 +369,55 @@ export function statedStayOf(length: { readonly unit: StayLengthUnit; readonly c
 export function recordGuestStatedStay(text: string, stayIntent: AssistantStayIntent, policy?: ExtendedStayPolicy): void {
   const reading = readStayLength(text, policy);
   if (reading.kind === "length") stayIntent.statedStay = statedStayOf(reading);
+}
+
+/**
+ * Issue 20 (ADR 0106, amended 8 Nov 2026; ADR 0093): the stay facts the guest's own words give on an in-scope turn, saved so a clarification
+ * keeps them across a cold restore. Only the guest's text is read: the closed area list, one day the guest typed that the date rules accept,
+ * and the party size and bedrooms the deterministic readers read. Nothing the planner or the classifier proposed is an input, and a refused
+ * date is not saved.
+ * - Area: a different held city is not switched here (issue 09 asks first); the same or no held city takes the guest's area.
+ * - Check-in: exactly one day the guest typed (an ISO token or an English day-month literal) that the booking horizon and the stay rules
+ *   accept (ADR 0055, ADR 0023), and that is not a checkout. Two days, a checkout, a span ("next month") or a refused date saves nothing.
+ *   A new check-in replaces the held dates, as a chip edit does; its checkout and nights then come only from the stated length.
+ * - Stated length: recorded by recordGuestStatedStay (issue 19). With a guest check-in it gives the checkout by the chip rule
+ *   (validatedCheckOutForNights); an invalid stay records neither nights nor checkout.
+ */
+export function recordGuestAuthoredFacts(text: string, stayIntent: AssistantStayIntent, now: Date, policy?: ExtendedStayPolicy): void {
+  const location = resolveLocationMention(text);
+  if (location !== undefined && (stayIntent.location === undefined || stayIntent.location === location.city)) {
+    stayIntent.location = location.city;
+    if (location.neighbourhood !== undefined) stayIntent.neighbourhood = location.neighbourhood;
+  }
+  const typed = extractStayRequestFacts(text);
+  if (typed.partySize !== undefined) stayIntent.partySize = typed.partySize;
+  if (typed.bedrooms !== undefined) stayIntent.bedrooms = typed.bedrooms;
+  const checkIn = guestTypedCheckIn(text, now, policy);
+  if (checkIn !== undefined && (stayIntent.checkIn !== checkIn || stayIntent.isDemoDate !== false)) {
+    stayIntent.checkIn = checkIn;
+    stayIntent.isDemoDate = false;
+    stayIntent.checkOut = undefined;
+    stayIntent.nights = undefined;
+  }
+  const stated = stayIntent.statedStay;
+  if (stayIntent.isDemoDate === false && stayIntent.checkIn !== undefined && stated !== undefined) {
+    const checkOut = validatedCheckOutForNights(stayIntent.checkIn, stated.nights, now, policy);
+    if (checkOut !== null) {
+      stayIntent.nights = stated.nights;
+      stayIntent.checkOut = checkOut;
+    }
+  }
+}
+
+/** Issue 20: the one day the guest typed in this text that the date rules accept as a check-in, or undefined (fail closed). */
+function guestTypedCheckIn(text: string, now: Date, policy?: ExtendedStayPolicy): string | undefined {
+  const days = new Set<string>(text.match(/(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/g) ?? []);
+  for (const literal of guestDateLiterals(text, now)) days.add(literal.date);
+  // A text that names a checkout leaves the roles of its dates unclear ("use 6 Nov for both the check-in and checkout dates"): nothing is saved.
+  if (days.size !== 1 || mentionsCheckOut(text)) return undefined;
+  const [day] = days;
+  if (day === undefined || isDateGovernedByCheckOut(text, day, now)) return undefined;
+  return validatedCheckOutForNights(day, 1, now, policy) === null ? undefined : day;
 }
 
 /**
@@ -1748,6 +1798,7 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
       settlePendingStayDate(text, state, now, environment.extendedStayPolicy);
       recordGuestStatedStay(text, state.stayIntent, environment.extendedStayPolicy);
     },
+    recordGuestFacts: (text, state, now) => recordGuestAuthoredFacts(text, state.stayIntent, now, environment.extendedStayPolicy),
     projectToolResult: (_name, result, limits) => {
       const keys = new Set(["locationChangePending", "dateConfirmationPending", "stayRef", "city", "capacity", "bedrooms", "resultCount", "checkIn", "checkOut", "nights", "partySize", "isDemoDate", "nightlyKobo", "mandatoryFeesKobo", "allInStayTotalKobo", "refundableSecurityDepositKobo", "amountDueNowKobo", "totalAmountDueNowKobo", "currency", "inspectionStatus", "managementAuthorityStatus", "status", "expiresAt", "expiresAtIso", "hasOffer", "hasBooking", "draftCreated", "created", "availabilityChecked", "inventoryReserved", "operation", "available", "stays", "compared", "result", "hasRequest", "requestStatus", "facility", "facilityListed", "facilityAmenity"]);
       const closedStatuses = new Set(["passed", "failed", "expired", "verified", "unverified", "none", "request_draft", "request_submitted", "request_disclosed", "offer_issued", "issued", "accepted", "payment_pending", "paid", "cancelled", "rejected", "stale", "revoked", "confirmed", "no_active_booking", "unknown"]);

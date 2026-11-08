@@ -3115,9 +3115,29 @@ export class LocalGuestApp {
     return thread;
   }
 
+  /**
+   * Issue 20 (ADR 0106 amended 8 Nov 2026; ADR 0093): a context with no area keeps only the guest's own facts that need no area. A
+   * check-in counts only when the guest typed it (isDemoDate false), and its checkout and nights come with it. The stated length, party size
+   * and bedrooms need no area. Nothing else is kept, and an empty context is not saved.
+   */
+  #partialAssistantContext(state: AssistantTaskState): PersistedAssistantContext | null {
+    const stay = state.stayIntent;
+    const checkIn = stay.isDemoDate === false && typeof stay.checkIn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(stay.checkIn) ? stay.checkIn : undefined;
+    const checkOut = checkIn !== undefined && typeof stay.checkOut === "string" && /^\d{4}-\d{2}-\d{2}$/.test(stay.checkOut) ? stay.checkOut : undefined;
+    const context: PersistedAssistantContext = {
+      ...(checkIn === undefined ? {} : { checkIn, isDemoDate: false }),
+      ...(checkOut === undefined ? {} : { checkOut }),
+      ...(checkIn !== undefined && Number.isSafeInteger(stay.nights) && (stay.nights ?? 0) > 0 ? { nights: stay.nights } : {}),
+      ...(stay.statedStay ? { statedStay: { nights: stay.statedStay.nights, unit: stay.statedStay.unit, count: stay.statedStay.count } } : {}),
+      ...(Number.isSafeInteger(stay.partySize) && (stay.partySize ?? 0) > 0 ? { partySize: stay.partySize } : {}),
+      ...(Number.isSafeInteger(stay.bedrooms) && (stay.bedrooms ?? -1) >= 0 ? { bedrooms: stay.bedrooms } : {}),
+    };
+    return Object.keys(context).length === 0 ? null : context;
+  }
+
   #assistantContextFromState(state: AssistantTaskState): PersistedAssistantContext | null {
     const city = state.stayIntent.location;
-    if (city !== "Lagos" && city !== "Abuja") return null;
+    if (city !== "Lagos" && city !== "Abuja") return this.#partialAssistantContext(state);
     const knownNeighbourhoods = new Set(this.#environment.unitRepository.findAll().map((unit) => unit.location.neighbourhood));
     const neighbourhood = state.stayIntent.neighbourhood;
     // Issue 08: the closed amenity catalogue (ADR 0106) is the only source of persisted amenity ids.
@@ -3162,6 +3182,22 @@ export class LocalGuestApp {
     currentArtifact?: DiscoveryArtifactProjection,
     keepArtifactId: string | null = null,
   ): void {
+    // Issue 20 (ADR 0106 amended 8 Nov 2026): a context with no area runs no search. It keeps the guest's own criteria for the strip and
+    // clears the held results, which an area would have to match.
+    if (context.city === undefined) {
+      thread.discoveryArtifact = null;
+      thread.discoveryArtifactId = null;
+      thread.unitDetail = null;
+      thread.searchHistory = [];
+      thread.discoveryContext = {
+        ...(context.checkIn ? { checkIn: context.checkIn, datesConfirmed: true } : {}),
+        ...(context.nights === undefined ? {} : { nights: context.nights }),
+        ...statedStayLengthPart(context),
+        ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
+        ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
+      };
+      return;
+    }
     // Issue 04 (ADR 0106, 2 Nov 2026): a pending date show-back is not a search. A restore must not rebuild results for its dates.
     if (context.pendingDate !== undefined) {
       // Issue 16 (parity): while a date show-back is open the criteria strip shows the held stay "to confirm", as the deterministic
@@ -3343,7 +3379,7 @@ export class LocalGuestApp {
     const state: AssistantTaskState = {
       goal: shortlist.length ? "find_stay" : null,
       stayIntent: {
-        location: context.city,
+        ...(context.city === undefined ? {} : { location: context.city }),
         ...(context.neighbourhood ? { neighbourhood: context.neighbourhood } : {}),
         ...(context.checkIn ? { checkIn: context.checkIn } : {}),
         ...(typeof context.isDemoDate === "boolean" ? { isDemoDate: context.isDemoDate } : {}),
