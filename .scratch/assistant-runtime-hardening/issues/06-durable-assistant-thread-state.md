@@ -66,6 +66,10 @@ The Cloudflare Agents SDK's useful idea is one Durable Object per conversation w
 
 ## Comments
 
+### Production-launch/01 reconciliation (8 Nov 2026)
+
+Implementation reached main in `1c2e0b8`; `test/assistant-thread-lock.test.ts` and `test/assistant-session-thread-lock.test.ts` exercise the lock and cold restore. Keep open: Workers interleave and browser retry are recorded separately in follow-up 08, and this issue's Comments leave its full-suite DoD gate pending. Do not equate a merge with resolution.
+
 ### Triage record (28 Oct 2026), implementation of options and owner decisions
 
 **Tests first.** `test/assistant-thread-lock.test.ts`, written before the change. On the first run 7 of the 12 criteria failed as predicted (no refusal, a throw out of the turn, a restored proposal). The 5 that passed had no interleave to exercise (cross-thread, read-only, deadline, a Yes after execution, the no-interleave commit). Final file: 14 tests, all pass. Every test is named for one criterion and covers its failure path.

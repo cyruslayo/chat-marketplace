@@ -29,6 +29,10 @@ Use PRD's ADR map and ADR 0106. Exercise real tool boundaries and observable dom
 
 ## Comments
 
+### Production-launch/01 reconciliation (8 Nov 2026)
+
+Implementation `bae38ad` reached main through `ae708b1`; `test/assistant-tool-authorization.test.ts` covers the named tool-authority criteria. Keep `claimed`: the issue's own Comments defer independent review and the integrated five-control gate.
+
 Record commands, pass counts, commit, and Definition of Done evidence.
 
 ### Implementation evidence — 23 October 2026

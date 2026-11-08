@@ -38,6 +38,10 @@ Prepare only the synthetic live model checks; respect the existing approved key 
 
 ## Comments
 
+### Production-launch/01 reconciliation (8 Nov 2026)
+
+The integrated controls reached main through `ae708b1`. Focused quota/evaluation and Worker tests are recorded below. Keep `claimed`: AC8 expressly requires a green full `npm test`, while the recorded gate at line 655 exits 1 (2,456/2,458 non-browser and 33/35 browser files) and the live-evaluation/review evidence is incomplete. Do not mark resolved on the strength of the merge.
+
 Keep the batch claimed until complete integrated evidence and independent review are recorded.
 
 23 Oct preflight: read-only OpenRouter /auth/key metadata confirms limit USD2, usage USD0.01443705, remaining USD1.98556295. No paid model request or account-setting change occurred. Recheck before the live evaluation.

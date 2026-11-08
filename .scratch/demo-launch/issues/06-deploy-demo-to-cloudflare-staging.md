@@ -62,3 +62,5 @@ Before deploying, run the pre-deploy gate on the commit being deployed: `npm run
 | 0105 | Staging-only demo | `SHORTLET_DEMO` on staging only |
 
 ## Comments
+
+Production-launch/01 reconciliation (8 Nov 2026): staging was verified live on 29 Oct (production-launch PRD), but this issue requires deployment-specific gate, URL and webhook evidence. `test/pilot-production-composition.test.ts` is a composition check, not live webhook proof. Keep `ready-for-human` for owner deployment steps; do not infer resolution from the staging journey.

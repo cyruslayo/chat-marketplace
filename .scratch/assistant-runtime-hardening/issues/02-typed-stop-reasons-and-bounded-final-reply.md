@@ -49,6 +49,10 @@ Use an injected clock or a scripted model that advances time; no real waits.
 
 ## Comments
 
+### Production-launch/01 reconciliation (8 Nov 2026)
+
+Implementation reached main in `1c2e0b8`; `test/assistant-turn-stop-reasons.test.ts` and `test/assistant-turn-stop-cold-restore.test.ts` cover the stop and restore paths. Keep open: the issue's recorded DoD full-suite gate and the owner decisions documented below have not been closed by evidence in this reconciliation.
+
 ### Implementation (28 Oct 2026, branch `integration/concierge-controls`)
 
 **ADR discovery and table.** Read ADR 0106 in full (with the 26 and 27 Oct amendments), ADR 0079 and 0080 (the issue's named ADRs), ADR 0075, and the headers of 0092 and 0093 (concierge path, not touched here). Constraints and where they bite:

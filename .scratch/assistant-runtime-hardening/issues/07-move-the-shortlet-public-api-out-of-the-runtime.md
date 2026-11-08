@@ -56,3 +56,5 @@ The boundary test (`test/assistant-runtime-boundary.test.ts`) records each as a 
 - Any `shortlet-app.ts` caller changed by this issue: the test that drives it.
 
 ## Comments
+
+Production-launch/01 reconciliation (8 Nov 2026): `test/assistant-runtime-boundary.test.ts` still carries an allowlist for this follow-up; there is no implementation/criterion evidence to resolve it. `needs-triage` remains.

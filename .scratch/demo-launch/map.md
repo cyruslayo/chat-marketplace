@@ -36,6 +36,8 @@ Issue 11 leaves the back-office payables screen showing Period 1 only. See its d
 
 ## Context pointers
 
+**Current status note (production-launch/01, 8 Nov 2026):** the table above is authoritative. Entries below describing 12 or 13 as `ready-for-agent` are historical progress snapshots; both are now `resolved` (12: `6f82a7b`, 13: `a572324`). Issue 03 still awaits the owner's benchmark acceptance; 06 and 07 retain their unmet deployment and live 180-night acceptance evidence.
+
 - 01: [ADR 0105](../../docs/adr/0105-public-demo-exception.md) records the accepted demo exception. ADR 0104 notes its demo-only partial supersession. Four dedicated tests and the complete suite passed.
 
 - 04: the staging demo is off by default and refused in production (ADR 0105). Its acceptance runs the owner confirmation command path. Tests: test/demo-mode-config.test.ts, test/demo-mode-guest.test.ts, test/demo-auto-accept.test.ts, test/demo-listing-chip.test.ts, test/demo-accept-delay-config.test.ts, test/demo-mode-landing.test.ts. Captures: .scratch/demo-launch/screenshots/04/. Open items are in the issue Comments.

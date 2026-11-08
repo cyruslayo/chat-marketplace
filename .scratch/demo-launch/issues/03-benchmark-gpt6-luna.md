@@ -54,6 +54,10 @@ The owner wants the agent's performance measured before the demo. ADR 0079 also 
 
 ## Comments
 
+### Production-launch/01 reconciliation (8 Nov 2026)
+
+The benchmark implementation and three live journeys are recorded below; the issue's owner go/no-go acceptance is still pending and production-launch/02 asks for it explicitly. Keep `ready-for-human`; tests alone cannot settle that decision.
+
 ### 23 October 2026: benchmark review findings 1 and 2 fixed
 
 The owner authorized both review fixes. This change affects the smoke harness and report generator, rather than application behavior.

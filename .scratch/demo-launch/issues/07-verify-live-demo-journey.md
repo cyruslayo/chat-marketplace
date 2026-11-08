@@ -49,3 +49,5 @@ Then:
 | 0087 | Paystack test mode on staging | Step 6 |
 
 ## Comments
+
+Production-launch/01 reconciliation (8 Nov 2026): the PRD records a live Short Stay checkout on 29 Oct, not this issue's six-period 180-night Extended Stay walk with captures, model-handled counter and benchmark verdict. `test/pay-each-demo-billing-period.test.ts` is offline evidence only. Keep `ready-for-agent` until all named ACs have evidence.

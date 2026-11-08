@@ -30,6 +30,10 @@ Use PRD's ADR map and ADR 0106. Test actual model requests and application persi
 
 ## Comments
 
+### Production-launch/01 reconciliation (8 Nov 2026)
+
+Implementation `c2c1b4f` reached main through `ae708b1`; `test/assistant-context-isolation.test.ts` and `test/assistant-persistent-continuity.test.ts` cover context and persistence. Keep `claimed`: its recorded integrated review and batch-gate items are not closed merely by merging.
+
 Implementation evidence (23 Oct 2026): the five `AC1`–`AC5` tests in `test/assistant-context-isolation.test.ts` were added before runtime changes. The first test run failed on an invalid fixture (`unitRepository.all`); after correcting the fixture, AC2 detected raw phone data in classifier input, AC3 detected model prose and rejected input in stored history, AC5 detected arbitrary provider codes in diagnostics. These were implementation failures, not skipped assertions.
 
 ADR constraints applied:

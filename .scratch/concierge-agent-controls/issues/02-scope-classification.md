@@ -32,6 +32,10 @@ Use PRD's ADR map and ADR 0106. Tests use the application turn boundary, actual 
 
 ## Comments
 
+### Production-launch/01 reconciliation (8 Nov 2026)
+
+Implementation `76ff0fc` reached main through `ae708b1`; `test/assistant-scope-controls.test.ts` and `test/assistant-scope-persistence.test.ts` cover scope and cold persistence. Keep `claimed`: the issue records an outstanding integrated five-control gate and does not establish a resolved DoD status.
+
 Record exact commands, pass counts, commit, and Definition of Done evidence.
 
 Implementation uses the existing model port in both Node and Cloudflare compositions.

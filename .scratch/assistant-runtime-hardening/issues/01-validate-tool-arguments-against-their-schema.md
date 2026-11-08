@@ -44,6 +44,10 @@ Model output is untrusted (ADR 0075). Wrong types should be rejected in one plac
 
 ## Comments
 
+### Production-launch/01 reconciliation (8 Nov 2026)
+
+Implementation is on main through merge `1c2e0b8`; `test/assistant-tool-argument-validation.test.ts` names AC1–AC8 (13 checks in the previous focused run). Keep open: the issue explicitly left its full-suite DoD item pending, and the production-launch reconciliation has not supplied a new full-suite gate or independently closed that acceptance gap.
+
 Implementation (integration/concierge-controls, 28 Oct 2026). Status left at `ready-for-agent`: Definition of Done item 7 is not yet met (see below).
 
 ADRs read and applied: 0075 (values never echoed in the error text or diagnostics; field names only), 0072 (validation is a front gate; command validation unchanged), 0099 (each pack's own `toolDefinition`/`parametersSchema` is used; the platform does not copy schemas), 0106 (fail closed; unknown or unlisted type names match nothing; invalid call denies the turn). Also read 0092 and 0093 for the cold-restore context. No ADR conflicts.

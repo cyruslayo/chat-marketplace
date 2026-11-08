@@ -45,6 +45,10 @@ If recording with a real provider is not possible in the agent's environment, re
 
 ## Comments
 
+### Production-launch/01 reconciliation (8 Nov 2026)
+
+Implementation reached main in `1c2e0b8`; `test/assistant-recording-clients.test.ts` and `test/assistant-recorded-journeys.test.ts` exercise recordings and replay. Keep open: the existing Comments reserve live-provider recording for the owner, and no new full-suite DoD evidence is recorded here.
+
 ### Implementation (28 Oct 2026, branch `integration/concierge-controls`)
 
 **ADR discovery and table.** Listed `docs/adr/` and read ADR 0075, 0079, 0070 and 0081 (the issue's table) and ADR 0106 (concierge path, with its 26 and 27 Oct amendments). Constraints and where they bite:

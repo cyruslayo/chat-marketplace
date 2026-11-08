@@ -66,6 +66,10 @@ New: `test/assistant-stage-handlers.test.ts`, `test/assistant-runtime-boundary.t
 
 ## Comments
 
+### Production-launch/01 reconciliation (8 Nov 2026)
+
+Implementation (including `c6d7928`) is on main through `1c2e0b8`; `test/assistant-stage-handlers.test.ts` and `test/assistant-runtime-boundary.test.ts` are present. Keep open: the issue itself records the remaining Shortlet runtime API boundary as follow-up 07 and does not record a clean full-suite DoD gate for this issue.
+
 ### Implementation (28 Oct 2026, branch `integration/concierge-controls`, base d60f82b)
 
 Status left `ready-for-agent`. The full `npm test` item of the Definition of Done is open for the batch gate, and `npm test` and `npm run test:workers` were not run here (Test scope). Commits: `fa8e064` (transaction), `360c8d0` (projection handlers), `c6d7928` (confirmation handlers), and the tests and this record in the step-4 commit.

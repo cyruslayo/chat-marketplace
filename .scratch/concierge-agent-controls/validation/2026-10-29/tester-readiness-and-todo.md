@@ -28,7 +28,7 @@ Search (Lekki, 2 guests, 10-13 Nov 2026) -> View -> Request to Book -> phone -> 
 5. After a refused payment start the chat card still shows the verify-return button.
 6. The conditional-offer HMAC literal `conditional_offer_secret` should become a configured secret.
 7. Local workerd load check of the prebuilt bundle has no repo script (only the static module-scope guard exists).
-8. Demo CSV trust fields expire 2027-12-31; refresh before about 19 Sep 2027 (104-day rule blocks offers after that).
+8. Demo CSV trust fields expire 2027-12-31; refresh before about 3 Sep 2027 (119-day window: 90-day Booking Horizon plus the 29-night Short Stay blocks offers after that).
 
 ## Gate status (da4e3c5 and main)
 check clean; test:workers and npm test pass except load flakes that pass solo and the accepted commerce files (`commerce-store-pages.real-browser`, `commerce-surfaces-chromium`) plus the D3 timing failure above.

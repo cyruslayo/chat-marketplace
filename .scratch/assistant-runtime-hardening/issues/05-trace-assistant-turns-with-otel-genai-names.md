@@ -60,6 +60,10 @@ ADR 0079 requires end-to-end correlation and redacted metrics. The OpenTelemetry
 
 ## Comments
 
+### Production-launch/01 reconciliation (8 Nov 2026)
+
+Implementation (including `4f6acce`) is on main through `1c2e0b8`; `test/assistant-turn-record.test.ts` and `test/assistant-turn-record-hosts.test.ts` cover the record and hosts. Keep open: the Comments document a Worker turn-level test gap and a deferred full-suite DoD gate; merge alone is not closure evidence.
+
 ### Triage (28 Oct 2026, implementer)
 
 Decisions recorded in "Triage decisions" above; acceptance criteria finalised from the draft (draft 1 is now criteria 1 and 2 with the host test; draft 3 is criterion 3; draft 4 became criterion 5, since one record per turn replaces per-event correlation; criteria 4 and 6 are new). Status set to `ready-for-agent`.

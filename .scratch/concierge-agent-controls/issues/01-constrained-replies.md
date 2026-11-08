@@ -32,6 +32,10 @@ Do not weaken old assertions to accept missing facts or unsafe effects.
 
 ## Comments
 
+### Production-launch/01 reconciliation (8 Nov 2026)
+
+Implementation `193caa1` reached main through `ae708b1`. `test/shortlet-assistant-evals.test.ts` and `test/openai-compatible-client.test.ts` contain focused reply/adapter checks. Keep `claimed`: integrated captures, independent review and the issue's own recorded batch gate remain unresolved; the merge is not DoD evidence.
+
 ### Independent review corrections, 23 October 2026
 
 The first review found missing active-offer and successful-draft replies, zero-deposit collection wording, and a planning-token limit mismatch.

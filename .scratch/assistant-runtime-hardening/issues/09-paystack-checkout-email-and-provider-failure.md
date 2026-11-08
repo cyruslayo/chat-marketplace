@@ -63,3 +63,7 @@ recorded here so the owner can decide the order.
 - The bounded provider call (issue 06, M13) uses the constant `PAYSTACK_CHECKOUT_PROVIDER_TIMEOUT_MS` in
   `apps/local-guest/src/shortlet-app.ts`. Its value (20 s) is an engineering setting to confirm.
 - Staging payments are real Paystack test mode. The owner pays with the published test card. Stop before card entry (AGENTS.md).
+
+## Comments
+
+Production-launch/01 reconciliation (8 Nov 2026): `test/assistant-thread-lock.test.ts` records the defect reproduction, not a fix or cold-restored provider-failure recovery test. `needs-triage` remains.

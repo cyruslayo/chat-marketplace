@@ -54,4 +54,8 @@ store. Two gaps remain, and the owner's decision on issue 06 assumed both:
 - `AGENTS.md` says "every Worker request is a cold restore". The code does not do that. A request reuses its session runtime while
   that runtime is resident (`guest-server.ts`, `runtimeForSession`; the Durable Object caches its handler, `shortlet-pilot-do.ts`).
   Eviction, restart or redeploy rebuilds the runtime from the store, and only then does the restore run. The owner should correct
-  that sentence (documentation only; this issue does not edit AGENTS.md).
+   that sentence (documentation only; this issue does not edit AGENTS.md).
+
+## Comments
+
+Production-launch/01 reconciliation (8 Nov 2026): `test/assistant-thread-lock.test.ts` and `test/assistant-session-thread-lock.test.ts` show the server refusal, but there is no Workers interleave harness or browser retry criterion evidence. `needs-triage` remains.
