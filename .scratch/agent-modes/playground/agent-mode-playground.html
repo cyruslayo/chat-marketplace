@@ -1,0 +1,859 @@
+<title>Agent Mode Playground</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: a phone-sized chat on the left drives the agent; the bench on the right forces states, tiers and motion settings. Stacks on phones. */
+:root {
+  --bg: #F6F5F0; --surface: #FFFFFF; --surface-2: #EEECE5; --surface-3: #FFFFFF;
+  --text: #1D2923; --text-2: #49574E; --muted: #5D6A62; --line: #D9D6CC; --line-strong: #747C75;
+  --action: #0B5C46; --on-action: #FFFFFF; --action-subtle: #EEF6F2; --focus: #995300;
+  --warning: #7A4C00; --warning-surface: #FFF2D6; --scrim: rgb(17 24 20 / 0.42);
+  --stays-accent: #8A4318; --stays-subtle: #F7E6D8;
+  --dine-accent: #8E3B5F; --dine-subtle: #F6E3EB;
+  --events-accent: #23589C; --events-subtle: #E3ECF8;
+  --community-accent: #7A5A00; --community-subtle: #F6EDD2;
+  --rest-accent: #8B928D; --eye: #FFFFFF; --ink: #1D2923; --face-line: #FFFFFF;
+  --person: #49574E; --on-person: #FFFFFF;
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  --spring: linear(0, 0.009, 0.035 2.1%, 0.141, 0.281 6.7%, 0.723 12.9%, 0.938 16.7%, 1.017, 1.077, 1.121, 1.149 24.3%, 1.159, 1.163, 1.161, 1.154 29.9%, 1.129 32.8%, 1.051 39.6%, 1.017 43.1%, 0.991, 0.977 51%, 0.974 53.8%, 0.975 57.1%, 0.997 69.8%, 1.003 76.9%, 1.004 83.8%, 1);
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111814; --surface: #18211C; --surface-2: #212C26; --surface-3: #26322B;
+    --text: #E6EBE5; --text-2: #C3CCC5; --muted: #A3AFA7; --line: #323E37; --line-strong: #6E7A72;
+    --action: #5CC49A; --on-action: #06150F; --action-subtle: #15342A; --focus: #F2A554;
+    --warning: #F2C46E; --warning-surface: #33280F; --scrim: rgb(0 0 0 / 0.55);
+    --stays-accent: #E59A6A; --stays-subtle: #3A2518;
+    --dine-accent: #E592B5; --dine-subtle: #3A1C29;
+    --events-accent: #8DB8F0; --events-subtle: #172A42;
+    --community-accent: #E8C25E; --community-subtle: #33290F;
+    --rest-accent: #6B746E; --eye: #FFFFFF; --ink: #1D2923; --face-line: #2A1A10;
+    --person: #C3CCC5; --on-person: #111814;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111814; --surface: #18211C; --surface-2: #212C26; --surface-3: #26322B;
+  --text: #E6EBE5; --text-2: #C3CCC5; --muted: #A3AFA7; --line: #323E37; --line-strong: #6E7A72;
+  --action: #5CC49A; --on-action: #06150F; --action-subtle: #15342A; --focus: #F2A554;
+  --warning: #F2C46E; --warning-surface: #33280F; --scrim: rgb(0 0 0 / 0.55);
+  --stays-accent: #E59A6A; --stays-subtle: #3A2518;
+  --dine-accent: #E592B5; --dine-subtle: #3A1C29;
+  --events-accent: #8DB8F0; --events-subtle: #172A42;
+  --community-accent: #E8C25E; --community-subtle: #33290F;
+  --rest-accent: #6B746E; --eye: #FFFFFF; --ink: #1D2923; --face-line: #2A1A10;
+  --person: #C3CCC5; --on-person: #111814;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg); color: var(--text); font-family: var(--font-sans); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px 48px;
+}
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+button, input, select { font: inherit; color: inherit; }
+
+.page { max-width: 1120px; margin: 0 auto; display: grid; gap: 20px; }
+.intro { display: grid; gap: 6px; max-width: 70ch; }
+.intro h1 { font-family: var(--font-display); font-weight: 600; font-size: clamp(1.7rem, 4vw, 2.3rem); line-height: 1.15; margin: 0; text-wrap: balance; }
+.intro p { margin: 0; color: var(--text-2); }
+.intro .note { font-size: 0.86rem; color: var(--muted); }
+.layout { display: grid; gap: 24px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 920px) { .layout { grid-template-columns: minmax(0, 400px) minmax(0, 1fr); } .phone-col { position: sticky; top: 16px; } }
+
+/* ---------- phone ---------- */
+.phone {
+  --mode-accent: var(--stays-accent); --mode-subtle: var(--stays-subtle);
+  position: relative; display: flex; flex-direction: column; height: min(740px, 86vh); min-height: 560px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 28px; overflow: hidden;
+  box-shadow: 0 1px 0 var(--line), 0 18px 40px -24px var(--scrim);
+}
+.phone[data-mode="dine"] { --mode-accent: var(--dine-accent); --mode-subtle: var(--dine-subtle); }
+.phone[data-mode="events"] { --mode-accent: var(--events-accent); --mode-subtle: var(--events-subtle); }
+.phone[data-mode="community"] { --mode-accent: var(--community-accent); --mode-subtle: var(--community-subtle); }
+
+.appbar {
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line);
+  background: var(--surface); box-shadow: inset 0 -3px 0 var(--mode-accent); transition: box-shadow .4s;
+}
+.agent-btn {
+  display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 2px 10px 2px 2px; border: 0; background: none;
+  border-radius: 999px; cursor: pointer; text-align: start; flex: 1; min-width: 0;
+}
+.agent-btn:hover { background: var(--surface-2); }
+.agent-btn .mark { width: 44px; height: 44px; flex: none; view-transition-name: agent-mark; }
+.persona { display: grid; min-width: 0; }
+.persona strong { font-size: 0.98rem; line-height: 1.2; }
+.persona span { font-size: 0.8rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chev { width: 16px; height: 16px; flex: none; color: var(--muted); }
+.new-btn { min-height: 44px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); cursor: pointer; font-size: 0.85rem; }
+
+.stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.lanes { flex: 1; overflow-y: auto; padding: 14px 14px 96px; overscroll-behavior: contain; }
+.lane { display: flex; flex-direction: column; gap: 10px; content-visibility: auto; }
+
+/* hero / empty state */
+.hero { display: grid; gap: 12px; justify-items: center; text-align: center; padding-block: 6px 10px; }
+.hero h2 { font-family: var(--font-display); font-size: 1.45rem; line-height: 1.2; margin: 0; text-wrap: balance; }
+.hero p { margin: 0; color: var(--text-2); font-size: 0.92rem; max-width: 34ch; }
+.hero .preview-tag { font-size: 0.75rem; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+.strip {
+  position: relative; border: 0; margin: 0; padding: 4px 0 8px; width: 100%; min-width: 0;
+  display: grid; grid-auto-flow: column; grid-auto-columns: 92px; gap: 6px; overflow-x: auto;
+  scroll-snap-type: x mandatory; overscroll-behavior-x: contain; scrollbar-width: none;
+  padding-inline: calc(50% - 46px); scroll-padding-inline: calc(50% - 46px);
+}
+.strip::-webkit-scrollbar { display: none; }
+.strip legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.strip label {
+  scroll-snap-align: center; display: grid; justify-items: center; gap: 2px; padding: 6px 4px; min-height: 44px;
+  border-radius: 16px; cursor: pointer; color: var(--muted); font-size: 0.78rem; transition: color .2s;
+}
+.strip input { position: absolute; opacity: 0; pointer-events: none; }
+.strip .mark { width: 56px; height: 56px; transition: scale .45s var(--spring), opacity .3s; scale: .78; opacity: .65; }
+.strip label:has(input:checked) { color: var(--text); font-weight: 600; }
+.strip label:has(input:checked) .mark { scale: 1.18; opacity: 1; }
+.strip label:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: -3px; }
+.strip .teaser { font-size: 0.68rem; font-weight: 400; color: var(--muted); }
+.starters { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.chip {
+  min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--mode-accent);
+  background: var(--surface); color: var(--text); cursor: pointer; font-size: 0.88rem;
+}
+.chip:hover { background: var(--mode-subtle); }
+
+/* messages */
+.msg { display: flex; gap: 8px; align-items: flex-end; max-width: 92%; }
+.msg.user { align-self: flex-end; }
+.msg .bubble { padding: 9px 12px; border-radius: 16px; font-size: 0.92rem; }
+.msg.user .bubble { background: var(--mode-subtle); border-bottom-right-radius: 4px; }
+.msg.agent .bubble { background: var(--surface-2); border-bottom-left-radius: 4px; }
+.msg.agent .mark { width: 28px; height: 28px; flex: none; }
+.divider { display: flex; align-items: center; gap: 8px; justify-content: center; font-size: 0.78rem; color: var(--muted); padding-block: 4px; text-align: center; }
+.divider .mark { width: 22px; height: 22px; flex: none; }
+.system { align-self: center; font-size: 0.82rem; color: var(--text-2); background: var(--surface-2); border-radius: 999px; padding: 6px 12px; text-align: center; }
+.card { align-self: stretch; border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; display: grid; gap: 10px; background: var(--surface); }
+.card p { margin: 0; font-size: 0.9rem; }
+.card .row { display: flex; flex-wrap: wrap; gap: 8px; }
+.btn { min-height: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); cursor: pointer; font-size: 0.88rem; }
+.btn.primary { background: var(--action); color: var(--on-action); border-color: var(--action); }
+.undo { align-self: flex-start; margin-left: 36px; }
+
+/* presence dock: the agent pops up above the composer while it is engaged */
+.dock {
+  position: absolute; left: 12px; bottom: 8px; display: flex; align-items: flex-end; gap: 6px; pointer-events: none;
+  translate: 0 130%; opacity: 0; transition: translate .5s var(--spring), opacity .25s; view-transition-name: agent-dock;
+}
+.dock[data-show="true"] { translate: 0 0; opacity: 1; }
+.dock-figure { position: relative; width: 76px; height: 76px; }
+.dock-figure .mark { width: 76px; height: 76px; position: absolute; inset: 0; }
+.dock-peek { position: absolute; left: 44px; bottom: 0; width: 48px; height: 48px; translate: -24px 0; opacity: 0; transition: translate .5s var(--spring), opacity .3s; }
+.dock[data-peek="true"] .dock-peek { translate: 0 0; opacity: 1; }
+.dock-peek .mark { width: 48px; height: 48px; }
+.dock-human {
+  position: absolute; left: 40px; bottom: 2px; width: 40px; height: 40px; border-radius: 50%;
+  background: var(--person); color: var(--on-person); display: grid; place-items: center; scale: 0; transition: scale .45s var(--spring);
+}
+.dock[data-human="true"] .dock-human { scale: 1; }
+.dock-human svg { width: 22px; height: 22px; }
+.dock-chip {
+  margin: 0 0 40px; padding: 7px 11px; border-radius: 14px 14px 14px 4px; background: var(--surface-3); border: 1px solid var(--line);
+  font-size: 0.8rem; max-width: 230px; box-shadow: 0 6px 16px -10px var(--scrim);
+}
+.dock[data-peek="true"] .dock-chip, .dock[data-human="true"] .dock-chip { margin-left: 26px; }
+
+.composer { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line); background: var(--surface); }
+.composer input { flex: 1; min-width: 0; min-height: 44px; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); padding: 0 14px; }
+.composer button { width: 44px; height: 44px; border-radius: 50%; border: 0; background: var(--action); color: var(--on-action); cursor: pointer; display: grid; place-items: center; }
+.composer button svg { width: 20px; height: 20px; }
+
+/* sheet */
+dialog.sheet {
+  position: fixed; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 22px 22px 0 0;
+  background: var(--surface); color: var(--text); max-height: 80vh; overflow: auto; inset: auto auto 0 0; width: 400px; max-width: 100vw;
+}
+dialog.sheet::backdrop { background: var(--scrim); }
+.sheet form { display: grid; gap: 10px; padding: 8px 16px 18px; }
+.sheet .grab { width: 40px; height: 5px; border-radius: 3px; background: var(--line-strong); margin: 8px auto 0; }
+.sheet h2 { margin: 0; font-size: 1.05rem; }
+.sheet fieldset { border: 0; margin: 0; padding: 0; display: grid; gap: 8px; }
+.sheet legend { font-size: 0.82rem; color: var(--muted); margin-bottom: 4px; }
+.sheet label {
+  display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 10px; align-items: center; padding: 8px 10px; border-radius: var(--radius);
+  border: 1px solid var(--line); cursor: pointer; min-height: 60px;
+}
+.sheet label:has(input:checked) { border-color: var(--line-strong); background: var(--surface-2); }
+.sheet label:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
+.sheet input[type="radio"] { position: absolute; opacity: 0; }
+.sheet .mark { width: 48px; height: 48px; }
+.sheet .opt { display: grid; min-width: 0; }
+.sheet .opt strong { font-size: 0.95rem; }
+.sheet .opt span { font-size: 0.8rem; color: var(--muted); }
+.sheet .warn { margin: 0; padding: 10px 12px; border-radius: 12px; background: var(--warning-surface); color: var(--warning); font-size: 0.86rem; }
+.sheet .actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+/* ---------- agent mark (SVG rig) ---------- */
+.mark { display: block; overflow: visible; }
+.mark[data-agent="stays"] { --m-accent: var(--stays-accent); }
+.mark[data-agent="dine"] { --m-accent: var(--dine-accent); }
+.mark[data-agent="events"] { --m-accent: var(--events-accent); }
+.mark[data-agent="community"] { --m-accent: var(--community-accent); }
+.mark[data-state="resting"] { --m-accent: var(--rest-accent); }
+.mark .b { fill: var(--m-accent); stroke: var(--m-accent); stroke-width: 3; stroke-linejoin: round; transition: fill .4s, stroke .4s; }
+.mark .perf { stroke: var(--face-line); stroke-width: 1.6; stroke-dasharray: 2.5 3; opacity: .45; fill: none; }
+.mark .ew { fill: var(--eye); }
+.mark .pupil { fill: var(--ink); transition: translate .35s var(--spring); }
+.mark .line { fill: none; stroke: var(--face-line); stroke-width: 2.2; stroke-linecap: round; }
+.mark .mouth-open { fill: var(--face-line); opacity: 0; }
+.mark .eyes-closed, .mark .zz, .mark .thought circle { opacity: 0; transition: opacity .3s; }
+.mark .zz { fill: var(--muted); font: 700 11px var(--font-sans); }
+.mark .thought circle { fill: var(--m-accent); }
+.mark .rig, .mark .eyeball, .mark .prop-inner { transform-box: fill-box; }
+.mark .rig { transform-origin: 50% 100%; transition: rotate .45s var(--spring), translate .45s var(--spring), scale .45s var(--spring), opacity .35s; }
+.mark .eyeball { transform-origin: center; transition: scale .12s ease-out; }
+.mark.blink .eyeball { scale: 1 0.12; }
+.mark .prop-inner { transform-origin: center; scale: 0; transition: scale .45s var(--spring); }
+.mark .pd { fill: var(--surface); stroke: var(--m-accent); stroke-width: 1.6; }
+.mark .pl { fill: none; stroke: var(--m-accent); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+/* static forms of each state (always apply, motion or not) */
+.mark[data-state="listening"] .rig { rotate: -5deg; }
+.mark[data-state="listening"] .pupil { translate: 1.4px 1.6px; }
+.mark[data-state="thinking"] .pupil { translate: 0.8px -1.9px; }
+.mark[data-state="thinking"] .thought circle { opacity: .9; }
+.mark[data-state="working"] .pupil { translate: 1.9px 1.2px; }
+.mark[data-state="working"] .prop-inner { scale: 1; }
+.mark[data-state="responding"] .smile { opacity: 0; }
+.mark[data-state="responding"] .mouth-open { opacity: 1; }
+.mark[data-state="suggesting"] .rig { rotate: 5deg; }
+.mark[data-state="suggesting"] .pupil { translate: 2px 0; }
+.mark[data-state="resting"] .eyes { opacity: 0; }
+.mark[data-state="resting"] .eyes-closed, .mark[data-state="resting"] .zz { opacity: 1; }
+.mark[data-state="human"] .rig { translate: -3px 0; scale: .82; opacity: .5; }
+.mark[data-state="human"] .pupil { translate: 2px 0; }
+
+/* motion: only when the viewer has not asked for less, and the bench toggles are off.
+   Every loop is capped below 5 seconds (WCAG 2.2.2). */
+@media (prefers-reduced-motion: no-preference) {
+  .phone:not(.reduce) .mark.live[data-state="idle"] .rig { animation: breathe 2.4s ease-in-out 1; }
+  .phone:not(.reduce) .mark.live[data-state="thinking"] .thought circle { animation: bob .9s ease-in-out 5 alternate; }
+  .phone:not(.reduce) .mark.live[data-state="thinking"] .thought circle:nth-child(2) { animation-delay: .15s; }
+  .phone:not(.reduce) .mark.live[data-state="thinking"] .thought circle:nth-child(3) { animation-delay: .3s; }
+  .phone:not(.reduce) .mark.live[data-state="working"] .prop-inner { animation: tool 1.1s ease-in-out 4; }
+  .phone:not(.reduce) .mark.live[data-state="working"] .rig { animation: busy 1.1s ease-in-out 4; }
+  .phone:not(.reduce) .mark.live[data-state="responding"] .rig { animation: pop .7s var(--spring) 1; }
+  .phone:not(.reduce) .mark.live[data-state="suggesting"] .rig { animation: nudge .8s ease-in-out 2; }
+  .phone:not(.reduce) .mark.live.swap-in .rig { animation: swap-in .6s var(--spring) 1; }
+  .phone:not(.reduce) .dock[data-show="true"] .dock-figure { animation: hop .6s var(--spring) 1; }
+}
+.phone.reduce .dock, .phone.reduce .dock-peek, .phone.reduce .dock-human, .phone.reduce .mark * { transition: none !important; }
+@media (prefers-reduced-motion: reduce) { .dock, .dock-peek, .dock-human, .mark * , .strip .mark { transition: none !important; } }
+.phone.paused *, .phone.paused *::before { animation-play-state: paused !important; }
+
+@keyframes breathe { 50% { scale: 1.05; } }
+@keyframes bob { from { translate: 0 0; } to { translate: 0 -3px; } }
+@keyframes tool { 0%, 100% { rotate: 0deg; } 50% { rotate: -16deg; } }
+@keyframes busy { 0%, 100% { translate: 0 0; } 50% { translate: 0 -1.5px; } }
+@keyframes pop { from { scale: .88; } to { scale: 1; } }
+@keyframes nudge { 0%, 100% { translate: 0 0; } 50% { translate: 3px 0; } }
+@keyframes swap-in { from { scale: .4; rotate: -20deg; opacity: 0; } to { scale: 1; rotate: 0deg; opacity: 1; } }
+@keyframes hop { from { translate: 0 18px; } to { translate: 0 0; } }
+
+::view-transition-old(agent-mark) { animation: vt-out .22s ease-in both; }
+::view-transition-new(agent-mark) { animation: vt-in .55s var(--spring) both; }
+@keyframes vt-out { to { scale: .3; rotate: 25deg; opacity: 0; } }
+@keyframes vt-in { from { scale: .3; rotate: -25deg; opacity: 0; } }
+
+/* ---------- bench ---------- */
+.bench { display: grid; gap: 16px; min-width: 0; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; display: grid; gap: 10px; min-width: 0; }
+.panel h2 { margin: 0; font-size: 0.78rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.panel p { margin: 0; font-size: 0.88rem; color: var(--text-2); }
+.btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.state-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; }
+.state-grid .btn { border-radius: 10px; }
+.state-grid .btn[aria-pressed="true"] { background: var(--action-subtle); border-color: var(--action); }
+.seg { display: grid; gap: 6px; border: 0; padding: 0; margin: 0; }
+.seg legend { font-size: 0.88rem; color: var(--text-2); margin-bottom: 4px; }
+.seg label { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; font-size: 0.9rem; }
+.seg label:has(input:checked) { border-color: var(--action); background: var(--action-subtle); }
+.seg .tier { margin-left: auto; font-family: var(--font-mono); font-size: 0.78rem; color: var(--muted); }
+.toggles { display: grid; gap: 8px; }
+.toggles label { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: 0.9rem; }
+.toggles input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--action); }
+.toggles select { min-height: 44px; border-radius: 10px; border: 1px solid var(--line-strong); background: var(--surface); padding: 0 10px; }
+.log { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 260px; overflow: auto; font-family: var(--font-mono); font-size: 0.74rem; }
+.log li { padding: 5px 8px; border-radius: 6px; background: var(--surface-2); overflow-wrap: anywhere; }
+.log .dir { font-weight: 700; margin-right: 6px; }
+.log .client { opacity: .75; }
+.legend-list { margin: 0; padding-left: 18px; font-size: 0.86rem; color: var(--text-2); display: grid; gap: 4px; }
+.legend-list code { font-family: var(--font-mono); font-size: 0.8rem; }
+</style>
+
+<div class="page">
+  <header class="intro">
+    <h1>Agent Mode Playground</h1>
+    <p>Try how the concierge shows which agent is working, what it is doing, and how a guest moves between agents. Type in the phone, swipe the agent strip, tap the agent at the top, or use the bench.</p>
+    <p class="note">Demo only. Dine, Events and Community are made-up modes for trying the switch; only Stays exists in the product. The keyword routing here stands in for the server's scope classifier.</p>
+  </header>
+
+  <div class="layout">
+    <div class="phone-col">
+      <div class="phone" id="phone" data-mode="stays">
+        <header class="appbar">
+          <button class="agent-btn" id="agentBtn" type="button" aria-haspopup="dialog">
+            <span id="barMark"></span>
+            <span class="persona"><strong id="personaName">Stays concierge</strong><span id="personaStatus">Ready to help</span></span>
+            <svg class="chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button class="new-btn" id="newBtn" type="button">New</button>
+        </header>
+        <div class="stage">
+          <div class="lanes" id="lanes" role="log" aria-label="Conversation">
+            <section class="hero" id="hero" aria-labelledby="heroHeading">
+              <fieldset class="strip" id="strip">
+                <legend>Choose your concierge</legend>
+              </fieldset>
+              <span class="preview-tag" id="previewTag" hidden>Preview</span>
+              <h2 id="heroHeading">Find a place to stay</h2>
+              <p id="heroBody"></p>
+              <div class="starters" id="starters"></div>
+            </section>
+          </div>
+          <div class="dock" id="dock" data-show="false" aria-hidden="true">
+            <div class="dock-figure" id="dockFigure"></div>
+            <div class="dock-peek" id="dockPeek"></div>
+            <div class="dock-human"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="currentColor"/><path d="M4 21c1-4.5 4.2-6.5 8-6.5s7 2 8 6.5" fill="currentColor"/></svg></div>
+            <p class="dock-chip" id="dockChip">Working</p>
+          </div>
+        </div>
+        <form class="composer" id="composer">
+          <label for="composerInput" class="sr-only">Your message</label>
+          <input id="composerInput" type="text" autocomplete="off" enterkeyhint="send" placeholder="Area, dates, guests" />
+          <button type="submit" aria-label="Send"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        </form>
+        <p class="sr-only" role="status" id="announcer"></p>
+      </div>
+    </div>
+
+    <div class="bench">
+      <section class="panel" aria-labelledby="scnHead">
+        <h2 id="scnHead">Run a scenario</h2>
+        <div class="btn-row">
+          <button class="btn primary" type="button" data-scn="stay">Search for a stay</button>
+          <button class="btn" type="button" data-scn="dinner">Ask for dinner</button>
+          <button class="btn" type="button" data-scn="event">Ask what's on</button>
+          <button class="btn" type="button" data-scn="human">A team member takes over</button>
+          <button class="btn" type="button" data-scn="handback">Hand back to the concierge</button>
+          <button class="btn" type="button" data-scn="down">Concierge unavailable</button>
+          <button class="btn" type="button" data-scn="reset">Reset every chat</button>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="tierHead">
+        <h2 id="tierHead">Automatic switching</h2>
+        <fieldset class="seg" id="tierSeg">
+          <legend>When the guest asks about another topic, what does the current agent's task hold?</legend>
+          <label><input type="radio" name="risk" value="none" checked /> Nothing yet <span class="tier">tier A · switch</span></label>
+          <label><input type="radio" name="risk" value="shortlist" /> A search or shortlist <span class="tier">tier B · switch + undo</span></label>
+          <label><input type="radio" name="risk" value="proposal" /> An open booking proposal <span class="tier">tier C · suggest</span></label>
+        </fieldset>
+        <p id="tierNote">Tier A: no chat yet in this agent, so the new agent takes the message straight away.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="stateHead">
+        <h2 id="stateHead">Force a state</h2>
+        <div class="state-grid" id="stateGrid"></div>
+        <p id="stateHelp">Each state follows a signal the app already has.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="motionHead">
+        <h2 id="motionHead">Motion and theme</h2>
+        <div class="toggles">
+          <label><input type="checkbox" id="reduceToggle" /> Reduce motion (same as the system setting)</label>
+          <label><input type="checkbox" id="pauseToggle" /> Pause all motion</label>
+          <label>Theme <select id="themeSelect"><option value="system">Follow system</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
+          <label>Speed <select id="speedSelect"><option value="1.6">Slow</option><option value="1" selected>Normal</option><option value="0.5">Fast</option></select></label>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="logHead">
+        <h2 id="logHead">What the page sends and receives</h2>
+        <ol class="log" id="log"></ol>
+      </section>
+
+      <section class="panel" aria-labelledby="mapHead">
+        <h2 id="mapHead">How this maps to the design</h2>
+        <ul class="legend-list">
+          <li>The agent at the bottom left is the presence dock: it pops up while the agent is thinking, working or replying, and its chip says what it is doing.</li>
+          <li>Swiping the strip only previews an agent. A task starts when you send a message or tap a starter (<code>platform.task.start</code>).</li>
+          <li>Each agent keeps its own chat. Switching swaps the visible chat; only your own words cross on an automatic switch.</li>
+          <li>Every loop stops within 5 seconds, every state has a still form, and a team member taking over silences the agent.</li>
+        </ul>
+      </section>
+    </div>
+  </div>
+</div>
+
+<dialog class="sheet" id="sheet" aria-labelledby="sheetHead">
+  <div class="grab" aria-hidden="true"></div>
+  <form method="dialog" id="sheetForm">
+    <h2 id="sheetHead">Choose your concierge</h2>
+    <fieldset id="sheetList"><legend>Each one keeps its own chat.</legend></fieldset>
+    <p class="warn" id="sheetWarn" hidden></p>
+    <div class="actions">
+      <button class="btn" type="button" id="sheetClose">Close</button>
+      <button class="btn primary" type="submit" id="sheetGo">Switch</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+(() => {
+  // ---------- modes (static presentations; ADR 0107 decision 3) ----------
+  const MODES = {
+    stays: { name: "Stays concierge", label: "Stays", tagline: "Inspected apartments in Lagos and Abuja",
+      heading: "Find a place to stay", body: "Start with a city, your dates (or length of stay), and number of guests. We’ll find available entire-place stays and guide you through requesting one.",
+      starters: [["Explore Abuja", "I’m looking for a stay in Abuja"], ["Explore Lagos", "I’m looking for a stay in Lagos"]], placeholder: "Area, dates, guests",
+      steps: [["search", "Searching inspected stays"], ["calendar", "Checking your dates"], ["naira", "Pricing your stay"]],
+      reply: "I found 3 inspected apartments that are free for your dates. The first is a two-bedroom in Lekki Phase 1 at ₦185,000 a night.",
+      scope: "I can only help with stays. Your other chat is still there in the agent menu." },
+    dine: { name: "Dine concierge", label: "Dine", tagline: "Tables at restaurants near you",
+      heading: "Find a table", body: "Tell us the area, the time and how many people. We’ll find restaurants with a free table and hold it for you.",
+      starters: [["Dinner in Lekki", "Dinner for two in Lekki tonight"], ["Lunch in Wuse", "Lunch for four in Wuse on Friday"]], placeholder: "Area, time, people",
+      steps: [["search", "Looking for tables nearby"], ["clock", "Checking 7:30 PM for two"]],
+      reply: "Two places have a table for two at 7:30 PM in Lekki. Want me to hold one?" },
+    events: { name: "Events concierge", label: "Events", tagline: "Shows and concerts with tickets left",
+      heading: "Find something on", body: "Tell us the city and the weekend. We’ll find concerts, shows and talks that still have tickets.",
+      starters: [["This weekend in Lagos", "What’s on in Lagos this weekend?"], ["Comedy in Abuja", "Comedy shows in Abuja next week"]], placeholder: "City, date, kind of event",
+      steps: [["search", "Searching events this weekend"], ["ticket", "Checking tickets left"]],
+      reply: "Four events in Lagos this weekend still have tickets, including a Saturday concert in Victoria Island." },
+    community: { name: "Community concierge", label: "Community", tagline: "Groups and meetups to join",
+      heading: "Find your people", body: "Tell us what you’re into and where you live. We’ll find groups and meetups you can join.",
+      starters: [["Runners in Ikoyi", "Running groups in Ikoyi"], ["Tech meetups", "Tech meetups in Yaba this month"]], placeholder: "Interest, area",
+      steps: [["search", "Finding groups nearby"], ["people", "Checking who meets this week"]],
+      reply: "Three running groups meet in Ikoyi this week. The Saturday 6 AM group welcomes beginners." },
+  };
+  const ORDER = ["stays", "dine", "events", "community"];
+  // Demo stand-in for the server's scope classifier. The real decision is made on the server (ADR 0106).
+  const ROUTES = {
+    stays: /\b(stay|stays|apartment|flat|room|nights?|check[- ]?in|shortlet|bedroom|lekki phase|abuja|lagos)\b/i,
+    dine: /\b(dinner|lunch|breakfast|brunch|restaurant|eat|table|food)\b/i,
+    events: /\b(concert|show|shows|event|events|ticket|tickets|gig|comedy|festival|what[’']s on)\b/i,
+    community: /\b(group|groups|meetup|meetups|club|community|runners?|running)\b/i,
+  };
+
+  // ---------- agent SVG rig ----------
+  const BODY = {
+    stays: { d: "M32 10 L55 28 V50 a6 6 0 0 1 -6 6 H15 a6 6 0 0 1 -6 -6 V28 Z", extra: '<rect class="b" x="41" y="13" width="6" height="10" rx="1.5"/>', face: [32, 40] },
+    dine: { d: "M8 45 a24 24 0 0 1 48 0 Z", extra: '<circle class="b" cx="32" cy="17" r="3.5"/><rect class="b" x="4" y="46" width="56" height="7" rx="3.5"/>', face: [32, 35] },
+    events: { d: "M15 16 H49 a6 6 0 0 1 6 6 V29 a5 5 0 0 0 0 10 V46 a6 6 0 0 1 -6 6 H15 a6 6 0 0 1 -6 -6 V39 a5 5 0 0 0 0 -10 V22 a6 6 0 0 1 6 -6 Z", extra: '<path class="perf" d="M48 19 V49"/>', face: [30, 34] },
+    community: { d: "M14 12 H50 a7 7 0 0 1 7 7 V39 a7 7 0 0 1 -7 7 H31 L21 55 V46 H14 a7 7 0 0 1 -7 -7 V19 a7 7 0 0 1 7 -7 Z", extra: "", face: [32, 29] },
+  };
+  const PROPS = {
+    search: '<circle class="pd" r="9"/><circle class="pl" cx="-1.5" cy="-1.5" r="4"/><path class="pl" d="M1.5 1.5 L5 5"/>',
+    calendar: '<circle class="pd" r="9"/><rect class="pl" x="-5" y="-4" width="10" height="9" rx="1.5"/><path class="pl" d="M-5 -1 H5 M-2.5 -6 V-3 M2.5 -6 V-3"/>',
+    naira: '<circle class="pd" r="9"/><path class="pl" d="M-3 4.5 V-4.5 L3 4.5 V-4.5 M-5.5 -1 H5.5 M-5.5 1.5 H5.5"/>',
+    clock: '<circle class="pd" r="9"/><circle class="pl" r="5"/><path class="pl" d="M0 -3 V0 L2.5 1.5"/>',
+    ticket: '<circle class="pd" r="9"/><path class="pl" d="M-5.5 -3.5 H5.5 V-1.2 a1.2 1.2 0 0 0 0 2.4 V3.5 H-5.5 V1.2 a1.2 1.2 0 0 0 0 -2.4 Z"/>',
+    people: '<circle class="pd" r="9"/><circle class="pl" cx="-2.6" cy="-1.8" r="2"/><circle class="pl" cx="2.8" cy="-1.8" r="2"/><path class="pl" d="M-6.2 4.6 q3.6 -4.2 7.2 0 M-0.6 4.6 q3.6 -4.2 7.2 0"/>',
+  };
+  function markSVG(agent, opts = {}) {
+    const b = BODY[agent]; const [fx, fy] = b.face;
+    const eye = (x) => `<g transform="translate(${x} 0)"><g class="eyeball"><ellipse class="ew" rx="4.2" ry="4.8"/><circle class="pupil" r="2.1"/></g></g>`;
+    return `<svg class="mark${opts.live ? " live" : ""}" data-agent="${agent}" data-state="${opts.state || "idle"}" viewBox="-8 -12 80 80" aria-hidden="true" focusable="false">
+      <g class="thought"><circle cx="52" cy="6" r="2.2"/><circle cx="58" cy="0" r="2.8"/><circle cx="65" cy="-6" r="3.4"/></g>
+      <text class="zz" x="54" y="6">z</text>
+      <g class="rig">
+        <path class="b" d="${b.d}"/>${b.extra}
+        <g class="face" transform="translate(${fx} ${fy})">
+          <g class="eyes">${eye(-7)}${eye(7)}</g>
+          <path class="eyes-closed line" d="M-10.5 0 q3.5 2.6 7 0 M3.5 0 q3.5 2.6 7 0"/>
+          <path class="smile line" d="M-4 8 q4 3.4 8 0"/>
+          <ellipse class="mouth-open" cx="0" cy="9" rx="3.3" ry="2.7"/>
+        </g>
+        <g class="prop" transform="translate(52 48)"><g class="prop-inner"></g></g>
+      </g>
+    </svg>`;
+  }
+
+  // ---------- state ----------
+  const $ = (id) => document.getElementById(id);
+  const phone = $("phone"), lanesEl = $("lanes"), hero = $("hero"), dock = $("dock");
+  let active = "stays";      // committed mode: the active task's pack (server-derived in the product)
+  let preview = "stays";     // what the empty state shows while the guest flicks the strip
+  let agentState = "idle";
+  let runId = 0;
+  let speed = 1;
+  const tasks = {};          // per mode: { started, msgs, stage }
+  const lanes = {};          // per mode: lane element
+  const manualLeft = new Set();
+  ORDER.forEach((m) => { tasks[m] = { started: false, msgs: 0, stage: "none" }; });
+
+  const reduced = () => phone.classList.contains("reduce") || matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms * speed));
+
+  // ---------- log ----------
+  function log(dir, text, client = false) {
+    const li = document.createElement("li");
+    if (client) li.className = "client";
+    li.innerHTML = `<span class="dir"></span><span class="t"></span>`;
+    li.querySelector(".dir").textContent = dir;
+    li.querySelector(".t").textContent = text;
+    const list = $("log"); list.prepend(li);
+    while (list.children.length > 40) list.lastElementChild.remove();
+  }
+  function announce(text) { const a = $("announcer"); a.textContent = ""; requestAnimationFrame(() => { a.textContent = text; }); }
+
+  // ---------- lanes (one per mode; hidden in place, not detached) ----------
+  function laneFor(m) {
+    if (!lanes[m]) {
+      const sec = document.createElement("section");
+      sec.className = "lane"; sec.dataset.lane = m; sec.hidden = true;
+      sec.setAttribute("aria-label", `${MODES[m].name} chat`);
+      lanesEl.appendChild(sec); lanes[m] = sec;
+    }
+    return lanes[m];
+  }
+  function showLane() {
+    ORDER.forEach((m) => { if (lanes[m]) lanes[m].hidden = m !== active; });
+    const empty = tasks[active].msgs === 0;
+    hero.hidden = !empty;
+    if (empty) renderHero(); else lanesEl.scrollTop = lanesEl.scrollHeight;
+  }
+  function addRow(m, el) { laneFor(m).appendChild(el); if (m === active) { hero.hidden = true; lanesEl.scrollTop = lanesEl.scrollHeight; } }
+  function addMsg(m, who, text) {
+    const row = document.createElement("div"); row.className = `msg ${who}`;
+    row.innerHTML = (who === "agent" ? markSVG(m) : "") + `<div class="bubble"></div>`;
+    row.querySelector(".bubble").textContent = text;
+    tasks[m].msgs++; addRow(m, row); refreshTeasers(); return row;
+  }
+  function addDivider(m, text, agentOf = m) {
+    const row = document.createElement("div"); row.className = "divider";
+    row.innerHTML = markSVG(agentOf) + `<span></span>`; row.querySelector("span").textContent = text;
+    tasks[m].msgs++; addRow(m, row);
+  }
+  function addSystem(m, text) { const p = document.createElement("p"); p.className = "system"; p.textContent = text; tasks[m].msgs++; addRow(m, p); }
+
+  // ---------- chrome ----------
+  function renderChrome() {
+    const p = MODES[active];
+    $("personaName").textContent = p.name;
+    $("composerInput").placeholder = MODES[tasks[active].msgs === 0 ? preview : active].placeholder;
+    $("barMark").innerHTML = markSVG(active, { live: true, state: agentState });
+    $("dockFigure").innerHTML = markSVG(active, { live: true, state: agentState });
+  }
+  function renderHero() {
+    const p = MODES[preview];
+    phone.dataset.mode = preview;
+    $("heroHeading").textContent = p.heading;
+    $("heroBody").textContent = p.body;
+    $("previewTag").hidden = preview === active;
+    $("composerInput").placeholder = p.placeholder;
+    const s = $("starters"); s.innerHTML = "";
+    p.starters.forEach(([label, prompt]) => {
+      const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.textContent = label;
+      b.addEventListener("click", () => send(prompt)); s.appendChild(b);
+    });
+  }
+  function teaser(m) {
+    const t = tasks[m];
+    if (!t.started) return "No chat yet";
+    if (t.stage === "proposal") return "Booking proposal open";
+    if (t.stage === "shortlist") return m === "stays" ? "3 stays shortlisted" : "Results ready";
+    return `${t.msgs} message${t.msgs === 1 ? "" : "s"}`;
+  }
+  function buildStrip() {
+    const strip = $("strip");
+    ORDER.forEach((m) => {
+      const l = document.createElement("label");
+      l.innerHTML = `<input type="radio" name="stripAgent" value="${m}"${m === preview ? " checked" : ""} />${markSVG(m)}<span>${MODES[m].label}</span><span class="teaser" data-teaser="${m}"></span>`;
+      strip.appendChild(l);
+    });
+    strip.addEventListener("change", (e) => { if (e.target.name === "stripAgent") setPreview(e.target.value, true); });
+    // Swipe: commit the centred agent when scrolling settles. scrollend works in every engine as of Safari 26.2.
+    let t;
+    const settle = () => {
+      const r = strip.getBoundingClientRect(); const mid = r.left + r.width / 2; let best, dist = Infinity;
+      strip.querySelectorAll("label").forEach((l) => { const b = l.getBoundingClientRect(); const d = Math.abs(b.left + b.width / 2 - mid); if (d < dist) { dist = d; best = l; } });
+      const input = best && best.querySelector("input");
+      if (input && !input.checked) { input.checked = true; setPreview(input.value, false); }
+    };
+    if ("onscrollend" in window) strip.addEventListener("scrollend", settle);
+    else strip.addEventListener("scroll", () => { clearTimeout(t); t = setTimeout(settle, 140); });
+    refreshTeasers();
+  }
+  function refreshTeasers() { document.querySelectorAll("[data-teaser]").forEach((el) => { el.textContent = teaser(el.dataset.teaser); }); }
+  function centreStrip(m, smooth) {
+    const l = $("strip").querySelector(`input[value="${m}"]`).closest("label");
+    const strip = $("strip");
+    const left = l.offsetLeft - (strip.clientWidth - l.offsetWidth) / 2;
+    strip.scrollTo({ left, behavior: smooth && !reduced() ? "smooth" : "auto" });
+  }
+  function setPreview(m, scroll) {
+    if (m === preview) return;
+    preview = m;
+    withTransition(() => { renderHero(); $("barMark").innerHTML = markSVG(m, { live: true, state: "idle" }); $("personaName").textContent = MODES[m].name; });
+    if (scroll) centreStrip(m, true);
+    log("client only", `preview "${m}" · no task created, no server call`, true);
+    announce(`Previewing the ${MODES[m].name}. Send a message to start.`);
+  }
+
+  // ---------- agent state ----------
+  const STATE_INFO = {
+    idle: ["Ready to help", "Nothing in flight. One breath, then still."],
+    listening: ["Listening", "Guest is typing. The agent leans in. App bar only."],
+    thinking: ["Thinking", "Request in flight before a tool runs. Dots stop after 4.5 s."],
+    working: ["Working", "A tool is running. The prop shows which task."],
+    responding: ["Replying", "A reply arrived. One spring pop."],
+    suggesting: ["Suggesting another agent", "Another agent peeks in. The guest decides."],
+    switching: ["Switching", "Mode changed. The mark morphs in."],
+    resting: ["Unavailable", "Quota or outage. Grey and still."],
+    human: ["A team member is replying", "Human takeover. The agent steps aside and stops moving."],
+  };
+  let blinkTimers = [];
+  function setState(state, opts = {}) {
+    agentState = state === "switching" ? "idle" : state;
+    document.querySelectorAll(".mark.live").forEach((el) => {
+      el.dataset.state = agentState;
+      el.classList.remove("swap-in");
+      if (state === "switching") { void el.getBoundingClientRect(); el.classList.add("swap-in"); }
+      const inner = el.querySelector(".prop-inner");
+      const fresh = document.createElementNS("http://www.w3.org/2000/svg", "g"); fresh.setAttribute("class", "prop-inner");
+      fresh.innerHTML = PROPS[opts.prop || "search"]; inner.replaceWith(fresh);
+    });
+    const label = opts.label || STATE_INFO[state][0];
+    $("personaStatus").textContent = label;
+    const showDock = ["thinking", "working", "responding", "suggesting", "human", "resting"].includes(state);
+    dock.dataset.show = String(showDock);
+    dock.dataset.peek = String(state === "suggesting");
+    dock.dataset.human = String(state === "human");
+    $("dockChip").textContent = label;
+    if (state === "suggesting") $("dockPeek").innerHTML = markSVG(opts.peek || ORDER[(ORDER.indexOf(active) + 1) % ORDER.length], { state: "listening" });
+    document.querySelectorAll("#stateGrid .btn").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.state === state)));
+    $("stateHelp").textContent = STATE_INFO[state][1];
+    if (!opts.quiet) announce(`${MODES[active].name}: ${label}`);
+    // Blink at most twice, and only within 5 seconds of a change (WCAG 2.2.2).
+    blinkTimers.forEach(clearTimeout); blinkTimers = [];
+    if (!["resting", "human"].includes(state) && !reduced()) {
+      [1300, 3700].forEach((t) => blinkTimers.push(setTimeout(() => {
+        document.querySelectorAll(".mark.live").forEach((el) => { el.classList.add("blink"); setTimeout(() => el.classList.remove("blink"), 140); });
+      }, t)));
+    }
+  }
+
+  // ---------- switching ----------
+  function withTransition(update) {
+    if (!document.startViewTransition || reduced()) { update(); return; }
+    // Typed transitions where supported (ViewTransition.types); the callback form everywhere else.
+    const typed = typeof ViewTransition !== "undefined" && "types" in ViewTransition.prototype;
+    try { typed ? document.startViewTransition({ update, types: ["mode-switch"] }) : document.startViewTransition(update); }
+    catch { update(); }
+  }
+  function switchTo(m, reason, extra = {}) {
+    if (m === active && preview === m) return;
+    const from = active;
+    const call = tasks[m].started ? `platform.task.switch {"taskId":"t-${m}"}` : `platform.task.start {"domain":"${m}"}`;
+    log("→ server", call);
+    tasks[m].started = true;
+    active = m; preview = m;
+    withTransition(() => { phone.dataset.mode = m; renderChrome(); showLane(); const i = $("strip").querySelector(`input[value="${m}"]`); if (i) i.checked = true; });
+    log("← server", `mode {"id":"${m}"} · modeChange {"from":"${from}","to":"${m}","reason":"${reason}","undoable":${reason === "auto_detected"}}`);
+    log("diagnostic", `assistant.mode.change.v1 {"from":"${from}","to":"${m}","reason":"${reason}"${extra.tier ? `,"tier":"${extra.tier}"` : ""},"undone":${!!extra.undone}}`);
+    setState("switching", { label: `Now with the ${MODES[m].name}` });
+    syncTierUI();
+  }
+
+  // ---------- turns ----------
+  function route(text) {
+    if (ROUTES[active].test(text)) return active;
+    return ORDER.find((m) => m !== active && ROUTES[m].test(text)) || active;
+  }
+  function tierFor(from, to) {
+    if (manualLeft.has(to)) return "C";
+    const t = tasks[from];
+    if (t.msgs === 0) return "A";
+    return t.stage === "proposal" ? "C" : "B";
+  }
+  async function send(text, opts = {}) {
+    text = text.trim(); if (!text) return;
+    const my = ++runId;
+    // Committing from the hero: a preview becomes the guest's choice.
+    if (tasks[active].msgs === 0 && preview !== active) switchTo(preview, "guest_selected");
+    const target = opts.noRoute ? active : route(text);
+    if (target === active && !tasks[active].started) { tasks[active].started = true; log("→ server", `platform.task.start {"domain":"${active}"}`); }
+    if (target !== active) {
+      const from = active, tier = tierFor(from, target);
+      if (tier === "C") {
+        addMsg(from, "user", text);
+        log("→ server", `/api/turn {"text":"…"}`);
+        setState("thinking"); await wait(700); if (my !== runId) return;
+        setState("suggesting", { peek: target, label: `${MODES[target].label} can help with that` });
+        log("← server", `modeChange {"from":"${from}","to":"${target}","reason":"suggested","undoable":false}`);
+        const card = document.createElement("div"); card.className = "card";
+        card.innerHTML = `<p></p><div class="row"><button class="btn primary" type="button">Switch to ${MODES[target].label}</button><button class="btn" type="button">Stay here</button></div>`;
+        card.querySelector("p").textContent = `That sounds like one for the ${MODES[target].name}. ${tasks[from].stage === "proposal" ? "Your booking proposal is kept here." : "Your chat here is kept."}`;
+        const [go, stay] = card.querySelectorAll("button");
+        go.addEventListener("click", () => { card.remove(); manualLeft.add(from); handOver(from, target, text, "guest_selected"); });
+        stay.addEventListener("click", () => { card.remove(); setState("idle"); });
+        tasks[from].msgs++; addRow(from, card);
+        return;
+      }
+      handOver(from, target, text, "auto_detected", tier);
+      return;
+    }
+    addMsg(active, "user", text);
+    log("→ server", `/api/turn {"text":"…"} (task t-${active})`);
+    await runAgent(active, my, opts.scopeReply);
+  }
+  async function handOver(from, to, text, reason, tier) {
+    const my = ++runId;
+    if (tasks[from].msgs > 0) addDivider(from, `You continued with the ${MODES[to].name}`, to);
+    switchTo(to, reason, { tier });
+    await wait(450); if (my !== runId) return;
+    addDivider(to, reason === "auto_detected" ? `Now with the ${MODES[to].name}` : `You switched to the ${MODES[to].name}`, to);
+    addMsg(to, "user", text);  // only the guest's own words cross lanes
+    log("→ server", `/api/turn {"text":"…"} (task t-${to}; prior lane not included)`);
+    await runAgent(to, my);
+    if (my !== runId || reason !== "auto_detected") return;
+    const undo = document.createElement("button"); undo.type = "button"; undo.className = "btn undo"; undo.textContent = `Ask ${MODES[from].label} instead`;
+    undo.addEventListener("click", () => {
+      undo.remove(); manualLeft.add(to);
+      switchTo(from, "guest_selected", { undone: true });
+      send(text, { noRoute: true, scopeReply: true });
+    });
+    tasks[to].msgs++; addRow(to, undo);
+  }
+  async function runAgent(m, my, scopeReply) {
+    setState("thinking"); await wait(900); if (my !== runId) return;
+    if (!scopeReply) {
+      for (const [prop, label] of MODES[m].steps) {
+        setState("working", { prop, label: `${label}…` }); log("← stream", `tool step: ${label}`); await wait(1150); if (my !== runId) return;
+      }
+    }
+    setState("responding");
+    addMsg(m, "agent", scopeReply ? (MODES[m].scope || "I can only help with this topic.") : MODES[m].reply);
+    if (!scopeReply && tasks[m].stage === "none") { tasks[m].stage = "shortlist"; syncTierUI(); refreshTeasers(); }
+    await wait(1600); if (my !== runId) return;
+    setState("idle", { quiet: true });
+  }
+
+  // ---------- bench ----------
+  function syncTierUI() {
+    const s = tasks[active].msgs === 0 && tasks[active].stage === "none" ? "none" : tasks[active].stage;
+    const r = document.querySelector(`#tierSeg input[value="${s}"]`); if (r) r.checked = true;
+    const notes = {
+      none: "Tier A: nothing done in this agent yet, so the new agent takes the message straight away.",
+      shortlist: "Tier B: a search is in progress but nothing is at risk. The switch happens, the old chat keeps its state, and an undo chip appears.",
+      proposal: "Tier C: a booking proposal is open. The other agent peeks in and the guest decides.",
+    };
+    $("tierNote").textContent = notes[s];
+  }
+  $("tierSeg").addEventListener("change", (e) => {
+    const v = e.target.value; tasks[active].stage = v;
+    if (v !== "none" && tasks[active].msgs === 0) { tasks[active].started = true; addSystem(active, v === "proposal" ? "Booking proposal ready: Lekki Phase 1, 2 nights, ₦370,000. Confirm to send the request." : "3 stays shortlisted in Lekki Phase 1."); }
+    syncTierUI(); refreshTeasers();
+  });
+  const grid = $("stateGrid");
+  Object.keys(STATE_INFO).forEach((s) => {
+    const b = document.createElement("button"); b.type = "button"; b.className = "btn"; b.dataset.state = s; b.textContent = s; b.setAttribute("aria-pressed", "false");
+    b.addEventListener("click", () => { runId++; const step = MODES[active].steps[0]; setState(s, s === "working" ? { prop: step[0], label: `${step[1]}…` } : {}); });
+    grid.appendChild(b);
+  });
+  document.querySelectorAll("[data-scn]").forEach((b) => b.addEventListener("click", () => {
+    const k = b.dataset.scn;
+    if (k === "stay") { if (active !== "stays") { manualLeft.add(active); switchTo("stays", "guest_selected"); } send("I need a 2-bedroom in Lekki Phase 1 for 2 nights, 2 guests"); }
+    if (k === "dinner") send("Can you also find dinner for two in Lekki tonight?");
+    if (k === "event") send("What’s on in Lagos this weekend?");
+    if (k === "human") { runId++; tasks[active].started = true; addSystem(active, "A team member has joined. The concierge is paused."); setState("human"); log("← server", "handoff {\"state\":\"human_active\"}"); }
+    if (k === "handback") { runId++; addSystem(active, "The concierge is back."); setState("idle"); log("← server", "handoff {\"state\":\"returned\"}"); }
+    if (k === "down") { runId++; setState("resting", { label: "Unavailable. Try again in a few minutes." }); log("← server", "controlOutcome \"quota_refusal\""); }
+    if (k === "reset") resetAll();
+  }));
+  function resetAll() {
+    runId++;
+    ORDER.forEach((m) => { tasks[m] = { started: false, msgs: 0, stage: "none" }; if (lanes[m]) { lanes[m].remove(); delete lanes[m]; } });
+    manualLeft.clear(); active = "stays"; preview = "stays";
+    phone.dataset.mode = "stays"; renderChrome(); showLane(); setState("idle", { quiet: true });
+    const i = $("strip").querySelector('input[value="stays"]'); i.checked = true; centreStrip("stays", false);
+    syncTierUI(); refreshTeasers(); log("client only", "reset every chat", true);
+  }
+  $("reduceToggle").addEventListener("change", (e) => phone.classList.toggle("reduce", e.target.checked));
+  $("pauseToggle").addEventListener("change", (e) => phone.classList.toggle("paused", e.target.checked));
+  $("themeSelect").addEventListener("change", (e) => { const v = e.target.value; if (v === "system") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = v; });
+  $("speedSelect").addEventListener("change", (e) => { speed = Number(e.target.value); });
+  document.addEventListener("visibilitychange", () => { if (!$("pauseToggle").checked) phone.classList.toggle("paused", document.visibilityState === "hidden"); });
+
+  // ---------- composer ----------
+  const input = $("composerInput");
+  input.addEventListener("input", () => {
+    const busy = ["thinking", "working", "responding", "human", "resting", "suggesting"].includes(agentState);
+    if (busy) return;
+    const want = input.value.trim() ? "listening" : "idle";
+    if (want !== agentState) setState(want, { quiet: true });
+  });
+  $("composer").addEventListener("submit", (e) => { e.preventDefault(); const v = input.value; input.value = ""; send(v); });
+  $("newBtn").addEventListener("click", () => {
+    runId++;
+    if (lanes[active]) { lanes[active].remove(); delete lanes[active]; }
+    tasks[active] = { started: false, msgs: 0, stage: "none" };
+    log("→ server", `platform.task.start {"domain":"${active}"} (new conversation in this agent only)`);
+    showLane(); setState("idle", { quiet: true }); syncTierUI(); refreshTeasers();
+    announce(`New ${MODES[active].name} chat. Other agents keep theirs.`);
+  });
+
+  // ---------- sheet (modal dialog: Android Back and Escape close it; no extra history entry) ----------
+  const sheet = $("sheet");
+  function placeSheet() {
+    const r = phone.getBoundingClientRect();
+    const w = Math.min(r.width, window.innerWidth);
+    sheet.style.width = `${w}px`; sheet.style.left = `${Math.max(0, r.left)}px`;
+  }
+  function openSheet() {
+    const list = $("sheetList"); list.querySelectorAll("label").forEach((l) => l.remove());
+    ORDER.forEach((m) => {
+      const l = document.createElement("label");
+      l.innerHTML = `<input type="radio" name="sheetAgent" value="${m}"${m === active ? " checked" : ""} />${markSVG(m)}<span class="opt"><strong>${MODES[m].name}</strong><span>${m === active ? "Current · " : ""}${teaser(m)} · ${MODES[m].tagline}</span></span>`;
+      list.appendChild(l);
+    });
+    updateWarn(); placeSheet(); sheet.showModal();
+  }
+  function updateWarn() {
+    const v = sheet.querySelector('input[name="sheetAgent"]:checked')?.value;
+    const w = $("sheetWarn");
+    const risky = v && v !== active && tasks[active].stage === "proposal";
+    w.hidden = !risky;
+    if (risky) w.textContent = `Your ${MODES[active].label} booking proposal will need confirming again when you come back.`;
+    $("sheetGo").textContent = v === active ? "Stay here" : "Switch";
+  }
+  $("agentBtn").addEventListener("click", openSheet);
+  $("sheetList").addEventListener("change", updateWarn);
+  $("sheetClose").addEventListener("click", () => sheet.close());
+  sheet.addEventListener("click", (e) => { if (e.target === sheet) sheet.close(); });
+  window.addEventListener("resize", () => { if (sheet.open) placeSheet(); });
+  $("sheetForm").addEventListener("submit", () => {
+    const v = sheet.querySelector('input[name="sheetAgent"]:checked')?.value;
+    if (!v || v === active) return;
+    runId++;
+    manualLeft.add(active);
+    if (tasks[active].stage === "proposal") { tasks[active].stage = "shortlist"; addSystem(active, "Your booking proposal was set aside. Confirm it again when you return."); }
+    switchTo(v, "guest_selected");
+    if (tasks[v].msgs === 0) centreStrip(v, false);
+    announce(`Now with the ${MODES[v].name}`);
+  });
+
+  // ---------- boot ----------
+  laneFor("stays");
+  buildStrip();
+  renderChrome(); showLane(); syncTierUI();
+  requestAnimationFrame(() => centreStrip("stays", false));
+  setState("idle", { quiet: true });
+  log("← server", 'mode {"id":"stays"} (first render sets data-mode on the page)');
+})();
+</script>
