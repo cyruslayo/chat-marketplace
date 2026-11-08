@@ -1,4 +1,4 @@
-import { GUEST_PHONE_COPY, GUEST_PAYMENT_COPY } from "../../web-agent/src/guest-content.js";
+import { GUEST_PHONE_COPY, GUEST_PAYMENT_COPY, GUEST_NOTICE_COPY } from "../../web-agent/src/guest-content.js";
 import { generatePlatformId } from "../../../packages/platform-core/src/index.js";
 import {
   createServer,
@@ -85,7 +85,7 @@ import {
 } from "../../../apps/web-agent/src/index.js";
 import { unitDetailArtifactFromProjection } from "../../../apps/web/src/unit-detail-artifact.js";
 import { bannerWrapped } from "./html-banner.js";
-import { demoListingChipHtml, withDemoBanner } from "./guest-kit.js";
+import { demoListingChipHtml, withDemoBanner, noticeConfirmationHtml, noticeRecordedHtml, noticeActionLinkHtml } from "./guest-kit.js";
 import {
   errorPage,
   escapeHtml,
@@ -643,7 +643,29 @@ async function readJsonBody(req: HttpRequestLike): Promise<unknown> {
  * Demo-launch issue 12 AC4 (ADR 0092): the Guest's Billing Period schedule. Each period shows its dates, amount, due date and
  * status; only the period that is payable now has a payment button, and each payment is a separate Paystack TEST session.
  */
-function renderPeriodScheduleHtml(offerId: string, periods: readonly BillingPeriodProjection[]): string {
+/** The Notice to End page wrapper: the same frame and shell as the schedule page (ADR 0077). */
+function renderNoticePageHtml(body: string): string {
+  return pageShell({
+    title: GUEST_NOTICE_COPY.heading,
+    frame: appFrameHtml({ threadId: null, publicStep: "stay" }),
+    style: "",
+    body: `<div class="guest-editorial">${body}</div>`,
+  });
+}
+
+/** The link to the Notice to End step on a confirmed Extended Stay after Verified Access, else nothing (ADR 0092). */
+function noticeEntryHtml(environment: LocalGuestEnvironment, offerId: string, principal: CommandPrincipal): string {
+  try {
+    const contract = environment.cardPaymentApp.getBookingContract(offerId);
+    if (!contract || contract.noticeToEnd) return "";
+    environment.noticeToEnd.previewNotice(contract.contractId, principal);
+    return noticeActionLinkHtml(offerId);
+  } catch {
+    return "";
+  }
+}
+
+function renderPeriodScheduleHtml(offerId: string, periods: readonly BillingPeriodProjection[], noticeLinkHtml = ""): string {
   const rows = periods.map((period) => {
     const label = `${GUEST_FACT_LABELS.billingPeriod} ${period.periodIndex}`;
     const action = period.status === "payable" && !period.live
@@ -655,7 +677,7 @@ function renderPeriodScheduleHtml(offerId: string, periods: readonly BillingPeri
     title: GUEST_FACT_LABELS.paymentSchedule,
     frame: appFrameHtml({ threadId: null, publicStep: "stay" }),
     style: "",
-    body: `<div class="guest-editorial"><section aria-label="${escapeHtml(GUEST_FACT_LABELS.paymentSchedule)}"><h1>${escapeHtml(GUEST_FACT_LABELS.paymentSchedule)}</h1><p>${escapeHtml(GUEST_FACT_LABELS.firstPeriodOnly)}</p><ol>${rows}</ol></section></div>`,
+    body: `<div class="guest-editorial"><section aria-label="${escapeHtml(GUEST_FACT_LABELS.paymentSchedule)}"><h1>${escapeHtml(GUEST_FACT_LABELS.paymentSchedule)}</h1><p>${escapeHtml(GUEST_FACT_LABELS.firstPeriodOnly)}</p><ol>${rows}</ol>${noticeLinkHtml}</section></div>`,
   });
 }
 
@@ -4990,6 +5012,73 @@ export function createGuestRequestHandler(
       return;
     }
 
+    // Monthly-stays issue 17 (ADR 0092 amended, ADR 0060, ADR 0080): the Notice to End confirmation step and its commit. GET
+    // shows the domain's calculation at today's notice date (or the recorded notice). POST commits only the notice date and
+    // contract version the guest was shown; a stale, forged or repeated confirmation changes nothing (fail closed).
+    const noticeMatch = /^\/bookings\/notice\/([^/]+)$/.exec(url.pathname);
+    if (noticeMatch && (req.method === "GET" || req.method === "POST")) {
+      const offerId = decodeURIComponent(noticeMatch[1]!);
+      const session = await resolveBrowserSession(
+        env,
+        browserSessions,
+        readGuestSession(req),
+        sessionScopedGuestPrincipals ? undefined : app.environment.config.guestId,
+        accountCredentialsOf(req),
+        guestAccounts,
+      );
+      if (!session) {
+        sendJson(res, 401, { ok: false, code: "GUEST_SESSION_REQUIRED" });
+        return;
+      }
+      const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
+      const selfPath = `/bookings/notice/${encodeURIComponent(offerId)}`;
+      try {
+        // getArtifact throws unless this Guest owns the offer (ADR 0087 binding of references to the Guest).
+        app.environment.cardPaymentApp.getArtifact(offerId, principal);
+        const contract = app.environment.cardPaymentApp.getBookingContract(offerId);
+        if (!contract) throw new Error("NOTICE_NOT_AVAILABLE");
+        if (req.method === "POST") {
+          const form = await readFormBody(req);
+          app.environment.noticeToEnd.giveNotice(contract.contractId, principal, {
+            noticeDate: form.get("noticeDate") ?? "",
+            contractVersion: Number(form.get("contractVersion")),
+          });
+          res.writeHead(303, { Location: selfPath });
+          res.end();
+          return;
+        }
+        const backHref = `/bookings/periods/${encodeURIComponent(offerId)}`;
+        const recorded = contract.noticeToEnd;
+        const body = recorded
+          ? noticeRecordedHtml({
+              newLastNight: recorded.newLastNight,
+              newCheckOut: contract.dates.checkOut,
+              refundKobo: recorded.refundKobo ?? 0,
+              owedKobo: recorded.owedKobo ?? 0,
+              backHref,
+            })
+          : (() => {
+              const preview = app.environment.noticeToEnd.previewNotice(contract.contractId, principal);
+              return noticeConfirmationHtml({
+                offerId,
+                noticeDate: preview.noticeDate,
+                contractVersion: preview.contractVersion,
+                newLastNight: preview.newLastNight,
+                newCheckOut: preview.newCheckOut,
+                refundKobo: preview.refundKobo,
+                owedKobo: preview.owedKobo,
+                terms: preview.noticeToEndTerms,
+                backHref,
+              });
+            })();
+        res.writeHead(200, GUEST_HTML_HEADERS);
+        res.end(renderNoticePageHtml(body));
+      } catch {
+        sendJson(res, 400, { ok: false, code: "NOTICE_NOT_AVAILABLE" });
+      }
+      return;
+    }
+
     // Demo-launch issue 12 AC4 (ADR 0092): a Guest's later Billing Period schedule, and a separate Paystack TEST session
     // for one period. The schedule shows what is payable now; it never shows a future period as paid.
     const periodPageMatch = /^\/bookings\/periods\/([^/]+)$/.exec(url.pathname);
@@ -5015,7 +5104,7 @@ export function createGuestRequestHandler(
         if (periodPageMatch) {
           const periods = app.environment.cardPaymentApp.projectBillingPeriods(offerId);
           // Render before the headers are written: a failure here must still reach the catch below as a 400.
-          const html = renderPeriodScheduleHtml(offerId, periods);
+          const html = renderPeriodScheduleHtml(offerId, periods, noticeEntryHtml(app.environment, offerId, principal));
           res.writeHead(200, GUEST_HTML_HEADERS);
           res.end(html);
           return;

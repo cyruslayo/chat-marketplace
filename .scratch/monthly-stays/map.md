@@ -44,4 +44,4 @@ Work top to bottom. The frontier is the first issue that is open, unblocked and 
 
 | # | Issue | Type | Status | Blocked by |
 | --- | --- | --- | --- | --- |
-| 17 | [Wire Notice to End into the guest and owner apps](issues/17-wire-notice-to-end-into-the-app.md) | task | ready-for-agent | none |
+| 17 | [Wire Notice to End into the guest and owner apps](issues/17-wire-notice-to-end-into-the-app.md) | task | claimed (partial, see Comments) | none |

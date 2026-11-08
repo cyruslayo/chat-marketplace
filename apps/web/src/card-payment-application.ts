@@ -73,6 +73,11 @@ export class CardPaymentApplication {
   }
 
   /** Façade read of the Booking Contract for an offer (issue 10 reads the immutable period snapshot through it). */
+  /** Keeps the cached contract in step with an atomic amendment (monthly-stays issue 17). */
+  replaceBookingContract(contract: import("../../../domains/shortlet/src/index.js").BookingContract): void {
+    this.#manager.replaceBookingContract(contract);
+  }
+
   getBookingContract(offerId: string): ReturnType<CardPaymentManager["getBookingContract"]> {
     return this.#manager.getBookingContract(offerId);
   }

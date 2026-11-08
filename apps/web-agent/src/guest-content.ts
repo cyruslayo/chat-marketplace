@@ -634,3 +634,20 @@ export const GUEST_PAYMENT_COPY = {
   manualHelp: "Pay our business account and upload your receipt. Your booking confirms only after we check the money has arrived. You can't switch until this attempt expires or is declined.",
   lateReview: "A late payment needs review and does not confirm your booking. Contact Shortlet if you sent money after the deadline.",
 } as const;
+
+/**
+ * Monthly-stays issue 17 (ADR 0092, ADR 0077): the Notice to End copy, one source for the chat workspace and the standalone
+ * page. The action, heading, confirm and back labels were proposed in the issue and are awaiting owner confirmation (Comments).
+ */
+export const GUEST_NOTICE_COPY = Object.freeze({
+  action: "Give notice to end your stay",
+  heading: "End your stay early",
+  confirm: "Give notice",
+  back: "Keep my stay",
+  newLastNight: "New last night",
+  newCheckOut: "New checkout",
+  refund: "Refund for paid nights after it",
+  owed: "Still owed up to it",
+  recordedHeading: "Notice given",
+  recordedLead: "Your stay now ends on the new last night below. Refunds are paid by hand, as the terms say.",
+});

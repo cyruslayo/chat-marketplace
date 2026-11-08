@@ -66,6 +66,9 @@ import {
   OwnerPayoutError,
   OwnerRecoveryError,
   SqliteOwnerPayableLedger,
+  NoticeToEndManager,
+  checkInNoticePorts,
+  recordedNoticeRefundPort,
   type OwnerPayableProjection,
   type AccessStatus,
   type CheckInSupportState,
@@ -246,6 +249,20 @@ export interface OperatorOwnerPayable {
    * Null for a Short Stay. Carries no Period Payment reference and no guest identity (ADR 0075).
    */
   readonly periods: readonly OwnerPeriodPayable[] | null;
+  /** Monthly-stays issue 17 (ADR 0092): the Notice to End recorded on the contract, or null. Amounts in kobo. */
+  readonly notice: OwnerNoticeView | null;
+}
+
+/** The Notice to End as the back office shows it: the date given, the new last night and checkout, and the amounts. */
+export interface OwnerNoticeView {
+  readonly noticeDate: string;
+  readonly effectiveDate: string;
+  readonly newLastNight: string;
+  readonly newCheckOut: string;
+  /** Paid nights after the new last night, refunded at nightly contracted values; null for a notice recorded before refunds were stored. */
+  readonly refundKobo: number | null;
+  /** Unpaid nights up to the new last night, owed at nightly contracted values; null for a notice recorded before this was stored. */
+  readonly owedKobo: number | null;
 }
 
 /**
@@ -578,6 +595,8 @@ export class LocalApartmentOwnerEnvironment {
   readonly #manualTransferStore: SqliteManualTransferStore;
   /** Cancellation outcomes and owner payouts (B7, ADR 0089); the cancellation ledger port posts here. */
   readonly ownerPayableLedger: SqliteOwnerPayableLedger;
+  /** ADR 0092 Notice to End (monthly-stays issue 17): the same manager as the guest composition, over the shared tables. */
+  readonly noticeToEnd: NoticeToEndManager;
 
   #demoRequests: string[] = [];
 
@@ -636,6 +655,33 @@ export class LocalApartmentOwnerEnvironment {
       this.#sqlDatabase,
       this.clock,
     );
+    // Monthly-stays issue 17 (ADR 0092 amended, ADR 0060, ADR 0061, ADR 0089). Period 1 is paid once the contract exists; a later
+    // period is paid when its Period Payment is recorded (the same rows the owner projection reads).
+    const noticeCheckIn = checkInNoticePorts(this.#checkInStore);
+    this.noticeToEnd = new NoticeToEndManager({
+      contracts: {
+        getContract: (contractId: string) => {
+          const contract = this.#bookingState.findContractById(contractId);
+          if (!contract) throw new Error("Booking Contract is not found");
+          return contract;
+        },
+        mutateContract: (contractId, expectedVersion, mutation) => this.#bookingState.mutateContract(contractId, expectedVersion, mutation),
+      },
+      periods: {
+        projectBillingPeriods: (offerId) => [
+          { periodIndex: 1, status: "paid" },
+          ...this.interactionStore.listPeriodPayments(offerId).map((record) => ({ periodIndex: record.periodIndex, status: "paid" })),
+        ],
+        paymentsFor: (offerId) => this.interactionStore.listPeriodPayments(offerId).map((record) => ({ periodIndex: record.periodIndex, pspReference: record.pspReference })),
+      },
+      owners: this.ownerPayableLedger,
+      arrival: noticeCheckIn.arrival,
+      failures: noticeCheckIn.failures,
+      refunds: recordedNoticeRefundPort(),
+      extendedStayPolicy: this.config.extendedStayPolicy ?? EXTENDED_STAY_POLICY,
+      demoTerms: this.config.demo === true,
+      clock: this.clock,
+    });
     this.audit = new SqliteAuditLog(this.#sqlDatabase);
     this.telemetry = new SqliteTelemetry(this.#sqlDatabase, dependencies.telemetrySink === undefined ? {} : { sink: dependencies.telemetrySink });
     this.grantStore = new SqliteOperatorRepresentativeGrantStore(
@@ -2154,6 +2200,7 @@ export class LocalApartmentOwnerEnvironment {
             reservation.reservationId,
           ),
           payouts: this.ownerPayableLedger.listPayouts(reservation.reservationId),
+          noticeAdjustments: this.ownerPayableLedger.listPeriodNoticeAdjustments(reservation.reservationId),
           recoveries: this.ownerPayableLedger.listRecoveries(
             reservation.reservationId,
           ),
@@ -2195,6 +2242,16 @@ export class LocalApartmentOwnerEnvironment {
             })
         : null,
       periods: periodPayables ?? null,
+      notice: contract.noticeToEnd
+        ? {
+            noticeDate: contract.noticeToEnd.noticeDate,
+            effectiveDate: contract.noticeToEnd.effectiveDate,
+            newLastNight: contract.noticeToEnd.newLastNight,
+            newCheckOut: contract.dates.checkOut,
+            refundKobo: contract.noticeToEnd.refundKobo ?? null,
+            owedKobo: contract.noticeToEnd.owedKobo ?? null,
+          }
+        : null,
     });
   }
 

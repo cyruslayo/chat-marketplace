@@ -37,6 +37,11 @@ import {
   type BookingContract,
   type ContractRepository,
   type ReservationLike,
+  NoticeToEndManager,
+  checkInNoticePorts,
+  recordedNoticeRefundPort,
+  SqliteCheckInSupportStore,
+  SqliteOwnerPayableLedger,
 } from "../../../domains/shortlet/src/index.js";
 import {
   PaystackPayments,
@@ -339,6 +344,8 @@ export class LocalGuestEnvironment {
   readonly bookingRequestApp: BookingRequestApplication;
   readonly conditionalOfferApp: ConditionalOfferApplication;
   readonly cardPaymentApp: CardPaymentApplication;
+  /** ADR 0092 Notice to End (monthly-stays issue 17): constructed in every deployment; the policy is the Extended Stay policy. */
+  readonly noticeToEnd: NoticeToEndManager;
   /** The platform Payments module this environment composed (ADR 0099 rule 2); undefined when hosted checkout is off. */
   readonly payments?: Payments;
   /**
@@ -587,6 +594,35 @@ export class LocalGuestEnvironment {
       ...(payments === undefined
         ? {}
         : { payments }),
+    });
+
+    // Monthly-stays issue 17 (ADR 0092 amended, ADR 0060, ADR 0061, ADR 0089): the Notice to End manager in every deployment.
+    // Verified Access and open failures are read from the shared check-in store; refunds are recorded, not paid out.
+    const noticeCheckIn = checkInNoticePorts(new SqliteCheckInSupportStore(sqlDatabase));
+    this.noticeToEnd = new NoticeToEndManager({
+      contracts: {
+        getContract: (contractId: string) => {
+          const contract = bookingState.findContractById(contractId);
+          if (!contract) throw new Error("Booking Contract is not found");
+          return contract;
+        },
+        mutateContract: (contractId, expectedVersion, mutation) => {
+          const next = bookingState.mutateContract(contractId, expectedVersion, mutation);
+          this.cardPaymentApp.replaceBookingContract(next);
+          return next;
+        },
+      },
+      periods: {
+        projectBillingPeriods: (offerId, now) => this.cardPaymentApp.projectBillingPeriods(offerId, now),
+        paymentsFor: (offerId) => this.cardPaymentApp.getPeriodPayments(offerId),
+      },
+      owners: new SqliteOwnerPayableLedger(sqlDatabase, this.clock),
+      arrival: noticeCheckIn.arrival,
+      failures: noticeCheckIn.failures,
+      refunds: recordedNoticeRefundPort(),
+      extendedStayPolicy,
+      demoTerms,
+      clock: this.clock,
     });
 
     const transferProvider =

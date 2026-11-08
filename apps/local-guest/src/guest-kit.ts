@@ -15,7 +15,9 @@ import {
   GUEST_TASK_RAIL,
   GUEST_VERTICALS,
   UNIT_DETAIL_ABOUT_HEADING,
+  GUEST_NOTICE_COPY,
   commerceSoldBy,
+  formatGuestDate,
   stayTotalLabel,
 } from "../../web-agent/src/guest-content.js";
 import { formatNgnKobo } from "../../web-agent/src/discovery-a2ui.js";
@@ -737,4 +739,41 @@ export function verticalStartersHtml(verticals: readonly VerticalStarter[]): str
 /** The domain chip and step header for the active task, shown above the conversation. */
 export function taskStepHeaderHtml(domainLabel: string, status: string): string {
   return `<header class="ui-step-header"><span class="ui-domain-chip">${escapeHtml(domainLabel)}</span><span class="ui-step-header__status">${escapeHtml(status)}</span></header>`;
+}
+
+/**
+ * Monthly-stays issue 17 (ADR 0092, ADR 0077/0080): the Notice to End confirmation step. Every figure is the domain's
+ * calculation at `noticeDate`; the form binds the notice date and contract version the guest was shown (ADR 0060).
+ * The back link changes nothing. Chat and the standalone page render this same markup.
+ */
+export interface NoticeConfirmationInput {
+  readonly offerId: string;
+  readonly noticeDate: string;
+  readonly contractVersion: number;
+  readonly newLastNight: string;
+  readonly newCheckOut: string;
+  readonly refundKobo: number;
+  readonly owedKobo: number;
+  readonly terms: string;
+  /** The screen the back action returns to. */
+  readonly backHref: string;
+}
+
+function noticeDate(value: string): string {
+  return formatGuestDate(value) ?? value;
+}
+
+export function noticeConfirmationHtml(input: NoticeConfirmationInput): string {
+  const action = `/bookings/notice/${encodeURIComponent(input.offerId)}`;
+  return `<section class="ui-panel notice-step" aria-labelledby="notice-heading" data-notice-step data-notice-date="${escapeHtml(input.noticeDate)}"><h1 id="notice-heading">${escapeHtml(GUEST_NOTICE_COPY.heading)}</h1><p>${escapeHtml(input.terms)}</p><dl class="notice-facts"><div><dt>${escapeHtml(GUEST_NOTICE_COPY.newLastNight)}</dt><dd data-new-last-night="${escapeHtml(input.newLastNight)}">${escapeHtml(noticeDate(input.newLastNight))}</dd></div><div><dt>${escapeHtml(GUEST_NOTICE_COPY.newCheckOut)}</dt><dd>${escapeHtml(noticeDate(input.newCheckOut))}</dd></div><div><dt>${escapeHtml(GUEST_NOTICE_COPY.refund)}</dt><dd data-refund-kobo="${input.refundKobo}">${escapeHtml(formatNgnKobo(input.refundKobo))}</dd></div><div><dt>${escapeHtml(GUEST_NOTICE_COPY.owed)}</dt><dd data-owed-kobo="${input.owedKobo}">${escapeHtml(formatNgnKobo(input.owedKobo))}</dd></div></dl><form method="post" action="${escapeHtml(action)}"><input type="hidden" name="noticeDate" value="${escapeHtml(input.noticeDate)}"><input type="hidden" name="contractVersion" value="${input.contractVersion}"><button class="ui-button ui-button--primary ui-button--block" type="submit">${escapeHtml(GUEST_NOTICE_COPY.confirm)}</button></form><a class="ui-button ui-button--block" href="${escapeHtml(input.backHref)}">${escapeHtml(GUEST_NOTICE_COPY.back)}</a></section>`;
+}
+
+/** The recorded Notice to End, read-only: the new last night and checkout and the amounts it fixed. */
+export function noticeRecordedHtml(input: { readonly newLastNight: string; readonly newCheckOut: string; readonly refundKobo: number; readonly owedKobo: number; readonly backHref: string }): string {
+  return `<section class="ui-panel notice-recorded" aria-labelledby="notice-recorded-heading" data-notice-recorded><h1 id="notice-recorded-heading">${escapeHtml(GUEST_NOTICE_COPY.recordedHeading)}</h1><p>${escapeHtml(GUEST_NOTICE_COPY.recordedLead)}</p><dl class="notice-facts"><div><dt>${escapeHtml(GUEST_NOTICE_COPY.newLastNight)}</dt><dd data-new-last-night="${escapeHtml(input.newLastNight)}">${escapeHtml(noticeDate(input.newLastNight))}</dd></div><div><dt>${escapeHtml(GUEST_NOTICE_COPY.newCheckOut)}</dt><dd>${escapeHtml(noticeDate(input.newCheckOut))}</dd></div><div><dt>${escapeHtml(GUEST_NOTICE_COPY.refund)}</dt><dd data-refund-kobo="${input.refundKobo}">${escapeHtml(formatNgnKobo(input.refundKobo))}</dd></div><div><dt>${escapeHtml(GUEST_NOTICE_COPY.owed)}</dt><dd data-owed-kobo="${input.owedKobo}">${escapeHtml(formatNgnKobo(input.owedKobo))}</dd></div></dl><a class="ui-button ui-button--block" href="${escapeHtml(input.backHref)}">${escapeHtml(GUEST_NOTICE_COPY.back)}</a></section>`;
+}
+
+/** The entry point on a confirmed Extended Stay's schedule: a link to the confirmation step. */
+export function noticeActionLinkHtml(offerId: string): string {
+  return `<a class="ui-button ui-button--block" href="/bookings/notice/${encodeURIComponent(offerId)}" data-notice-action>${escapeHtml(GUEST_NOTICE_COPY.action)}</a>`;
 }
