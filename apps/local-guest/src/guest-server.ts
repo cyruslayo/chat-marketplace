@@ -2034,6 +2034,24 @@ async function threadReadable(
   });
 }
 
+/**
+ * Pilot issue 53: a thread id is server-issued when this browser session already holds it, or when the session's
+ * principal owns its durable record (a thread the server created for this Guest). A pattern-matching id outside both
+ * is client-chosen and is refused; it is never adopted.
+ */
+async function threadIssuedToSession(
+  env: LocalGuestEnvironment,
+  session: BrowserSession,
+  threadId: string,
+): Promise<boolean> {
+  if (session.threadIds.has(threadId)) return true;
+  const record = await env.guestData.findThread(threadId);
+  return record !== null && authorizesPrincipalOwner(session.identity, {
+    principalId: record.principalId,
+    tenantId: record.tenantId,
+  });
+}
+
 async function bindBrowserThread(
   env: LocalGuestEnvironment,
   cache: Map<string, BrowserSession>,
@@ -3744,13 +3762,20 @@ export function createGuestRequestHandler(
         }
         shellSession = resolved;
       }
+      // Pilot issue 53: the id always comes from this server's own session set or a fresh mint, never from a
+      // client-chosen value. A normal load reuses the session's latest server-issued thread so a reload keeps the
+      // conversation; ?new=1 starts a fresh one (the client's new-conversation action).
       const requestedThreadId = url.searchParams.get("threadId");
-      const threadId =
+      const requestedIsServerIssued =
         requestedThreadId !== null &&
         THREAD_ID_PATTERN.test(requestedThreadId) &&
-        shellSession?.threadIds.has(requestedThreadId)
-          ? requestedThreadId
-          : mintThreadId();
+        shellSession?.threadIds.has(requestedThreadId) === true;
+      const existing = shellSession === null ? [] : [...shellSession.threadIds];
+      const threadId = requestedIsServerIssued
+        ? requestedThreadId!
+        : url.searchParams.get("new") === "1" || existing.length === 0
+          ? mintThreadId()
+          : existing.at(-1)!;
       shellSession?.threadIds.add(threadId);
       res.writeHead(200, GUEST_HTML_HEADERS);
       res.end(renderGuestShellHtml(threadId));
@@ -5414,7 +5439,7 @@ export function createGuestRequestHandler(
         }
         const threadId = url.searchParams.get("threadId") ?? "";
         // Pilot issue 53: a thread id is usable only when this server issued it to this browser session.
-        if (!THREAD_ID_PATTERN.test(threadId) || !session.threadIds.has(threadId)) {
+        if (!THREAD_ID_PATTERN.test(threadId) || !(await threadIssuedToSession(app.environment, session, threadId))) {
           sendPageError(req, res, 400, "INVALID_CONVERSATION");
           return;
         }
@@ -5467,7 +5492,7 @@ export function createGuestRequestHandler(
       if (
         submittedThreadId !== "" &&
         (!THREAD_ID_PATTERN.test(submittedThreadId) ||
-          !session.threadIds.has(submittedThreadId))
+          !(await threadIssuedToSession(app.environment, session, submittedThreadId)))
       ) {
         sendPageError(req, res, 400, "INVALID_CONVERSATION");
         return;

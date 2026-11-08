@@ -2870,7 +2870,7 @@ function startNewConversation(): void {
   } catch {
     /* Storage is optional; the server mints the next id. */
   }
-  window.location.replace("/");
+  window.location.replace("/?new=1");
 }
 
 function closeNewConversationConfirm(): void {

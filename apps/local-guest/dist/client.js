@@ -12268,7 +12268,7 @@ Known schemas:
       window.sessionStorage.removeItem("shortlet-concierge-thread");
     } catch {
     }
-    window.location.replace("/");
+    window.location.replace("/?new=1");
   }
   function closeNewConversationConfirm() {
     newConversationConfirm.hidden = true;
