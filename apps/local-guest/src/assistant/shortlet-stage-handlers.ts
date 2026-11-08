@@ -7,6 +7,7 @@ import { ContinuousOccupancyError, UnitUnavailableError, type NoticePreview } fr
 import { GUEST_NOTICE_COPY } from "../../../web-agent/src/guest-content.js";
 import { AssistantGuestRefusalError } from "./date-tokens.js";
 import { proposeDraftRevision } from "./shortlet-draft-revision.js";
+import { projectContractArtifact } from "./contract-artifact-projection.js";
 
 /**
  * Issue 04: the shortlet pack's stage handlers. Each handler owns one stage name, the stages it retires, the copy a failed
@@ -472,7 +473,7 @@ const noticeHandler: AssistantStageHandler = {
     const bookingSurfaceId = `thread-${turn.threadId}:booking:${refs.contractId}`;
     tx.place(BOOKING_STAGE, bookingSurfaceId);
     try {
-      const contractArtifact = environment.contractApp.getArtifact(refs.contractId, environment.guestPrincipal());
+      const contractArtifact = projectContractArtifact(environment, refs.contractId);
       return { ok: true, message: GUEST_NOTICE_COPY.given, surfaces: [{ surfaceId: bookingSurfaceId, a2uiMessages: turn.pack.bookingContractSurface(contractArtifact, bookingSurfaceId) }] };
     } catch {
       // The notice is committed; a presentation failure keeps the committed state and returns the message alone.

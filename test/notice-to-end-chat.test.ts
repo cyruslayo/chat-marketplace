@@ -341,3 +341,40 @@ test("AC7: The card's surface id and its bound values survive a cold restore unc
     f.close();
   }
 });
+
+// Issue 18 fix (STEP 0): the event response's booking surface must title the unit as the restored state does.
+test("After Give notice, the event response shows the unit's real title", async () => {
+  const threadId = "g-0cc1000b01";
+  const f = extendedFixture();
+  try {
+    const { booking, offerId } = await extendedToReservation(f, threadId);
+    recordVerifiedAccess(f, contractOf(f, offerId).reservationId);
+    const card = successOf(await coldApp(f, threadId, model()).app.handleEventAsync(threadId, buttonNamed(booking, OPEN_EVENT)), "open").surfaces[0]!;
+    const given = successOf(await coldApp(f, threadId).app.handleEventAsync(threadId, buttonNamed(card, ASSISTANT_CONFIRM_ACTION_EVENT)), "give notice");
+    const unitId = f.environment.contractApp.getArtifact(contractOf(f, offerId).contractId, f.environment.guestPrincipal()).facts.unitId;
+    const unitTitle = f.environment.unitRepository.findById(unitId)?.title;
+    assert.ok(unitTitle, "the unit has a title");
+    const bookingSurface = given.surfaces.find((surface) => surface.surfaceId.includes(":booking:"));
+    assert.ok(bookingSurface, "the give-notice response re-presents the booking surface");
+    const titles = textOfComponent(bookingSurface.a2uiMessages, "booking-contract-unit");
+    assert.deepEqual(titles, [unitTitle], "the event response titles the unit as the restored state does");
+    const restored = coldApp(f, threadId).app.getState(threadId)!.surfaces.find((surface) => surface.surfaceId.includes(":booking:"));
+    assert.deepEqual(textOfComponent(restored?.a2uiMessages, "booking-contract-unit"), [unitTitle], "the restored state carries the same title");
+  } finally {
+    f.close();
+  }
+});
+
+/** The text of every A2UI Text component with `id` in a surface's messages. */
+function textOfComponent(messages: unknown, id: string): string[] {
+  const found: string[] = [];
+  const walk = (node: unknown): void => {
+    if (node === null || typeof node !== "object") return;
+    if (Array.isArray(node)) { node.forEach(walk); return; }
+    const record = node as Record<string, unknown>;
+    if (record.id === id && typeof record.text === "string") found.push(record.text);
+    Object.values(record).forEach(walk);
+  };
+  walk(messages);
+  return found;
+}

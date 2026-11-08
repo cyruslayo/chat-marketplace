@@ -166,6 +166,7 @@ import {
 } from "../../web-agent/src/confirmation-presentation.js";
 import type { ConditionalOfferArtifact } from "../../../apps/web/src/conditional-offer-artifact.js";
 import type { BookingContractArtifact } from "../../../apps/web/src/booking-contract-artifact.js";
+import { projectContractArtifact } from "./assistant/contract-artifact-projection.js";
 import type { CardPaymentApplication } from "../../../apps/web/src/card-payment-application.js";
 import {
   LocalGuestEnvironment,
@@ -5271,16 +5272,7 @@ export class LocalGuestApp {
   }
 
   #contractArtifact(contractId: string): BookingContractArtifact {
-    const artifact = this.#environment.contractApp.getArtifact(
-      contractId,
-      this.#environment.guestPrincipal(),
-    );
-    const unit = this.#environment.unitRepository.findById(
-      artifact.facts.unitId,
-    );
-    return unit
-      ? { ...artifact, facts: { ...artifact.facts, unitTitle: unit.title } }
-      : artifact;
+    return projectContractArtifact(this.#environment, contractId);
   }
 
   #confirmedBookingFallback(artifact: BookingContractArtifact): string {
