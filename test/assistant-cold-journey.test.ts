@@ -1,38 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { GuestTurnResult, GuestTurnSuccess } from "../apps/local-guest/src/shortlet-app.js";
-import { datedFixture, firstButtonAction, LIVE_LIKE_CLOCK, restartedDatedApp, scriptedPlanner, type DatedFixture } from "./helpers/guest-date-fixtures.js";
+import { datedFixture, firstButtonAction, LIVE_LIKE_CLOCK, restartedDatedApp, scriptedPlanner } from "./helpers/guest-date-fixtures.js";
+import { coldApp, PHONE, SCRIPT, STAY_TEXT, successOf, tap } from "./helpers/assistant-cold-journey-harness.js";
 
 // A fresh thread's full booking journey on the staging-like clock (27 Oct 2026), with the assistant runtime enabled and a
 // cold restore (a new application over the same store) before EVERY event, as each request on the Worker is.
 // Units pass the offer check at this clock (the fixture trust dates now come from DEMO_TRUST_EXPIRES_ON).
-
-const STAY_TEXT = "Apartment in Lekki for 2 guests, 3 nights from 14 December 2026";
-const STAY_SEARCH = { city: "Lagos", neighbourhood: "Lekki Phase 1", checkIn: "2026-12-14", nights: 3, guests: 2 };
-const PHONE = "+234 801 234 5678";
-const SCRIPT = {
-  [STAY_TEXT]: { slots: { city: "Lagos", neighbourhood: "Lekki Phase 1", checkIn: "2026-12-14", nights: 3, guests: 2 }, search: STAY_SEARCH },
-};
-
-function successOf(result: GuestTurnResult, label: string): GuestTurnSuccess {
-  assert.equal(result.ok, true, result.ok ? "" : `${label}: expected success, saw ${result.code}: ${result.message}`);
-  if (!result.ok) throw new Error("unreachable");
-  return result;
-}
-
-interface Surface { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] }
-
-/** A new application over the same store, loaded as the browser's page load does, before the event is sent. */
-function coldApp(f: DatedFixture, threadId: string) {
-  const restored = restartedDatedApp(f, scriptedPlanner({}).client);
-  restored.app.getState(threadId);
-  return restored.app;
-}
-
-/** The first Button action on a surface, sent after a cold restore. */
-async function tap(f: DatedFixture, threadId: string, surface: Surface, label: string): Promise<GuestTurnSuccess> {
-  return successOf(await coldApp(f, threadId).handleEventAsync(threadId, firstButtonAction(surface)), label);
-}
+// The script, the phone and the cold-restore driver live in test/helpers/assistant-cold-journey-harness.ts.
 
 test("a fresh thread completes the booking journey, cold-restored before every event, on the staging clock", async () => {
   const f = datedFixture(scriptedPlanner(SCRIPT).client, undefined, { clock: LIVE_LIKE_CLOCK, stagingGuest: true });
