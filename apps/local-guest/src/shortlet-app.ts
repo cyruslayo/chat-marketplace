@@ -3176,28 +3176,31 @@ export class LocalGuestApp {
    * the runtime and the sync adopts that artifact; a cold restore re-queries the context (ADR 0077/0080) and passes the persisted
    * `keepArtifactId`, so the re-queried facts take over the id the guest's card already names (ADR 0106).
    */
+  /** Issue 20: the strip's criteria from a persisted context alone (no search, no results). */
+  #assistantContextCriteria(thread: GuestThreadState, context: PersistedAssistantContext): void {
+    thread.discoveryArtifact = null;
+    thread.discoveryArtifactId = null;
+    thread.unitDetail = null;
+    thread.searchHistory = [];
+    thread.discoveryContext = {
+      ...(context.city === undefined ? {} : { city: context.city }),
+      ...(context.neighbourhood ? { neighbourhood: context.neighbourhood } : {}),
+      ...(context.checkIn ? { checkIn: context.checkIn, datesConfirmed: true } : {}),
+      ...(context.nights === undefined ? {} : { nights: context.nights }),
+      ...statedStayLengthPart(context),
+      ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
+      ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
+    };
+  }
+
   #assistantContextSearch(
     thread: GuestThreadState,
     context: PersistedAssistantContext,
     currentArtifact?: DiscoveryArtifactProjection,
     keepArtifactId: string | null = null,
+    // Issue 20 (owner rule: a clarification turn runs no search): without `mayQuery` the context only sets the criteria, so no discovery query runs.
+    mayQuery = true,
   ): void {
-    // Issue 20 (ADR 0106 amended 8 Nov 2026): a context with no area runs no search. It keeps the guest's own criteria for the strip and
-    // clears the held results, which an area would have to match.
-    if (context.city === undefined) {
-      thread.discoveryArtifact = null;
-      thread.discoveryArtifactId = null;
-      thread.unitDetail = null;
-      thread.searchHistory = [];
-      thread.discoveryContext = {
-        ...(context.checkIn ? { checkIn: context.checkIn, datesConfirmed: true } : {}),
-        ...(context.nights === undefined ? {} : { nights: context.nights }),
-        ...statedStayLengthPart(context),
-        ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
-        ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
-      };
-      return;
-    }
     // Issue 04 (ADR 0106, 2 Nov 2026): a pending date show-back is not a search. A restore must not rebuild results for its dates.
     if (context.pendingDate !== undefined) {
       // Issue 16 (parity): while a date show-back is open the criteria strip shows the held stay "to confirm", as the deterministic
@@ -3215,6 +3218,12 @@ export class LocalGuestApp {
         ...(pendingCheckIn === undefined ? {} : { checkIn: pendingCheckIn }),
         datesConfirmed: false,
       };
+      return;
+    }
+    // Issue 20 (ADR 0106 amended 8 Nov 2026): a context with no area, or one with no search to rebuild, keeps the guest's own criteria
+    // for the strip and runs no discovery query. It clears the held results, which a search would have to match.
+    if (context.city === undefined || !mayQuery) {
+      this.#assistantContextCriteria(thread, context);
       return;
     }
     const budgetTotal = persistedBudgetTotal(context);
@@ -3274,11 +3283,14 @@ export class LocalGuestApp {
     if (!thread.assistantContext) return;
     const runtime = this.#assistantRuntime;
     const currentArtifact = runtime?.hasThread(thread.threadId) ? runtime.getThread(thread.threadId).discoveryArtifact : undefined;
+    const held = isDiscoveryArtifactProjection(currentArtifact) ? currentArtifact : undefined;
+    // Issue 20: a restore rebuilds the results only for a thread that has searched (a held result or a search history); a clarification-only context does not.
     this.#assistantContextSearch(
       thread,
       thread.assistantContext,
-      isDiscoveryArtifactProjection(currentArtifact) ? currentArtifact : undefined,
+      held,
       thread.discoveryArtifactId,
+      held !== undefined || thread.searchHistory.length > 0,
     );
   }
 
@@ -3444,7 +3456,9 @@ export class LocalGuestApp {
     if (context) {
       thread.assistantContext = context;
       const runtimeArtifact = isDiscoveryArtifactProjection(assistant.discoveryArtifact) ? assistant.discoveryArtifact : undefined;
-      this.#assistantContextSearch(thread, context, runtimeArtifact ?? thread.discoveryArtifact ?? undefined);
+      // Issue 20: the sync re-queries only a thread that already holds results; a clarification that saves facts runs no search.
+      const held = runtimeArtifact ?? thread.discoveryArtifact ?? undefined;
+      this.#assistantContextSearch(thread, context, held, null, held !== undefined);
     }
     if (assistant.taskState.currentDraftId) thread.draftId = assistant.taskState.currentDraftId;
     if (assistant.taskState.currentBookingRequestId) thread.requestId = assistant.taskState.currentBookingRequestId;

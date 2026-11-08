@@ -1155,13 +1155,6 @@ export class AssistantRuntime {
     validatedTurnToolNames = toolNamesForValidatedIntents(packForScope, assessment.intents);
     taskSwitchPermitted = assessment.intents.includes("task_switch");
     candidateHistory.push({ role: "user", text: redactSensitiveData(discardUserInput ? text : originalUserText) as string });
-    // Issue 20 (ADR 0106, amended 8 Nov 2026): the guest's own stay facts are saved on this in-scope turn, on the committed state and the
-    // candidate alike, so a clarification that commits keeps them across a cold restore. A mixed turn carries scoped text, so it records nothing.
-    if (!discardUserInput) {
-      candidatePack().recordGuestFacts?.(originalUserText, thread.taskState, this.#environment.clock());
-      candidatePack().recordGuestFacts?.(originalUserText, tx.taskState, this.#environment.clock());
-    }
-
     const userTextHistory: string[] = [...(thread.canonicalUserFactHistory ?? []), ...candidateHistory
       .filter((s): s is Extract<AssistantConversationStep, { role: "user" }> => s.role === "user")
       .map((s) => s.text)];
@@ -1172,6 +1165,9 @@ export class AssistantRuntime {
     let finalAssistantReply: string | undefined;
     // Issue 10: chips for a `clarify_stay` reply, from the pack's clarification hook; never set for other reply kinds.
     let finalQuickReplies: readonly string[] | undefined;
+    // Issue 20 (ADR 0106, amended 8 Nov 2026): a planner reply that asks for a missing stay fact (clarify_stay), with no successful operation,
+    // saves the guest's own facts at commit. Any other reply saves nothing from this turn.
+    let clarifiesStay = false;
     let activeStage: AssistantDiagnosticStage = "provider_request";
     let activeToolName: string | undefined;
     let hasSuccessfulApplicationOperation = false;
@@ -1252,6 +1248,7 @@ export class AssistantRuntime {
             ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
           finalQuickReplies = quickRepliesForReply(candidatePack(), plan, latestResults, tx.taskState);
           candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
+          clarifiesStay = plan?.kind === "clarify_stay";
           stopReason = "reply";
           break;
         }
@@ -1460,6 +1457,7 @@ export class AssistantRuntime {
         candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
       }
 
+      if (clarifiesStay && !hasSuccessfulApplicationOperation && !discardUserInput) candidatePack().recordGuestFacts?.(originalUserText, tx.taskState, this.#environment.clock());
       // 4. Commit Transaction (Item 24)
       this.#commitHistory(thread, candidateHistory, candidatePack(), tx.taskState);
       tx.commit(thread, { state: true, tasks: true, discovery: true, lastSurfaces: tx.surfaces.length > 0 ? tx.surfaces : tx.lastSurfaces });
@@ -1511,6 +1509,9 @@ export class AssistantRuntime {
         // details is a rejected tool call. The turn keeps the guest's message, commits no new task state, and asks the guest.
         controlOutcome = "tool_denial";
         recordOutcome(controlOutcome);
+        // Issue 20: a search missing its stay details asks the guest for the missing fact, so the guest's own facts are saved. Any other
+        // refused call (a date or budget the guest did not give, a length the guest did not state) saves nothing from this turn.
+        if (error instanceof AssistantStayDetailsError && !discardUserInput) candidatePack().recordGuestFacts?.(originalUserText, thread.taskState, this.#environment.clock());
         candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
         this.#commitHistory(thread, candidateHistory, candidatePack(), thread.taskState);
         // A pack's guest-facing refusal carries its own sentence (ADR 0106; no guest identifier, ADR 0075).

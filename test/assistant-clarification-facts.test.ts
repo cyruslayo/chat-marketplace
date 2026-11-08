@@ -97,7 +97,8 @@ test("AC3 A clarification turn saves nothing the planner proposed: a planner che
     assert.equal(context.checkOut, undefined, "no checkout is saved either");
     assert.equal(context.nights, undefined, "no nights from the planner are saved");
     assert.deepEqual(context.statedStay, { nights: 60, unit: "month", count: 2 }, "the guest's own length is saved");
-    assert.equal(context.city, "Lagos", "the guest's own area is saved");
+    // Coordinator rule (8 Nov 2026): a refused planner date is not a missing-fact clarification, so the area it came with is not saved.
+    assert.equal(context.city, undefined, "a refused planner date saves no area");
   } finally { f.close(); }
 });
 

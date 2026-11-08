@@ -25,9 +25,29 @@ const NAMED_JOURNEYS = [
   "confirm-after-search-change",
 ] as const;
 
+/**
+ * Issue 20 (owner decision, 8 Nov 2026): a missing-information clarification keeps the guest's own area. The planner's canonical facts after
+ * turn 1 of this recording (made before issue 20) say "city":null; the runtime now says "city":"Lagos", from the guest's own words "Ikoyi".
+ * Only that one fact is replaced in the in-memory copy, once, at the planner step that shows it. The recording file is not edited, and
+ * every other request, tool result and turn output is still compared.
+ */
+function withOwnerAreaFact(journey: string, recording: ReturnType<typeof loadRecording>): ReturnType<typeof loadRecording> {
+  if (journey !== "missing-information-clarification") return recording;
+  const exchanges = recording.exchanges.map((exchange, index) => {
+    if (index !== 3) return exchange;
+    const history = exchange.request.history.map((entry) => {
+      if (!("text" in entry) || typeof entry.text !== "string" || !entry.text.startsWith("Canonical task facts: ")) return entry;
+      assert.equal(entry.text.split("\"city\":null").length - 1, 1, "the canonical facts state the area once, as no area");
+      return { ...entry, text: entry.text.replace("\"city\":null", "\"city\":\"Lagos\"") };
+    });
+    return { ...exchange, request: { ...exchange.request, history } };
+  });
+  return { ...recording, exchanges };
+}
+
 test("Replaying a recording through a fresh runtime reproduces the recorded messages, surface ids, component types and task rail for every turn.", async () => {
   for (const journey of NAMED_JOURNEYS) {
-    const recording = loadRecording(journey);
+    const recording = withOwnerAreaFact(journey, loadRecording(journey));
     const { turns, replay } = await replayJourney(recording);
     replay.assertFaithful();
     assert.equal(turns.length, recording.turns.length, `${journey}: turn count`);
