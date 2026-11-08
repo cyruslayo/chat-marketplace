@@ -21,7 +21,9 @@ export type BookingRequestApplicationDependencies = BookingRequestManagerDepende
   readonly operatorAuthority?: OperatorRepresentativeAuthority;
   readonly clock?: () => Date;
   readonly store?: import("../../../domains/shortlet/src/index.js").SqliteGuestInteractionStore | null;
-  readonly guestContacts: import("../../../domains/shortlet/src/index.js").GuestContactSource;
+  /** ADR 0085: only the local-only owner simulator may omit a contact source. */
+  readonly guestContacts?: import("../../../domains/shortlet/src/index.js").GuestContactSource;
+  readonly allowContactlessLocalDemo?: boolean;
 };
 
 export interface BookingRequestDecisionInput {
@@ -179,8 +181,8 @@ export class BookingRequestApplication {
 export function createBookingRequestApplication(
   dependencies: BookingRequestApplicationDependencies,
 ): BookingRequestApplication {
-  if (!dependencies.guestContacts) throw new Error("Guest contact source is required");
-  const { clock, operatorAuthority, store, ...managerDependencies } = dependencies;
+  if (!dependencies.guestContacts && dependencies.allowContactlessLocalDemo !== true) throw new Error("Guest contact source is required");
+  const { clock, operatorAuthority, store, allowContactlessLocalDemo: _allowContactlessLocalDemo, ...managerDependencies } = dependencies;
   return new BookingRequestApplication(
     new BookingRequestManager({ ...managerDependencies, store }),
     { operatorAuthority, clock: clock ?? (() => new Date()) }

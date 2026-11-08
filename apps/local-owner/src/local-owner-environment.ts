@@ -661,22 +661,18 @@ export class LocalApartmentOwnerEnvironment {
       store: new SqliteOperatorEnforcementStateStore(this.#sqlDatabase),
     });
     this.reliabilityAuthority = {
-      getReliability: ({
-        operatorId,
-        tenantId,
-      }: {
-        operatorId: string;
-        tenantId: string;
-      }): AuthoritativeReliabilityRecord => ({
-        operatorId,
-        tenantId,
-        trailing60dCompletedBookings: 12,
-        trailing60dOpportunities: 12,
-        trailing60dReliabilityRate: 0.98,
-        trailing180dCompletedBookings: 35,
-        trailing180dOpportunities: 35,
-        trailing180dReliabilityRate: 0.99,
-      }),
+      getReliability: ({ operatorId, tenantId }: { operatorId: string; tenantId: string }): AuthoritativeReliabilityRecord => {
+        if (operatorId !== this.config.operatorId || tenantId !== this.config.tenantId) {
+          throw new Error("Operator reliability scope mismatch");
+        }
+        // ADR 0066 and owner cold-start decision: no observed opportunities means no rate, not a fictitious success.
+        // ADR 0083 tier settlement is superseded by 0089; the legacy tier evaluator stays Standard without evidence.
+        return {
+          operatorId, tenantId,
+          trailing60dCompletedBookings: 0, trailing60dOpportunities: 0, trailing60dReliabilityRate: null,
+          trailing180dCompletedBookings: 0, trailing180dOpportunities: 0, trailing180dReliabilityRate: null,
+        };
+      },
     };
     this.scopeAuthority = {
       isOperatorInTenant: ({
@@ -701,16 +697,8 @@ export class LocalApartmentOwnerEnvironment {
     });
     this.bookingStateRepository = this.#bookingState;
 
-    const guestVerification = new GuestVerificationService({
-      repository: this.unitRepository,
-      verificationResults: {
-        getVerificationResult: ({ tenantId, guestId }) => ({
-          tenantId,
-          guestId,
-          governmentIdVerified: true,
-        }),
-      },
-    });
+    // ADR 0085: booking disclosure does not require ID verification; check-in remains fail closed.
+    const guestVerification = new GuestVerificationService({ repository: this.unitRepository });
 
     this.bookingRequestApp = createBookingRequestApplication({
       repository: this.unitRepository,
@@ -724,15 +712,9 @@ export class LocalApartmentOwnerEnvironment {
       // ADR 0092 as amended 1 Nov 2026: Extended Stays are on in every deployment; ADR 0105 labels are demo-only.
       extendedStayPolicy: this.config.extendedStayPolicy ?? EXTENDED_STAY_POLICY,
       demoTerms: this.config.demo === true,
-      guestContacts: {
-        find: (guestId: string, tenantId: string) => ({
-          guestId,
-          tenantId,
-          phoneNumber: "+2348012345678",
-          contactEmail: null,
-          revision: 1,
-        }),
-      },
+      // The local demo synthesizes requests with no Guest contact. In production the Operator cannot disclose a
+      // request without one; only the Guest composition writes the contact snapshot (ADR 0085, 0101).
+      ...(this.config.production ? { guestContacts: { find: () => null } } : { allowContactlessLocalDemo: true }),
     });
     this.conditionalOfferApp = createConditionalOfferApplication({
       signingKey: this.config.conditionalOfferSigningKey ?? (this.config.production === true
@@ -1181,13 +1163,13 @@ export class LocalApartmentOwnerEnvironment {
     } catch {
       /* observability cannot block reads */
     }
-    const phoneNumber = (request as { phoneNumber?: string }).phoneNumber;
-    return phoneNumber
-      ? Object.freeze({
-          ...artifact,
-          facts: Object.freeze({ ...artifact.facts, phoneNumber }),
-        })
-      : artifact;
+    const phoneNumber = (request as { phoneNumber?: string | null }).phoneNumber ?? null;
+    const contactEmail = this.interactionStore.findBookingRequestContactEmail(requestId, request.tenantId);
+    // ADR 0075/0086: expose contact only on this grant-checked detail; never on the general request artifact/list or logs.
+    return Object.freeze({
+      ...artifact,
+      facts: Object.freeze({ ...artifact.facts, phoneNumber, contactEmail }),
+    });
   }
 
   /**

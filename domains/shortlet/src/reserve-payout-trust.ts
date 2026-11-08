@@ -17,10 +17,10 @@ export interface AuthoritativeReliabilityRecord {
   readonly tenantId: string;
   readonly trailing60dCompletedBookings: number;
   readonly trailing60dOpportunities: number;
-  readonly trailing60dReliabilityRate: number;
+  readonly trailing60dReliabilityRate: number | null;
   readonly trailing180dCompletedBookings: number;
   readonly trailing180dOpportunities: number;
-  readonly trailing180dReliabilityRate: number;
+  readonly trailing180dReliabilityRate: number | null;
 }
 
 export interface OperatorReliabilityAuthority {
@@ -284,7 +284,7 @@ export class ReservePayoutManager {
     }
 
     // Preferred tier evaluation (ADR 0083: >= 30 bookings / 180d, reliability >= 0.98 evaluated before Proven)
-    if (completedBookings180d >= 30 && reliabilityScore180d >= 0.98) {
+    if (completedBookings180d >= 30 && reliabilityScore180d !== null && reliabilityScore180d >= 0.98) {
       reasons.push("Meets Preferred tier requirements (>=30 bookings/180d, >=98% reliability)");
       return {
         operatorId,
@@ -297,7 +297,7 @@ export class ReservePayoutManager {
     }
 
     // Proven tier evaluation (ADR 0083: >= 10 bookings / 60d, reliability >= 0.95)
-    if (completedBookings60d >= 10 && reliabilityScore60d >= 0.95) {
+    if (completedBookings60d >= 10 && reliabilityScore60d !== null && reliabilityScore60d >= 0.95) {
       reasons.push("Meets Proven tier requirements (>=10 bookings/60d, >=95% reliability)");
       return {
         operatorId,

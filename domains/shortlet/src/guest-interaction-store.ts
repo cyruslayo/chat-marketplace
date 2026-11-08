@@ -981,6 +981,14 @@ export class SqliteGuestInteractionStore {
     return bookingRequestFromRow(row);
   }
 
+  /** Private contact snapshot for an already authorized Booking Request detail; never add it to general artifacts. */
+  findBookingRequestContactEmail(requestId: string, tenantId: string): string | null {
+    const row = this.#database.prepare(
+      "SELECT contact_email FROM guest_booking_request_contacts WHERE request_id = $requestId AND tenant_id = $tenantId",
+    ).get({ $requestId: requestId, $tenantId: tenantId });
+    return typeof row?.contact_email === "string" ? row.contact_email : null;
+  }
+
   /**
    * The Booking Requests whose primary guest is one of the given principals, in one tenant (ADR 0093). An empty
    * principal set or a missing tenant reads nothing.
