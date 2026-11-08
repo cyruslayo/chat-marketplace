@@ -1,6 +1,6 @@
 # Extend an Extended Stay
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 06, 17, 18
 
@@ -98,3 +98,12 @@ See `docs/agents/issue-tracker.md`.
     - Affected, all non-browser tests matching `assistant-*`, guest-server, shortlet-app, draft, request-to-book, notice, extension and concierge (69 files), in two batches: batch 1 278 of 279 pass; the one failure is `test/assistant-recording-clients.test.ts` "Live recording refuses an --out inside test/fixtures", an `ENOTDIR` in that test's own `/tmp` junction cleanup on Linux, unrelated to this change (run solo, 8 of 9). Batch 2 338 of 338 pass.
     - `env -u LLM_API_KEY npm run check`: exit 0 on the working tree before the commit.
   - **Not done.** Browser runs (not requested). The full `npm test` and `npm run test:workers` (batch gate). The capture `capture-09-extension.ts` and the owner approve/decline over HTTP (earlier open items (a) and (c) above are unchanged). Status stays `ready-for-agent`.
+- **8 Nov 2026, Claude (owner approval recorded, relayed by the coordinator).** The owner approved, as written, every Notice to End and extension label and guest sentence listed in this issue, with one change: "Still owed up to it" becomes "Still to pay before then" (`GUEST_NOTICE_COPY.owed`, `apps/web-agent/src/guest-content.ts`; the regenerated `apps/local-guest/dist/client.js` carries the same single line). No other wording changed. Status is not changed by this entry.
+- **8 Nov 2026, Claude (open items closed; status set to `resolved`).**
+  - **Typed route over HTTP.** Closed in the commit that follows 6d72c3b (the warm session runtime adopts the shell's booking references; see the follow-up above). `test/warm-session-post-payment.test.ts` 6 of 6 pass, including the typed extension request on the warm HTTP route.
+  - **Owner approve and decline over HTTP (open item (c)).** `test/extension-owner-http.test.ts` (new) 2 of 2 pass. A real pending extension is booked and paid over the guest routes, requested over the guest routes (the "Extend your stay" event, then the card's Request extension button), and then decided over the owner routes (`/operator/extensions/:contractId/:extensionId/(approve|decline)`) on a second owner server over the same SQLite store, signed in with `signInOperator`. Approve: the route returns 303, the checkout is the requested one, one Billing Period is appended, and the request leaves the inbox. Decline: 303, the checkout and the periods are unchanged, the decision is recorded as `declined`, and the request leaves the inbox. The inbox renders the pending request with its decision forms before the decision.
+  - **Labels.** "Still owed up to it" is now "Still to pay before then" (see the approval above); `test/warm-session-post-payment.test.ts` pins the approved string on the notice card.
+  - **Rename.** The warm-runtime adoption helpers are domain-neutral in `assistant-runtime.ts` (`AssistantShellReferences`, `adoptShellReferences`, `SHELL_REFERENCE_KEYS`). The shell owns the shortlet domain check.
+  - **ADR 0106.** Amendment (8 Nov 2026): booking-change intents, dated and placed before "Constraints retained".
+  - **Commands and counts (env `-u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test ...`).** Requested list (`warm-session-post-payment`, all `extension-*` files, `extended-stay-extension`, `notice-to-end-chat`, `notice-to-end-wiring`, `assistant-runtime-boundary`, `assistant-pack-registry`, `assistant-cold-journey`, `assistant-scope-controls`, `assistant-stage-handlers`, `guest-confirmation-system`): 122 of 122 pass. Affected non-browser set (69 files), batch 1 278 of 279 (the one failure is the environmental `/tmp` junction cleanup in `assistant-recording-clients.test.ts`, unchanged from before), batch 2 338 of 338. `env -u LLM_API_KEY npm run check` exit 0 on the working tree and on the committed tree.
+  - **Not done.** The browser captures are the earlier 79d6e3d set (no new captures for the label change; the label is text only). The full `npm test` and `npm run test:workers` run once per batch before merging to main (not run here).

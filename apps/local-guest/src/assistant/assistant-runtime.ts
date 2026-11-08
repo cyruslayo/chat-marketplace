@@ -225,7 +225,7 @@ export interface AssistantRuntimeOptions {
 }
 
 /** ADR 0106: the references the shell owns for the guest's thread (the draft, request, offer, reservation and contract it holds). */
-export interface AssistantShortletShellReferences {
+export interface AssistantShellReferences {
   readonly currentDraftId?: string;
   readonly currentBookingRequestId?: string;
   readonly currentOfferId?: string;
@@ -233,7 +233,7 @@ export interface AssistantShortletShellReferences {
   readonly currentContractId?: string;
 }
 
-const SHORTLET_SHELL_REFERENCE_KEYS = ["currentDraftId", "currentBookingRequestId", "currentOfferId", "currentReservationId", "currentContractId"] as const;
+const SHELL_REFERENCE_KEYS = ["currentDraftId", "currentBookingRequestId", "currentOfferId", "currentReservationId", "currentContractId"] as const;
 
 export interface AssistantShortletRestoreInput {
   readonly principalId: string;
@@ -749,11 +749,11 @@ export class AssistantRuntime {
    * becomes an offer, a payment confirms a stay). A warm thread is not rebuilt, so it adopts those references here, exactly as a
    * cold restore derives them. Only the five shell references change: the history, surfaces and pending action are kept.
    */
-  adoptShortletShellReferences(threadId: string, references: AssistantShortletShellReferences): boolean {
+  adoptShellReferences(threadId: string, references: AssistantShellReferences): boolean {
     if (!this.hasThread(threadId) || this.threadBusy(threadId)) return false;
     const thread = this.getThread(threadId);
     const state = thread.taskState;
-    for (const key of SHORTLET_SHELL_REFERENCE_KEYS) {
+    for (const key of SHELL_REFERENCE_KEYS) {
       const value = references[key];
       if (value === undefined) delete state[key];
       else state[key] = value;

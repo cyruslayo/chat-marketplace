@@ -228,7 +228,7 @@ import {
 import {
   AssistantRuntime,
   type AssistantControlOutcome,
-  type AssistantShortletShellReferences,
+  type AssistantShellReferences,
   type AssistantShortletRestoreInput,
   type AssistantTaskRailEntry,
   type AssistantVertical,
@@ -3280,7 +3280,7 @@ export class LocalGuestApp {
    * ADR 0106: the references the shell holds for the thread (draft, request, offer, and the reservation and contract the offer's
    * snapshot names). The cold restore and the warm runtime both derive their shell-owned state from this one place.
    */
-  #assistantShellReferences(thread: GuestThreadState): AssistantShortletShellReferences {
+  #assistantShellReferences(thread: GuestThreadState): AssistantShellReferences {
     let currentContractId: string | undefined;
     let currentReservationId: string | undefined;
     if (thread.offerId) {
@@ -3313,7 +3313,7 @@ export class LocalGuestApp {
     if (runtime.hasThread(threadId)) {
       const warm = runtime.getThread(threadId);
       const activeTask = warm.tasks.find((task) => task.taskId === warm.activeTaskId);
-      if (activeTask?.domain === "shortlet") runtime.adoptShortletShellReferences(threadId, this.#assistantShellReferences(thread));
+      if (activeTask?.domain === "shortlet") runtime.adoptShellReferences(threadId, this.#assistantShellReferences(thread));
       return;
     }
     if (!context) return;

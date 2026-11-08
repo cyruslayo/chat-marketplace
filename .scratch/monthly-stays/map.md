@@ -18,7 +18,7 @@ Work top to bottom. The frontier is the first issue that is open, unblocked and 
 | 06 | [Billing Periods and Period Payments](issues/06-billing-periods-and-period-payments.md) | task | ready-for-agent | 04, 05 |
 | 07 | [Period Owner Payable](issues/07-period-owner-payable.md) | task | ready-for-agent | 06 |
 | 08 | [Cancellation and Notice to End](issues/08-cancellation-and-notice-to-end.md) | task | ready-for-agent | 06 |
-| 09 | [Extend an Extended Stay](issues/09-extend-an-extended-stay.md) | task | ready-for-agent | 06, 17, 18 |
+| 09 | [Extend an Extended Stay](issues/09-extend-an-extended-stay.md) | task | resolved | 06, 17, 18 |
 | 10 | [Stay receipt for each Billing Period](issues/10-stay-receipt-per-period.md) | task | ready-for-agent | 02, 06 |
 | 11 | [Guest discovery for monthly stays](issues/11-guest-discovery-for-monthly-stays.md) | task | ready-for-agent | 04, 05 |
 | 12 | [Servicing and maintenance requests](issues/12-servicing-and-maintenance-requests.md) | task | ready-for-agent | 05, 06 |

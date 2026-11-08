@@ -43,6 +43,7 @@ test("A typed notice request after payment opens the notice card on the warm ses
     const card = cardOf(ask.surfaces);
     assert.ok(card, "the notice card is offered on the warm runtime");
     assert.ok(JSON.stringify(card.a2uiMessages).includes(GUEST_NOTICE_COPY.newLastNight), "the card is the notice card");
+    assert.ok(JSON.stringify(card.a2uiMessages).includes("Still to pay before then"), "the card shows the approved owed label (8 Nov 2026)");
   } finally {
     session.close();
     f.close();

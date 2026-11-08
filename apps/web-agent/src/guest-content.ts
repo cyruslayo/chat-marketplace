@@ -655,7 +655,7 @@ export const GUEST_NOTICE_COPY = Object.freeze({
   newLastNight: "New last night",
   newCheckOut: "New checkout",
   refund: "Refund for paid nights after it",
-  owed: "Still owed up to it",
+  owed: "Still to pay before then",
   recordedHeading: "Notice given",
   recordedLead: "Your stay now ends on the new last night below. Refunds are paid by hand, as the terms say.",
 });
