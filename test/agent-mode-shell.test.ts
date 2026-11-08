@@ -21,15 +21,24 @@ import { coldApp, PHONE, SCRIPT, STAY_TEXT, successOf, tap } from "./helpers/ass
 const { GUEST_MODES, validateModePresentation } = guestContent;
 const { composerHtml } = guestKit;
 
-/** The stays copy as it stands on main at 16d592e: guest-server.ts:577-612 and :774, client.ts:1881, :1887 and :2599. Pinned literally. */
+/**
+ * The stays presentation in the nested shape of architecture-analysis.md 5.2, with `composer.ariaLabel` added.
+ * Copy as it stands on main at 16d592e: guest-server.ts:577-612 and :774, client.ts:1881, :1887 and :2599, the registered
+ * Stays vertical (shortlet-assistant-pack.ts:1520-1521) and GUEST_VERTICALS.staysDescription. Pinned literally.
+ */
 const STAYS = {
   id: "stays",
-  heading: "Find a place to stay",
-  body: "Start with a city, your dates (or length of stay), and number of guests. We’ll find available entire-place stays and guide you through requesting one.",
-  starters: [
-    { label: "Explore Abuja", prompt: "I’m looking for a stay in Abuja" },
-    { label: "Explore Lagos", prompt: "I’m looking for a stay in Lagos" },
-  ],
+  label: "Stays",
+  persona: { name: "Stays", icon: "home" },
+  tagline: "Find an inspected apartment in Lagos or Abuja and book it.",
+  emptyState: {
+    heading: "Find a place to stay",
+    body: "Start with a city, your dates (or length of stay), and number of guests. We’ll find available entire-place stays and guide you through requesting one.",
+    starters: [
+      { label: "Explore Abuja", prompt: "I’m looking for a stay in Abuja" },
+      { label: "Explore Lagos", prompt: "I’m looking for a stay in Lagos" },
+    ],
+  },
   composer: {
     label: "Your message",
     ariaLabel: "Message the concierge",
@@ -48,9 +57,12 @@ const STAYS = {
 
 /** Every stays string, flattened, so AC3 can prove none of it leaks into another mode's shell. */
 const STAYS_STRINGS: readonly string[] = [
-  STAYS.heading,
-  STAYS.body,
-  ...STAYS.starters.flatMap((starter) => [starter.label, starter.prompt]),
+  STAYS.label,
+  STAYS.persona.name,
+  STAYS.tagline,
+  STAYS.emptyState.heading,
+  STAYS.emptyState.body,
+  ...STAYS.emptyState.starters.flatMap((starter) => [starter.label, starter.prompt]),
   STAYS.composer.label,
   STAYS.composer.ariaLabel,
   STAYS.composer.placeholder,
@@ -64,9 +76,16 @@ const STAYS_STRINGS: readonly string[] = [
   STAYS.criteria.editLabel,
 ];
 
+type Loose = Record<string, unknown>;
+
+/** A nested object of a loosely typed copy, for the refusal cases in AC2. */
+function section(copy: Loose, key: string): Loose {
+  return copy[key] as Loose;
+}
+
 /** A deep copy of the stays presentation with one change, for the refusal cases in AC2. */
-function staysVariant(change: (copy: Record<string, unknown>) => void): unknown {
-  const copy = JSON.parse(JSON.stringify(GUEST_MODES.stays)) as Record<string, unknown>;
+function staysVariant(change: (copy: Loose) => void): unknown {
+  const copy = JSON.parse(JSON.stringify(GUEST_MODES.stays)) as Loose;
   change(copy);
   return copy;
 }
@@ -75,9 +94,13 @@ test("AC1: The stays presentation holds the current shell copy unchanged", () =>
   const stays = GUEST_MODES.stays;
   assert.equal(Object.isFrozen(stays), true, "the stays presentation is frozen");
   assert.equal(stays.id, STAYS.id);
-  assert.equal(stays.heading, STAYS.heading);
-  assert.equal(stays.body, STAYS.body);
-  assert.deepEqual(stays.starters, STAYS.starters);
+  assert.equal(stays.label, STAYS.label);
+  assert.equal(stays.persona.name, STAYS.persona.name);
+  assert.equal(stays.persona.icon, STAYS.persona.icon);
+  assert.equal(stays.tagline, STAYS.tagline);
+  assert.equal(stays.emptyState.heading, STAYS.emptyState.heading);
+  assert.equal(stays.emptyState.body, STAYS.emptyState.body);
+  assert.deepEqual(stays.emptyState.starters, STAYS.emptyState.starters);
   assert.equal(stays.composer.label, STAYS.composer.label);
   assert.equal(stays.composer.ariaLabel, STAYS.composer.ariaLabel);
   assert.equal(stays.composer.placeholder, STAYS.composer.placeholder);
@@ -87,8 +110,8 @@ test("AC1: The stays presentation holds the current shell copy unchanged", () =>
   assert.equal(stays.workspace.returnedAnnouncement, STAYS.workspace.returnedAnnouncement);
   assert.equal(stays.workspace.readyAnnouncement, STAYS.workspace.readyAnnouncement);
   assert.equal(stays.workspace.workingStatus, STAYS.workspace.workingStatus);
-  assert.equal(stays.criteria.regionLabel, STAYS.criteria.regionLabel);
-  assert.equal(stays.criteria.editLabel, STAYS.criteria.editLabel);
+  assert.equal(stays.criteria?.regionLabel, STAYS.criteria.regionLabel);
+  assert.equal(stays.criteria?.editLabel, STAYS.criteria.editLabel);
 });
 
 test("AC2: A malformed presentation is refused", () => {
@@ -96,13 +119,15 @@ test("AC2: A malformed presentation is refused", () => {
 
   const starter = { label: "Explore Abuja", prompt: "I’m looking for a stay in Abuja" };
   const refused: readonly (readonly [string, unknown])[] = [
-    ["an unknown key", staysVariant((copy) => { copy.surprise = "not a field"; })],
+    ["an unknown top-level key", staysVariant((copy) => { copy.surprise = "not a field"; })],
+    ["an unknown nested key", staysVariant((copy) => { section(copy, "composer").surprise = "not a field"; })],
     ["a missing id", staysVariant((copy) => { delete copy.id; })],
-    ["an empty heading", staysVariant((copy) => { copy.heading = ""; })],
-    ["zero starters", staysVariant((copy) => { copy.starters = []; })],
-    ["five starters", staysVariant((copy) => { copy.starters = [starter, starter, starter, starter, starter]; })],
-    ["an over-long string", staysVariant((copy) => { copy.body = "x".repeat(2001); })],
-    ["an unknown icon", staysVariant((copy) => { copy.icon = "not-a-kit-icon"; })],
+    ["an empty emptyState heading", staysVariant((copy) => { section(copy, "emptyState").heading = ""; })],
+    ["zero emptyState starters", staysVariant((copy) => { section(copy, "emptyState").starters = []; })],
+    ["five emptyState starters", staysVariant((copy) => { section(copy, "emptyState").starters = [starter, starter, starter, starter, starter]; })],
+    ["an over-long string", staysVariant((copy) => { section(copy, "emptyState").body = "x".repeat(2001); })],
+    ["an unknown persona icon", staysVariant((copy) => { section(copy, "persona").icon = "not-a-kit-icon"; })],
+    ["a missing persona", staysVariant((copy) => { delete copy.persona; })],
     ["null", null],
     ["a string", "x"],
     ["a number", 42],
@@ -117,13 +142,17 @@ test("AC3: The chat shell is rendered from the presentation", () => {
   // Test-only presentation: every string differs from the stays copy, so a leak shows up as a stays string in the markup.
   const testMode = {
     id: "stays",
-    icon: "message-plus",
-    heading: "TEST HEADING",
-    body: "TEST BODY for the empty state",
-    starters: [
-      { label: "TEST STARTER ONE", prompt: "TEST PROMPT ONE" },
-      { label: "TEST STARTER TWO", prompt: "TEST PROMPT TWO" },
-    ],
+    label: "TEST LABEL MODE",
+    persona: { name: "TEST PERSONA", icon: "message-plus" },
+    tagline: "TEST TAGLINE",
+    emptyState: {
+      heading: "TEST HEADING",
+      body: "TEST BODY for the empty state",
+      starters: [
+        { label: "TEST STARTER ONE", prompt: "TEST PROMPT ONE" },
+        { label: "TEST STARTER TWO", prompt: "TEST PROMPT TWO" },
+      ],
+    },
     composer: { label: "TEST LABEL", ariaLabel: "TEST COMPOSER", placeholder: "TEST PLACEHOLDER", hint: "TEST HINT" },
     workspace: {
       regionLabel: "TEST WORKSPACE REGION",
