@@ -10196,6 +10196,13 @@ Known schemas:
   );
   function getThreadId() {
     try {
+      const meta = document.querySelector('meta[name="shortlet-thread-id"]')?.getAttribute("content");
+      if (meta && /^g-[a-f0-9-]{6,64}$/.test(meta)) {
+        window.sessionStorage.setItem("shortlet-concierge-thread", meta);
+        const current = new URLSearchParams(window.location.search).get("threadId");
+        if (current !== meta) window.history.replaceState(null, "", `/?threadId=${encodeURIComponent(meta)}`);
+        return meta;
+      }
       const urlParam = new URLSearchParams(window.location.search).get(
         "threadId"
       );
@@ -10207,12 +10214,7 @@ Known schemas:
       if (stored && /^g-[a-f0-9-]{6,64}$/.test(stored)) return stored;
     } catch {
     }
-    const created = `g-${crypto.randomUUID()}`;
-    try {
-      window.sessionStorage.setItem("shortlet-concierge-thread", created);
-    } catch {
-    }
-    return created;
+    return null;
   }
   function isRecord3(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -11109,7 +11111,7 @@ Known schemas:
       throw new Error("Invalid response verticals");
     return value;
   }
-  var threadId = getThreadId();
+  var threadId = getThreadId() ?? "";
   var shellState = createConversationShellState();
   var activePayload;
   var isLoading = false;
@@ -12262,13 +12264,11 @@ Known schemas:
     return note;
   }
   function startNewConversation() {
-    const next = `g-${crypto.randomUUID()}`;
     try {
-      window.sessionStorage.setItem("shortlet-concierge-thread", next);
-      window.location.replace("/");
+      window.sessionStorage.removeItem("shortlet-concierge-thread");
     } catch {
-      window.location.replace(`/?threadId=${encodeURIComponent(next)}`);
     }
+    window.location.replace("/");
   }
   function closeNewConversationConfirm() {
     newConversationConfirm.hidden = true;

@@ -5455,6 +5455,11 @@ export function createGuestRequestHandler(
         sendPageError(req, res, 400, "INVALID_CONVERSATION");
         return;
       }
+      // The session is checked before the id, so an unauthenticated post keeps its 401 (pilot issue 53).
+      if (!session) {
+        sendPageError(req, res, 401, "AUTHENTICATION_REQUIRED");
+        return;
+      }
       const submittedThreadId = form.get("threadId") ?? "";
       // Pilot issue 53: the server mints every guest thread id. A submitted id is accepted only when this server
       // issued it to this browser session; a client-chosen id that merely matches the old pattern is refused and
@@ -5462,7 +5467,6 @@ export function createGuestRequestHandler(
       if (
         submittedThreadId !== "" &&
         (!THREAD_ID_PATTERN.test(submittedThreadId) ||
-          !session ||
           !session.threadIds.has(submittedThreadId))
       ) {
         sendPageError(req, res, 400, "INVALID_CONVERSATION");
