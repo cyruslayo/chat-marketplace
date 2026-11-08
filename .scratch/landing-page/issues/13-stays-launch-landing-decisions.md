@@ -50,3 +50,5 @@ The owner replied **"accept recommendations"** after the session report explicit
 The same reply approved fast-forwarding the tracker branch to local `main` (`ad5ad72`), completed without a push or deployment. It did not accept a future ADR draft or authorize later branch merges.
 
 ## Comments
+
+8 Nov 2026: item 4 superseded by issue 16 (owner approved monthly positioning and copy).

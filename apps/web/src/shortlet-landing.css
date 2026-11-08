@@ -1041,7 +1041,8 @@ a.landing-unit__link:focus-visible {
 .landing-faq__item > p {
   margin: 0;
   padding-block-end: var(--space-4);
-  max-inline-size: 60ch;
+  /* Issue 16: 56ch keeps the longest approved answer within the 75-character prose line (ADR 0078, Issue 04 AC7). */
+  max-inline-size: 56ch;
   color: var(--color-text-secondary);
   font-size: var(--landing-size-faq-answer);
   line-height: 1.55;
@@ -1904,4 +1905,41 @@ a.landing-unit__link:focus-visible {
 .landing-phone .ui-price-breakdown__value {
   flex-shrink: 0;
   white-space: nowrap;
+}
+
+/* Issue 16 "Staying for months?" band: the three facts as one list (tokens only; the check icon is the kit icon). */
+.landing-months__facts {
+  display: grid;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--landing-ink);
+  font-family: var(--landing-font-body);
+}
+
+.landing-months__fact {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.landing-months__fact > .ui-icon {
+  inline-size: 1.5rem;
+  block-size: 1.5rem;
+  color: var(--landing-accent-ink);
+}
+
+.landing-months__fact > p {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+@media (min-width: 64rem) {
+  .landing-months__facts {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-6);
+  }
 }

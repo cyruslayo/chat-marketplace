@@ -19,6 +19,7 @@ PRD: `PRD.md`. Branch: `feat/landing-page` (cut from `wip/main-snapshot-2026-10-
 | 13 | Owner decisions for the stays-launch landing page | grilling (ready-for-human) | none |
 | 14 | Carry the landing search box message into a new conversation | task | 11, 13 |
 | 15 | Verify the ported landing page on main (wave gate for 11, 12 and 14) | task | 11, 12, 14 |
+| 16 | Landing page: say that stays run from a few nights to 6 months | task | 13 (item 4 superseded) |
 
 Issues 06–10 follow the redesign chosen on 13 Oct 2026 (design audit `design-audit.md`; canvas <https://claude.ai/artifact/5ENjonAtFM3UMzBnvzGLrL>, boards `Mix-Desktop` and `Mix-Phone`; spec `docs/design/shortlet-landing-page-direction.md`). 07–10 are one wave, verified together in 10.
 
@@ -38,3 +39,4 @@ Issues 11–15 (20 Oct 2026) bring the page onto `main` after the multi-domain p
 - 13 (ready-for-human): decisions 1–5 approved 20 Oct 2026; photography and FAQ answers still open.
 - 14 (resolved 21 Oct 2026, `71e8c97`): `POST /welcome/start` carries the first message into a new conversation (`guest-server.ts`, `turn-limits.ts`, `GUEST_CONTINUE_CONVERSATION`), with the landing sends counted in the pilot rate limits.
 - 15 (resolved 21 Oct 2026): the wave gate. Evidence: `screenshots/15/`, full runs `full-suite-15.txt`, `-15b.txt`, `-15c.txt` (the last green).
+- 16 (resolved 8 Nov 2026, on `feat/landing-monthly-copy`): monthly positioning and approved copy on the landing (`landing-copy.ts`, the "Staying for months?" band in `landing-page-html.ts`); the chip validator accepts Extended Stays; screenshots `screenshots/16/`.
