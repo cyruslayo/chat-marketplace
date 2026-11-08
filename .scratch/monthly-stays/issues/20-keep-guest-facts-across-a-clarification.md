@@ -1,6 +1,6 @@
 # 20 · Keep the guest's own facts across a clarification turn
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 19
 Requested: 8 Nov 2026
@@ -133,3 +133,38 @@ show-back on a clarification turn (AC4 of the brief, item 4), so it is not imple
 ### Status
 
 Status stays `ready-for-agent`: AC1 to AC7 pass; AC8 passes with one owner-decision assertion change (see Deviation).
+
+### Coordinator decision and follow-up (8 Nov 2026): AC8 edit accepted, range and "N of us" phrasings
+
+- Coordinator decision (not an owner decision): the edit to `test/stay-length-assistant.test.ts` (issue 19 AC3, `nights` now 60, `!== 61`)
+  is ACCEPTED. The old `nights === undefined` encoded the gap this issue closes, and the 61-night refusal is still asserted. AC8 therefore
+  passes on the coordinator's reading.
+- Date ranges (`apps/local-guest/src/assistant/shortlet-assistant-pack.ts`, `guestTypedDates`, `validatedStay`): a literal range ("5–8 Jan",
+  "5 Jan to 8 Jan", "from 5 Jan until 8 Jan") or two literal days joined by to/until/till/through is a check-in and checkout, saved with nights
+  and statedStay unit night when StayDateRange accepts it (ADR 0023/0092 lengths, ADR 0055 horizon). The shared resolver (`resolveStayDatePhrases`)
+  is the only reader; no new date parser. Ambiguous text saves no dates: a relative or span phrase, a refused literal, two check-ins ("5 Jan or 6 Jan"),
+  a checkout not after the check-in, or a checkout keyword. The inner day of a range ("8 Jan" inside "5–8 Jan") is one reading, not a second date.
+- Party size (`apps/local-guest/src/concierge.ts`, `PARTY_OF_US_PATTERN`): "N of us" / "the N of us", digits or number words of two or more
+  (NUMBER_WORDS). It is read by the shared `extractStayRequestFacts`, so the deterministic and the assistant paths both read it. "us", "a few of us"
+  and "some of us" give no party.
+- New test file: `test/assistant-clarification-ranges.test.ts`, four tests named as the coordinator asked: "A date range in a clarification turn is
+  kept after a cold restore" (three phrasings, each a cold restore before every event: the strip reads "5–8 Jan 2027 · 3 nights"), "An ambiguous date
+  range saves no dates", "'4 of us' is read as a party of 4 on both paths" (deterministic `criteria.guests.count` 4; assistant saved partySize 4),
+  "'a few of us' gives no party size" (both paths).
+- ADR 0106: the issue 20 amendment line now names "a typed check-in or a typed stay with its checkout" (the same line, nothing else).
+
+Commands and pass counts (all `env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test <files>`):
+- The new file: 4 pass, 0 fail (the first run had one failure: the inner day of "5–8 Jan" was a second reading; fixed in the reader).
+- Extended affected set (29 files: the 20 from the previous record, the new file, `test/assistant-checkout-dates.test.ts`,
+  `test/guest-discovery-reasons.test.ts`, and the non-browser landing files `landing-chip-limit`, `landing-handoff`, `landing-monthly-copy`,
+  `landing-page-motion`, `landing-page`, `landing-port`): 220 pass, 0 fail, exit 0.
+- Wider set (`assistant-discovery-view`, `assistant-short-stays-29-nights`, `assistant-where-chip`, `assistant-date-literal-authority`, and the
+  `*restart*` test files; the `*projection*` glob matched no files): 77 pass, 0 fail, exit 0.
+- `env -u LLM_API_KEY npm run check` on the committed tree (code commit `54459f1`, clean except the untracked `node_modules` symlink): exit 0.
+- Not run: the real-Chrome strip file (strip markup unchanged), the full `npm test` and `npm run test:workers` (batch gate).
+
+Code commits: `ec16505` (the issue 20 change), `54459f1` (ranges and "N of us"). Records: `758785b`, and the resolving commit below.
+
+### Status
+
+Status: resolved. AC1 to AC7 pass; AC8 passes on the coordinator decision above; the follow-up tests pass. Map row: resolved.

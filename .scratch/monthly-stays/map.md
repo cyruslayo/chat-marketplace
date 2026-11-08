@@ -47,4 +47,4 @@ Work top to bottom. The frontier is the first issue that is open, unblocked and 
 | 17 | [Wire Notice to End into the guest and owner apps](issues/17-wire-notice-to-end-into-the-app.md) | task | resolved | none |
 | 18 | [Give notice from the chat and the assistant](issues/18-notice-to-end-in-chat-and-assistant.md) | task | resolved | 17 |
 | 19 | [Understand stays given in months (and weeks)](issues/19-understand-stays-given-in-months.md) | task | resolved | none |
-| 20 | [Keep the guest's own facts across a clarification turn](issues/20-keep-guest-facts-across-a-clarification.md) | task | ready-for-agent | 19 |
+| 20 | [Keep the guest's own facts across a clarification turn](issues/20-keep-guest-facts-across-a-clarification.md) | task | resolved | 19 |
