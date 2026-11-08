@@ -31,7 +31,7 @@ Goal: a closed, founder-operated paid pilot with 10–20 real, inspected units i
 | 17 | [OpenAI-compatible model adapter (DeepSeek and OpenAI)](issues/17-openai-compatible-model-adapter.md) | task | resolved | none |
 | 18 | [Validated concierge configuration and provider fallback](issues/18-validated-concierge-configuration.md) | task | resolved | 17 |
 | 19 | [Guardrails: rate limits, body limits, session lifecycle and errors](issues/19-guardrails-rate-limits-and-sessions.md) | task | resolved | 18 |
-| 20 | [Remove production stubs in the back office](issues/20-remove-back-office-stubs.md) | task | ready-for-agent | none |
+| 20 | [Remove production stubs in the back office](issues/20-remove-back-office-stubs.md) | task | resolved | none |
 | 21 | [Persist money and audit records](issues/21-persist-money-and-audit-records.md) | task | ready-for-agent | none |
 | 22 | [Staging deployment mode for the closed beta](issues/22-staging-deployment-mode.md) | task | resolved | none |
 | 23 | [Operator and guest notifications](issues/23-operator-and-guest-notifications.md) | task | resolved | none |
@@ -48,6 +48,8 @@ Issues 16–26 come from the production audit of 28 Sept 2026. The closed beta (
 - Agent issues follow the Definition of Done in `docs/agents/issue-tracker.md`.
 
 ## Context pointers (append as issues resolve)
+
+- 20: [The back-office stub fix](../production-launch/issues/04-remove-back-office-stubs.md) (`8fa90f5`) projects stored request contact only after the grant check, permits unverified booking under ADR 0085, and reports reliability unavailable at cold start by owner decision; 97/97 scoped Node, 7/7 Worker tests, clean type check.
 
 - 11: web app is all-in-one (agent discovery rendered by Weaver). WhatsApp is support only and not connected; `whatsapp-adapter.ts` stays paused.
 - 17, 18: concierge providers are `gemini` and `openai-compatible` (DeepSeek or OpenAI), with an optional `CONCIERGE_FALLBACK`; settings are validated at startup (`apps/local-guest/src/assistant/concierge-configuration.ts`). Branch `launch/llm-providers`.

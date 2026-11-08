@@ -1,6 +1,6 @@
 # Remove the production stubs in the back office
 
-Status: claimed
+Status: resolved
 Type: AFK
 Blocked by: none
 Requested: 8 Nov 2026
@@ -66,3 +66,7 @@ Exact commands (each prefixed with `C:\Program Files\Git\usr\bin\env.exe -u LLM_
 - `npm run check`: exit 0, zero type errors and Worker bundle guard clean.
 
 Definition of Done review: (1) AC1–AC5 each has a distinct criterion-named `test()`; (2) anonymous/cross-tenant, missing contact, missing ID verification, absent reliability and bad source literals are exercised; (3) ADR table checked again against the private snapshot query, fail-closed scope, and nullable rates; (4) existing request store, application and session/grant boundaries reused; (5) the owner decided the only new cold-start presentation rule above; (6) guest contact is HTML-escaped and omitted from general artifacts, audits and logs; (7) scoped Node/Worker tests and type check pass. Full batch gate belongs to issue 12.
+
+## Answer
+
+The back office now shows contact recorded on the request (or explicitly missing), never asserts ID verification at request time, and treats reliability as unavailable without observed opportunities. Committed as `8fa90f5`; 97/97 scoped Node tests, 7/7 Worker tests and clean type check. The owner's cold-start decision and the supersession of ADR 0083 by 0089 are recorded above. Wrapped pilot issue 20 is resolved with the same evidence.
