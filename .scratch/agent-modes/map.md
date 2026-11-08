@@ -10,8 +10,8 @@ Goal: switching Domain Packs changes the agent and the guest UI together (ADR 01
 
 | # | Slice | Issue | Status |
 |---|---|---|---|
-| 0 | ADR 0107 accepted, Agent Mode glossary entry | — | accepted (glossary entry lands with 01) |
-| 1 | Render the shell from the stays mode, no visible change | [01](issues/01-render-the-shell-from-the-stays-mode.md) | ready-for-agent |
+| 0 | ADR 0107 accepted, Agent Mode glossary entry | — | accepted (glossary entry landed with 01) |
+| 1 | Render the shell from the stays mode, no visible change | [01](issues/01-render-the-shell-from-the-stays-mode.md) | resolved |
 | 1b | Agent Mark for the single stays mode: glyph, states, hero-to-app-bar transition, reduced motion, human state (analysis 9.1–9.2) | — | not written |
 | 2 | Neutral platform preamble, persona in the pack | — | not written |
 | 3 | Domain-neutral pack contract (surface map, pack-owned state) | — | not written |
