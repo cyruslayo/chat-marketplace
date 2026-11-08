@@ -18,6 +18,8 @@ import {
   GUEST_NOTICE_COPY,
   commerceSoldBy,
   formatGuestDate,
+  noticeFactRows,
+  type NoticeFactsInput,
   stayTotalLabel,
 } from "../../web-agent/src/guest-content.js";
 import { formatNgnKobo } from "../../web-agent/src/discovery-a2ui.js";
@@ -763,14 +765,23 @@ function noticeDate(value: string): string {
   return formatGuestDate(value) ?? value;
 }
 
+function noticeFactsDlHtml(facts: NoticeFactsInput): string {
+  const rows = noticeFactRows(facts, formatNgnKobo);
+  const cells = rows.map((row) => {
+    const attribute = row.key === "newLastNight" ? ` data-new-last-night="${escapeHtml(row.raw)}"` : row.key === "refund" ? ` data-refund-kobo="${escapeHtml(row.raw)}"` : row.key === "owed" ? ` data-owed-kobo="${escapeHtml(row.raw)}"` : "";
+    return `<dt>${escapeHtml(row.label)}</dt><dd${attribute}>${escapeHtml(row.value)}</dd>`;
+  }).join("");
+  return `<dl class="ui-facts ui-facts--stacked">${cells}</dl>`;
+}
+
 export function noticeConfirmationHtml(input: NoticeConfirmationInput): string {
   const action = `/bookings/notice/${encodeURIComponent(input.offerId)}`;
-  return `<section class="ui-panel" aria-labelledby="notice-heading" data-notice-step data-notice-date="${escapeHtml(input.noticeDate)}"><h1 id="notice-heading">${escapeHtml(GUEST_NOTICE_COPY.heading)}</h1><p>${escapeHtml(input.terms)}</p><dl class="ui-facts ui-facts--stacked"><dt>${escapeHtml(GUEST_NOTICE_COPY.newLastNight)}</dt><dd data-new-last-night="${escapeHtml(input.newLastNight)}">${escapeHtml(noticeDate(input.newLastNight))}</dd><dt>${escapeHtml(GUEST_NOTICE_COPY.newCheckOut)}</dt><dd>${escapeHtml(noticeDate(input.newCheckOut))}</dd><dt>${escapeHtml(GUEST_NOTICE_COPY.refund)}</dt><dd data-refund-kobo="${input.refundKobo}">${escapeHtml(formatNgnKobo(input.refundKobo))}</dd><dt>${escapeHtml(GUEST_NOTICE_COPY.owed)}</dt><dd data-owed-kobo="${input.owedKobo}">${escapeHtml(formatNgnKobo(input.owedKobo))}</dd></dl><form method="post" action="${escapeHtml(action)}"><input type="hidden" name="noticeDate" value="${escapeHtml(input.noticeDate)}"><input type="hidden" name="contractVersion" value="${input.contractVersion}"><button class="ui-button ui-button--primary ui-button--block" type="submit">${escapeHtml(GUEST_NOTICE_COPY.confirm)}</button></form><a class="ui-button ui-button--block" href="${escapeHtml(input.backHref)}">${escapeHtml(GUEST_NOTICE_COPY.back)}</a></section>`;
+  return `<section class="ui-panel" aria-labelledby="notice-heading" data-notice-step data-notice-date="${escapeHtml(input.noticeDate)}"><h1 id="notice-heading">${escapeHtml(GUEST_NOTICE_COPY.heading)}</h1><p>${escapeHtml(input.terms)}</p>${noticeFactsDlHtml(input)}<form method="post" action="${escapeHtml(action)}"><input type="hidden" name="noticeDate" value="${escapeHtml(input.noticeDate)}"><input type="hidden" name="contractVersion" value="${input.contractVersion}"><button class="ui-button ui-button--primary ui-button--block" type="submit">${escapeHtml(GUEST_NOTICE_COPY.confirm)}</button></form><a class="ui-button ui-button--block" href="${escapeHtml(input.backHref)}">${escapeHtml(GUEST_NOTICE_COPY.back)}</a></section>`;
 }
 
 /** The recorded Notice to End, read-only: the new last night and checkout and the amounts it fixed. */
-export function noticeRecordedHtml(input: { readonly newLastNight: string; readonly newCheckOut: string; readonly refundKobo: number; readonly owedKobo: number; readonly backHref: string }): string {
-  return `<section class="ui-panel" aria-labelledby="notice-recorded-heading" data-notice-recorded><h1 id="notice-recorded-heading">${escapeHtml(GUEST_NOTICE_COPY.recordedHeading)}</h1><p>${escapeHtml(GUEST_NOTICE_COPY.recordedLead)}</p><dl class="ui-facts ui-facts--stacked"><dt>${escapeHtml(GUEST_NOTICE_COPY.newLastNight)}</dt><dd data-new-last-night="${escapeHtml(input.newLastNight)}">${escapeHtml(noticeDate(input.newLastNight))}</dd><dt>${escapeHtml(GUEST_NOTICE_COPY.newCheckOut)}</dt><dd>${escapeHtml(noticeDate(input.newCheckOut))}</dd><dt>${escapeHtml(GUEST_NOTICE_COPY.refund)}</dt><dd data-refund-kobo="${input.refundKobo}">${escapeHtml(formatNgnKobo(input.refundKobo))}</dd><dt>${escapeHtml(GUEST_NOTICE_COPY.owed)}</dt><dd data-owed-kobo="${input.owedKobo}">${escapeHtml(formatNgnKobo(input.owedKobo))}</dd></dl><a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(input.backHref)}">${escapeHtml(GUEST_NOTICE_COPY.recordedBack)}</a></section>`;
+export function noticeRecordedHtml(input: NoticeFactsInput & { readonly backHref: string }): string {
+  return `<section class="ui-panel" aria-labelledby="notice-recorded-heading" data-notice-recorded><h1 id="notice-recorded-heading">${escapeHtml(GUEST_NOTICE_COPY.recordedHeading)}</h1><p>${escapeHtml(GUEST_NOTICE_COPY.recordedLead)}</p>${noticeFactsDlHtml(input)}<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(input.backHref)}">${escapeHtml(GUEST_NOTICE_COPY.recordedBack)}</a></section>`;
 }
 
 /** The entry point on a confirmed Extended Stay's schedule: a link to the confirmation step. */

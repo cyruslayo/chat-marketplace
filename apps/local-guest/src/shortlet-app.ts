@@ -1398,7 +1398,8 @@ export class LocalGuestApp {
         event.name === ASSISTANT_CANCEL_ACTION_EVENT ||
         event.name === TASK_START_EVENT ||
         event.name === TASK_SWITCH_EVENT ||
-        event.name === COMMERCE_CHECKOUT_CONFIRM_ACTION
+        event.name === COMMERCE_CHECKOUT_CONFIRM_ACTION ||
+        this.#assistantRuntime.acceptsPackEvent(event.name)
       ) {
         // Issue 03 follow-up (ADR 0074, ADR 0070): the runtime authorises a confirm or cancel by the surface id in the event
         // context. The surface the guest acted on is the event's own surface id, so the two must agree, or the event is
@@ -1421,7 +1422,11 @@ export class LocalGuestApp {
             message: output.message ?? "The action failed.",
           };
         }
-        return this.#assistantResult(output);
+        // Issue 18 AC7: an assistant event is remembered the way a turn is, so its pending card (and the task state that holds it) is
+        // written to the guest thread and survives a cold restore. No timeline text is added (userText is undefined).
+        const eventResult = this.#assistantResult(output);
+        if (eventResult.ok) this.#rememberResult(threadId, undefined, eventResult);
+        return eventResult;
       }
     }
 

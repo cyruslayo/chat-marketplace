@@ -2,7 +2,10 @@ import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage 
 import type { BookingContractArtifact } from "../../web/src/booking-contract-artifact.js";
 import { confirmationSteps } from "./confirmation-presentation.js";
 import { formatBookingMoney, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";
-import { GUEST_FACT_LABELS, GUEST_GLOSSARY, accommodationProviderLine, guestFact, guestReservationStatus } from "./guest-content.js";
+import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_NOTICE_COPY, accommodationProviderLine, guestFact, guestReservationStatus, noticeFactRows } from "./guest-content.js";
+
+/** Issue 18: the chat event a booking surface sends to open the Notice to End card. The platform routes it by name. */
+export const NOTICE_OPEN_EVENT = "shortlet.assistant.open-notice";
 
 export function bookingContractArtifactToA2UI({ artifact, surfaceId }: { readonly artifact: BookingContractArtifact; readonly surfaceId: string }): readonly A2UIServerMessage[] {
   const { facts } = artifact;
@@ -11,8 +14,11 @@ export function bookingContractArtifactToA2UI({ artifact, surfaceId }: { readonl
   // ADR-0015/0016/0085: only call the refundable deposit collected when the
   // contract projection confirms the collection is held.
   const depositCollected = facts.securityDeposit?.status === "held" && (facts.refundableSecurityDepositKobo ?? 0) > 0;
+  // Issue 18: a recorded notice shows its facts (the same helper as the page); an Extended Stay without one offers the action.
+  const noticeRows = facts.noticeToEnd ? noticeFactRows(facts.noticeToEnd, formatBookingMoney) : [];
+  const noticeIds = facts.noticeToEnd ? ["booking-contract-notice-recorded", ...noticeRows.map((row) => `booking-contract-notice-${row.key}`)] : facts.noticeToEndTerms ? ["booking-contract-notice-action"] : [];
   const components: A2UIComponent[] = [
-    { id: "root", component: "Column", children: ["booking-contract-title", "booking-contract-status", "booking-contract-unit", "booking-contract-provider", ...ticketFactIds("booking-contract"), ...(guestNames.length > 0 ? ["booking-contract-guests"] : []), ...(facts.allInStayTotalKobo === undefined ? [] : ["booking-contract-total"]), ...((facts.refundableSecurityDepositKobo ?? 0) > 0 ? ["booking-contract-deposit"] : []), "booking-contract-paid", ...(depositCollected ? ["booking-contract-deposit-collected"] : []), "booking-contract-arrival", "booking-contract-checkout", "booking-contract-policies", "booking-contract-references"] },
+    { id: "root", component: "Column", children: ["booking-contract-title", "booking-contract-status", "booking-contract-unit", "booking-contract-provider", ...ticketFactIds("booking-contract"), ...(guestNames.length > 0 ? ["booking-contract-guests"] : []), ...(facts.allInStayTotalKobo === undefined ? [] : ["booking-contract-total"]), ...((facts.refundableSecurityDepositKobo ?? 0) > 0 ? ["booking-contract-deposit"] : []), "booking-contract-paid", ...(depositCollected ? ["booking-contract-deposit-collected"] : []), "booking-contract-arrival", "booking-contract-checkout", "booking-contract-policies", ...noticeIds, "booking-contract-references"] },
     { id: "booking-contract-title", component: "Text", text: "Your booking", variant: "h2" },
     { id: "booking-contract-status", component: "Text", text: guestReservationStatus("confirmed") },
     { id: "booking-contract-unit", component: "Text", text: facts.unitTitle ?? "Your stay", variant: "h3" },
@@ -29,6 +35,8 @@ export function bookingContractArtifactToA2UI({ artifact, surfaceId }: { readonl
     { id: "booking-contract-checkout", component: "Text", text: `Checkout time: ${facts.checkout?.time ?? "11:00"} WAT` },
     { id: "booking-contract-policies", component: "Text", text: `Cancellation terms: ${facts.cancellationPolicy?.summary ?? "See your Booking Contract."} House rules: ${facts.guestConductRules.join("; ") || "See your Booking Contract."}` },
     ...(facts.noticeToEndTerms ? [{ id: "booking-contract-notice-to-end", component: "Text" as const, text: `Notice to End: ${facts.noticeToEndTerms}` }] : []),
+    ...(facts.noticeToEnd ? [{ id: "booking-contract-notice-recorded", component: "Text" as const, text: GUEST_NOTICE_COPY.recordedHeading }, ...noticeRows.map((row) => ({ id: `booking-contract-notice-${row.key}`, component: "Text" as const, text: `${row.label}: ${row.value}` }))] : []),
+    ...(!facts.noticeToEnd && facts.noticeToEndTerms ? [{ id: "booking-contract-notice-action", component: "Button" as const, child: "booking-contract-notice-label", action: { event: { name: NOTICE_OPEN_EVENT, context: { surfaceId } } }, accessibility: { label: GUEST_NOTICE_COPY.action } }, { id: "booking-contract-notice-label", component: "Text" as const, text: GUEST_NOTICE_COPY.action }] : []),
     { id: "booking-contract-references", component: "Text", text: `Booking reference and full contract are in your booking details.${facts.cardMetadata ? ` Card ending ${facts.cardMetadata.last4}.` : ""}` },
   ];
   return [{ version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } }, { version: "v0.9.1", updateComponents: { surfaceId, components } }];

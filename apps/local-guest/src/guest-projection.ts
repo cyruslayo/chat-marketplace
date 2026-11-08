@@ -77,9 +77,10 @@ export function parsePersistedReplacedProposal(value: unknown): PersistedReplace
   return { id: value.id, reason: value.reason };
 }
 
-const PENDING_ACTION_TYPES: readonly string[] = ["request_to_book", "accept_offer", "start_checkout"];
-const PENDING_REFERENCE_STRINGS = ["stayRef", "unitId", "checkIn", "checkOut", "requestId", "offerId", "offerStatus"] as const;
-const PENDING_REFERENCE_NUMBERS = ["partySize", "stayTotalKobo", "refundableDepositKobo", "totalDueNowKobo", "offerVersion", "projectionVersion"] as const;
+// Issue 18: give_notice is restored like the other typed actions. An unlisted type still fails closed on load.
+const PENDING_ACTION_TYPES: readonly string[] = ["request_to_book", "accept_offer", "start_checkout", "give_notice"];
+const PENDING_REFERENCE_STRINGS = ["stayRef", "unitId", "checkIn", "checkOut", "requestId", "offerId", "offerStatus", "contractId", "noticeDate", "newLastNight", "newCheckOut"] as const;
+const PENDING_REFERENCE_NUMBERS = ["partySize", "stayTotalKobo", "refundableDepositKobo", "totalDueNowKobo", "offerVersion", "projectionVersion", "contractVersion", "refundKobo", "owedKobo"] as const;
 
 /** Fail closed: any malformed field, an executed action or an unknown type returns null (the action is not restored). */
 export function parsePersistedPendingAction(value: unknown): PersistedPendingAction | null {

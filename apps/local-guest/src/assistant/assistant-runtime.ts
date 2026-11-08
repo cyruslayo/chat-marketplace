@@ -65,6 +65,7 @@ import {
 import {
   isExplicitConfirmation,
   isExplicitCancellation,
+  isTextConfirmable,
   type PendingAssistantAction,
 } from "./pending-actions.js";
 import {
@@ -1011,6 +1012,10 @@ export class AssistantRuntime {
     }
 
     if (tx.taskState.pendingAction && !tx.taskState.pendingAction.executed) {
+      if (isExplicitConfirmation(text) && !isTextConfirmable(tx.taskState.pendingAction.type)) {
+        // Issue 18 AC3: this card confirms only through its own button. The card stays open and nothing is executed.
+        return { ok: true, messages: [ASSISTANT_CONTROL_COPY.useCardButtons], surfaces: [], tasks: this.getTaskRail(threadId) };
+      }
       if (isExplicitConfirmation(text)) {
         // A confirmation that throws (not a stale proposal) has already dropped and committed the proposal. The turn returns the
         // closed unavailable code rather than throwing out of the chat turn.
@@ -1547,6 +1552,11 @@ export class AssistantRuntime {
     }
   }
 
+  /** Issue 18: true when a registered pack declares this button event (a pack's own card opener), so the shell forwards it by name. */
+  acceptsPackEvent(eventName: string): boolean {
+    return this.#packs.ids().some((id) => this.#packs.packFor(id)?.openActionNames?.includes(eventName) === true);
+  }
+
   handleAssistantEvent(threadId: string, eventName: string, context: AssistantEventContext | null | undefined): AssistantTurnOutput {
     // Issue 06 (ADR 0070): every event here changes the thread (confirm, cancel, task start or switch, platform action), so a
     // second mutating event during a run is refused, not applied on top of the run's older state.
@@ -1632,7 +1642,10 @@ export class AssistantRuntime {
 
     if (eventName === ASSISTANT_CONFIRM_ACTION_EVENT || eventName === ASSISTANT_CANCEL_ACTION_EVENT) {
       // ADR-0074: only the current authoritative surface retains action authority.
-      const activeSurfaceId = tx.activeSurfaces.get(PENDING_ACTION_STAGE);
+      // ADR 0074, issue 18 AC6/AC7: the card's id is derived from the persisted pending action, so a cold restore re-keys it rather
+      // than relying on the turn's in-memory stage map (which a restored app does not hold).
+      const pendingForSurface = tx.taskState.pendingAction;
+      const activeSurfaceId = pendingForSurface ? pendingActionSurfaceId(threadId, pendingForSurface.id) : undefined;
       if (!activeSurfaceId || context?.surfaceId !== activeSurfaceId) {
         return { ok: false, code: "STALE_SURFACE", message: "That action is no longer active." };
       }
@@ -1681,6 +1694,28 @@ export class AssistantRuntime {
         surfaces: execution.surfaces,
         tasks: this.getTaskRail(threadId),
       };
+    }
+
+    // Issue 18 (ADR 0099, 0074, 0106): a pack's own button opens the pack's own confirmation card, routed by the event name the pack
+    // declares. No planner call. The pack checks the pressed surface is current; the runtime only places the card it returns.
+    const opener = this.#packs.ids().map((id) => this.#packs.packFor(id)).find((candidate) => candidate?.openActionNames?.includes(eventName));
+    if (opener?.handleOpenAction) {
+      const opened = opener.handleOpenAction({
+        actionName: eventName,
+        context: (context ?? {}) as Record<string, unknown>,
+        taskState: tx.taskState,
+        threadId,
+        now: this.#environment.clock(),
+      });
+      if (!opened.ok) return { ok: false, code: opened.code, message: opened.message };
+      const surfaceId = pendingActionSurfaceId(threadId, opened.pendingAction.id);
+      tx.taskState.replacedPendingAction = null;
+      tx.taskState.pendingAction = opened.pendingAction;
+      tx.supersede(PENDING_ACTION_STAGE);
+      tx.place(PENDING_ACTION_STAGE, surfaceId);
+      const surface = { surfaceId, a2uiMessages: opener.pendingActionSurface(opened.pendingAction, surfaceId) };
+      tx.commit(thread, { state: true, tasks: false, discovery: false, lastSurfaces: [surface] });
+      return { ok: true, messages: [opened.message], surfaces: [surface], tasks: this.getTaskRail(threadId) };
     }
 
     return { ok: false, code: "UNSUPPORTED_EVENT", message: "Unknown assistant action." };

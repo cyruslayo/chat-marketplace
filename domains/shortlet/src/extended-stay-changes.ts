@@ -348,7 +348,7 @@ export class NoticeToEndManager {
 /**
  * The Check-In Support state as the Notice to End guards read it (ADR 0061, ADR 0089). Verified Access, or a late voluntary
  * arrival, is the precondition. An open failure of any kind (failed access, human review, or a Blocking Fulfilment Complaint
- * not yet resolved) sends the stay to its ADR 0061 remedy instead. Unreadable state is treated as open (fail closed).
+ * not yet resolved) sends the stay to its ADR 0061 remedy instead. A store that cannot be read throws (fail closed).
  */
 export function checkInNoticePorts(store: CheckInSupportStore): { readonly arrival: NoticeToEndManagerOptions["arrival"]; readonly failures: NoticeToEndManagerOptions["failures"] } {
   return {
@@ -360,8 +360,9 @@ export function checkInNoticePorts(store: CheckInSupportStore): { readonly arriv
     },
     failures: {
       hasOpenFailure: (reservationId: string) => {
+        // No check-in record means no failure is on file. Verified Access is checked separately, so a stay without it is still refused.
         const state = store.load(reservationId);
-        if (state === null) return true;
+        if (state === null) return false;
         const status = state.result?.status;
         if (status === "failed_access" || status === "under_human_review") return true;
         return state.complaints.some((complaint) => complaint.status !== "resolved");

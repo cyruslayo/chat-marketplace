@@ -36,6 +36,8 @@ export interface BookingContractArtifact {
     readonly cancellationPolicy?: { readonly type?: string; readonly version?: string; readonly summary?: string };
     /** Demo-launch issue 13: the demo Notice to End terms, present for an Extended Stay only (ADR 0092, ADR 0105). */
     readonly noticeToEndTerms?: string;
+    /** Issue 18: the Notice to End recorded on this contract (ADR 0060), so a booking surface shows it instead of offering a second one. */
+    readonly noticeToEnd?: { readonly newLastNight: string; readonly newCheckOut: string; readonly refundKobo: number; readonly owedKobo: number };
     readonly guestConductRules: readonly string[];
     readonly guestConductPolicy?: GuestConductPolicySnapshot;
     readonly contractVersion: number;
@@ -61,6 +63,13 @@ function safeCancellationPolicy(value: unknown): BookingContractArtifact["facts"
   return Object.keys(result).length ? Object.freeze(result) : undefined;
 }
 
+/** Issue 18: the Notice to End recorded on a Booking Contract, as the artifact carries it (ADR 0060). Absent when none is recorded. */
+function recordedNotice(contract: object): { readonly newLastNight: string; readonly newCheckOut: string; readonly refundKobo: number; readonly owedKobo: number } | undefined {
+  const record = contract as { readonly noticeToEnd?: { readonly newLastNight: string; readonly refundKobo?: number; readonly owedKobo?: number }; readonly dates?: { readonly checkOut: string } };
+  if (!record.noticeToEnd || !record.dates) return undefined;
+  return { newLastNight: record.noticeToEnd.newLastNight, newCheckOut: record.dates.checkOut, refundKobo: record.noticeToEnd.refundKobo ?? 0, owedKobo: record.noticeToEnd.owedKobo ?? 0 };
+}
+
 export function bookingContractArtifactId(contractId: string): string { return `booking-contract:${contractId}`; }
 
 export function bookingContractArtifactFromView(view: BookingContractView, contract: { readonly paymentDetails: { readonly paymentMethod: "fresh_card" | "bank_transfer"; readonly amountKobo: number; readonly cardMetadata?: { readonly brand: string; readonly last4: string } }; readonly policies: { readonly cancellationPolicy: unknown; readonly guestConductRules: readonly string[]; readonly guestConductPolicy?: GuestConductPolicySnapshot }; readonly parties: BookingContractView["parties"]; readonly checkout?: BookingContractView["checkout"]; readonly financialSummary?: { readonly currentContractTotalKobo: number; readonly amendmentAdjustments: readonly { readonly amendmentId: string; readonly type: "additional_collection" | "refund" | "none"; readonly amountKobo: number; readonly currency: "NGN" }[] } }, _viewer: CommandPrincipal, options: { readonly demoTerms?: boolean } = {}): BookingContractArtifact {
@@ -76,6 +85,7 @@ export function bookingContractArtifactFromView(view: BookingContractView, contr
     paymentMethod: contract.paymentDetails.paymentMethod, ...(contract.paymentDetails.cardMetadata ? { cardMetadata: Object.freeze({ ...contract.paymentDetails.cardMetadata }) } : {}),
     ...(safeCancellationPolicy(contract.policies.cancellationPolicy) ? { cancellationPolicy: safeCancellationPolicy(contract.policies.cancellationPolicy) } : {}),
     ...((contract.policies.cancellationPolicy as { readonly type?: unknown } | undefined)?.type === "extended" ? { noticeToEndTerms: noticeToEndTerms(options.demoTerms === true) } : {}),
+    ...(recordedNotice(contract) ? { noticeToEnd: recordedNotice(contract) } : {}),
     guestConductRules: Object.freeze(contract.policies.guestConductPolicy ? contract.policies.guestConductPolicy.rules.map((rule) => rule.summary) : [...contract.policies.guestConductRules]),
     ...(contract.policies.guestConductPolicy ? { guestConductPolicy: contract.policies.guestConductPolicy } : {}), contractVersion: view.contractVersion,
     checkout: Object.freeze({ time: view.checkout?.time ?? contract.checkout?.time ?? "11:00", timezone: view.checkout?.timezone ?? contract.checkout?.timezone ?? "Africa/Lagos", source: view.checkout?.source ?? contract.checkout?.source ?? "contractual" }),

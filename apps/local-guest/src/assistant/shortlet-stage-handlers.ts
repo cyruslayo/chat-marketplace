@@ -3,7 +3,8 @@ import { replacePendingProposal, type AssistantTaskState } from "./assistant-sta
 import { pendingProposalAuthorised } from "./assistant-platform.js";
 import type { PendingAssistantAction } from "./pending-actions.js";
 import { AssistantStaleProposalError, PENDING_ACTION_STAGE, retireOwnStages, type AssistantStageHandler, type StageTurnContext } from "./assistant-stage-handler.js";
-import { ContinuousOccupancyError, UnitUnavailableError } from "../../../../domains/shortlet/src/index.js";
+import { ContinuousOccupancyError, UnitUnavailableError, type NoticePreview } from "../../../../domains/shortlet/src/index.js";
+import { GUEST_NOTICE_COPY } from "../../../web-agent/src/guest-content.js";
 import { AssistantGuestRefusalError } from "./date-tokens.js";
 import { proposeDraftRevision } from "./shortlet-draft-revision.js";
 
@@ -434,6 +435,52 @@ const draftReplacementHandler: AssistantStageHandler = {
   },
 };
 
+/** Issue 18: the Notice to End card's stage. Only the card's own button reaches its confirm (ADR 0074, 0080). */
+export const NOTICE_STAGE = "notice";
+
+/**
+ * Commits the Notice to End the card showed. The guest's button is the only confirmation (text never reaches here). The bound
+ * notice date and contract version must still match the current preview; otherwise nothing is recorded (ADR 0060, fail closed).
+ */
+const noticeHandler: AssistantStageHandler = {
+  stage: NOTICE_STAGE,
+  supersedes: [NOTICE_STAGE],
+  confirms: "give_notice",
+  confirm(action, turn: StageTurnContext) {
+    const { tx, environment } = turn;
+    const refs = action.authoritativeReferences;
+    if (!refs.contractId || refs.noticeDate === undefined || refs.contractVersion === undefined) {
+      tx.clearPendingAction();
+      return { ok: false, code: "STALE_SURFACE", message: GUEST_NOTICE_COPY.stale };
+    }
+    let current: NoticePreview;
+    try {
+      current = environment.noticeToEnd.previewNotice(refs.contractId, environment.guestPrincipal());
+    } catch {
+      tx.clearPendingAction();
+      return { ok: false, code: "STALE_SURFACE", message: GUEST_NOTICE_COPY.stale };
+    }
+    if (current.contractVersion !== refs.contractVersion || current.noticeDate !== refs.noticeDate) {
+      tx.clearPendingAction();
+      return { ok: false, code: "STALE_SURFACE", message: GUEST_NOTICE_COPY.stale };
+    }
+    // Dropped before the commit, so the same button press cannot replay the amendment (ADR 0060).
+    tx.clearPendingAction();
+    environment.noticeToEnd.giveNotice(refs.contractId, environment.guestPrincipal(), { noticeDate: refs.noticeDate, contractVersion: refs.contractVersion });
+    retireOwnStages(noticeHandler, turn);
+    // The booking is re-presented with the recorded notice in place of the action (the same surface the checkout handler files).
+    const bookingSurfaceId = `thread-${turn.threadId}:booking:${refs.contractId}`;
+    tx.place(BOOKING_STAGE, bookingSurfaceId);
+    try {
+      const contractArtifact = environment.contractApp.getArtifact(refs.contractId, environment.guestPrincipal());
+      return { ok: true, message: GUEST_NOTICE_COPY.given, surfaces: [{ surfaceId: bookingSurfaceId, a2uiMessages: turn.pack.bookingContractSurface(contractArtifact, bookingSurfaceId) }] };
+    } catch {
+      // The notice is committed; a presentation failure keeps the committed state and returns the message alone.
+      return { ok: true, message: GUEST_NOTICE_COPY.given, surfaces: [] };
+    }
+  },
+};
+
 export const SHORTLET_STAGE_HANDLERS: readonly AssistantStageHandler[] = [
   discoveryHandler,
   draftReplacementHandler,
@@ -442,4 +489,5 @@ export const SHORTLET_STAGE_HANDLERS: readonly AssistantStageHandler[] = [
   requestToBookHandler,
   acceptOfferHandler,
   startCheckoutHandler,
+  noticeHandler,
 ];

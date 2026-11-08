@@ -608,6 +608,9 @@ export class LocalGuestEnvironment {
         },
         mutateContract: (contractId, expectedVersion, mutation) => {
           const next = bookingState.mutateContract(contractId, expectedVersion, mutation);
+          // The booking artifact reads the contract repository, so the amended contract is written there too (issue 18 AC2).
+          const reservation = this.contractRepository.findReservationById(next.reservationId);
+          if (reservation) this.contractRepository.recordConfirmedOutcome(reservation, next);
           this.cardPaymentApp.replaceBookingContract(next);
           return next;
         },

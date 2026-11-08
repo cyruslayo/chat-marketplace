@@ -30,7 +30,10 @@ import type {
 import type { PendingAssistantAction } from "./pending-actions.js";
 import type { ConciergeIntent, ScopeAssessment } from "./scope-classifier.js";
 import { pendingActionToA2UI } from "./pending-action-a2ui.js";
-import { SHORTLET_STAGE_HANDLERS, proposalStillAuthorised } from "./shortlet-stage-handlers.js";
+import { BOOKING_STAGE, SHORTLET_STAGE_HANDLERS, proposalStillAuthorised } from "./shortlet-stage-handlers.js";
+import { GUEST_NOTICE_COPY } from "../../../web-agent/src/guest-content.js";
+import { NOTICE_OPEN_EVENT } from "../../../web-agent/src/booking-contract-a2ui.js";
+import type { NoticePreview } from "../../../../domains/shortlet/src/index.js";
 import {
   ASSISTANT_PLATFORM_PREAMBLE,
   type AssistantClarificationKind,
@@ -193,6 +196,12 @@ export const ASSISTANT_TOOL_DEFINITIONS: readonly AssistantToolDefinition[] = [
     },
   },
   {
+    name: "propose_notice_to_end",
+    description: "Offer the Notice to End card for the confirmed Extended Stay when the Guest asks to end it early. This only previews the card; the Guest confirms with the card's own button. Nothing is recorded by this tool.",
+    category: "proposal",
+    parametersSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
+  },
+  {
     name: "propose_accept_offer",
     description: "Propose accepting the active Conditional Booking Offer. Requires guest confirmation.",
     category: "proposal",
@@ -241,6 +250,8 @@ export function assistantToolsForState(taskState: AssistantTaskState, policy?: E
       case "propose_accept_offer":
         return taskState.currentOfferId !== undefined;
       case "propose_start_payment":
+        return taskState.currentOfferId !== undefined;
+      case "propose_notice_to_end":
         return taskState.currentOfferId !== undefined;
       default:
         return true;
@@ -1230,6 +1241,19 @@ export function executeAssistantTool(
       };
     }
 
+    case "propose_notice_to_end": {
+      // Issue 18 (ADR 0106, 0080): a preview only. The card's own button records notice; this tool records nothing.
+      const offerId = taskState.currentOfferId;
+      const contractId = offerId === undefined ? undefined : context.environment.cardPaymentApp.getBookingContract(offerId)?.contractId;
+      if (contractId === undefined) throw new AssistantGuestRefusalError(GUEST_NOTICE_COPY.notExtended);
+      const pendingAction = proposeNoticeToEnd({ environment: context.environment, contractId, threadId: context.threadId, now: context.now });
+      return {
+        result: { actionId: pendingAction.id, proposedAction: "give_notice", summary: pendingAction.summary, requiresConfirmation: true, message: GUEST_NOTICE_COPY.cardOpened },
+        updatedTaskState: taskState,
+        pendingActionCreated: pendingAction,
+      };
+    }
+
     case "propose_accept_offer": {
       if (!taskState.currentOfferId) {
         throw new Error("No active Conditional Offer to accept.");
@@ -1370,7 +1394,7 @@ function renderShortletReplyBody(plan: AssistantReplyPlan | undefined, results: 
   const kindForTool: Readonly<Record<string, string>> = {
     search_stays: "show_results", get_unit_details: "show_details", compare_stays: "compare",
     explain_stay_price: "explain_price", get_booking_status: "show_status", get_offer_status: "show_status",
-    prepare_request_draft: "propose_action", propose_request_to_book: "propose_action", propose_accept_offer: "propose_action", propose_start_payment: "propose_action",
+    prepare_request_draft: "propose_action", propose_request_to_book: "propose_action", propose_accept_offer: "propose_action", propose_start_payment: "propose_action", propose_notice_to_end: "propose_action",
   };
   const selected = plan ? successfulResults.find((result) => plan.references.includes(result.name) && kindForTool[result.name] === plan.kind) : undefined;
   const operation = selected ?? successfulResults[0];
@@ -1394,7 +1418,7 @@ function renderShortletReplyBody(plan: AssistantReplyPlan | undefined, results: 
     const money = (value: unknown) => `₦${(Number(value) / 100).toLocaleString("en-NG")}`;
     return GUEST_ASSISTANT_COPY.offerAmount(...amounts.map(money) as [string, string, string]);
   }
-  if (typeof data.message === "string" && ["propose_request_to_book", "propose_accept_offer", "propose_start_payment", "get_offer_status"].includes(operation.name)) return data.message;
+  if (typeof data.message === "string" && ["propose_request_to_book", "propose_accept_offer", "propose_start_payment", "propose_notice_to_end", "get_offer_status"].includes(operation.name)) return data.message;
   if (operation.name === "search_stays") {
     if (typeof data.resultCount !== "number" || typeof data.neighbourhood !== "string" && typeof data.location !== "string") return GUEST_ASSISTANT_COPY.safeClarification;
     const count = data.resultCount;
@@ -1514,6 +1538,44 @@ function sentStageReply(taskState: AssistantTaskState, environment: LocalGuestEn
 }
 
 /** The shortlet pack: prompt section, tools and surface projections for the shortlet domain. */
+/**
+ * Issue 18 (ADR 0080, 0092, 0060, 0074): the Notice to End card for the confirmed Extended Stay. It previews only: the notice
+ * date and contract version it shows are bound into the card, and nothing is recorded here. A stay that cannot take notice is a
+ * guest refusal (tool_denial or a refused button), never CONCIERGE_UNAVAILABLE (ADR 0106).
+ */
+function proposeNoticeToEnd(input: { readonly environment: LocalGuestEnvironment; readonly contractId: string; readonly threadId: string; readonly now: Date }): PendingAssistantAction {
+  let preview: NoticePreview;
+  try {
+    preview = input.environment.noticeToEnd.previewNotice(input.contractId, input.environment.guestPrincipal());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message.includes("Verified Access")) throw new AssistantGuestRefusalError(GUEST_NOTICE_COPY.notVerified);
+    if (message.includes("Extended Stays")) throw new AssistantGuestRefusalError(GUEST_NOTICE_COPY.notExtended);
+    throw new AssistantGuestRefusalError(GUEST_NOTICE_COPY.unavailable);
+  }
+  const actionId = generatePlatformId("pa");
+  return {
+    id: actionId,
+    threadId: input.threadId,
+    guestActorId: input.environment.config.guestId,
+    tenantId: input.environment.config.tenantId,
+    type: "give_notice",
+    authoritativeReferences: {
+      contractId: input.contractId,
+      noticeDate: preview.noticeDate,
+      contractVersion: preview.contractVersion,
+      newLastNight: preview.newLastNight,
+      newCheckOut: preview.newCheckOut,
+      refundKobo: preview.refundKobo,
+      owedKobo: preview.owedKobo,
+    },
+    summary: preview.noticeToEndTerms,
+    createdAt: input.now.toISOString(),
+    expiresAt: new Date(input.now.getTime() + 15 * 60 * 1000).toISOString(),
+    executed: false,
+  };
+}
+
 export function createShortletAssistantPack(environment: LocalGuestEnvironment): AssistantDomainPack {
   return {
     id: "shortlet",
@@ -1539,6 +1601,8 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
       request: ["get_unit_details", "prepare_request_draft", "propose_request_to_book"],
       accept: ["get_offer_status", "propose_accept_offer"],
       payment: ["get_offer_status", "propose_start_payment"],
+      // Issue 18: a guest who asks to end a confirmed stay early is offered the notice card only (the tool previews and records nothing).
+      support: ["propose_notice_to_end"],
     },
     // ADR 0005, 0060, 0080, 0106 (issue 12): a sent Booking Request, offer, payment or Reservation answers a change with its explanation
     // and no planner call. Before anything is sent this returns undefined and the turn goes to the planner as a search.
@@ -1630,6 +1694,28 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     conditionalOfferSurface: (artifact, surfaceId) => conditionalOfferArtifactToA2UI({ artifact: artifact as never, surfaceId }),
     cardPaymentSurface: (artifact, surfaceId) => cardPaymentArtifactToA2UI({ artifact: artifact as never, surfaceId }),
     bookingContractSurface: (artifact, surfaceId) => bookingContractArtifactToA2UI({ artifact: artifact as never, surfaceId }),
+    openActionNames: [NOTICE_OPEN_EVENT],
+    handleOpenAction: ({ context: openContext, threadId, now }) => {
+      // Issue 18 AC6 (ADR 0074): the press must name a booking surface of this thread whose contract this guest can read. The id is
+      // `thread-<thread>:booking:<contract>` (shortlet-stage-handlers.ts), so it survives a cold restore; a forged, superseded or
+      // unknown id is stale and nothing is previewed.
+      const pressed = typeof openContext.surfaceId === "string" ? openContext.surfaceId : "";
+      const prefix = `thread-${threadId}:booking:`;
+      const contractId = pressed.startsWith(prefix) ? pressed.slice(prefix.length) : "";
+      if (contractId === "") return { ok: false, code: "STALE_SURFACE", message: "That action is no longer active." };
+      try {
+        environment.contractApp.getArtifact(contractId, environment.guestPrincipal());
+      } catch {
+        return { ok: false, code: "STALE_SURFACE", message: "That action is no longer active." };
+      }
+      try {
+        const pendingAction = proposeNoticeToEnd({ environment, contractId, threadId, now });
+        return { ok: true, pendingAction, message: GUEST_NOTICE_COPY.cardOpened };
+      } catch (error) {
+        if (error instanceof AssistantGuestRefusalError) return { ok: false, code: "NOTICE_NOT_AVAILABLE", message: error.message };
+        throw error;
+      }
+    },
     revalidateProposal: (action) => {
       if (action.type !== "request_to_book") return { ok: true };
       const refs = action.authoritativeReferences;

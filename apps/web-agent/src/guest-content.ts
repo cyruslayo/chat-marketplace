@@ -645,6 +645,13 @@ export const GUEST_NOTICE_COPY = Object.freeze({
   confirm: "Give notice",
   back: "Keep my stay",
   recordedBack: "Back to my stay",
+  /** Issue 18 (proposed for owner confirmation, 8 Nov 2026): refusals and the typed-confirmation reply. */
+  notExtended: "Giving notice applies to an Extended Stay. This is a Short Stay, so it cannot be ended early from here.",
+  notVerified: "You can give notice once you have checked in at the property.",
+  unavailable: "Notice to End is not available for this stay right now.",
+  cardOpened: "Here are the terms for giving notice. Press Give notice on the card to confirm.",
+  given: "Notice given. Your stay now ends on the new last night.",
+  stale: "The notice terms have changed. Ask again to see the current terms.",
   newLastNight: "New last night",
   newCheckOut: "New checkout",
   refund: "Refund for paid nights after it",
@@ -652,3 +659,29 @@ export const GUEST_NOTICE_COPY = Object.freeze({
   recordedHeading: "Notice given",
   recordedLead: "Your stay now ends on the new last night below. Refunds are paid by hand, as the terms say.",
 });
+
+/** The Notice to End facts as the domain calculated them (issue 18 AC1): one helper for the page and the chat card. */
+export interface NoticeFactsInput {
+  readonly newLastNight: string;
+  readonly newCheckOut: string;
+  readonly refundKobo: number;
+  readonly owedKobo: number;
+}
+
+/** One fact row: its copy label, the value shown, and the raw value a test or a hook reads. */
+export interface NoticeFactRow {
+  readonly key: "newLastNight" | "newCheckOut" | "refund" | "owed";
+  readonly label: string;
+  readonly value: string;
+  readonly raw: string;
+}
+
+/** The four facts in the issue 17 order. `money` formats kobo for the surface that shows them. */
+export function noticeFactRows(facts: NoticeFactsInput, money: (kobo: number) => string): readonly NoticeFactRow[] {
+  return [
+    { key: "newLastNight", label: GUEST_NOTICE_COPY.newLastNight, value: formatGuestDate(facts.newLastNight) ?? facts.newLastNight, raw: facts.newLastNight },
+    { key: "newCheckOut", label: GUEST_NOTICE_COPY.newCheckOut, value: formatGuestDate(facts.newCheckOut) ?? facts.newCheckOut, raw: facts.newCheckOut },
+    { key: "refund", label: GUEST_NOTICE_COPY.refund, value: money(facts.refundKobo), raw: String(facts.refundKobo) },
+    { key: "owed", label: GUEST_NOTICE_COPY.owed, value: money(facts.owedKobo), raw: String(facts.owedKobo) },
+  ];
+}
