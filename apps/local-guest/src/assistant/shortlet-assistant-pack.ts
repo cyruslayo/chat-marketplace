@@ -4,10 +4,9 @@ import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantGu
 import { ContinuousOccupancyError, StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, MAX_STAY_NIGHTS, BOOKING_HORIZON_DAYS, dateKeyInLagos, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
 import { SEARCH_AREAS, extractStayRequestFacts, formatGuestDay, locationConflictQuestion, quickRepliesFor, resolveLocationMention, stayBudgetKobo, stayCriteriaGap, unsupportedPreferenceNote, viewResultIntent, type PendingLocationChange } from "../concierge.js";
 import { phraseIsGuestAuthored, readCheckInPhrase, type CheckInPhraseReading } from "./date-phrases.js";
-import { guestDateLiterals } from "./date-literals.js";
 import { isExplicitConfirmation } from "./pending-actions.js";
 import { extractBudget, type StayBudget } from "../stay-budget.js";
-import { EXTENDED_STAY_POLICY, readStayLength, type StayLengthUnit } from "../../../../domains/shortlet/src/index.js";
+import { DEFAULT_STAY_DATE_POLICY, EXTENDED_STAY_POLICY, readStayLength, resolveStayDatePhrases, type StayLengthUnit } from "../../../../domains/shortlet/src/index.js";
 import { stayLengthLimitRefusal } from "../concierge.js";
 import { FACILITY_KEYS, facilityFor, normalizeRequiredAmenities, unsupportedAmenityLabelFor } from "../stay-vocabulary.js";
 import {
@@ -392,9 +391,16 @@ export function recordGuestAuthoredFacts(text: string, stayIntent: AssistantStay
   const typed = extractStayRequestFacts(text);
   if (typed.partySize !== undefined) stayIntent.partySize = typed.partySize;
   if (typed.bedrooms !== undefined) stayIntent.bedrooms = typed.bedrooms;
-  const checkIn = guestTypedCheckIn(text, now, policy);
-  if (checkIn !== undefined && (stayIntent.checkIn !== checkIn || stayIntent.isDemoDate !== false)) {
-    stayIntent.checkIn = checkIn;
+  const typedDates = guestTypedDates(text, now, policy);
+  if (typedDates?.checkOut !== undefined && typedDates.nights !== undefined) {
+    // A stay the guest typed (a range) is a new check-in, checkout and length, as a chip edit sets them (unit night).
+    stayIntent.checkIn = typedDates.checkIn;
+    stayIntent.isDemoDate = false;
+    stayIntent.checkOut = typedDates.checkOut;
+    stayIntent.nights = typedDates.nights;
+    stayIntent.statedStay = { nights: typedDates.nights, unit: "night", count: typedDates.nights };
+  } else if (typedDates !== undefined && (stayIntent.checkIn !== typedDates.checkIn || stayIntent.isDemoDate !== false)) {
+    stayIntent.checkIn = typedDates.checkIn;
     stayIntent.isDemoDate = false;
     stayIntent.checkOut = undefined;
     stayIntent.nights = undefined;
@@ -409,15 +415,65 @@ export function recordGuestAuthoredFacts(text: string, stayIntent: AssistantStay
   }
 }
 
-/** Issue 20: the one day the guest typed in this text that the date rules accept as a check-in, or undefined (fail closed). */
-function guestTypedCheckIn(text: string, now: Date, policy?: ExtendedStayPolicy): string | undefined {
-  const days = new Set<string>(text.match(/(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/g) ?? []);
-  for (const literal of guestDateLiterals(text, now)) days.add(literal.date);
-  // A text that names a checkout leaves the roles of its dates unclear ("use 6 Nov for both the check-in and checkout dates"): nothing is saved.
-  if (days.size !== 1 || mentionsCheckOut(text)) return undefined;
-  const [day] = days;
-  if (day === undefined || isDateGovernedByCheckOut(text, day, now)) return undefined;
-  return validatedCheckOutForNights(day, 1, now, policy) === null ? undefined : day;
+/** Issue 20 (coordinator): the dates the guest typed in one message, read by the shared stay-date resolver: one check-in day, or a check-in and its checkout. */
+export interface GuestTypedDates {
+  readonly checkIn: string;
+  readonly checkOut?: string;
+  readonly nights?: number;
+}
+
+/** The words that join two literal days into a stay ("5 Jan to 8 Jan", "from 5 Jan until 8 Jan"). */
+const RANGE_CONNECTIVE = /^\s*(?:to|until|till|through|-|–|—)\s*$/i;
+
+/**
+ * Issue 20 (ADR 0106, ADR 0023, ADR 0092, ADR 0055): one day, or a stay the guest typed. A literal range ("5–8 Jan") or two literal days
+ * joined by "to", "until", "till" or "through" is a check-in and its checkout, and must be a valid stay (StayDateRange). Anything
+ * ambiguous saves nothing: a relative phrase, a span, a refused literal, two check-ins, a checkout that is not after the check-in, or a
+ * checkout keyword (the roles of the dates are then unclear).
+ */
+function guestTypedDates(text: string, now: Date, policy?: ExtendedStayPolicy): GuestTypedDates | undefined {
+  const found = resolveStayDatePhrases(text, now, DEFAULT_STAY_DATE_POLICY);
+  if (found.some((entry) => entry.kind !== "day" || entry.source !== "literal")) return undefined;
+  if (mentionsCheckOut(text)) return undefined;
+  const items: { readonly date: string; readonly endDate?: string; readonly start: number; readonly end: number }[] = found.map((entry) => ({
+    date: entry.kind === "day" ? entry.date : "",
+    ...(entry.kind === "day" && entry.endDate !== undefined ? { endDate: entry.endDate } : {}),
+    start: entry.span.start,
+    end: entry.span.end,
+  }));
+  // A range ("5–8 Jan") is also read as its inner day ("8 Jan"): that day is part of the range, not a second date.
+  const ranged = items.filter((item) => item.endDate !== undefined);
+  const readings = items.filter((item) => item.endDate !== undefined || !ranged.some((range) => item.start >= range.start && item.end <= range.end));
+  items.length = 0;
+  items.push(...readings);
+  for (const match of text.matchAll(/(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/g)) {
+    const start = match.index ?? 0;
+    const end = start + match[0].length;
+    if (!items.some((item) => start < item.end && item.start < end)) items.push({ date: match[0], start, end });
+  }
+  const ranges = items.filter((item) => item.endDate !== undefined);
+  if (ranges.length === 1 && items.length === 1) {
+    const [range] = ranges;
+    return range?.endDate === undefined ? undefined : validatedStay(range.date, range.endDate, now, policy);
+  }
+  if (ranges.length !== 0) return undefined;
+  if (items.length === 1) {
+    const [only] = items;
+    if (only === undefined || isDateGovernedByCheckOut(text, only.date, now)) return undefined;
+    return validatedStay(only.date, undefined, now, policy);
+  }
+  if (items.length !== 2) return undefined;
+  const [first, second] = [...items].sort((a, b) => a.start - b.start);
+  if (first === undefined || second === undefined || !RANGE_CONNECTIVE.test(text.slice(first.end, second.start))) return undefined;
+  return validatedStay(first.date, second.date, now, policy);
+}
+
+/** A check-in, with its checkout when given: the stay must pass StayDateRange (ADR 0023 length, ADR 0055 horizon). */
+function validatedStay(checkIn: string, checkOut: string | undefined, now: Date, policy?: ExtendedStayPolicy): GuestTypedDates | undefined {
+  if (checkOut === undefined) return validatedCheckOutForNights(checkIn, 1, now, policy) === null ? undefined : { checkIn };
+  const nights = nightsBetween(checkIn, checkOut);
+  if (nights === undefined || nights < 1) return undefined;
+  return validatedCheckOutForNights(checkIn, nights, now, policy) === checkOut ? { checkIn, checkOut, nights } : undefined;
 }
 
 /**

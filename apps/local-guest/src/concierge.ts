@@ -14,7 +14,7 @@
  * facts found in the latest message.
  */
 
-import { BOOKING_HORIZON_DAYS, DEFAULT_STAY_DATE_POLICY, MAX_STAY_NIGHTS, dateKeyInLagos, isExtendedStayLength, readStayLength, resolveStayDatePhrases, type ExtendedStayPolicy, type StayLengthUnit } from "../../../domains/shortlet/src/index.js";
+import { BOOKING_HORIZON_DAYS, DEFAULT_STAY_DATE_POLICY, MAX_STAY_NIGHTS, NUMBER_WORDS, dateKeyInLagos, isExtendedStayLength, readStayLength, resolveStayDatePhrases, type ExtendedStayPolicy, type StayLengthUnit } from "../../../domains/shortlet/src/index.js";
 import { formatNgnKobo } from "../../web-agent/src/discovery-a2ui.js";
 import { GUEST_ASSISTANT_COPY, GUEST_LOCATION_CONFLICT, guestStayMonthsWords } from "../../web-agent/src/guest-content.js";
 import { AMENITY_ALIASES, SEARCH_AREAS, STAY_LOCATION_ALIASES } from "./stay-vocabulary.js";
@@ -206,6 +206,9 @@ const AFFIRMATION_PATTERN = /^(?:yes|yeah|yep|yup|sure|ok|okay|okey|go ahead|do 
 
 // Plain party phrases (issue 01 AC4). An explicit count ("4 guests") always wins.
 const SOLO_PATTERN = /\b(?:just|only)\s+(?:me|myself)\b|\bby myself\b|\bon my own\b|\bsolo\b/i;
+/** Issue 20 (coordinator): "4 of us" or "the four of us", in digits or number words of two or more. "us", "a few of us" and "some of us" give no party. */
+const PARTY_WORDS = Object.keys(NUMBER_WORDS).filter((word) => (NUMBER_WORDS[word] ?? 0) >= 2).join("|");
+const PARTY_OF_US_PATTERN = new RegExp(`\\b(?:the\\s+)?(\\d{1,2}|${PARTY_WORDS})\\s+of\\s+us\\b`, "i");
 const PAIR_PATTERN = /\b(?:me|myself)\s+and\s+my\s+(?:wife|husband|partner|girlfriend|boyfriend|fianc[eé]e?|friend|colleague|sister|brother|mum|mom|dad|son|daughter)\b|\bmy\s+(?:wife|husband|partner)\s+and\s+(?:i|me)\b|\b(?:a|as a)\s+couple\b|\b(?:the\s+)?two of us\b/i;
 
 // Preferences discovery cannot filter by yet. They are acknowledged, never
@@ -396,7 +399,10 @@ export function extractStayRequestFacts(text: string, options: { readonly now?: 
   const stayLength = dates?.checkOut === undefined && lengthReading !== undefined && lengthReading.unit !== "night"
     ? { unit: lengthReading.unit, count: lengthReading.count, nights: lengthReading.nights }
     : undefined;
+  const partyOfUsToken = PARTY_OF_US_PATTERN.exec(normalized)?.[1]?.toLowerCase();
+  const partyOfUs = partyOfUsToken === undefined ? undefined : /^\d/.test(partyOfUsToken) ? Number.parseInt(partyOfUsToken, 10) : NUMBER_WORDS[partyOfUsToken];
   const partySize = guestsMatch ? Number.parseInt(guestsMatch[1] ?? "", 10)
+    : partyOfUs !== undefined ? partyOfUs
     : SOLO_PATTERN.test(normalized) ? 1
       : PAIR_PATTERN.test(normalized) ? 2 : undefined;
   const bedroomsToken = bedroomsMatch?.[1]?.toLowerCase();
