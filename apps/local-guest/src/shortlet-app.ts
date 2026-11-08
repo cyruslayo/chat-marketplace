@@ -228,6 +228,7 @@ import {
 import {
   AssistantRuntime,
   type AssistantControlOutcome,
+  type AssistantShortletShellReferences,
   type AssistantShortletRestoreInput,
   type AssistantTaskRailEntry,
   type AssistantVertical,
@@ -3275,15 +3276,11 @@ export class LocalGuestApp {
     return this.#assistantRuntime?.threadBusy(threadId) === true;
   }
 
-  #restoreAssistantFromGuestThread(threadId: string, thread: GuestThreadState): void {
-    const runtime = this.#assistantRuntime;
-    const context = thread.assistantContext;
-    // Issue 06 (ADR 0070): a restore never rewrites a thread a mutating run is changing; that run commits its own delta.
-    if (!runtime || !context || runtime.hasThread(threadId) || runtime.threadBusy(threadId)) return;
-    // ADR 0070/0075/0093: load only the owner-checked, minimal projection; never restore model or provider history.
-    if (!thread.discoveryArtifact) this.#rebuildAssistantDiscovery(thread);
-    const shortlist = this.#assistantShortlist(thread);
-    const selected = context.selectedUnitId ? shortlist.find((stay) => stay.unitId === context.selectedUnitId) : undefined;
+  /**
+   * ADR 0106: the references the shell holds for the thread (draft, request, offer, and the reservation and contract the offer's
+   * snapshot names). The cold restore and the warm runtime both derive their shell-owned state from this one place.
+   */
+  #assistantShellReferences(thread: GuestThreadState): AssistantShortletShellReferences {
     let currentContractId: string | undefined;
     let currentReservationId: string | undefined;
     if (thread.offerId) {
@@ -3296,6 +3293,35 @@ export class LocalGuestApp {
         } catch { /* Invalid persisted metadata cannot restore domain status. */ }
       }
     }
+    return {
+      ...(thread.draftId ? { currentDraftId: thread.draftId } : {}),
+      ...(thread.requestId ? { currentBookingRequestId: thread.requestId } : {}),
+      ...(thread.offerId ? { currentOfferId: thread.offerId } : {}),
+      ...(currentReservationId ? { currentReservationId } : {}),
+      ...(currentContractId ? { currentContractId } : {}),
+    };
+  }
+
+  #restoreAssistantFromGuestThread(threadId: string, thread: GuestThreadState): void {
+    const runtime = this.#assistantRuntime;
+    const context = thread.assistantContext;
+    // Issue 06 (ADR 0070): a restore never rewrites a thread a mutating run is changing; that run commits its own delta.
+    if (!runtime || runtime.threadBusy(threadId)) return;
+    // ADR 0106 (warm session runtime): a runtime that already holds the thread is not rebuilt, but the shell advances the thread
+    // outside the assistant (a Request to Book makes a draft, a request is confirmed into an offer, a payment confirms the stay).
+    // Those references are adopted here, so the next turn sees what a cold restore sees. The history and the open surfaces are kept.
+    if (runtime.hasThread(threadId)) {
+      const warm = runtime.getThread(threadId);
+      const activeTask = warm.tasks.find((task) => task.taskId === warm.activeTaskId);
+      if (activeTask?.domain === "shortlet") runtime.adoptShortletShellReferences(threadId, this.#assistantShellReferences(thread));
+      return;
+    }
+    if (!context) return;
+    // ADR 0070/0075/0093: load only the owner-checked, minimal projection; never restore model or provider history.
+    if (!thread.discoveryArtifact) this.#rebuildAssistantDiscovery(thread);
+    const shortlist = this.#assistantShortlist(thread);
+    const selected = context.selectedUnitId ? shortlist.find((stay) => stay.unitId === context.selectedUnitId) : undefined;
+    const shellReferences = this.#assistantShellReferences(thread);
     const state: AssistantTaskState = {
       goal: shortlist.length ? "find_stay" : null,
       stayIntent: {
@@ -3314,11 +3340,7 @@ export class LocalGuestApp {
       },
       shortlist,
       ...(selected ? { selectedStayRef: selected.stayRef } : {}),
-      ...(thread.draftId ? { currentDraftId: thread.draftId } : {}),
-      ...(thread.requestId ? { currentBookingRequestId: thread.requestId } : {}),
-      ...(thread.offerId ? { currentOfferId: thread.offerId } : {}),
-      ...(currentReservationId ? { currentReservationId } : {}),
-      ...(currentContractId ? { currentContractId } : {}),
+      ...shellReferences,
       pendingAction: thread.pendingAction,
       replacedPendingAction: thread.replacedPendingAction,
       pendingDraftReplacement: thread.pendingDraftReplacement,
