@@ -124,3 +124,30 @@ Needed to resolve: trace the `chat-compare` shift (and the `request-declined` an
 Definition of Done (docs/agents/issue-tracker.md): not audited in this pass. Item 7 (`npm test`) is per batch, not per issue.
 
 Git: no commit of screenshots or dist; the sweep's 219 tracked changes under `.scratch/guest-ui-consistency/screenshots/final/` remain unstaged; the base worktree `C:/AI2026/chat-marketplace-agent-modes-base` is left in place for the owner.
+
+### Agent E, repeat-run result and Definition of Done audit (Agent modes issue 01)
+
+Status: **still ready-for-agent (not resolved)**. The repeat-run comparison is noise, but Definition of Done item 2 is not met (see below).
+
+Repeat runs (3 runs per side, base at 7830f13 and post at 445a20d, one process at a time, `npx tsx .scratch/guest-ui-consistency/capture-11.ts <group>`):
+
+- `chat-compare-light-320` and `-390`: each side has two states. Base run 1 differs from runs 2 and 3 (247507 and 305281 pixel bytes); runs 2 and 3 match. Post has the same pattern. Base-run-N matches post-run-N only where the state matches. Classification: **noise** (bistable render, present in both trees).
+- `manual-transfer-page-light-320`: base runs differ by 1461 to 1523 bytes from each other; post runs by 1334 to 1474. Same magnitude both sides. **Noise.**
+- `request-declined-chat-dark-320`: base run 2 differs from runs 1 and 3 by 10740 bytes (run 1 vs 3 is 16). Post runs identical to each other. Base run 2 is identical to every post run; base runs 1 and 3 match each other only. Base-vs-base flip has the same 10740 magnitude as the earlier base-vs-post difference. **Noise.**
+- `offer-live-page-light-320`: all pairs identical (0). The earlier 52-byte difference did not recur. **Noise.**
+- Earlier base-vs-base re-run (7 groups) also showed non-determinism in chat-home-dark-320, chat-results, chat-unit-light-320, confirmed-*, manual-transfer-page, manual-waiting-page and bank-transfer-page.
+- Verdict: no real visual difference shown. The shell HTML is byte-identical apart from `data-mode` (AC4), and the client change is the validator plus three announcement strings. This is a repeat-run result, not an element-level proof.
+
+Definition of Done (docs/agents/issue-tracker.md):
+
+1. Every AC has a dedicated named test (AC1 to AC8 in `test/agent-mode-shell.test.ts`, plus the cold-journey AC7). **Met**.
+2. Failure paths exercised. **Not met for AC8**: it asserts the rejection branch exists in `client.ts` source (the STOPGAP at the test's comment), not that a bad mode is rejected at run time. AC2 covers its refused cases. AC7 and AC6 have no failure path in the criterion text. Needs a node-importable validator (or a browser test) to close.
+3. ADRs listed and read: ADR 0107 read in full this pass; 0077, 0078, 0080, 0081, 0099, 0104 and 0106 headers and decision sections skimmed, not read in full. ADR constraints affecting this slice: 0107 decisions 1, 2, 3, 5, 6, 7; the other ADRs were not cited in code. **Partly met.** Full reading of 0077/0080/0106 still needed before this can be ticked.
+4. No unused injected dependency. Not audited in this pass. **Not checked**.
+5. No invented policy strings. The copy is moved verbatim (AC1 pins the strings). **Met for AC1 scope; not separately audited**.
+6. No bearer credential or identity material in logs. The mode is public presentation copy; no log lines added. **Met by inspection**.
+7. `npm run check` passes: `npm run check` in this worktree, **exit 0** (tsc for root, apps/cloudflare, the test and tooling configs, plus the worker bundle guard). `npm test` passes: per batch, not per issue (CLAUDE.md Test scope). **Pending batch gate**.
+
+Deferred per ADR 0107 decision 3: validation of a mode id against a `--mode-*` token block is slice 4 (no token blocks in this slice).
+
+Worktree note: `git status` of `C:/AI2026/chat-marketplace-agent-modes` also lists tracked modifications under `.scratch/multi-domain-platform/screenshots/26/` and `.scratch/ui-recovery/recovered/` that this step did not write. Owner to check.
