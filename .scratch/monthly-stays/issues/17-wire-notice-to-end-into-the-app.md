@@ -1,6 +1,6 @@
 # 17 · Wire Notice to End into the guest and owner apps
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: none
 Requested: 8 Nov 2026
@@ -95,4 +95,9 @@ See `docs/agents/issue-tracker.md` and the AGENTS.md capture rules. Record comma
   - **Strings for owner confirmation.** No new strings in this follow-up.
 
 - 8 Nov 2026, **orchestrator: scope split.** The chat half of AC2–AC4 and AC5 (assistant) move to issue 18, which needs a new confirmation kind designed against ADR 0106. Issue 17 is complete when the page path, compositions and back office (done) and **AC7 captures of the standalone notice page and recorded state** are done. The page is reachable from the chat today through "View payment schedule" on the confirmed booking.
+
+- **Step 1, AC7 captures (8 Nov 2026, resolved).** Script: `.scratch/guest-ui-consistency/capture-17.ts` (starts the real guest handler over HTTP on a confirmed Extended Stay after Verified Access; uses the default asset loader, so the kit stylesheet is real). Run: `flock /tmp/claude-0/-home-user-chat-marketplace/c5fa8244-d71a-531b-936e-129ae015daa0/scratchpad/browser.lock env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow SHORTLET_CHROME_PATH=/usr/bin/google-chrome npx tsx .scratch/guest-ui-consistency/capture-17.ts` -> 16 captures, 16 pass (overflow and 44px targets for `button, a` in the panel, light and dark, 320/390/768/1280). Files: `.scratch/guest-ui-consistency/screenshots/17/notice-step-{light,dark}-{320,390,768,1280}.png` and `notice-recorded-{light,dark}-{320,390,768,1280}.png` (32 new files; the first pass caught the stubbed stylesheet, which made both buttons under 44px, and the rerun used the real one).
+- **Findings fixed in the same step.** The recorded state's back link rendered faded in dark mode: it had no variant. It now uses `ui-button--secondary`, and its label is "Back to my stay" (was "Keep my stay", which did not fit once notice was given). **New string for owner confirmation:** "Back to my stay".
+- **Commands for the re-check.** `env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test test/notice-to-end-wiring.test.ts` -> 9 tests, 9 pass, 0 fail.
+- **Status.** Resolved for the page path: AC1 (composition, demo and non-demo tests), AC2 page (`GET`, the action on the schedule page, confirmation facts, refusals before Verified Access and on a Short Stay), AC3 page (back changes nothing, confirm commits one version), AC4 page (stale date, stale version and unknown offer refused), AC6 (back-office notice and reduced payable), AC7 (captures above). **Moved to issue 18, per the owner's split (commit 5057a35):** the chat half of AC2, AC3 and AC4, and AC5 (assistant).
 

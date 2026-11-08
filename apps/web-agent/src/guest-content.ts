@@ -644,6 +644,7 @@ export const GUEST_NOTICE_COPY = Object.freeze({
   heading: "End your stay early",
   confirm: "Give notice",
   back: "Keep my stay",
+  recordedBack: "Back to my stay",
   newLastNight: "New last night",
   newCheckOut: "New checkout",
   refund: "Refund for paid nights after it",
