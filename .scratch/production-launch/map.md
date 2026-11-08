@@ -29,7 +29,7 @@ Start now: agents **01, 03, 04, 10, 11**; owner **02, 13, 16, 17** (and start 14
 
 | # | Issue | Type | Status | Blocked by |
 |---|---|---|---|---|
-| 01 | [Reconcile issue statuses and the work map](issues/01-reconcile-tracker-statuses.md) | AFK | ready-for-agent | none |
+| 01 | [Reconcile issue statuses and the work map](issues/01-reconcile-tracker-statuses.md) | AFK | resolved | none |
 | 02 | [Confirm the launch decisions](issues/02-confirm-launch-decisions.md) | grilling | ready-for-human | none |
 | 03 | [Conditional Offer signing secret](issues/03-configure-conditional-offer-signing-secret.md) | AFK | ready-for-agent | none |
 | 04 | [Remove back-office stubs](issues/04-remove-back-office-stubs.md) | AFK | ready-for-agent | none |
@@ -59,3 +59,5 @@ Start now: agents **01, 03, 04, 10, 11**; owner **02, 13, 16, 17** (and start 14
 4. Resolve by appending `## Answer`, setting `Status: resolved`, resolving the wrapped issue too, and adding a context pointer below.
 
 ## Context pointers (append as issues resolve)
+
+- 01: [Reconciliation](issues/01-reconcile-tracker-statuses.md) audited 27 hardening/controls/demo issues against main, retained uncertain statuses with evidence, rebuilt the 356-issue [work map](../WORK-MAP.md), and corrected the tester-facing 119-day note. Evidence commit `71ccf94`; 4/4 criterion tests and clean type check.

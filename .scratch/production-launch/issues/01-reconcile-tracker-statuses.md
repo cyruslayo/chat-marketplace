@@ -1,6 +1,6 @@
 # Reconcile issue statuses with main and regenerate the work map
 
-Status: claimed
+Status: resolved
 Type: AFK
 Blocked by: none
 Requested: 8 Nov 2026
@@ -60,3 +60,7 @@ Exact commands (Windows `env -u LLM_API_KEY` equivalent: `C:\Program Files\Git\u
 - Python issue-inventory/WORK-MAP row assertion: 22/22 effort rows and 356/356 issue files matched.
 
 Definition of Done review: (1) AC1–AC4 each has one named test; (2) missing evidence, stale map counts and stale tester copy fail the checks; AC4 checks any newly resolved issue for Answer and cited evidence, and uncertain issues for a note; (3) ADR 0023 amendment and 0055 listed/read above; (4) no dependency injection; (5) 119 days derives from 90+29, no new domain rule; (6) no credentials/log changes; (7) type check and four issue tests green. Full suites are reserved for the single issue-12 batch gate under AGENTS.md Test scope.
+
+## Answer
+
+The reconciliation evidence and the regenerated 356-issue inventory are committed at `71ccf94`. Hardening and controls remain open where recorded acceptance evidence is incomplete; no other issue status was upgraded on a merge alone. The tester guidance now uses the 119-day window. Criterion checks: 4/4 and `npm run check` clean.

@@ -44,12 +44,12 @@ print('TOTAL', sum(sum(v.values()) for v in counts.values()),
 | multi-domain-platform | 2 | 0 | 1 | 1 | 6 | 0 | 25 | 35 |
 | operator-dashboard | 1 | 0 | 0 | 0 | 0 | 0 | 13 | 14 |
 | pilot-launch-readiness | 7 | 10 | 0 | 0 | 0 | 0 | 10 | 27 |
-| production-launch | 12 | 8 | 0 | 0 | 1 | 0 | 0 | 21 |
+| production-launch | 12 | 8 | 0 | 0 | 0 | 0 | 1 | 21 |
 | short-stays-29-nights | 0 | 0 | 0 | 0 | 0 | 0 | 6 | 6 |
 | shortlet-concierge-launch | 3 | 6 | 0 | 2 | 1 | 0 | 43 | 55 |
 | test-runner-speed | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 1 |
 | weaver-catalogues | 6 | 0 | 0 | 0 | 0 | 0 | 2 | 8 |
-| **Total** | **62** | **41** | **4** | **7** | **15** | **4** | **223** | **356** |
+| **Total** | **62** | **41** | **4** | **7** | **14** | **4** | **224** | **356** |
 
 ## Reconciliation notes
 
