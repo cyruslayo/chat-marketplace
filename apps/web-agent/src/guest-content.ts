@@ -24,8 +24,16 @@ export const GUEST_GLOSSARY = Object.freeze({
 });
 
 /** Server-authored concierge copy for replies whose facts come from current pack projections. */
+/** Issue 19 (ADR 0092: a month is 30 nights): the show-back words for a stay the guest stated in months. The only source of this wording. */
+export function guestStayMonthsWords(count: number): string {
+  return count === 1 ? "(1 month)" : `(${count} months)`;
+}
+
 export const GUEST_ASSISTANT_COPY = Object.freeze({
   stayClarification: "How many nights will you be staying, and for how many guests?",
+  // Issue 19 (ADR 0106): a model's nights that differ from the length the guest typed are refused, and that length is shown back.
+  statedStay: (nights: number, stated?: { readonly unit: "night" | "week" | "fortnight" | "month"; readonly count: number }) =>
+    `Just to check: ${nights} nights${stated?.unit === "month" ? ` ${guestStayMonthsWords(stated.count)}` : ""}. Which length should I search?`,
   // Issue 08 (ADR 0106): an area the server does not know is refused with the closed list of areas it can search.
   areaClarification: (examples: string) => `I couldn't find that area. Which area should I search? For example: ${examples}.`,
   // Issue 07 (ADR 0106, ADR 0015): a budget the server cannot read from the guest's own words is refused, never searched as a guessed amount.
@@ -36,8 +44,9 @@ export const GUEST_ASSISTANT_COPY = Object.freeze({
   unitDatesClarification: "Add your check-in and checkout dates to see this apartment's price for your stay. Please write them with the day, month and year, for example 20 November 2026 to 23 November 2026.",
   // Issue 04 (ADR 0106 2 Nov 2026, ADR 0080, ADR 0077): the show-back of a relative date the guest must confirm. The deterministic
   // path says the same sentence (concierge.ts), so both paths show the same dates before a search.
-  dateShowBack: (arriving: string, leaving: string, nights: number, guests: number, place: string) =>
-    `Just to check: arriving ${arriving} and leaving ${leaving} (${nights} ${nights === 1 ? "night" : "nights"}), ${guests} ${guests === 1 ? "guest" : "guests"} in ${place}. Shall I search these dates? Reply "yes", or tell me different dates.`,
+  // Issue 19: a stay the guest stated in months shows its nights first and the months in brackets ("60 nights (2 months)").
+  dateShowBack: (arriving: string, leaving: string, nights: number, guests: number, place: string, stated?: { readonly unit: "night" | "week" | "fortnight" | "month"; readonly count: number }) =>
+    `Just to check: arriving ${arriving} and leaving ${leaving}${stated?.unit === "month" ? `, ${nights} nights ${guestStayMonthsWords(stated.count)}` : ` (${nights} ${nights === 1 ? "night" : "nights"})`}, ${guests} ${guests === 1 ? "guest" : "guests"} in ${place}. Shall I search these dates? Reply "yes", or tell me different dates.`,
   // Issue 04: an ambiguous phrase names its candidate days; one chip per day, and a tap chooses it.
   // Issue 13b (ADR 0106, 2 Nov 2026; ADR 0080): the same date check while a Request Draft is open. "yes" updates the draft; nothing is searched.
   draftDateShowBack: (arriving: string, leaving: string, nights: number, guests: number) =>

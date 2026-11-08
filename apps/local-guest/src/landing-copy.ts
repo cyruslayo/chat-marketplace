@@ -44,7 +44,7 @@ export const LANDING_COPY = Object.freeze({
   exampleChips: [
     { text: "Somewhere quiet in Abuja for a week", nights: 7 },
     { text: "Lekki, 3 nights from Friday, 4 of us", nights: 3 },
-    { text: "Ikoyi, 60 nights from 5 Jan, relocating", nights: 60 },
+    { text: "Ikoyi, 2 months from 5 Jan, relocating", nights: 60 },
   ],
   /** S06: reassurance under the hero and the closing composer. */
   reassurance: "Nothing is charged, and nothing is sent until you press send.",

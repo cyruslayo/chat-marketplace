@@ -39,7 +39,7 @@ test("AC3: The approved chips and the landing copy tests (test/landing-page.test
     [
       { text: "Somewhere quiet in Abuja for a week", nights: 7 },
       { text: "Lekki, 3 nights from Friday, 4 of us", nights: 3 },
-      { text: "Ikoyi, 60 nights from 5 Jan, relocating", nights: 60 },
+      { text: "Ikoyi, 2 months from 5 Jan, relocating", nights: 60 },
     ],
     "the three approved chips are unchanged",
   );

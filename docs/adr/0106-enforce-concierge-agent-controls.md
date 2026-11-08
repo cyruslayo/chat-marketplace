@@ -93,6 +93,7 @@ This amendment does not change the verdict's authority, tool gating, the fail-cl
 ### Amendment (27 Oct 2026): structured stay facts from the criteria chips
 
 - Chip facts. The date chip and the guests chip are structured guest input. Beyond the confirmed check-in (see Structured dates above), the chip's nights and party size are guest-authored stay facts. The server records them in the assistant's task state so the next planner turn sees them and the persisted context keeps them.
+- Stated length (8 Nov 2026, issue 19). A stay length the guest typed (nights, weeks or months) is a guest-authored stay fact, as chip nights are. A month is 30 nights (ADR 0092).
 - Derivation. A confirmed check-in with chip nights gives the checkout by the same night-count rule as the planner's search (`checkOutForNights`), and StayDateRange validates it (ADR 0023 length, ADR 0055 horizon). An invalid stay records neither nights nor checkout. The check-in itself is still recorded when it is confirmed.
 - Authority. Nights and party size are not dates and carry no date authority. A planner date still needs guest text or a confirmed chip check-in. A model-proposed check-in is never recorded through this path, and a relative or unconfirmed chip date is not recorded.
 - Projection. The persisted assistant context keeps only the fields it already held (city, neighbourhood, check-in, checkout, nights, party size and the other filters). No new record is persisted (ADR 0093 minimal projection, ADR 0099 and ADR 0101).

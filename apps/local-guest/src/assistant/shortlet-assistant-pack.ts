@@ -6,6 +6,8 @@ import { SEARCH_AREAS, formatGuestDay, locationConflictQuestion, quickRepliesFor
 import { phraseIsGuestAuthored, readCheckInPhrase, type CheckInPhraseReading } from "./date-phrases.js";
 import { isExplicitConfirmation } from "./pending-actions.js";
 import { extractBudget, type StayBudget } from "../stay-budget.js";
+import { EXTENDED_STAY_POLICY, readStayLength, type StayLengthUnit } from "../../../../domains/shortlet/src/index.js";
+import { stayLengthLimitRefusal } from "../concierge.js";
 import { FACILITY_KEYS, facilityFor, normalizeRequiredAmenities, unsupportedAmenityLabelFor } from "../stay-vocabulary.js";
 import {
   discoveryArtifactToA2UI,
@@ -331,6 +333,47 @@ function normalizeGuestWords(text: string): string {
  * authored state (a chip or an earlier phrase), so repeating it changes nothing and grants the model no new amount. Any other phrase is
  * refused. Owner decision needed: see issue 07 Comments.
  */
+/**
+ * Issue 19 (ADR 0106, 27 Oct and 2 Nov 2026 amendments; ADR 0092): a stay length the guest typed (nights, weeks or months) is
+ * guest-authored, read here on the server from the guest's own words and never from the model. The current turn's text decides
+ * first. A vague current length (a few months, 2-3 months) authorizes no nights beyond the ones the task already holds. With no
+ * length in this turn, an earlier guest length counts only while the task still holds the nights it set: a chip or other edit that
+ * changed the nights since then overrides the earlier words (ADR 0106 chip facts). The canonical guest text (userTextHistory) carries
+ * earlier words across a cold restore, so the check holds on every request.
+ */
+export type GuestStatedStay =
+  | { readonly kind: "length"; readonly unit: StayLengthUnit; readonly count: number; readonly nights: number }
+  | { readonly kind: "vague" };
+
+export function guestStatedStay(userTextHistory: readonly string[], heldNights: number | undefined): GuestStatedStay | undefined {
+  const current = userTextHistory.at(-1);
+  const now = current === undefined ? undefined : readStayLength(current);
+  if (now?.kind === "length") return now;
+  if (now?.kind === "vague") return { kind: "vague" };
+  for (let index = userTextHistory.length - 2; index >= 0; index -= 1) {
+    const earlier = readStayLength(userTextHistory[index] ?? "");
+    if (earlier.kind === "length") return heldNights === earlier.nights ? earlier : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * The nights a search or draft uses under the guest's stated length. A model's different nights are a rejected tool call
+ * (tool_denial, AssistantGuestRefusalError), and the reply shows the guest's length back. A length outside the stay rules
+ * is refused with the existing limit (ADR 0023, ADR 0092).
+ */
+export function guestStatedNights(nights: number | undefined, stay: GuestStatedStay | undefined, heldNights: number | undefined, policy?: ExtendedStayPolicy): number | undefined {
+  if (stay === undefined) return nights;
+  if (stay.kind === "vague") {
+    if (nights !== undefined && nights !== heldNights) throw new AssistantGuestRefusalError(GUEST_ASSISTANT_COPY.stayClarification);
+    return nights;
+  }
+  if (nights !== undefined && nights !== stay.nights) throw new AssistantGuestRefusalError(GUEST_ASSISTANT_COPY.statedStay(stay.nights, stay));
+  const refusal = stayLengthLimitRefusal(stay.nights, policy);
+  if (refusal !== undefined) throw new AssistantGuestRefusalError(refusal);
+  return stay.nights;
+}
+
 function guestStatedBudget(phrase: string, userTextHistory: readonly string[], held: StayBudget | undefined): StayBudget {
   const wanted = normalizeGuestWords(phrase);
   const escaped = wanted.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -762,6 +805,10 @@ export function executeAssistantTool(
         }
       }
 
+      // Issue 19: a length the guest typed holds for the nights the search uses. A checkout the guest gave wins over a duration (ADR 0106).
+      if (dateWords.checkOut === undefined && checkOutRelative === undefined) {
+        nights = guestStatedNights(nights, guestStatedStay(context.userTextHistory, taskState.stayIntent.nights), taskState.stayIntent.nights, context.environment.extendedStayPolicy);
+      }
       // ADR 0106: a search with stay details must name both nights and party size (in this call or the task state).
       // A missing value is a rejected tool call answered with the fixed stay clarification, not an application fault.
       if (hasStayDetails && (nights === undefined || guests === undefined)) {
@@ -1178,7 +1225,9 @@ export function executeAssistantTool(
       const stayRef = String(args.stayRef ?? "").trim();
       const stay = taskState.shortlist.find((candidate) => candidate.stayRef === stayRef);
       if (!stay) throw new Error(`Stay reference '${stayRef}' is not in the current shortlist.`);
-      const nights = Number(args.nights);
+      // Issue 19: the guest's stated length holds for a draft too (ADR 0106); without one the model's nights are read as before.
+      const requestedNights = args.nights == null ? undefined : Number(args.nights);
+      const nights = guestStatedNights(requestedNights, guestStatedStay(context.userTextHistory, taskState.stayIntent.nights), taskState.stayIntent.nights, context.environment.extendedStayPolicy) ?? Number(args.nights);
       const guests = Number(args.guests);
       // ADR 0023 as amended / ADR 0106: an out-of-range length is a rejected tool call (tool_denial), never a thrown error.
       if (!Number.isSafeInteger(nights) || nights < 1 || (nights > MAX_STAY_NIGHTS && !isExtendedStayLength(nights, context.environment.extendedStayPolicy))) throw new AssistantStayDetailsError("nights must fit the configured Short Stay or Extended Stay range");
@@ -1433,6 +1482,11 @@ function renderShortletReplyBody(plan: AssistantReplyPlan | undefined, results: 
       ? stayCriteriaGap({ city: taskState.stayIntent.location, partySize: taskState.stayIntent.partySize, checkIn: taskState.stayIntent.checkIn, nights: taskState.stayIntent.nights })
       : undefined;
     if (plan?.kind === "clarify_stay" && gap !== undefined && "next" in gap && gap.next === "when") return GUEST_ASSISTANT_COPY.datesClarification;
+    // Issue 19 (ADR 0092, ADR 0023): a length the guest typed beyond the stay rules gets the existing limit sentence, even when the planner's
+    // call was rejected at its schema and no search ran. The deployment policy is EXTENDED_STAY_POLICY (every composition supplies it).
+    const typedLength = readStayLength(userText);
+    const typedLimit = typedLength.kind === "length" ? stayLengthLimitRefusal(typedLength.nights, EXTENDED_STAY_POLICY) : undefined;
+    if (typedLimit !== undefined) return typedLimit;
     return plan?.kind === "clarify_stay" || /how many|nights|\bstay\b|somewhere|\bplace\b|lagos|abuja|lekki|ikoyi/i.test(userText)
       ? GUEST_ASSISTANT_COPY.stayClarification
       : GUEST_ASSISTANT_COPY.safeClarification;

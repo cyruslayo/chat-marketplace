@@ -89,8 +89,8 @@ test("AC1: Every slot in the table renders exactly the approved text, within its
   const chip = LANDING_COPY.exampleChips[2]!;
   assert.deepEqual(
     { text: chip.text, nights: chip.nights },
-    { text: "Ikoyi, 60 nights from 5 Jan, relocating", nights: 60 },
-    "the third chip is the approved 60-night chip",
+    { text: "Ikoyi, 2 months from 5 Jan, relocating", nights: 60 },
+    "the third chip is the approved 2-month chip (60 nights, issue 19)",
   );
   within(chip.text, LANDING_LENGTH_LIMITS.exampleChip, "exampleChips[2]");
   assert.ok(html.includes(`>${escapeHtml(chip.text)}</button>`), "the 60-night chip renders as a button");
@@ -168,7 +168,7 @@ test("AC3: The chip validator accepts 29, 30, 60 and 180 nights and refuses 0 an
   assert.deepEqual(validateExampleChips(LANDING_COPY.exampleChips), [], "every approved chip passes the validator");
 });
 
-test("AC4: The 60-night chip, sent through the landing handoff, produces a 60-night search on a production-like composition", async () => {
+test("AC4 (and issue 19 AC6): The 2-month chip (60 nights), sent through the landing handoff, yields a 60-night search with the (2 months) show-back on a production-like composition", async () => {
   // The issue 14 path: POST /welcome/start with the chip text, on a composition with the demo off (the default for
   // openNode). Then a cold restore (a new server over the same database) before the conversation is read, as a Worker request.
   const CHIP = LANDING_COPY.exampleChips[2]!.text;
@@ -202,10 +202,9 @@ test("AC4: The 60-night chip, sent through the landing handoff, produces a 60-ni
       assert.equal(page.status, 200, "the conversation is readable after a cold restore");
       const text = plainText(await page.text()).replace(/\s+/g, " ");
       assert.ok(text.includes(CHIP), "the first Guest message is the chip text");
-      assert.ok(text.includes("60 nights"), "the concierge reads the stay as 60 nights");
+      assert.ok(text.includes("60 nights (2 months)"), "the concierge reads the stay as 2 months (60 nights) and shows both back");
       assert.ok(text.includes("Tue 5 Jan 2027"), "the check-in is 5 January 2027, the next 5 January after the clock");
       assert.doesNotMatch(text, /how many nights|how long (?:would you|will you) stay|how many nights/i, "the concierge does not ask for the nights again");
-      assert.doesNotMatch(text, /month|monthly/i, "no month parser is needed: the chip says nights");
     } finally {
       await restored.close();
     }

@@ -216,6 +216,7 @@ import { ContinuousOccupancyError } from "../../../domains/shortlet/src/index.js
 import {
   amenityQuestions,
   extractStayRequestFacts,
+  type StatedStayLength,
   formatGuestDay,
   mergeStayRequestContext,
   resolveStayRequestContext,
@@ -255,7 +256,7 @@ import {
   ASSISTANT_CONFIRM_ACTION_EVENT,
   ASSISTANT_CANCEL_ACTION_EVENT,
 } from "./assistant/pending-action-a2ui.js";
-import { GUEST_ACCOUNT_COPY, GUEST_ASSISTANT_COPY } from "../../web-agent/src/guest-content.js";
+import { GUEST_ACCOUNT_COPY, GUEST_ASSISTANT_COPY, guestStayMonthsWords } from "../../web-agent/src/guest-content.js";
 import { SqliteGuestContactRepository, type GuestContactSource } from "../../../domains/shortlet/src/index.js";
 import {
   GuestContactOwnedByAccountError,
@@ -1007,7 +1008,7 @@ export class LocalGuestApp {
       });
     }
 
-    return acknowledged(this.#executeDiscovery(thread, resolution.filters));
+    return acknowledged(this.#executeDiscovery(thread, resolution.filters, { stayLength: resolution.stayLength }));
   }
 
   #guestStage(thread: GuestThreadState): GuestStage {
@@ -1101,7 +1102,7 @@ export class LocalGuestApp {
   #executeDiscovery(
     thread: GuestThreadState,
     filters: StayRequestFilters,
-    options: { readonly recordHistory?: boolean } = {},
+    options: { readonly recordHistory?: boolean; /** Issue 19: the length the guest stated in months or weeks, for the reply. */ readonly stayLength?: StatedStayLength } = {},
   ): GuestTurnResult {
     if (options.recordHistory !== false && thread.discoveryContext) {
       thread.searchHistory.push({ ...thread.discoveryContext });
@@ -1120,6 +1121,8 @@ export class LocalGuestApp {
       createSurfaceId: () => thread.discoverySurfaceId,
     });
     const result = adapter.search({ ...filters });
+    // Issue 19 (ADR 0092): a stay stated in months shows its nights and the months in brackets; nights and weeks show the dates only.
+    const statedMonths = options.stayLength?.unit === "month" ? `, ${options.stayLength.nights} nights ${guestStayMonthsWords(options.stayLength.count)}` : "";
     thread.discoveryArtifact = result.artifact;
     // ADR 0106: the results on screen name this artifact, so a cold restore keeps this id.
     thread.discoveryArtifactId = result.artifact.id;
@@ -1133,7 +1136,7 @@ export class LocalGuestApp {
     return {
       ok: true,
       messages: [
-        `I found ${result.artifact.facts.results.length} eligible place${result.artifact.facts.results.length === 1 ? "" : "s"} in ${filters.location}${filters.maxPriceKobo === undefined ? "" : ` within your ${formatNgnKobo(filters.maxPriceKobo)} budget (${GUEST_GLOSSARY.allInStayTotal})`} for your stay from ${formatGuestDay(filters.checkIn)} to ${formatGuestDay(filters.checkOut)}. You can view the details below.`,
+        `I found ${result.artifact.facts.results.length} eligible place${result.artifact.facts.results.length === 1 ? "" : "s"} in ${filters.location}${filters.maxPriceKobo === undefined ? "" : ` within your ${formatNgnKobo(filters.maxPriceKobo)} budget (${GUEST_GLOSSARY.allInStayTotal})`} for your stay from ${formatGuestDay(filters.checkIn)} to ${formatGuestDay(filters.checkOut)}${statedMonths}. You can view the details below.`,
       ],
       surfaces: [
         {
@@ -4087,7 +4090,7 @@ export class LocalGuestApp {
           ? this.#clarificationChips(thread, resolution.next)
           : {}),
       };
-    const result = this.#executeDiscovery(thread, resolution.filters);
+    const result = this.#executeDiscovery(thread, resolution.filters, { stayLength: resolution.stayLength });
     this.#reconcileAssistantStay(thread);
     return result;
   }
@@ -4227,6 +4230,7 @@ export class LocalGuestApp {
     this.#recordAssistantArea(thread, previous);
     const result = this.#executeDiscovery(thread, resolution.filters, {
       recordHistory: false,
+      stayLength: resolution.stayLength,
     });
     this.#reconcileAssistantStay(thread);
     return result.ok
@@ -4252,10 +4256,11 @@ export class LocalGuestApp {
               [context.neighbourhood, context.city].filter(Boolean).join(", "),
           };
     const nights = context.nights;
+    // Issue 19 (decision 2): a stay stated in months shows its months in brackets; the chip value stays the number of nights.
     const nightsLabel =
       nights === undefined
         ? ""
-        : `${nights} ${nights === 1 ? "night" : "nights"}`;
+        : `${nights} ${nights === 1 ? "night" : "nights"}${context.stayLength?.unit === "month" ? ` ${guestStayMonthsWords(context.stayLength.count)}` : ""}`;
     const checkOut =
       context.checkIn !== undefined && nights !== undefined
         ? new Date(
