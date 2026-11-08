@@ -158,7 +158,8 @@ test("AC3: The chat shell is rendered from the presentation", () => {
 
 test("AC4: The default shell is unchanged", () => {
   // The snapshot was taken from the unchanged code (before issue 01). Only <html> gains data-mode="stays".
-  const snapshot = readFileSync(new URL("./fixtures/guest-shell-pre-agent-modes.html", import.meta.url), "utf8");
+  // The render's template literals are LF; a CRLF working copy of the fixture must not fail the comparison.
+  const snapshot = readFileSync(new URL("./fixtures/guest-shell-pre-agent-modes.html", import.meta.url), "utf8").replace(/\r\n/g, "\n");
   const htmlTag = '<html lang="en-NG" data-theme="system">';
   assert.equal(snapshot.split(htmlTag).length, 2, "the snapshot has exactly one <html> tag to mark");
   const expected = snapshot.replace(htmlTag, '<html lang="en-NG" data-theme="system" data-mode="stays">');
