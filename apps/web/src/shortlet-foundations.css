@@ -447,6 +447,8 @@
   .agent-dock { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--layout-gutter-mobile) 0; color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); }
   .agent-dock[hidden] { display: none; }
   .agent-dock__chip:empty { display: none; }
+  /* With a workspace open, the desktop grid has no row for the dock (guest-server.ts owns that template), so the dock steps aside; #working-status still reports the turn. */
+  main:has(#active-workspace:not([hidden])) > #agent-dock { display: none; }
   /* Agent Mark states (ADR 0107 decision 9, issue 01b): each state has a static form here, and motion is added only under no-preference. */
   .agent-mark[data-agent-state="listening"] { transform: scale(1.06); }
   .agent-mark[data-agent-state="suggesting"] { transform: translateY(-2px); }
@@ -467,6 +469,8 @@
     @keyframes agent-mark-pop { 0% { transform: scale(1); } 40% { transform: scale(1.12); } 100% { transform: scale(1); } }
     @keyframes agent-mark-nudge { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
     @keyframes agent-mark-switch { from { opacity: 0; } to { opacity: 1; } }
+    /* The page snaps and only the shared agent-mark group glides from the hero to the app bar (ADR 0107 decision 9). */
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
   }
   /* Commerce offer card (ADR 0078): the title sits under the card padding, not under the browser's default heading margin. */
   .ui-panel[data-commerce-offer] > h2 { margin-block-start: 0; }
