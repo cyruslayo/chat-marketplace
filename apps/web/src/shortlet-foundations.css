@@ -123,6 +123,7 @@
   --duration-slow: 320ms;
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-enter: cubic-bezier(0, 0, 0, 1);
+  --ease-spring: linear(0, 0.5 18%, 0.84 38%, 1.06 62%, 0.98 82%, 1);
 
   --layer-sticky: 10;
   --layer-skip-link: 30;
@@ -434,6 +435,44 @@
   .ui-appbar__action { min-block-size: var(--control-min-target); }
   .ui-icon-button { display: inline-flex; flex: none; inline-size: var(--control-min-target); block-size: var(--control-min-target); align-items: center; justify-content: center; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-pill); background: var(--color-surface); color: var(--color-text); text-decoration: none; cursor: pointer; }
   .ui-icon-button:hover { border-color: var(--color-action); color: var(--color-action); }
+  /* Agent Mark (ADR 0107 decision 9, issue 01b): static sizing and colour only. Motion follows the state and is added separately. */
+  .agent-mark { display: inline-grid; flex: none; place-items: center; color: var(--color-action); }
+  .agent-mark > .ui-icon { inline-size: 100%; block-size: 100%; }
+  .agent-mark[data-agent-mark="hero"] { inline-size: 4.5rem; block-size: 4.5rem; margin-block-end: var(--space-3); view-transition-name: agent-mark; }
+  .agent-mark[data-agent-mark="appbar"] { inline-size: 1.75rem; block-size: 1.75rem; }
+  /* The app-bar mark takes the shared name only once the empty state is hidden, so two marks never share it in one snapshot. */
+  .app:has(#empty-state[hidden]) .ui-appbar > .agent-mark[data-agent-mark="appbar"] { view-transition-name: agent-mark; }
+  .agent-mark[data-agent-mark="dock"] { inline-size: 1.5rem; block-size: 1.5rem; }
+  .agent-mark[data-agent-state="human"] { color: var(--color-text-secondary); }
+  .agent-mark__badge { display: grid; inline-size: 100%; block-size: 100%; place-items: center; border-radius: var(--radius-pill); background: var(--color-surface-subtle); }
+  .agent-dock { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--layout-gutter-mobile) 0; color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); }
+  .agent-dock[hidden] { display: none; }
+  .agent-dock__chip:empty { display: none; }
+  /* With a workspace open, the desktop grid has no row for the dock (guest-server.ts owns that template), so the dock steps aside; #working-status still reports the turn. */
+  main:has(#active-workspace:not([hidden])) > #agent-dock { display: none; }
+  /* Agent Mark states (ADR 0107 decision 9, issue 01b): each state has a static form here, and motion is added only under no-preference. */
+  .agent-mark, .agent-mark * { transition: none; }
+  .agent-mark[data-agent-state="listening"] { transform: scale(1.06); }
+  .agent-mark[data-agent-state="suggesting"] { transform: translateY(-2px); }
+  .agent-mark[data-agent-state="resting"] { opacity: 0.6; }
+  @media (prefers-reduced-motion: no-preference) {
+    /* Transform and opacity only; the spring is a linear() curve. Every animation is finite (at most 4.8 s), so none loops past 5 s (WCAG 2.2.2). */
+    .agent-mark[data-agent-state="thinking"] { animation: agent-mark-think 1200ms ease-in-out 4; }
+    .agent-mark[data-agent-state="responding"] { animation: agent-mark-pop 360ms var(--ease-spring) 1; }
+    .agent-mark[data-agent-state="suggesting"] { animation: agent-mark-nudge 600ms var(--ease-spring) 2; }
+    .agent-mark[data-agent-state="switching"] { animation: agent-mark-switch 320ms var(--ease-spring) 1; }
+    /* Motion pauses while the page is hidden; the client sets data-page-hidden on <html> (client.ts). */
+    html[data-page-hidden] .agent-mark[data-agent-state="thinking"],
+    html[data-page-hidden] .agent-mark[data-agent-state="responding"],
+    html[data-page-hidden] .agent-mark[data-agent-state="suggesting"],
+    html[data-page-hidden] .agent-mark[data-agent-state="switching"] { animation-play-state: paused; }
+    @keyframes agent-mark-think { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.06); opacity: 0.8; } }
+    @keyframes agent-mark-pop { 0% { transform: scale(1); } 40% { transform: scale(1.12); } 100% { transform: scale(1); } }
+    @keyframes agent-mark-nudge { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+    @keyframes agent-mark-switch { from { opacity: 0; } to { opacity: 1; } }
+    /* The page snaps; only the shared mark group glides from the hero to the app bar (ADR 0107 decision 9). */
+    ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+  }
   /* Commerce offer card (ADR 0078): the title sits under the card padding, not under the browser's default heading margin. */
   .ui-panel[data-commerce-offer] > h2 { margin-block-start: 0; }
 

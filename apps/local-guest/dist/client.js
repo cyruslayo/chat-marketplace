@@ -9204,7 +9204,9 @@ Known schemas:
     "message-plus": '<path d="M8 9h8M8 13h5M12 21l-3-3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v6M16 19h6M19 16v6"/>',
     photo: '<path d="M15 8h.01"/><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 16l5-5c.9-.9 2.1-.9 3 0l5 5M14 14l1-1c.9-.9 2.1-.9 3 0l3 3"/>',
     pin: '<path d="M12 21s-6-5.5-6-10a6 6 0 0 1 12 0c0 4.5-6 10-6 10z"/><circle cx="12" cy="11" r="2"/>',
+    person: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20.5c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
+    "stays-mark": '<path d="M4 19.5V11c0-4 3.6-7 8-7s8 3 8 7v8.5"/><path d="M9.5 19.5v-4a2.5 2.5 0 0 1 5 0v4"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
     upload: '<path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M7 9l5-5 5 5M12 4v12"/>',
     users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.5 3.2-5.5 6.5-5.5s5.9 2 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.8c2 .7 3.2 2.5 3.5 5.2"/>',
@@ -9874,7 +9876,7 @@ Known schemas:
     id: "stays",
     label: "Stays",
     // Naming is settled in slice 2 of the agent-modes effort; "Stays" is the placeholder persona name.
-    persona: { name: "Stays", icon: "home" },
+    persona: { name: "Stays", icon: "stays-mark" },
     tagline: GUEST_VERTICALS.staysDescription,
     emptyState: {
       heading: "Find a place to stay",
@@ -10028,6 +10030,27 @@ Known schemas:
   }
   function readResponseMode(value) {
     return validateModePresentation(value);
+  }
+
+  // apps/local-guest/src/agent-mark-state.ts
+  var BUSY_STATES = ["thinking", "working", "responding"];
+  function nextAgentMarkState(current, event) {
+    if (current === "human") return "human";
+    switch (event.type) {
+      case "turn-started":
+        return "thinking";
+      case "reply-landed":
+        return "responding";
+      case "response-settled":
+        return current === "responding" ? "idle" : current;
+      case "turn-ended":
+        return current === "thinking" || current === "working" ? "idle" : current;
+      case "turn-refused":
+        return "resting";
+      case "composer-changed":
+        if (event.focusedWithText) return BUSY_STATES.includes(current) ? current : "listening";
+        return current === "listening" ? "idle" : current;
+    }
   }
 
   // apps/web-agent/src/booking-presentation.ts
@@ -11270,6 +11293,38 @@ Known schemas:
   function applyResponseMode(response) {
     appliedMode = readResponseMode(response.mode) ?? appliedMode;
   }
+  var AGENT_MARK_POP_MS = 400;
+  var agentMarkState = "idle";
+  var agentMarkSettleTimer;
+  var agentDock = requiredElement("agent-dock");
+  var agentDockChip = agentDock.querySelector(".agent-dock__chip");
+  function setAgentMark(event) {
+    agentMarkState = nextAgentMarkState(agentMarkState, event);
+    for (const mark of document.querySelectorAll("[data-agent-mark]")) mark.setAttribute("data-agent-state", agentMarkState);
+  }
+  function landAgentReply() {
+    setAgentMark({ type: "reply-landed" });
+    window.clearTimeout(agentMarkSettleTimer);
+    agentMarkSettleTimer = window.setTimeout(() => setAgentMark({ type: "response-settled" }), AGENT_MARK_POP_MS);
+  }
+  function syncPageHidden() {
+    document.documentElement.toggleAttribute("data-page-hidden", document.visibilityState === "hidden");
+  }
+  syncPageHidden();
+  document.addEventListener("visibilitychange", syncPageHidden);
+  function syncComposerMark() {
+    setAgentMark({ type: "composer-changed", focusedWithText: document.activeElement === composerInput && composerInput.value.trim() !== "" });
+  }
+  composerInput.addEventListener("input", syncComposerMark);
+  composerInput.addEventListener("focus", syncComposerMark);
+  composerInput.addEventListener("blur", syncComposerMark);
+  function withAgentMarkTransition(update) {
+    if (emptyState.hidden || !document.startViewTransition || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      update();
+      return;
+    }
+    document.startViewTransition(update);
+  }
   var threadId = getThreadId();
   var shellState = createConversationShellState();
   var activePayload;
@@ -12125,6 +12180,7 @@ Known schemas:
   function renderResponse(response) {
     if (!response.ok) {
       const message = response.message ?? "That action could not be completed.";
+      if (response.code === "quota_refusal" || response.code === "CONCIERGE_UNAVAILABLE") setAgentMark({ type: "turn-refused", code: response.code });
       if (response.code === "STALE_SURFACE" || response.code === "STALE_ACTION" || response.code === "EXPIRED_SURFACE") {
         shellState = markActiveSurfaceStatus(shellState, response.code === "EXPIRED_SURFACE" ? "expired" : "stale");
         if (activePayload) renderSurface({ ...activePayload, status: shellState.activeSurface?.status });
@@ -12145,6 +12201,7 @@ Known schemas:
     const surfaces = response.surfaces ?? [];
     renderSurfaces(surfaces);
     for (const receipt of response.receipts ?? []) addReceipt(receipt);
+    landAgentReply();
     return true;
   }
   async function refreshServerState(preserveConversation = shellState.activeSurface?.mode === "focused-surface" && !shellState.focusedSurfaceOpen) {
@@ -12188,6 +12245,9 @@ Known schemas:
     workingStatus.hidden = !next;
     workingStatus.textContent = next ? appliedMode.workspace.workingStatus : "";
     if (next) announce("Message sent. The concierge is working on your request.");
+    agentDock.hidden = !next;
+    if (agentDockChip) agentDockChip.textContent = next ? appliedMode.workspace.workingStatus : "";
+    setAgentMark({ type: next ? "turn-started" : "turn-ended" });
   }
   async function showLandedTurn(text) {
     try {
@@ -12235,6 +12295,7 @@ Known schemas:
     }
     if (eventInFlight) return;
     eventInFlight = true;
+    setAgentMark({ type: "turn-started" });
     const control = lastActivatedControl?.isConnected && activeWorkspace.contains(lastActivatedControl) ? lastActivatedControl : void 0;
     control?.setAttribute("data-loading", "true");
     control?.setAttribute("aria-busy", "true");
@@ -12248,6 +12309,7 @@ Known schemas:
       announce("The action could not be sent. Please try again.", true);
     } finally {
       eventInFlight = false;
+      setAgentMark({ type: "turn-ended" });
       control?.removeAttribute("data-loading");
       control?.removeAttribute("aria-busy");
       activeWorkspace.removeAttribute("aria-busy");
@@ -12363,8 +12425,10 @@ Known schemas:
     suggestion.addEventListener("click", () => {
       const text = suggestion.dataset.prompt?.trim();
       if (!text || isLoading) return;
-      addTurn("user", text);
-      void sendTurn(text);
+      withAgentMarkTransition(() => {
+        addTurn("user", text);
+        void sendTurn(text);
+      });
     });
   }
   composerForm.addEventListener("submit", (event) => {
@@ -12372,8 +12436,10 @@ Known schemas:
     const text = composerInput.value.trim();
     if (text === "" || isLoading) return;
     clearQuickReplies();
-    addTurn("user", text);
-    void sendTurn(text);
+    withAgentMarkTransition(() => {
+      addTurn("user", text);
+      void sendTurn(text);
+    });
   });
   async function restoreServerState() {
     try {

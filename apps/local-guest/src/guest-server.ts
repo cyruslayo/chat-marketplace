@@ -160,6 +160,7 @@ import {
   appBarHtml,
   composerHtml,
   confirmationScreenHtml,
+  agentMarkHtml,
   emptyStateHtml,
   offerScreenHtml,
   railHtml,
@@ -561,6 +562,7 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays)
   <a class="skip-link" href="#main-content">Skip to conversation</a>
   <div class="app guest-editorial">
     <header class="ui-appbar">
+      ${agentMarkHtml(mode, "appbar")}
       <a class="header-identity ui-appbar__brand" href="/" aria-label="Shortlet home"><h1>Shortlet</h1></a>
       <span class="header-note">Abuja · Lagos</span>
       <span class="ui-appbar__grow"></span>
@@ -601,6 +603,7 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays)
         </div>
         <p id="criteria-status" class="criteria-status" role="alert"></p>
       </section>
+      <div id="agent-dock" class="agent-dock" hidden>${agentMarkHtml(mode, "dock")}<span class="agent-dock__chip"></span></div>
       ${composerHtml(mode, "chat")}
     </main>
     <div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>

@@ -1,0 +1,264 @@
+bank-transfer-chat-dark-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1680 x32-237 y21-41
+bank-transfer-chat-dark-320.png	identical	base-noise 0	head-vs-b2 0 
+bank-transfer-chat-dark-390.png	identical	base-noise 0	head-vs-b2 0 
+bank-transfer-chat-dark-768.png	identical	base-noise 0	head-vs-b2 0 
+bank-transfer-chat-light-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1680 x32-237 y21-41
+bank-transfer-chat-light-320.png	CHANGED (stable base)	base-noise 0	head-vs-b2 3135 x16-278 y19-62
+bank-transfer-chat-light-390.png	identical	base-noise 0	head-vs-b2 0 
+bank-transfer-chat-light-768.png	identical	base-noise 0	head-vs-b2 0 
+bank-transfer-page-dark-1280.png	UNSTABLE base, head matches neither	base-noise 578	head-vs-b2 633 x565-659 y908-917
+bank-transfer-page-dark-320.png	UNSTABLE base, head matches neither	base-noise 578	head-vs-b2 633 x37-131 y1093-1102
+bank-transfer-page-dark-390.png	UNSTABLE base, head matches neither	base-noise 578	head-vs-b2 633 x39-133 y996-1005
+bank-transfer-page-dark-768.png	UNSTABLE base, head matches neither	base-noise 578	head-vs-b2 633 x309-403 y908-917
+bank-transfer-page-light-1280.png	UNSTABLE base, head matches neither	base-noise 577	head-vs-b2 635 x565-658 y908-917
+bank-transfer-page-light-320.png	UNSTABLE base, head matches neither	base-noise 577	head-vs-b2 635 x37-130 y1093-1102
+bank-transfer-page-light-390.png	UNSTABLE base, head matches neither	base-noise 577	head-vs-b2 635 x39-132 y996-1005
+bank-transfer-page-light-768.png	UNSTABLE base, head matches neither	base-noise 577	head-vs-b2 635 x309-402 y908-917
+chat-compare-dark-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1680 x32-237 y21-41
+chat-compare-dark-320.png	identical	base-noise 0	head-vs-b2 0 
+chat-compare-dark-390.png	identical	base-noise 0	head-vs-b2 0 
+chat-compare-dark-768.png	identical	base-noise 0	head-vs-b2 0 
+chat-compare-light-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1680 x32-237 y21-41
+chat-compare-light-320.png	identical	base-noise 0	head-vs-b2 0 
+chat-compare-light-390.png	identical	base-noise 0	head-vs-b2 0 
+chat-compare-light-768.png	identical	base-noise 0	head-vs-b2 0 
+chat-home-dark-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 37597 x304-828 y21-333
+chat-home-dark-320.png	CHANGED (stable base)	base-noise 0	head-vs-b2 38639 x16-319 y0-894
+chat-home-dark-390.png	CHANGED (stable base)	base-noise 0	head-vs-b2 35163 x18-363 y21-377
+chat-home-dark-768.png	CHANGED (stable base)	base-noise 0	head-vs-b2 37597 x40-564 y21-333
+chat-home-light-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 37525 x304-828 y21-333
+chat-home-light-320.png	CHANGED (stable base)	base-noise 0	head-vs-b2 35059 x16-299 y45-426
+chat-home-light-390.png	CHANGED (stable base)	base-noise 0	head-vs-b2 35163 x18-363 y21-377
+chat-home-light-768.png	CHANGED (stable base)	base-noise 0	head-vs-b2 37525 x40-564 y21-333
+chat-results-dark-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1680 x32-237 y21-41
+chat-results-dark-320.png	UNSTABLE base, head matches neither	base-noise 3580	head-vs-b2 1084 x16-128 y45-65
+chat-results-dark-390.png	UNSTABLE base, head matches neither	base-noise 21	head-vs-b2 1105 x18-130 y21-870
+chat-results-dark-768.png	UNSTABLE base, head matches neither	base-noise 21	head-vs-b2 1702 x41-246 y21-870
+chat-results-light-1280.png	UNSTABLE base, head matches neither	base-noise 21	head-vs-b2 1680 x32-237 y21-41
+chat-results-light-320.png	UNSTABLE base, head matches neither	base-noise 9907	head-vs-b2 10970 x16-303 y7-882
+chat-results-light-390.png	UNSTABLE base, head matches neither	base-noise 21	head-vs-b2 1086 x18-130 y21-311
+chat-results-light-768.png	UNSTABLE base, head matches neither	base-noise 21	head-vs-b2 1681 x41-246 y21-41
+chat-unit-dark-1280.png	UNSTABLE base, head matches neither	base-noise 36756	head-vs-b2 38436 x32-1261 y21-799
+chat-unit-dark-320.png	noise (base unstable; head matches one base run)	base-noise 23401	head-vs-b2 23401 x0-319 y13-687
+chat-unit-dark-390.png	noise (base unstable; head matches one base run)	base-noise 30227	head-vs-b2 30227 x0-389 y14-745
+chat-unit-dark-768.png	noise (base unstable; head matches one base run)	base-noise 72672	head-vs-b2 72672 x0-764 y33-743
+chat-unit-light-1280.png	UNSTABLE base, head matches neither	base-noise 34499	head-vs-b2 36179 x32-1261 y21-799
+chat-unit-light-320.png	UNSTABLE base, head matches neither	base-noise 23275	head-vs-b2 25553 x0-319 y9-687
+chat-unit-light-390.png	noise (base unstable; head matches one base run)	base-noise 28988	head-vs-b2 28988 x0-389 y14-743
+chat-unit-light-768.png	noise (base unstable; head matches one base run)	base-noise 66074	head-vs-b2 66074 x1-764 y33-743
+confirmed-chat-dark-1280.png	UNSTABLE base, head matches neither	base-noise 1220	head-vs-b2 2671 x32-870 y21-762
+confirmed-chat-dark-320.png	UNSTABLE base, head matches neither	base-noise 1204	head-vs-b2 994 x77-224 y727-739
+confirmed-chat-dark-390.png	UNSTABLE base, head matches neither	base-noise 1204	head-vs-b2 994 x79-226 y664-676
+confirmed-chat-dark-768.png	UNSTABLE base, head matches neither	base-noise 1204	head-vs-b2 994 x229-376 y621-633
+confirmed-chat-light-1280.png	UNSTABLE base, head matches neither	base-noise 1216	head-vs-b2 2663 x32-870 y21-762
+confirmed-chat-light-320.png	UNSTABLE base, head matches neither	base-noise 1212	head-vs-b2 1000 x77-224 y727-739
+confirmed-chat-light-390.png	UNSTABLE base, head matches neither	base-noise 1212	head-vs-b2 1000 x79-226 y664-676
+confirmed-chat-light-768.png	UNSTABLE base, head matches neither	base-noise 1212	head-vs-b2 1000 x229-376 y621-633
+confirmed-page-dark-1280.png	UNSTABLE base, head matches neither	base-noise 1204	head-vs-b2 994 x605-752 y681-693
+confirmed-page-dark-320.png	UNSTABLE base, head matches neither	base-noise 1204	head-vs-b2 994 x77-224 y797-809
+confirmed-page-dark-390.png	UNSTABLE base, head matches neither	base-noise 1204	head-vs-b2 994 x79-226 y724-736
+confirmed-page-dark-768.png	UNSTABLE base, head matches neither	base-noise 1204	head-vs-b2 994 x349-496 y681-693
+confirmed-page-light-1280.png	UNSTABLE base, head matches neither	base-noise 1212	head-vs-b2 1000 x605-752 y681-693
+confirmed-page-light-320.png	UNSTABLE base, head matches neither	base-noise 1212	head-vs-b2 1000 x77-224 y797-809
+confirmed-page-light-390.png	UNSTABLE base, head matches neither	base-noise 1212	head-vs-b2 1000 x79-226 y724-736
+confirmed-page-light-768.png	UNSTABLE base, head matches neither	base-noise 1212	head-vs-b2 1000 x349-496 y681-693
+error-page-dark-1280.png	identical	base-noise 0	head-vs-b2 0 
+error-page-dark-320.png	identical	base-noise 0	head-vs-b2 0 
+error-page-dark-390.png	identical	base-noise 0	head-vs-b2 0 
+error-page-dark-768.png	identical	base-noise 0	head-vs-b2 0 
+error-page-light-1280.png	identical	base-noise 0	head-vs-b2 0 
+error-page-light-320.png	identical	base-noise 0	head-vs-b2 0 
+error-page-light-390.png	identical	base-noise 0	head-vs-b2 0 
+error-page-light-768.png	identical	base-noise 0	head-vs-b2 0 
+manual-transfer-chat-dark-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1680 x32-237 y21-41
+manual-transfer-chat-dark-320.png	identical	base-noise 0	head-vs-b2 0 
+manual-transfer-chat-dark-390.png	identical	base-noise 0	head-vs-b2 0 
+manual-transfer-chat-dark-768.png	identical	base-noise 0	head-vs-b2 0 
+manual-transfer-chat-light-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1680 x32-237 y21-41
+manual-transfer-chat-light-320.png	identical	base-noise 0	head-vs-b2 0 
+manual-transfer-chat-light-390.png	identical	base-noise 0	head-vs-b2 0 
+manual-transfer-chat-light-768.png	identical	base-noise 0	head-vs-b2 0 
+manual-transfer-page-dark-1280.png	UNSTABLE base, head matches neither	base-noise 635	head-vs-b2 650 x593-669 y1023-1036
+manual-transfer-page-dark-320.png	UNSTABLE base, head matches neither	base-noise 617	head-vs-b2 634 x62-133 y1153-1165
+manual-transfer-page-dark-390.png	UNSTABLE base, head matches neither	base-noise 635	head-vs-b2 650 x67-143 y1162-1175
+manual-transfer-page-dark-768.png	UNSTABLE base, head matches neither	base-noise 635	head-vs-b2 650 x337-413 y1023-1036
+manual-transfer-page-light-1280.png	UNSTABLE base, head matches neither	base-noise 632	head-vs-b2 645 x593-669 y1023-1036
+manual-transfer-page-light-320.png	UNSTABLE base, head matches neither	base-noise 615	head-vs-b2 637 x62-133 y1153-1165
+manual-transfer-page-light-390.png	UNSTABLE base, head matches neither	base-noise 632	head-vs-b2 645 x67-143 y1162-1175
+manual-transfer-page-light-768.png	UNSTABLE base, head matches neither	base-noise 632	head-vs-b2 645 x337-413 y1023-1036
+manual-waiting-chat-dark-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1680 x32-237 y21-41
+manual-waiting-chat-dark-320.png	identical	base-noise 0	head-vs-b2 0 
+manual-waiting-chat-dark-390.png	identical	base-noise 0	head-vs-b2 0 
+manual-waiting-chat-dark-768.png	identical	base-noise 0	head-vs-b2 0 
+manual-waiting-chat-light-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1680 x32-237 y21-41
+manual-waiting-chat-light-320.png	noise (base unstable; head matches one base run)	base-noise 3135	head-vs-b2 3135 x16-278 y19-62
+manual-waiting-chat-light-390.png	identical	base-noise 0	head-vs-b2 0 
+manual-waiting-chat-light-768.png	identical	base-noise 0	head-vs-b2 0 
+manual-waiting-page-dark-1280.png	UNSTABLE base, head matches neither	base-noise 606	head-vs-b2 601 x594-668 y858-871
+manual-waiting-page-dark-320.png	UNSTABLE base, head matches neither	base-noise 606	head-vs-b2 601 x66-140 y1097-1110
+manual-waiting-page-dark-390.png	UNSTABLE base, head matches neither	base-noise 606	head-vs-b2 601 x68-142 y950-963
+manual-waiting-page-dark-768.png	UNSTABLE base, head matches neither	base-noise 606	head-vs-b2 601 x338-412 y858-871
+manual-waiting-page-light-1280.png	UNSTABLE base, head matches neither	base-noise 607	head-vs-b2 601 x594-668 y858-871
+manual-waiting-page-light-320.png	UNSTABLE base, head matches neither	base-noise 607	head-vs-b2 601 x66-140 y1097-1110
+manual-waiting-page-light-390.png	UNSTABLE base, head matches neither	base-noise 607	head-vs-b2 601 x68-142 y950-963
+manual-waiting-page-light-768.png	UNSTABLE base, head matches neither	base-noise 607	head-vs-b2 601 x338-412 y858-871
+no-js-conversation-dark-1280.png	identical	base-noise 0	head-vs-b2 0 
+no-js-conversation-dark-320.png	identical	base-noise 0	head-vs-b2 0 
+no-js-conversation-dark-390.png	identical	base-noise 0	head-vs-b2 0 
+no-js-conversation-dark-768.png	identical	base-noise 0	head-vs-b2 0 
+no-js-conversation-light-1280.png	identical	base-noise 0	head-vs-b2 0 
+no-js-conversation-light-320.png	identical	base-noise 0	head-vs-b2 0 
+no-js-conversation-light-390.png	identical	base-noise 0	head-vs-b2 0 
+no-js-conversation-light-768.png	identical	base-noise 0	head-vs-b2 0 
+no-reservation-page-dark-1280.png	identical	base-noise 0	head-vs-b2 0 
+no-reservation-page-dark-320.png	identical	base-noise 0	head-vs-b2 0 
+no-reservation-page-dark-390.png	identical	base-noise 0	head-vs-b2 0 
+no-reservation-page-dark-768.png	identical	base-noise 0	head-vs-b2 0 
+no-reservation-page-light-1280.png	identical	base-noise 0	head-vs-b2 0 
+no-reservation-page-light-320.png	CHANGED (stable base)	base-noise 0	head-vs-b2 22448 x32-287 y1107-1206
+no-reservation-page-light-390.png	identical	base-noise 0	head-vs-b2 0 
+no-reservation-page-light-768.png	identical	base-noise 0	head-vs-b2 0 
+offer-expired-chat-dark-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1681 x305-510 y21-41
+offer-expired-chat-dark-320.png	CHANGED (stable base)	base-noise 0	head-vs-b2 4664 x16-319 y0-894
+offer-expired-chat-dark-390.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1084 x18-130 y21-41
+offer-expired-chat-dark-768.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1681 x41-246 y21-41
+offer-expired-chat-light-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1681 x305-510 y21-41
+offer-expired-chat-light-320.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1084 x16-128 y45-65
+offer-expired-chat-light-390.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1084 x18-130 y21-41
+offer-expired-chat-light-768.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1681 x41-246 y21-41
+offer-expired-page-dark-1280.png	identical	base-noise 0	head-vs-b2 0 
+offer-expired-page-dark-320.png	identical	base-noise 0	head-vs-b2 0 
+offer-expired-page-dark-390.png	identical	base-noise 0	head-vs-b2 0 
+offer-expired-page-dark-768.png	identical	base-noise 0	head-vs-b2 0 
+offer-expired-page-light-1280.png	identical	base-noise 0	head-vs-b2 0 
+offer-expired-page-light-320.png	identical	base-noise 0	head-vs-b2 0 
+offer-expired-page-light-390.png	identical	base-noise 0	head-vs-b2 0 
+offer-expired-page-light-768.png	identical	base-noise 0	head-vs-b2 0 
+offer-live-chat-dark-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1680 x32-237 y21-41
+offer-live-chat-dark-320.png	identical	base-noise 0	head-vs-b2 0 
+offer-live-chat-dark-390.png	identical	base-noise 0	head-vs-b2 0 
+offer-live-chat-dark-768.png	identical	base-noise 0	head-vs-b2 0 
+offer-live-chat-light-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1680 x32-237 y21-41
+offer-live-chat-light-320.png	noise (base unstable; head matches one base run)	base-noise 20	head-vs-b2 0 
+offer-live-chat-light-390.png	identical	base-noise 0	head-vs-b2 0 
+offer-live-chat-light-768.png	identical	base-noise 0	head-vs-b2 0 
+offer-live-page-dark-1280.png	identical	base-noise 0	head-vs-b2 0 
+offer-live-page-dark-320.png	identical	base-noise 0	head-vs-b2 0 
+offer-live-page-dark-390.png	identical	base-noise 0	head-vs-b2 0 
+offer-live-page-dark-768.png	identical	base-noise 0	head-vs-b2 0 
+offer-live-page-light-1280.png	identical	base-noise 0	head-vs-b2 0 
+offer-live-page-light-320.png	identical	base-noise 0	head-vs-b2 0 
+offer-live-page-light-390.png	identical	base-noise 0	head-vs-b2 0 
+offer-live-page-light-768.png	identical	base-noise 0	head-vs-b2 0 
+payment-choice-chat-dark-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1680 x32-237 y21-41
+payment-choice-chat-dark-320.png	identical	base-noise 0	head-vs-b2 0 
+payment-choice-chat-dark-390.png	identical	base-noise 0	head-vs-b2 0 
+payment-choice-chat-dark-768.png	identical	base-noise 0	head-vs-b2 0 
+payment-choice-chat-light-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1680 x32-237 y21-41
+payment-choice-chat-light-320.png	identical	base-noise 0	head-vs-b2 0 
+payment-choice-chat-light-390.png	identical	base-noise 0	head-vs-b2 0 
+payment-choice-chat-light-768.png	identical	base-noise 0	head-vs-b2 0 
+payment-choice-page-dark-1280.png	identical	base-noise 0	head-vs-b2 0 
+payment-choice-page-dark-320.png	identical	base-noise 0	head-vs-b2 0 
+payment-choice-page-dark-390.png	identical	base-noise 0	head-vs-b2 0 
+payment-choice-page-dark-768.png	identical	base-noise 0	head-vs-b2 0 
+payment-choice-page-light-1280.png	identical	base-noise 0	head-vs-b2 0 
+payment-choice-page-light-320.png	identical	base-noise 0	head-vs-b2 0 
+payment-choice-page-light-390.png	identical	base-noise 0	head-vs-b2 0 
+payment-choice-page-light-768.png	identical	base-noise 0	head-vs-b2 0 
+request-declined-chat-dark-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1680 x32-237 y21-41
+request-declined-chat-dark-320.png	UNSTABLE base, head matches neither	base-noise 3580	head-vs-b2 4664 x16-319 y0-894
+request-declined-chat-dark-390.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1084 x18-130 y21-41
+request-declined-chat-dark-768.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1681 x41-246 y21-41
+request-declined-chat-light-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1680 x32-237 y21-41
+request-declined-chat-light-320.png	UNSTABLE base, head matches neither	base-noise 11262	head-vs-b2 1084 x16-128 y45-65
+request-declined-chat-light-390.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1084 x18-130 y21-41
+request-declined-chat-light-768.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1681 x41-246 y21-41
+request-declined-page-dark-1280.png	identical	base-noise 0	head-vs-b2 0 
+request-declined-page-dark-320.png	identical	base-noise 0	head-vs-b2 0 
+request-declined-page-dark-390.png	identical	base-noise 0	head-vs-b2 0 
+request-declined-page-dark-768.png	identical	base-noise 0	head-vs-b2 0 
+request-declined-page-light-1280.png	identical	base-noise 0	head-vs-b2 0 
+request-declined-page-light-320.png	identical	base-noise 0	head-vs-b2 0 
+request-declined-page-light-390.png	identical	base-noise 0	head-vs-b2 0 
+request-declined-page-light-768.png	identical	base-noise 0	head-vs-b2 0 
+request-draft-chat-dark-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1680 x32-237 y21-41
+request-draft-chat-dark-320.png	identical	base-noise 0	head-vs-b2 0 
+request-draft-chat-dark-390.png	identical	base-noise 0	head-vs-b2 0 
+request-draft-chat-dark-768.png	identical	base-noise 0	head-vs-b2 0 
+request-draft-chat-light-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1680 x32-237 y21-41
+request-draft-chat-light-320.png	identical	base-noise 0	head-vs-b2 0 
+request-draft-chat-light-390.png	identical	base-noise 0	head-vs-b2 0 
+request-draft-chat-light-768.png	identical	base-noise 0	head-vs-b2 0 
+request-draft-page-dark-1280.png	identical	base-noise 0	head-vs-b2 0 
+request-draft-page-dark-320.png	identical	base-noise 0	head-vs-b2 0 
+request-draft-page-dark-390.png	identical	base-noise 0	head-vs-b2 0 
+request-draft-page-dark-768.png	identical	base-noise 0	head-vs-b2 0 
+request-draft-page-light-1280.png	identical	base-noise 0	head-vs-b2 0 
+request-draft-page-light-320.png	identical	base-noise 0	head-vs-b2 0 
+request-draft-page-light-390.png	identical	base-noise 0	head-vs-b2 0 
+request-draft-page-light-768.png	identical	base-noise 0	head-vs-b2 0 
+request-expired-chat-dark-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1680 x32-237 y21-41
+request-expired-chat-dark-320.png	UNSTABLE base, head matches neither	base-noise 3580	head-vs-b2 1084 x16-128 y45-65
+request-expired-chat-dark-390.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1084 x18-130 y21-41
+request-expired-chat-dark-768.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1681 x41-246 y21-41
+request-expired-chat-light-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1680 x32-237 y21-41
+request-expired-chat-light-320.png	UNSTABLE base, head matches neither	base-noise 1419	head-vs-b2 12368 x16-303 y8-883
+request-expired-chat-light-390.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1084 x18-130 y21-41
+request-expired-chat-light-768.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1681 x41-246 y21-41
+request-expired-page-dark-1280.png	identical	base-noise 0	head-vs-b2 0 
+request-expired-page-dark-320.png	identical	base-noise 0	head-vs-b2 0 
+request-expired-page-dark-390.png	identical	base-noise 0	head-vs-b2 0 
+request-expired-page-dark-768.png	identical	base-noise 0	head-vs-b2 0 
+request-expired-page-light-1280.png	identical	base-noise 0	head-vs-b2 0 
+request-expired-page-light-320.png	identical	base-noise 0	head-vs-b2 0 
+request-expired-page-light-390.png	identical	base-noise 0	head-vs-b2 0 
+request-expired-page-light-768.png	identical	base-noise 0	head-vs-b2 0 
+request-review-chat-dark-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1680 x32-237 y21-41
+request-review-chat-dark-320.png	identical	base-noise 0	head-vs-b2 0 
+request-review-chat-dark-390.png	identical	base-noise 0	head-vs-b2 0 
+request-review-chat-dark-768.png	identical	base-noise 0	head-vs-b2 0 
+request-review-chat-light-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1680 x32-237 y21-41
+request-review-chat-light-320.png	identical	base-noise 0	head-vs-b2 0 
+request-review-chat-light-390.png	identical	base-noise 0	head-vs-b2 0 
+request-review-chat-light-768.png	identical	base-noise 0	head-vs-b2 0 
+request-review-page-dark-1280.png	identical	base-noise 0	head-vs-b2 0 
+request-review-page-dark-320.png	identical	base-noise 0	head-vs-b2 0 
+request-review-page-dark-390.png	identical	base-noise 0	head-vs-b2 0 
+request-review-page-dark-768.png	identical	base-noise 0	head-vs-b2 0 
+request-review-page-light-1280.png	identical	base-noise 0	head-vs-b2 0 
+request-review-page-light-320.png	identical	base-noise 0	head-vs-b2 0 
+request-review-page-light-390.png	identical	base-noise 0	head-vs-b2 0 
+request-review-page-light-768.png	identical	base-noise 0	head-vs-b2 0 
+request-sent-chat-dark-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1680 x32-237 y21-41
+request-sent-chat-dark-320.png	identical	base-noise 0	head-vs-b2 0 
+request-sent-chat-dark-390.png	identical	base-noise 0	head-vs-b2 0 
+request-sent-chat-dark-768.png	identical	base-noise 0	head-vs-b2 0 
+request-sent-chat-light-1280.png	CHANGED (stable base)	base-noise 0	head-vs-b2 1680 x32-237 y21-41
+request-sent-chat-light-320.png	identical	base-noise 0	head-vs-b2 0 
+request-sent-chat-light-390.png	identical	base-noise 0	head-vs-b2 0 
+request-sent-chat-light-768.png	identical	base-noise 0	head-vs-b2 0 
+request-sent-page-dark-1280.png	identical	base-noise 0	head-vs-b2 0 
+request-sent-page-dark-320.png	identical	base-noise 0	head-vs-b2 0 
+request-sent-page-dark-390.png	identical	base-noise 0	head-vs-b2 0 
+request-sent-page-dark-768.png	identical	base-noise 0	head-vs-b2 0 
+request-sent-page-light-1280.png	identical	base-noise 0	head-vs-b2 0 
+request-sent-page-light-320.png	identical	base-noise 0	head-vs-b2 0 
+request-sent-page-light-390.png	identical	base-noise 0	head-vs-b2 0 
+request-sent-page-light-768.png	identical	base-noise 0	head-vs-b2 0 
+search-page-dark-1280.png	identical	base-noise 0	head-vs-b2 0 
+search-page-dark-320.png	identical	base-noise 0	head-vs-b2 0 
+search-page-dark-390.png	identical	base-noise 0	head-vs-b2 0 
+search-page-dark-768.png	identical	base-noise 0	head-vs-b2 0 
+search-page-light-1280.png	identical	base-noise 0	head-vs-b2 0 
+search-page-light-320.png	identical	base-noise 0	head-vs-b2 0 
+search-page-light-390.png	identical	base-noise 0	head-vs-b2 0 
+search-page-light-768.png	identical	base-noise 0	head-vs-b2 0 
+unit-page-dark-1280.png	identical	base-noise 0	head-vs-b2 0 
+unit-page-dark-320.png	identical	base-noise 0	head-vs-b2 0 
+unit-page-dark-390.png	identical	base-noise 0	head-vs-b2 0 
+unit-page-dark-768.png	identical	base-noise 0	head-vs-b2 0 
+unit-page-light-1280.png	identical	base-noise 0	head-vs-b2 0 
+unit-page-light-320.png	identical	base-noise 0	head-vs-b2 0 
+unit-page-light-390.png	identical	base-noise 0	head-vs-b2 0 
+unit-page-light-768.png	identical	base-noise 0	head-vs-b2 0 

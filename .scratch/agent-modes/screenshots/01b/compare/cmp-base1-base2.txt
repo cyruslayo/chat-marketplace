@@ -1,0 +1,67 @@
+A: C:/Users/Cyrus/AppData/Local/Temp/claude/b2230510a2602d34/88817713-7c52-4cde-add7-e2cd0d046331/scratchpad/base-run1
+B: C:/AI2026/chat-marketplace-agent-modes-01b-base/.scratch/guest-ui-consistency/screenshots/final
+shared PNGs: 264, identical: 203, differing: 61
+only in A: 0 
+only in B: 0 
+differing:
+  bank-transfer-page-dark-1280.png: 578 pixels differ, max channel delta 206
+  bank-transfer-page-dark-320.png: 578 pixels differ, max channel delta 206
+  bank-transfer-page-dark-390.png: 578 pixels differ, max channel delta 206
+  bank-transfer-page-dark-768.png: 578 pixels differ, max channel delta 206
+  bank-transfer-page-light-1280.png: 577 pixels differ, max channel delta 226
+  bank-transfer-page-light-320.png: 577 pixels differ, max channel delta 226
+  bank-transfer-page-light-390.png: 577 pixels differ, max channel delta 226
+  bank-transfer-page-light-768.png: 577 pixels differ, max channel delta 226
+  chat-results-dark-320.png: 3580 pixels differ, max channel delta 109
+  chat-results-dark-390.png: 21 pixels differ, max channel delta 213
+  chat-results-dark-768.png: 21 pixels differ, max channel delta 213
+  chat-results-light-1280.png: 21 pixels differ, max channel delta 217
+  chat-results-light-320.png: 9907 pixels differ, max channel delta 217
+  chat-results-light-390.png: 21 pixels differ, max channel delta 217
+  chat-results-light-768.png: 21 pixels differ, max channel delta 217
+  chat-unit-dark-1280.png: 36756 pixels differ, max channel delta 206
+  chat-unit-dark-320.png: 23401 pixels differ, max channel delta 206
+  chat-unit-dark-390.png: 30227 pixels differ, max channel delta 206
+  chat-unit-dark-768.png: 72672 pixels differ, max channel delta 206
+  chat-unit-light-1280.png: 34499 pixels differ, max channel delta 255
+  chat-unit-light-320.png: 23275 pixels differ, max channel delta 227
+  chat-unit-light-390.png: 28988 pixels differ, max channel delta 227
+  chat-unit-light-768.png: 66074 pixels differ, max channel delta 227
+  confirmed-chat-dark-1280.png: 1220 pixels differ, max channel delta 192
+  confirmed-chat-dark-320.png: 1204 pixels differ, max channel delta 192
+  confirmed-chat-dark-390.png: 1204 pixels differ, max channel delta 192
+  confirmed-chat-dark-768.png: 1204 pixels differ, max channel delta 192
+  confirmed-chat-light-1280.png: 1216 pixels differ, max channel delta 226
+  confirmed-chat-light-320.png: 1212 pixels differ, max channel delta 226
+  confirmed-chat-light-390.png: 1212 pixels differ, max channel delta 226
+  confirmed-chat-light-768.png: 1212 pixels differ, max channel delta 226
+  confirmed-page-dark-1280.png: 1204 pixels differ, max channel delta 213
+  confirmed-page-dark-320.png: 1204 pixels differ, max channel delta 213
+  confirmed-page-dark-390.png: 1204 pixels differ, max channel delta 213
+  confirmed-page-dark-768.png: 1204 pixels differ, max channel delta 213
+  confirmed-page-light-1280.png: 1212 pixels differ, max channel delta 217
+  confirmed-page-light-320.png: 1212 pixels differ, max channel delta 217
+  confirmed-page-light-390.png: 1212 pixels differ, max channel delta 217
+  confirmed-page-light-768.png: 1212 pixels differ, max channel delta 217
+  manual-transfer-page-dark-1280.png: 635 pixels differ, max channel delta 206
+  manual-transfer-page-dark-320.png: 617 pixels differ, max channel delta 206
+  manual-transfer-page-dark-390.png: 635 pixels differ, max channel delta 206
+  manual-transfer-page-dark-768.png: 635 pixels differ, max channel delta 206
+  manual-transfer-page-light-1280.png: 632 pixels differ, max channel delta 226
+  manual-transfer-page-light-320.png: 615 pixels differ, max channel delta 226
+  manual-transfer-page-light-390.png: 632 pixels differ, max channel delta 226
+  manual-transfer-page-light-768.png: 632 pixels differ, max channel delta 226
+  manual-waiting-chat-light-320.png: 3135 pixels differ, max channel delta 18
+  manual-waiting-page-dark-1280.png: 606 pixels differ, max channel delta 206
+  manual-waiting-page-dark-320.png: 606 pixels differ, max channel delta 206
+  manual-waiting-page-dark-390.png: 606 pixels differ, max channel delta 206
+  manual-waiting-page-dark-768.png: 606 pixels differ, max channel delta 206
+  manual-waiting-page-light-1280.png: 607 pixels differ, max channel delta 226
+  manual-waiting-page-light-320.png: 607 pixels differ, max channel delta 226
+  manual-waiting-page-light-390.png: 607 pixels differ, max channel delta 226
+  manual-waiting-page-light-768.png: 607 pixels differ, max channel delta 226
+  offer-live-chat-light-320.png: 20 pixels differ, max channel delta 15
+  request-declined-chat-dark-320.png: 3580 pixels differ, max channel delta 116
+  request-declined-chat-light-320.png: 11262 pixels differ, max channel delta 21
+  request-expired-chat-dark-320.png: 3580 pixels differ, max channel delta 116
+  request-expired-chat-light-320.png: 1419 pixels differ, max channel delta 16

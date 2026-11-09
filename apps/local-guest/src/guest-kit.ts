@@ -45,6 +45,7 @@ import type { ConfirmationContent } from "../../web-agent/src/confirmation-prese
 import type { OfferScreenContent } from "../../web-agent/src/offer-presentation.js";
 import type { PaymentScreenContent, PaymentMethodChoice } from "../../web-agent/src/payment-presentation.js";
 import type { CommerceOfferPresentation } from "../../web-agent/src/commerce-presentation.js";
+import type { AgentMarkPlacement, AgentMarkState } from "./agent-mark-state.js";
 
 /** The absolute deadline in Africa/Lagos time (ADR 0078), without the "Pay by" prefix. */
 export function formatWAT(iso: string): string {
@@ -742,6 +743,16 @@ export function taskStepHeaderHtml(domainLabel: string, status: string): string 
 }
 
 /**
+ * The Agent Mark (ADR 0107 decision 9): a decorative glyph of the mode persona icon, in one of three placements. It is aria-hidden and
+ * is never a button or a link; the text labels carry the meaning. The "human" state (ADR 0076) shows the person badge instead of the
+ * persona glyph, and has no animation. Motion is not in this markup: it lives in the kit CSS and follows the state (issue 01b).
+ */
+export function agentMarkHtml(mode: ModePresentation, placement: AgentMarkPlacement, state: AgentMarkState = "idle"): string {
+  const glyph = state === "human" ? `<span class="agent-mark__badge" data-agent-badge="person">${icon("person")}</span>` : icon(mode.persona.icon);
+  return `<span class="agent-mark" data-agent-mark="${placement}" data-agent-state="${state}" aria-hidden="true">${glyph}</span>`;
+}
+
+/**
  * The empty state of the chat shell, rendered from the mode (ADR 0107, ADR 0077). Indentation: the first line carries none;
  * the caller indents it to the shell's depth (8 spaces), and every inner line keeps its absolute indentation.
  */
@@ -750,6 +761,7 @@ export function emptyStateHtml(mode: ModePresentation): string {
     .map((starter) => `<button class="prompt-suggestion ui-chip" type="button" data-prompt="${escapeHtml(starter.prompt)}">${escapeHtml(starter.label)}</button>`)
     .join("\n            ");
   return `<section id="empty-state" aria-labelledby="empty-state-heading">
+          ${agentMarkHtml(mode, "hero")}
           <h2 id="empty-state-heading">${escapeHtml(mode.emptyState.heading)}</h2>
           <p>${escapeHtml(mode.emptyState.body)}</p>
           <div class="prompt-suggestions">
