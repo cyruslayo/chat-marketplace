@@ -447,6 +447,27 @@
   .agent-dock { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--layout-gutter-mobile) 0; color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); }
   .agent-dock[hidden] { display: none; }
   .agent-dock__chip:empty { display: none; }
+  /* Agent Mark states (ADR 0107 decision 9, issue 01b): each state has a static form here, and motion is added only under no-preference. */
+  .agent-mark[data-agent-state="listening"] { transform: scale(1.06); }
+  .agent-mark[data-agent-state="suggesting"] { transform: translateY(-2px); }
+  .agent-mark[data-agent-state="resting"] { opacity: 0.6; }
+  @media (prefers-reduced-motion: no-preference) {
+    /* Transform and opacity only; the spring is a linear() curve. Every animation is finite (at most 4.8 s), so none loops past 5 s (WCAG 2.2.2). */
+    .agent-mark { --agent-mark-spring: linear(0, 0.5 18%, 0.84 38%, 1.06 62%, 0.98 82%, 1); }
+    .agent-mark[data-agent-state="thinking"] { animation: agent-mark-think 1200ms ease-in-out 4; }
+    .agent-mark[data-agent-state="responding"] { animation: agent-mark-pop 360ms var(--agent-mark-spring) 1; }
+    .agent-mark[data-agent-state="suggesting"] { animation: agent-mark-nudge 600ms var(--agent-mark-spring) 2; }
+    .agent-mark[data-agent-state="switching"] { animation: agent-mark-switch 320ms var(--agent-mark-spring) 1; }
+    /* Motion pauses while the page is hidden; the client sets data-page-hidden on <html> (client.ts). */
+    html[data-page-hidden] .agent-mark[data-agent-state="thinking"],
+    html[data-page-hidden] .agent-mark[data-agent-state="responding"],
+    html[data-page-hidden] .agent-mark[data-agent-state="suggesting"],
+    html[data-page-hidden] .agent-mark[data-agent-state="switching"] { animation-play-state: paused; }
+    @keyframes agent-mark-think { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.06); opacity: 0.8; } }
+    @keyframes agent-mark-pop { 0% { transform: scale(1); } 40% { transform: scale(1.12); } 100% { transform: scale(1); } }
+    @keyframes agent-mark-nudge { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+    @keyframes agent-mark-switch { from { opacity: 0; } to { opacity: 1; } }
+  }
   /* Commerce offer card (ADR 0078): the title sits under the card padding, not under the browser's default heading margin. */
   .ui-panel[data-commerce-offer] > h2 { margin-block-start: 0; }
 
