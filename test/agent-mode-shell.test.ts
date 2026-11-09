@@ -29,7 +29,7 @@ const { composerHtml } = guestKit;
 const STAYS = {
   id: "stays",
   label: "Stays",
-  persona: { name: "Stays", icon: "home" },
+  persona: { name: "Stays", icon: "stays-mark" },
   tagline: "Find an inspected apartment in Lagos or Abuja and book it.",
   emptyState: {
     heading: "Find a place to stay",
