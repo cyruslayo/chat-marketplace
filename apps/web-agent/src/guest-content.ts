@@ -695,7 +695,7 @@ const STAYS_PRESENTATION: ModePresentation = {
   id: "stays",
   label: "Stays",
   // Naming is settled in slice 2 of the agent-modes effort; "Stays" is the placeholder persona name.
-  persona: { name: "Stays", icon: "home" },
+  persona: { name: "Stays", icon: "stays-mark" },
   tagline: GUEST_VERTICALS.staysDescription,
   emptyState: {
     heading: "Find a place to stay",
