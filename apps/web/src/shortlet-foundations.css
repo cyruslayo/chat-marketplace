@@ -450,6 +450,7 @@
   /* With a workspace open, the desktop grid has no row for the dock (guest-server.ts owns that template), so the dock steps aside; #working-status still reports the turn. */
   main:has(#active-workspace:not([hidden])) > #agent-dock { display: none; }
   /* Agent Mark states (ADR 0107 decision 9, issue 01b): each state has a static form here, and motion is added only under no-preference. */
+  .agent-mark { transition: none; }
   .agent-mark[data-agent-state="listening"] { transform: scale(1.06); }
   .agent-mark[data-agent-state="suggesting"] { transform: translateY(-2px); }
   .agent-mark[data-agent-state="resting"] { opacity: 0.6; }
