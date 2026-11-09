@@ -83,7 +83,7 @@ Each gets its own `test()`, named after it.
 
 ### Agent D, UI evidence and docs (issue 01b, head 9b399ef)
 
-Status at this entry: **ready-for-human**. Code is complete and the evidence is captured, but the issue is not resolved: DoD items 3 and 7 are not satisfied (see the DoD audit), and the owner has open decisions (items e, k and l below). Nothing was pushed, merged or deployed. No product code was changed by this entry.
+Status at this entry: **ready-for-human**. Code is complete and the evidence is captured, but the issue is not resolved: DoD item 7 is not satisfied (see the DoD audit), and the owner has open decisions (items k and l below). The dock placement beside an open workspace is settled by the owner (item e). Nothing was pushed, merged or deployed. No product code was changed by this entry.
 
 **Commands and counts (this run, worktree `C:\AI2026\chat-marketplace-agent-modes-01b`):**
 
@@ -116,7 +116,7 @@ Status at this entry: **ready-for-human**. Code is complete and the evidence is 
 
 1. **Every AC has a dedicated named test: MET.** AC1 `AC1: The shell shows the stays mark in the hero and in the app bar`; AC2 `AC2: Each mark state comes from an existing signal` and `AC2: No event sequence yields human, working, suggesting or switching`; AC3, AC4, AC5 and AC7 in `test/agent-mark-chromium.test.ts`; AC6 `AC6: A mark in the human state shows the person badge and never animates`; AC8 `AC8: The server-rendered shell shows both marks in the idle state without a client script`.
 2. **Failure paths exercised: MET under the criteria as worded.** AC2 covers the refusal path (both `quota_refusal` and `CONCIERGE_UNAVAILABLE` give `resting`), and the second AC2 test covers the states that must not occur (`human`, `working`, `suggesting`, `switching`). AC6 asserts the negative (no animation). AC1, AC3, AC4, AC5, AC7 and AC8 are positive checks as their criteria are worded.
-3. **Every ADR touching the domain listed and read: NOT MET.** Read in full in this pass: 0107 (decision 9 in full), 0076, 0077, 0078 and 0080. 0081 read to its first section only. 0106 read by its headings, its "Replies" section, the "Date authority" and "Structured stay facts" amendments, and "Constraints retained"; its full body was not read. The table below cites what the code relies on.
+3. **Every ADR touching the domain listed and read: MET (9 Nov 2026 pass).** All seven ADRs in the issue's list are now read in full: 0107 (all decisions and amendments), 0076, 0077, 0078, 0080, 0081 and 0106 (including its amendments). The ADR table below cites the constraint each change relies on. No change violates a constraint; the known deviations are in the table and in (a) to (l).
 4. **No unused injected dependency: MET by inspection.** `agentMarkHtml(mode, placement, state)` uses all three parameters. `nextAgentMarkState` is called from `setAgentMark`, and every event type it accepts is produced (`turn-started` and `turn-ended` from `setLoading` and `sendEvent`, `reply-landed` and `response-settled` from `landAgentReply`, `turn-refused` from `renderResponse`, `composer-changed` from the composer listeners). `AGENT_MARK_POP_MS` is used.
 5. **No invented policy string or rule: MET, with notes.** The diff of `guest-content.ts` changes only the stays persona icon. The dock chip reuses `workspace.workingStatus`. No new copy was added, so "Concierge · Stays" is still owed to issue 02. The motion values (CSS durations of 320 to 1200 ms, the `linear()` spring, `AGENT_MARK_POP_MS = 400`) are engineering values, not domain policy. The 5-second cap comes from ADR 0107 decision 9 and WCAG 2.2.2.
 6. **No credential or identity material in logs: MET.** The diff of `apps/` and `test/` adds no logging.
@@ -132,6 +132,7 @@ Status at this entry: **ready-for-human**. Code is complete and the evidence is 
 | 0107 d9 | Motion pauses while the page is hidden | `client.ts` `syncPageHidden` sets `data-page-hidden`; CSS `html[data-page-hidden]` rules; chromium AC5 |
 | 0107 d9 | The mark is `aria-hidden` decoration; the text carries the status | `agentMarkHtml` in `guest-kit.ts`; the `#working-status` text is unchanged; `findings-*.txt` (focusable false, aria-hidden true) |
 | 0107 d9 | Presence dock drops away when the reply lands | `#agent-dock` `hidden` set in `setLoading`; chromium AC7 |
+| 0107 d9 | The dock sits above the composer while a turn is in flight | **Deviation, settled by the owner on 9 Nov 2026:** the dock stays hidden while a workspace is open. The CSS rule `main:has(#active-workspace:not([hidden])) > #agent-dock` in `shortlet-foundations.css` hides it. No grid row is added, so the shell grid template and the snapshot are unchanged. Split captures show it hidden |
 | 0107 d9 | The chip names the current step in pack copy | **Deviation.** No step signal exists, so the chip reuses the working copy (item k) |
 | 0107 d9 | `working` is a tool step shown by a pack prop | **Deviation.** No tool-step signal, so `working` is never produced (deviation a) |
 | 0107 d9 | The mark sits inside a labelled control | **Deviation.** The app-bar mark is not a button (01b "What to build" 2, analysis 9.3). A control arrives with the mode sheet (slice 5) |
@@ -142,8 +143,13 @@ Status at this entry: **ready-for-human**. Code is complete and the evidence is 
 | 0078 | Dynamic surfaces announce meaningful changes, not tokens | No new announcer. `#working-status` and the `#announcer` are unchanged |
 | 0077 | Channel renders the canonical artifact; no recalculated amounts or deadlines | The marks render no amounts, deadlines or consent text. Copy is unchanged |
 | 0080 | No agent-only state transition | The marks read state and write nothing; no command or route is added |
-| 0081 | Weaver types stay out of domain and platform code | Only the kit icon set (`ui-kit.ts`) and the presentation string are touched |
-| 0106 | Reply path and controls unchanged | `renderResponse` change is the mark trigger only; the response mode and reply kinds are untouched |
+| 0081 | Weaver types stay out of domain and platform code; the A2UI and CopilotKit path is not used by the marks | No Weaver or A2UI import or reference in the 01b diff of `apps/` and `test/`. The marks use the kit icon set only |
+| 0081 | Rich UI failure must not remove or corrupt authoritative state; conventional routes stay the fallback | The marks are inert decoration. They write no state and no command. The no-JS shell shows the static idle marks (AC8), so the page works without the client script |
+| 0081 | Reduced motion, WCAG 2.2 AA, en-NG copy and constrained networks unchanged; human handoff requirements unchanged | Marks respect `prefers-reduced-motion` (chromium AC3). No new copy, so en-NG is unchanged. The human state is defined but not wired, the gap in deviation (b) |
+| 0106 | The model never grants permissions; the server supplies reply wording and facts | The mark state comes from client signals only, and the dock chip is static presentation copy, not model output. `renderResponse` gains only the mark trigger |
+| 0106 | A cold restore re-keys held ids and never re-mints them; no id is held by the mark | The mark state is a module variable, reset to `idle` on load. It holds no id and writes nothing to storage |
+| 0106 | Quota or guard failure preserves conventional workflows | The `resting` state is decoration on `quota_refusal` and `CONCIERGE_UNAVAILABLE`. It changes no workflow, command or message text |
+| 0106 | Guard diagnostics record only closed codes and counts | No diagnostic added by this change (the `assistant.control.outcome.v1` path is unchanged) |
 
 **Decisions and deviations:**
 
@@ -151,7 +157,7 @@ Status at this entry: **ready-for-human**. Code is complete and the evidence is 
 - **(b) The human state is defined and CSS-tested, but unwired.** No takeover signal reaches guests (grep of `apps/local-guest/src` finds only payment handoff). Wiring is owed to whichever issue brings takeover to guests (ADR 0076). `nextAgentMarkState` keeps `human` absorbing so a later signal cannot leave it.
 - **(c) `quota_refusal` does not reach the client as a code today.** It is recorded as a control outcome in `assistant-runtime.ts` (lines around 1094 and 1446) and the guest gets an ok response with the unavailable copy. The client branch for `quota_refusal` is therefore not reachable in practice, and only `CONCIERGE_UNAVAILABLE` gives `resting`. I did not re-trace this to the response body in this pass.
 - **(d) The app-bar mark takes `view-transition-name` only once the empty state is hidden.** Duplicate names in one snapshot abort the view transition, so a shared name on both marks at once is not safe. The rule is `.app:has(#empty-state[hidden]) .ui-appbar > .agent-mark[data-agent-mark="appbar"]`. This deviates from "both share the name", and the deviation is deliberate.
-- **(e) The dock is hidden beside an open desktop workspace.** The shell grid (`guest-server.ts`) has no row for the dock, and adding one changes the grid template and the snapshot. **Owner decision pending.**
+- **(e) SETTLED by the owner (9 Nov 2026, in chat): the presence dock stays hidden while a workspace is open.** No grid row and no shell grid or snapshot change. This removes the decision from the open items. The rule has no media query, so it applies at every width; whether phones should differ is item (l).
 - **(f) An extra `person` icon** was added to the kit for the human badge. It is an `ui-kit.ts` icon, not copy.
 - **(g) The stays-mark icon replaced `home` in `persona.icon`.** `test/agent-mode-shell.test.ts` (one line) and the shell snapshot fixture `test/fixtures/guest-shell-pre-agent-modes.html` were updated for the added marks only.
 - **(h) No new guest copy.** The "Concierge · Stays" wording is owed to issue 02 and the owner.
@@ -161,6 +167,6 @@ Status at this entry: **ready-for-human**. Code is complete and the evidence is 
 - **(l) The dock is hidden whenever a workspace is open, at every width (new finding).** The CSS rule `main:has(#active-workspace:not([hidden])) > #agent-dock { display: none }` has no media query, so on a phone with a workspace open the in-flight dock is also hidden. The captures show this at 320, 390 and 768. The brief described the rule as desktop-only; the code does not scope it. **Owner decision:** whether the dock should show on phones with a workspace open.
 - **Capture limitation.** The split captures set the in-flight state by writing the same attributes `setLoading` writes. The next client `setAgentMark` call overwrote the mark states, so those split shots show idle marks. The dock's hidden state is CSS-driven and is what the split captures test.
 
-**Owner decisions outstanding:** (e) and (l), the dock placement beside a workspace and on phones; (k), the duplicate copy. Also owed: the ADR 0107 wording on the labelled control (the mode sheet, slice 5). The DoD items 3 and 7 are pending the full ADR read and the batch gate.
+**Owner decisions outstanding:** (k), the duplicate working copy in the dock; (l), whether the dock should show on phones while a workspace is open. The 9 Nov decision in (e) keeps it hidden with a workspace open; the owner is asked to confirm that this also holds on phones. Also owed: the ADR 0107 wording on the labelled control (the mode sheet, slice 5). DoD item 7 is pending the batch gate.
 
 **Map:** row 1b is set to `ready-for-human` in `map.md` for the same reason.
