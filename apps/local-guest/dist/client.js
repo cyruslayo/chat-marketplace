@@ -11319,7 +11319,7 @@ Known schemas:
   composerInput.addEventListener("focus", syncComposerMark);
   composerInput.addEventListener("blur", syncComposerMark);
   function withAgentMarkTransition(update) {
-    if (!document.startViewTransition || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (emptyState.hidden || !document.startViewTransition || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       update();
       return;
     }

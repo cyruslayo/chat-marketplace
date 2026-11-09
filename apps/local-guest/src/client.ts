@@ -1562,7 +1562,9 @@ composerInput.addEventListener("blur", syncComposerMark);
  * always correct, and reduced motion skips the transition. The app-bar mark takes the shared name only once the empty state is hidden.
  */
 function withAgentMarkTransition(update: () => void): void {
-  if (!document.startViewTransition || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  // Only the first message has a hero to morph. Once the empty state is hidden the shared name sits on the app-bar mark in both
+  // snapshots, so a transition would animate nothing while it holds the document (a running view transition widens the page at 375px).
+  if (emptyState.hidden || !document.startViewTransition || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
     update();
     return;
   }
