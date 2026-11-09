@@ -3372,7 +3372,11 @@ export class LocalGuestApp {
     if (context) {
       thread.assistantContext = context;
       const runtimeArtifact = isDiscoveryArtifactProjection(assistant.discoveryArtifact) ? assistant.discoveryArtifact : undefined;
-      this.#assistantContextSearch(thread, context, runtimeArtifact ?? thread.discoveryArtifact ?? undefined);
+      const currentArtifact = runtimeArtifact ?? thread.discoveryArtifact ?? undefined;
+      // ADR 0106: a sync never re-mints the id the guest's card names. When the context has moved past the current artifact (a When or
+      // Guests chip that only asked a question, then any turn), the facts are re-queried under the current id, as a cold restore does;
+      // a fresh id here reaches no card, so the card's View would fail with ARTIFACT_MISMATCH (staging, 9 Nov 2026).
+      this.#assistantContextSearch(thread, context, currentArtifact, currentArtifact?.id ?? thread.discoveryArtifactId);
     }
     if (assistant.taskState.currentDraftId) thread.draftId = assistant.taskState.currentDraftId;
     if (assistant.taskState.currentBookingRequestId) thread.requestId = assistant.taskState.currentBookingRequestId;
