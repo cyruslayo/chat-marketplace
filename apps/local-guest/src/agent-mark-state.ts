@@ -23,6 +23,7 @@ export type AgentMarkEvent =
   | { readonly type: "turn-started" }
   | { readonly type: "reply-landed" }
   | { readonly type: "response-settled" }
+  | { readonly type: "turn-ended" }
   | { readonly type: "turn-refused"; readonly code: AgentMarkRefusalCode }
   | { readonly type: "composer-changed"; readonly focusedWithText: boolean };
 
@@ -39,6 +40,9 @@ export function nextAgentMarkState(current: AgentMarkState, event: AgentMarkEven
       return "responding";
     case "response-settled":
       return current === "responding" ? "idle" : current;
+    case "turn-ended":
+      // A turn that ends without a reply (a network failure, a stale action) returns to idle. A refusal or a landed reply keeps its state.
+      return current === "thinking" || current === "working" ? "idle" : current;
     case "turn-refused":
       return "resting";
     case "composer-changed":
