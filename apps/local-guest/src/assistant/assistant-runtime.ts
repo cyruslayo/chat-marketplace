@@ -47,7 +47,9 @@ import {
   replacePendingProposal,
   type AssistantStayReference,
   isAssistantBudgetPer,
+  isOpenQuestion,
   type AssistantBudgetPer,
+  type OpenQuestion,
 } from "./assistant-state.js";
 import { TurnTransaction, syncActiveTask } from "./assistant-turn-transaction.js";
 import { beginThreadRun, threadRunActive, THREAD_BUSY_CODE, THREAD_BUSY_MESSAGE } from "./assistant-thread-lock.js";
@@ -808,6 +810,33 @@ export class AssistantRuntime {
   }
 
   /**
+   * Issue 57 (ADR 0106 amendment, 9 Nov 2026): records the closed code of the question the assistant last asked, or clears it with
+   * `null`. The shell calls this after a criteria-strip clarification and a "which one" ask. An unknown code is refused; it is never
+   * stored. It grants no authority: a terse answer still becomes a fact only through guest text, a chip or a confirmed show-back.
+   */
+  recordOpenQuestion(threadId: string, code: OpenQuestion | null): boolean {
+    if (this.threadBusy(threadId)) return false;
+    const thread = this.#threads.get(threadId);
+    if (!thread) return false;
+    if (code !== null && !isOpenQuestion(code)) return false;
+    this.#applyOpenQuestion(thread.taskState, code);
+    const task = thread.tasks.find((entry) => entry.taskId === thread.activeTaskId);
+    if (task) task.state = thread.taskState;
+    return true;
+  }
+
+  /** Sets or clears the open-question code on a task state (candidate or committed). An unknown code fails closed to "none". */
+  #applyOpenQuestion(state: AssistantTaskState, code: OpenQuestion | null): void {
+    if (code === null || !isOpenQuestion(code)) delete state.openQuestion;
+    else state.openQuestion = code;
+  }
+
+  /** Issue 57: the open question a reply's clarification kind asks, from the pack, or undefined. */
+  #clarificationOpenQuestion(pack: AssistantDomainPack, state: AssistantTaskState, kind: AssistantClarificationKind): OpenQuestion | undefined {
+    return pack.clarificationOpenQuestion?.(state, kind);
+  }
+
+  /**
    * ADR 0106 (review follow-up): the criteria strip's area. A general area (no neighbourhood) clears the neighbourhood. Only an
    * area in the strip's own catalogue (SEARCH_AREAS, through searchAreaFor) is recorded; any other city or neighbourhood is refused
    * and the stay is unchanged.
@@ -1083,6 +1112,7 @@ export class AssistantRuntime {
     const assessment = text.length > this.#maxInputCharacters ? undefined : await assessScopeSafely(this.#scopeClassifier, safeUserText, {
       domain: packForScope.id, description: packForScope.scopeDescription ?? packForScope.label,
       hasShortlist: tx.taskState.shortlist.length > 0, hasSelectedStay: Boolean(tx.taskState.selectedStayRef), hasOffer: Boolean(tx.taskState.currentOfferId),
+      ...(tx.taskState.openQuestion === undefined ? {} : { openQuestion: tx.taskState.openQuestion }),
       turnContext: this.#turnContext(packForScope),
     }, this.#scopeOuterTimeoutMs, (error) => {
       // A retry failure carries the stage's decisive error; the first failure's outcome stands for refused or skipped retries (ADR 0106 amendment).
@@ -1130,6 +1160,8 @@ export class AssistantRuntime {
     let finalAssistantReply: string | undefined;
     // Issue 10: chips for a `clarify_stay` reply, from the pack's clarification hook; never set for other reply kinds.
     let finalQuickReplies: readonly string[] | undefined;
+    // Issue 57: the clarification kind that carries those chips, so the open-question code can be recorded (or cleared).
+    let finalClarificationKind: AssistantClarificationKind | undefined;
     let activeStage: AssistantDiagnosticStage = "provider_request";
     let activeToolName: string | undefined;
     let hasSuccessfulApplicationOperation = false;
@@ -1208,7 +1240,8 @@ export class AssistantRuntime {
           controlOutcome = this.#replyControlOutcome(latestResults) ?? controlOutcome;
           finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "", tx.taskState)
             ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
-          finalQuickReplies = quickRepliesForReply(candidatePack(), plan, latestResults, tx.taskState);
+          finalClarificationKind = clarificationKindForReply(candidatePack(), plan, latestResults);
+          finalQuickReplies = finalClarificationKind === undefined ? undefined : candidatePack().clarificationQuickReplies?.(tx.taskState, finalClarificationKind);
           candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
           stopReason = "reply";
           break;
@@ -1414,10 +1447,13 @@ export class AssistantRuntime {
         const plan = typeof parsedFinalPlan === "string" ? undefined : parsedFinalPlan;
         finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "", tx.taskState)
           ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
-        finalQuickReplies = quickRepliesForReply(candidatePack(), plan, latestResults, tx.taskState);
+        finalClarificationKind = clarificationKindForReply(candidatePack(), plan, latestResults);
+        finalQuickReplies = finalClarificationKind === undefined ? undefined : candidatePack().clarificationQuickReplies?.(tx.taskState, finalClarificationKind);
         candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
       }
 
+      // Issue 57 (ADR 0106 amendment): a clarification records the closed question it asks; any other committed answer clears it.
+      this.#applyOpenQuestion(tx.taskState, finalClarificationKind === undefined ? null : this.#clarificationOpenQuestion(candidatePack(), tx.taskState, finalClarificationKind) ?? null);
       // 4. Commit Transaction (Item 24)
       this.#commitHistory(thread, candidateHistory, candidatePack(), tx.taskState);
       tx.commit(thread, { state: true, tasks: true, discovery: true, lastSurfaces: tx.surfaces.length > 0 ? tx.surfaces : tx.lastSurfaces });
@@ -1482,6 +1518,13 @@ export class AssistantRuntime {
           ? (error.clarification === "area" ? "area" : undefined)
           : error instanceof AssistantStayDetailsError ? "stay_details" : "dates";
         const quickReplies = chipKind === undefined ? undefined : candidatePack().clarificationQuickReplies?.(thread.taskState, chipKind);
+        // Issue 57 (ADR 0106 amendment): the refusal asks one question, so its closed code is recorded on the committed state. A
+        // refusal with no clarification code (an occupancy conflict) leaves any open question as it was.
+        if (chipKind !== undefined) {
+          this.#applyOpenQuestion(thread.taskState, this.#clarificationOpenQuestion(candidatePack(), thread.taskState, chipKind) ?? null);
+          const activeTask = thread.tasks.find((entry) => entry.taskId === thread.activeTaskId);
+          if (activeTask) activeTask.state = thread.taskState;
+        }
         return { ok: true, messages: [clarification ?? ASSISTANT_CONTROL_COPY.unavailable], surfaces: [], modelHandled: false,
           discardUserInput: false, controlOutcome, tasks: this.getTaskRail(threadId), stopReason,
           ...(quickReplies === undefined ? {} : { quickReplies }) };
@@ -1847,14 +1890,12 @@ export class AssistantRuntime {
  * ADR 0099 / ADR 0106 (issues 10, 09): the chips for a reply. The pack names a clarification its own results carry (a held location
  * question); otherwise a typed `clarify_stay` reply gets the plan chips. Anything else gets none.
  */
-function quickRepliesForReply(
+function clarificationKindForReply(
   pack: AssistantDomainPack,
   plan: AssistantReplyPlan | undefined,
   results: readonly AssistantToolResult[],
-  taskState: AssistantTaskState,
-): readonly string[] | undefined {
-  const kind: AssistantClarificationKind | undefined = pack.replyClarificationKind?.(results) ?? (plan?.kind === "clarify_stay" ? "plan" : undefined);
-  return kind === undefined ? undefined : pack.clarificationQuickReplies?.(taskState, kind);
+): AssistantClarificationKind | undefined {
+  return pack.replyClarificationKind?.(results) ?? (plan?.kind === "clarify_stay" ? "plan" : undefined);
 }
 
 function getSafeResultCount(result: unknown): number | undefined {

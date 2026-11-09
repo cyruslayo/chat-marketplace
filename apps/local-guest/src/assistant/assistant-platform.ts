@@ -1,7 +1,7 @@
 import type { AssistantToolDefinition, AssistantToolResult } from "./assistant-model.js";
 import type { AssistantStageHandler } from "./assistant-stage-handler.js";
 import type { ConciergeIntent, ScopeAssessment } from "./scope-classifier.js";
-import type { AssistantTaskState, AssistantTurnSurface } from "./assistant-state.js";
+import type { AssistantTaskState, AssistantTurnSurface, OpenQuestion } from "./assistant-state.js";
 import type { PendingAssistantAction } from "./pending-actions.js";
 import type { LocalGuestEnvironment } from "../fixture.js";
 import type { CommandPrincipal } from "../../../../packages/platform-core/src/envelope.js";
@@ -145,6 +145,11 @@ export interface AssistantDomainPack {
    * on: it never adds chips to a scope, support or redirect reply. Undefined adds no chips.
    */
   clarificationQuickReplies?(taskState: AssistantTaskState, kind: AssistantClarificationKind): readonly string[] | undefined;
+  /**
+   * Issue 57 (ADR 0106 amendment): the closed open-question code a clarification asks, from the committed task state and the
+   * clarification kind. The runtime stores it so a terse answer can be read against it. Undefined adds no code.
+   */
+  clarificationOpenQuestion?(taskState: AssistantTaskState, kind: AssistantClarificationKind): OpenQuestion | undefined;
   /**
    * Issue 09 (ADR 0099): the clarification a turn's successful results ask for, when the pack's own result says so (for example a
    * location question held as pending). The runtime then offers that clarification's chips. Undefined keeps the plan's own chips.

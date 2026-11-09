@@ -2,7 +2,7 @@ import { draftRevisionRequest } from "./shortlet-draft-revision.js";
 import { generatePlatformId } from "../../../../packages/platform-core/src/index.js";
 import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantGuestRefusalError, AssistantStayDetailsError, containsGuestDate } from "./date-tokens.js";
 import { ContinuousOccupancyError, StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, MAX_STAY_NIGHTS, BOOKING_HORIZON_DAYS, dateKeyInLagos, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
-import { SEARCH_AREAS, formatGuestDay, locationConflictQuestion, quickRepliesFor, resolveLocationMention, stayBudgetKobo, stayCriteriaGap, unsupportedPreferenceNote, viewResultIntent, type PendingLocationChange } from "../concierge.js";
+import { SEARCH_AREAS, formatGuestDay, locationConflictQuestion, quickRepliesFor, resolveLocationMention, stayBudgetKobo, stayCriteriaGap, unsupportedPreferenceNote, viewResultIntent, type PendingLocationChange, type StayCriterion } from "../concierge.js";
 import { phraseIsGuestAuthored, readCheckInPhrase, type CheckInPhraseReading } from "./date-phrases.js";
 import { isExplicitConfirmation } from "./pending-actions.js";
 import { extractBudget, type StayBudget } from "../stay-budget.js";
@@ -26,6 +26,7 @@ import type { AssistantToolDefinition } from "./assistant-model.js";
 import type {
   AssistantStayReference,
   AssistantTaskState,
+  OpenQuestion,
 } from "./assistant-state.js";
 import type { PendingAssistantAction } from "./pending-actions.js";
 import type { ConciergeIntent, ScopeAssessment } from "./scope-classifier.js";
@@ -59,7 +60,8 @@ For an in-scope support request, return the typed support_guidance reply plan wi
 Do not claim an action succeeded until the authoritative tool or platform result confirms it.
 Do not generate HTML, A2UI, or raw application commands.
 In the reply plan, \`references\` lists only the names of the tools whose results the reply reports, for example \`search_stays\` or \`get_unit_details\`. A stay reference such as stay-1 belongs only in tool arguments and never in \`references\`. Use [] when no tool result is reported.
-Do not expose internal database IDs, tokens, or private credentials to the guest. In guest-facing wording, refer to stays by conversational references like stay-1, stay-2.`;
+Do not expose internal database IDs, tokens, or private credentials to the guest. In guest-facing wording, refer to stays by conversational references like stay-1, stay-2.
+If the canonical task facts name an openQuestion code, a short reply that answers it fills only that one slot; never infer other facts from it.`;
 
 /** The full shortlet system instruction (platform preamble + shortlet section). */
 export const ASSISTANT_SYSTEM_INSTRUCTION = `${ASSISTANT_PLATFORM_PREAMBLE}\n${SHORTLET_PROMPT_SECTION}`;
@@ -357,6 +359,40 @@ export function clarificationChipsFor(taskState: AssistantTaskState, kind: Assis
   const gap = stayCriteriaGap({ city: location, partySize, checkIn, nights });
   if (!("next" in gap) || gap.next === "when") return undefined;
   return quickRepliesFor(gap.next);
+}
+
+/** Issue 57 (ADR 0106 amendment): the closed open-question code for one missing stay criterion. */
+export function openQuestionForCriterion(next: StayCriterion): OpenQuestion {
+  switch (next) {
+    case "where": return "where";
+    case "who": return "party_size";
+    case "when": return "check_in";
+    case "nights": return "nights";
+  }
+}
+
+/**
+ * Issue 57 (ADR 0106 amendment): the closed open-question code the committed stay intent still needs. A date or location show-back
+ * wins over a criterion gap, because that is the question on screen. Undefined when no criterion is missing.
+ */
+export function openQuestionForCriteria(taskState: AssistantTaskState): OpenQuestion | undefined {
+  const { pendingDate, pendingLocation, location, partySize, checkIn, nights } = taskState.stayIntent;
+  if (pendingDate !== undefined) return "date_confirm";
+  if (pendingLocation !== undefined) return "location_confirm";
+  const gap = stayCriteriaGap({ city: location, partySize, checkIn, nights });
+  return "next" in gap ? openQuestionForCriterion(gap.next) : undefined;
+}
+
+/** Issue 57 (ADR 0106 amendment): the code a clarification kind asks, from the committed task state. */
+function openQuestionForClarification(taskState: AssistantTaskState, kind: AssistantClarificationKind): OpenQuestion | undefined {
+  switch (kind) {
+    case "area": return "where";
+    case "location": return "location_confirm";
+    case "date": return "date_confirm";
+    case "dates": return "check_in";
+    case "stay_details": return openQuestionForCriteria(taskState);
+    case "plan": return openQuestionForCriteria(taskState);
+  }
 }
 
 /** Issue 13b: the show-back sentence. With a Request Draft open, the same check updates the draft and nothing is searched. */
@@ -1576,6 +1612,7 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     validateToolCall: (name, args, taskState) => validateAssistantToolCall(name, args, taskState, environment.extendedStayPolicy),
     normalizeToolArguments,
     clarificationQuickReplies: clarificationChipsFor,
+    clarificationOpenQuestion: openQuestionForClarification,
     replyClarificationKind: (results) => locationChangeReplyKind(results) ?? dateChangeReplyKind(results),
     executeTool: executeAssistantTool,
     settlePendingGuestFacts: (text, state, now) => settlePendingStayDate(text, state, now, environment.extendedStayPolicy),
@@ -1608,7 +1645,7 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
       };
       return project(result) as Record<string, unknown>;
     },
-    projectStateSummary: (state, limits) => ({ city: state.stayIntent.location === "Lagos" || state.stayIntent.location === "Abuja" ? state.stayIntent.location : null, hasShortlist: state.shortlist.length > 0, shortlistRefs: state.shortlist.slice(0, limits.maxItems).map((stay) => stay.stayRef), selectedStayRef: state.selectedStayRef ?? null, checkIn: state.stayIntent.checkIn ?? null, checkOut: state.stayIntent.checkOut ?? null, nights: state.stayIntent.nights ?? null, partySize: state.stayIntent.partySize ?? null, hasSelectedStay: Boolean(state.selectedStayRef), hasPendingAction: Boolean(state.pendingAction) }),
+    projectStateSummary: (state, limits) => ({ city: state.stayIntent.location === "Lagos" || state.stayIntent.location === "Abuja" ? state.stayIntent.location : null, hasShortlist: state.shortlist.length > 0, shortlistRefs: state.shortlist.slice(0, limits.maxItems).map((stay) => stay.stayRef), selectedStayRef: state.selectedStayRef ?? null, checkIn: state.stayIntent.checkIn ?? null, checkOut: state.stayIntent.checkOut ?? null, nights: state.stayIntent.nights ?? null, partySize: state.stayIntent.partySize ?? null, hasSelectedStay: Boolean(state.selectedStayRef), hasPendingAction: Boolean(state.pendingAction), openQuestion: state.openQuestion ?? null }),
     taskSummary: shortletTaskSummary,
     renderReply: (plan, results, text, taskState) => renderShortletReply(plan, results, text, environment.clock(), taskState),
     // ADR 0106: a booking status with no active booking is reported as its own control outcome.

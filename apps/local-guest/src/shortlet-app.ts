@@ -211,6 +211,8 @@ import {
   type StayBudget,
 } from "./concierge.js";
 import { AMENITY_CATALOGUE_IDS } from "./stay-vocabulary.js";
+import { openQuestionForCriterion } from "./assistant/shortlet-assistant-pack.js";
+import type { OpenQuestion } from "./assistant/assistant-state.js";
 import { ContinuousOccupancyError } from "../../../domains/shortlet/src/index.js";
 import {
   amenityQuestions,
@@ -974,6 +976,8 @@ export class LocalGuestApp {
     const resolution = this.#resolveStayRequestContext(merged.context, this.#environment.clock());
     if (resolution.kind !== "search") {
       // Clarifications, date confirmations and limit refusals never run a search.
+      // Issue 57 (ADR 0106 amendment): a criterion clarification records the closed question it asks.
+      if (resolution.kind === "clarify") this.#recordOpenQuestionForCriterion(thread, resolution.next);
       return acknowledged({
         ok: true,
         messages: [resolution.reply],
@@ -1011,6 +1015,8 @@ export class LocalGuestApp {
       });
     }
 
+    // Issue 57: a search answered the open question, so no code carries into the next turn.
+    this.#recordOpenQuestion(thread, null);
     return acknowledged(this.#executeDiscovery(thread, resolution.filters));
   }
 
@@ -3136,7 +3142,22 @@ export class LocalGuestApp {
         : {}),
       ...(requiredAmenities?.length ? { requiredAmenities } : {}),
       ...(selectedStay ? { selectedUnitId: selectedStay.unitId } : {}),
+      // Issue 57 (ADR 0106 amendment): the closed open-question code persists with the context, so a terse reply survives a cold restore.
+      ...(state.openQuestion === undefined ? {} : { openQuestion: state.openQuestion }),
     };
+  }
+
+  /** Issue 57 (ADR 0106 amendment): records or clears the closed open-question code, keeping the persisted context in step. */
+  #recordOpenQuestion(thread: GuestThreadState, code: OpenQuestion | null): void {
+    const runtime = this.#assistantRuntime;
+    if (!runtime || !runtime.hasThread(thread.threadId)) return;
+    if (!runtime.recordOpenQuestion(thread.threadId, code)) return;
+    this.#persistAssistantStayContext(thread);
+  }
+
+  /** Issue 57: records the closed code a criterion clarification asks. */
+  #recordOpenQuestionForCriterion(thread: GuestThreadState, next: StayCriterion): void {
+    this.#recordOpenQuestion(thread, openQuestionForCriterion(next));
   }
 
   /**
@@ -3317,6 +3338,7 @@ export class LocalGuestApp {
         ...(context.pendingLocation ? { pendingLocation: context.pendingLocation } : {}),
         ...(context.pendingDate ? { pendingDate: { candidates: [...context.pendingDate.candidates], ...(context.pendingDate.checkIn === undefined ? {} : { checkIn: context.pendingDate.checkIn }) } } : {}),
       },
+      ...(context.openQuestion === undefined ? {} : { openQuestion: context.openQuestion }),
       shortlist,
       ...(selected ? { selectedStayRef: selected.stayRef } : {}),
       ...(thread.draftId ? { currentDraftId: thread.draftId } : {}),
@@ -3627,16 +3649,21 @@ export class LocalGuestApp {
   ): GuestTurnResult {
     const results = artifact.facts.results;
     const ordinalLabels = ["The first one", "The second one", "The third one"];
-    const askWhich = (message: string): GuestTurnResult => ({
-      ok: true,
-      messages: [message],
-      surfaces: [],
-      quickReplies: ordinalLabels.slice(
-        0,
-        Math.min(results.length, ordinalLabels.length),
-      ),
-    });
+    const askWhich = (message: string): GuestTurnResult => {
+      // Issue 57 (ADR 0106 amendment): "Which one?" is an open question the guest's next terse reply can answer.
+      this.#recordOpenQuestion(thread, "pick_result");
+      return {
+        ok: true,
+        messages: [message],
+        surfaces: [],
+        quickReplies: ordinalLabels.slice(
+          0,
+          Math.min(results.length, ordinalLabels.length),
+        ),
+      };
+    };
     if (results.length === 0) {
+      this.#recordOpenQuestion(thread, null);
       return {
         ok: true,
         messages: [
@@ -3668,6 +3695,8 @@ export class LocalGuestApp {
       artifact.actions.find(
         (action) => action.type === "view-unit" && action.unitId === unit.id,
       )?.conventionalRoute ?? `/stays/${encodeURIComponent(unit.id)}`;
+    // Issue 57: the choice answered the "which one" question.
+    this.#recordOpenQuestion(thread, null);
     return this.#openUnitDetail(thread, artifact, unit, route);
   }
 
@@ -4064,8 +4093,10 @@ export class LocalGuestApp {
       };
     thread.discoveryContext = next;
     this.#recordAssistantStayChip(thread, edit, next);
-    if (resolution.kind !== "search") this.#reconcileAssistantStay(thread);
-    if (resolution.kind !== "search")
+    if (resolution.kind !== "search") {
+      this.#reconcileAssistantStay(thread);
+      // Issue 57 (ADR 0106 amendment): the "So far I have…" reply asks for one criterion; record its closed code.
+      if (resolution.kind === "clarify") this.#recordOpenQuestionForCriterion(thread, resolution.next);
       return {
         ok: true,
         messages: [resolution.reply],
@@ -4074,7 +4105,10 @@ export class LocalGuestApp {
           ? this.#clarificationChips(thread, resolution.next)
           : {}),
       };
+    }
     const result = this.#executeDiscovery(thread, resolution.filters);
+    // Issue 57: a search answered the open question, so no code carries into the next turn.
+    this.#recordOpenQuestion(thread, null);
     this.#reconcileAssistantStay(thread);
     return result;
   }

@@ -76,6 +76,19 @@ export interface AssistantStayIntent {
   requiredAmenities?: readonly string[];
 }
 
+/**
+ * Issue 57 (ADR 0106 amendment, 9 Nov 2026): one closed, server-set code naming the question the assistant last asked. It lets the
+ * classifier and the planner read a terse answer ("Just me", "2", "a week", "the first one") as an answer to that question. It is
+ * never derived from model output, never carries text, and grants no authority: a fact still needs guest text, a chip or a confirmed
+ * show-back (the date authority rules are unchanged).
+ */
+export const OPEN_QUESTION_CODES = ["where", "party_size", "check_in", "nights", "stay_length", "pick_result", "date_confirm", "location_confirm"] as const;
+export type OpenQuestion = (typeof OPEN_QUESTION_CODES)[number];
+
+export function isOpenQuestion(value: unknown): value is OpenQuestion {
+  return typeof value === "string" && OPEN_QUESTION_CODES.some((code) => code === value);
+}
+
 export interface AssistantTaskState {
   goal: "find_stay" | "book_stay" | "manage_booking" | null;
   stayIntent: AssistantStayIntent;
@@ -94,6 +107,8 @@ export interface AssistantTaskState {
   replacedPendingAction?: ReplacedPendingAction | null;
   /** Issue 13a: the open replacement of the current Request Draft (ADR 0074, ADR 0080). Its surface id is re-keyed on a cold restore. */
   pendingDraftReplacement?: PendingDraftReplacement | null;
+  /** Issue 57 (ADR 0106 amendment): the closed code of the question the assistant last asked, or absent when none is open. */
+  openQuestion?: OpenQuestion;
 }
 
 export type PendingReplacementReason = "search_changed" | "task_switched";
@@ -186,5 +201,7 @@ export function cloneTaskState(state: AssistantTaskState): AssistantTaskState {
     pendingAction: state.pendingAction ? { ...state.pendingAction } : null,
     replacedPendingAction: state.replacedPendingAction ? { ...state.replacedPendingAction } : null,
     pendingDraftReplacement: state.pendingDraftReplacement ?? null,
+    // Issue 57: the open-question code survives a clone (a restore and each turn clone the task state).
+    ...(state.openQuestion === undefined ? {} : { openQuestion: state.openQuestion }),
   };
 }

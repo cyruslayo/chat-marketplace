@@ -112,6 +112,16 @@ Owner decision of 2 Nov 2026 on issue 01 (`.scratch/assistant-concierge-parity/i
 - Configuration (AC2). The rule values are configuration, not literals in code. The date resolver takes one policy object with these defaults: week start Monday; the "next <weekday>" rule above; the fixed holiday list (25 December, 31 December); and the Booking Horizon of 90 days (ADR 0055). The resolver and the shortlet pack contain no literal values for them. The literals now in `concierge.ts` `relativeDates` move into this policy object in issue 02.
 - Boundaries. A resolved date beyond the Booking Horizon (ADR 0055) authorizes nothing. ISO tokens, English day-month literals and chip dates are unchanged. A rejected planner call remains a `tool_denial` (27 Oct amendment). No deterministic in-scope fast path is added: the model returns the guest's words, and the server resolves and shows them back. The confirmation is guest input, so the agent still makes no state transition (ADR 0080).
 
+### Amendment (9 Nov 2026): one closed open-question code
+
+Owner decision of 9 Nov 2026 on the chat hardening batch (`.scratch/shortlet-concierge-launch/issues/57-assistant-open-question-state.md`). The staging defect of 9 Nov 2026 showed a terse answer ("Just me") to a question the assistant itself asked being classified `unclear` and discarded.
+
+- Closed code. The classifier's minimal task summary and the planner's canonical task facts may each carry one `openQuestion` code naming the question the assistant last asked. The value set is `where | party_size | check_in | nights | stay_length | pick_result | date_confirm | location_confirm`. The code is server-set only, never derived from model output, and never carries text. A value outside the set is dropped (fail closed), on both the live path and a cold restore.
+- Authority unchanged. The code grants no permission. A fact still needs guest text, a structured chip (the 27 Oct amendment), or a confirmed show-back (the 2 Nov amendment). Date authority is unchanged: a terse answer to a `check_in` or `date_confirm` question is read only as the classifier's advisory reading of guest text, and the planner's date must still equal a guest literal or a confirmed chip/show-back.
+- No new data. No assistant prompt, reply, or conversation history is added to either model. The classifier still receives the current message plus a minimal server-built summary, and the planner still sees no assistant prose (ADR 0075).
+- Lifecycle. The code is overwritten when a turn asks a different question, and cleared when a turn commits an answer or runs a new search.
+- No keyword fast path. The classifier and planner read the code; the server does not branch on guest keywords to answer a question.
+
 ## Constraints retained
 
 ADRs 0015, 0068–0080, 0089, 0099, 0101, 0102, and 0105 remain in force.

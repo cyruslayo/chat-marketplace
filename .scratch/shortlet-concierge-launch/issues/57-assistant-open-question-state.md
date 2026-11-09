@@ -1,6 +1,6 @@
 # The assistant remembers the question it asked (open-question state, ADR 0106 amendment)
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 Blocked by: 62
 Blocks: 58, 59, 61
@@ -47,18 +47,25 @@ The fix gives both models one closed, server-set code that names the open questi
 
 New `test/assistant-open-question.test.ts`: assistant on, cold restore (a new `LocalGuestApp` over the same store) before every event, fresh thread, 2026-10-27 clock, staging guest with no phone or email. Run warm and cold.
 
-- [ ] After a When chip that only asks for guests, the next classifier request carries `openQuestion: "party_size"`.
-- [ ] After a planner `clarify_stay`, the classifier request carries the code for the next missing criterion.
-- [ ] After a `tool_denial` for a missing party size or nights, the code is `party_size` or `nights`.
-- [ ] After an askWhich with several results, the code is `pick_result`. After a date show-back, it is `date_confirm`. After a location show-back, it is `location_confirm`.
-- [ ] Once the question is answered (state committed), the next classifier request carries no code.
-- [ ] The code survives a cold restore.
-- [ ] A persisted unknown code (e.g. `"drop_tables"`) is dropped on restore, and the classifier request carries none.
-- [ ] The planner request's canonical-facts line carries the code, and its history still contains no assistant prose.
-- [ ] `test/assistant-cold-journey.test.ts` and the scope-control tests still pass.
+- [x] After a When chip that only asks for guests, the next classifier request carries `openQuestion: "party_size"`.
+- [x] After a planner `clarify_stay`, the classifier request carries the code for the next missing criterion.
+- [x] After a `tool_denial` for a missing party size or nights, the code is `party_size` or `nights`.
+- [x] After an askWhich with several results, the code is `pick_result`. After a date show-back, it is `date_confirm`. After a location show-back, it is `location_confirm`.
+- [x] Once the question is answered (state committed), the next classifier request carries no code.
+- [x] The code survives a cold restore.
+- [x] A persisted unknown code (e.g. `"drop_tables"`) is dropped on restore, and the classifier request carries none.
+- [x] The planner request's canonical-facts line carries the code, and its history still contains no assistant prose.
+- [x] `test/assistant-cold-journey.test.ts` and the scope-control tests still pass.
 
 ## Verification
 
 `env -u LLM_API_KEY npm run check`. Then `env -u LLM_API_KEY npx tsx --test test/assistant-open-question.test.ts test/assistant-cold-journey.test.ts test/assistant-scope-controls.test.ts test/assistant-clarification-chips.test.ts test/assistant-date-phrases.test.ts test/assistant-location-change.test.ts test/assistant-discovery-artifact-drift.test.ts`. Record the counts in Comments.
 
 ## Comments
+- 9 Nov 2026, implemented on `fix/chat-hardening`. Commands (all with `env -u LLM_API_KEY`):
+  - `npm run check`: clean (tsc x4 plus the worker bundle guard).
+  - `npx tsx --test test/assistant-open-question.test.ts`: 17 of 17 pass (warm and cold).
+  - `npx tsx --test test/assistant-open-question.test.ts test/assistant-cold-journey.test.ts test/assistant-scope-controls.test.ts test/assistant-clarification-chips.test.ts test/assistant-date-phrases.test.ts test/assistant-location-change.test.ts test/assistant-discovery-artifact-drift.test.ts`: 87 of 87 pass.
+- ADRs read and applied: 0106 (amended 9 Nov 2026 with the closed open-question code; closed codes only, no new model data, no keyword fast path, date authority unchanged), 0075 (closed code only, no assistant prose in either request), 0092/0093 (staging clock 2026-10-27 and staging guest in every test), 0107 D11 (the code lives on the active task's state).
+- Implementation: `OpenQuestion`/`isOpenQuestion` and the task-state field in `assistant-state.ts`; `clarificationOpenQuestion` hook on the pack, `openQuestionForCriteria`/`openQuestionForCriterion` in `shortlet-assistant-pack.ts`; `recordOpenQuestion` + set/clear on the reply and tool-denial paths, the classifier context, and the canonical-facts line in `assistant-runtime.ts`; `openQuestion` on `ScopeContext` and the classifier instruction; shell persistence in `#assistantContextFromState`/`#restoreAssistantFromGuestThread` and set/clear in `#handleCriteriaEdit`, the typed-turn clarify and `#viewResultFromChat`'s askWhich; `PersistedAssistantContext.openQuestion` with a fail-closed drop in `guest-projection.ts`.
+- Definition of Done: every acceptance criterion has a named test (AC8 is the "canonical-facts line carries the code, no assistant prose" test; AC for "nights" is `openQuestionForCriteria names nights…`); ADRs listed above; no new injected dependency; no invented policy string (the code set is the issue's closed list); no credential or identity material added; check and the tests above are green.

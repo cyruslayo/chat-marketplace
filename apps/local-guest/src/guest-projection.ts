@@ -1,7 +1,7 @@
 import type { DiscoveryArtifactProjection } from "../../../apps/web-agent/src/index.js";
 import { parseDiscoverySearchContext, type DiscoverySearchContext } from "./concierge.js";
 import { parsePendingDraftReplacement, type PendingDraftReplacement } from "./draft-replacement.js";
-import { isAssistantBudgetPer, type AssistantBudgetPer } from "./assistant/assistant-state.js";
+import { isAssistantBudgetPer, isOpenQuestion, type AssistantBudgetPer, type OpenQuestion } from "./assistant/assistant-state.js";
 import { SEARCH_AREAS } from "./stay-vocabulary.js";
 import type { PendingAssistantAction } from "./assistant/pending-actions.js";
 import type { ReplacedPendingAction } from "./assistant/assistant-state.js";
@@ -165,6 +165,11 @@ export interface PersistedAssistantContext {
   readonly pendingLocation?: { readonly city: "Lagos" | "Abuja"; readonly neighbourhood?: string };
   /** Issue 04 (ADR 0106 2 Nov 2026, ADR 0093): the candidate dates of an unconfirmed relative phrase. A field of this context, not a record. */
   readonly pendingDate?: { readonly candidates: readonly string[]; readonly checkIn?: string };
+  /**
+   * Issue 57 (ADR 0106 amendment): the closed open-question code the assistant last asked. A field of this context, not a record; an
+   * unknown value is dropped (fail closed) so it can never name a question the runtime does not recognise.
+   */
+  readonly openQuestion?: OpenQuestion;
 }
 
 /**
@@ -217,7 +222,7 @@ function isUnitDetail(value: unknown): value is { readonly unitId: string; reado
 
 function parseAssistantContext(value: unknown): PersistedAssistantContext | null {
   if (!isRecord(value) || (value.city !== "Lagos" && value.city !== "Abuja")) return null;
-  const allowed = new Set(["city", "neighbourhood", "checkIn", "isDemoDate", "checkOut", "nights", "partySize", "bedrooms", "maxBudgetKobo", "maxBudgetPer", "requiredAmenities", "selectedUnitId", "pendingLocation", "pendingDate"]);
+  const allowed = new Set(["city", "neighbourhood", "checkIn", "isDemoDate", "checkOut", "nights", "partySize", "bedrooms", "maxBudgetKobo", "maxBudgetPer", "requiredAmenities", "selectedUnitId", "pendingLocation", "pendingDate", "openQuestion"]);
   if (Object.keys(value).some((key) => !allowed.has(key))) return null;
   if (value.neighbourhood !== undefined && (typeof value.neighbourhood !== "string" || value.neighbourhood.length > 100)) return null;
   if (value.isDemoDate !== undefined && typeof value.isDemoDate !== "boolean") return null;
@@ -259,6 +264,8 @@ function parseAssistantContext(value: unknown): PersistedAssistantContext | null
       const pendingDate = parsePendingDate(value.pendingDate);
       return pendingDate === undefined ? {} : { pendingDate };
     })()),
+    // Issue 57: an unknown open-question code is dropped, never restored (fail closed).
+    ...(isOpenQuestion(value.openQuestion) ? { openQuestion: value.openQuestion } : {}),
   };
 }
 
