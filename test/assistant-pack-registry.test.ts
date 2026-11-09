@@ -5,40 +5,17 @@ import test from "node:test";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
+import { createStubPack } from "./helpers/stub-domain-pack.js";
 import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/scripted-assistant-model.js";
 import {
   ASSISTANT_PLATFORM_PREAMBLE,
   AssistantPackRegistry,
   composeSystemInstruction,
-  type AssistantDomainPack,
 } from "../apps/local-guest/src/assistant/assistant-platform.js";
 import {
   ASSISTANT_SYSTEM_INSTRUCTION,
   createShortletAssistantPack,
 } from "../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
-
-function stubPack(overrides: Partial<AssistantDomainPack> = {}): AssistantDomainPack {
-  return {
-    id: "stub",
-    label: "Stub",
-    promptSection: "STUB SECTION",
-    intentKeywords: [],
-    toolNames: ["stub_tool"],
-    toolsForState: () => [],
-    validateToolCall: () => undefined,
-    executeTool: () => { throw new Error("not executed"); },
-    taskSummary: () => ({ label: "Stub", status: "Ready" }),
-    discoverySurface: () => [],
-    unitDetailSurface: () => [],
-    pendingActionSurface: () => [],
-    bookingRequestSurface: () => [],
-    conditionalOfferSurface: () => [],
-    cardPaymentSurface: () => [],
-    bookingContractSurface: () => [],
-    revalidateProposal: () => ({ ok: true }),
-    ...overrides,
-  };
-}
 
 let testDbIndex = 0;
 function createTestRuntime(model: ScriptedAssistantModel) {
@@ -80,7 +57,7 @@ test("AC2: a tool call naming a tool not offered by the active pack is rejected 
 });
 
 test("Prompt composition prefixes the platform preamble to the active pack's section", () => {
-  const pack = stubPack();
+  const pack = createStubPack();
   assert.equal(composeSystemInstruction(pack), `${ASSISTANT_PLATFORM_PREAMBLE}\nSTUB SECTION`);
 
   const registry = new AssistantPackRegistry();
