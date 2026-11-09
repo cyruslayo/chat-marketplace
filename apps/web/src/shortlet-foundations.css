@@ -469,7 +469,7 @@
     @keyframes agent-mark-pop { 0% { transform: scale(1); } 40% { transform: scale(1.12); } 100% { transform: scale(1); } }
     @keyframes agent-mark-nudge { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
     @keyframes agent-mark-switch { from { opacity: 0; } to { opacity: 1; } }
-    /* The page snaps and only the shared agent-mark group glides from the hero to the app bar (ADR 0107 decision 9). */
+    /* The page snaps; only the shared mark group glides from the hero to the app bar (ADR 0107 decision 9). */
     ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
   }
   /* Commerce offer card (ADR 0078): the title sits under the card padding, not under the browser's default heading margin. */
