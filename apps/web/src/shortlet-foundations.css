@@ -434,6 +434,19 @@
   .ui-appbar__action { min-block-size: var(--control-min-target); }
   .ui-icon-button { display: inline-flex; flex: none; inline-size: var(--control-min-target); block-size: var(--control-min-target); align-items: center; justify-content: center; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-pill); background: var(--color-surface); color: var(--color-text); text-decoration: none; cursor: pointer; }
   .ui-icon-button:hover { border-color: var(--color-action); color: var(--color-action); }
+  /* Agent Mark (ADR 0107 decision 9, issue 01b): static sizing and colour only. Motion follows the state and is added separately. */
+  .agent-mark { display: inline-grid; flex: none; place-items: center; color: var(--color-action); }
+  .agent-mark > .ui-icon { inline-size: 100%; block-size: 100%; }
+  .agent-mark[data-agent-mark="hero"] { inline-size: 4.5rem; block-size: 4.5rem; margin-block-end: var(--space-3); view-transition-name: agent-mark; }
+  .agent-mark[data-agent-mark="appbar"] { inline-size: 1.75rem; block-size: 1.75rem; }
+  /* The app-bar mark takes the shared name only once the empty state is hidden, so two marks never share it in one snapshot. */
+  .app:has(#empty-state[hidden]) .ui-appbar > .agent-mark[data-agent-mark="appbar"] { view-transition-name: agent-mark; }
+  .agent-mark[data-agent-mark="dock"] { inline-size: 1.5rem; block-size: 1.5rem; }
+  .agent-mark[data-agent-state="human"] { color: var(--color-text-secondary); }
+  .agent-mark__badge { display: grid; inline-size: 100%; block-size: 100%; place-items: center; border-radius: var(--radius-pill); background: var(--color-surface-subtle); }
+  .agent-dock { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--layout-gutter-mobile) 0; color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); }
+  .agent-dock[hidden] { display: none; }
+  .agent-dock__chip:empty { display: none; }
   /* Commerce offer card (ADR 0078): the title sits under the card padding, not under the browser's default heading margin. */
   .ui-panel[data-commerce-offer] > h2 { margin-block-start: 0; }
 
