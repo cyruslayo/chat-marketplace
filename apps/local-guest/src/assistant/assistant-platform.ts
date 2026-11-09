@@ -16,9 +16,8 @@ import { MAX_PLANNER_TOOL_ROUNDS } from "../turn-budget.js";
 /** Bounded tool rounds: the loop never runs longer than this. The value is shared with the browser's turn budget. */
 export const MAX_ASSISTANT_TOOL_ROUNDS = MAX_PLANNER_TOOL_ROUNDS;
 
-/** The domain-agnostic preamble the runtime prefixes to every pack's prompt section. */
-export const ASSISTANT_PLATFORM_PREAMBLE = `You are the Shortlet Guest Assistant.
-You assist guests with discovering accommodation, answering questions about stays and pricing, and preparing booking actions.
+/** The domain-agnostic preamble the runtime prefixes to every pack's prompt section. It names no domain: the pack's section carries the identity (ADR 0107 decision 8). */
+export const ASSISTANT_PLATFORM_PREAMBLE = `You are the platform's concierge.
 Use tools for current facts and actions. When you have no tool call, return only the requested typed reply plan. Do not write guest-facing prose.`;
 
 export interface AssistantToolPreconditionFailure {
