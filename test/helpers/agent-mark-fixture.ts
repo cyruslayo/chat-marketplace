@@ -10,8 +10,8 @@ export const HELD_TURN_MS = 7_000;
 const HELD_REPLY = "Here is what I found.";
 
 /**
- * A scripted model whose user-facing turn waits `holdMs` before it answers. The scope classifier (the call with a
- * structured output) is not held, so only the turn itself stays in flight, as a slow real turn would.
+ * A scripted model whose user-facing turn waits `holdMs` before it answers. The first planner call of each turn is held, and the
+ * scope classifier is not, so only the turn itself stays in flight, as a slow real turn would.
  */
 export function heldTurnModel(holdMs: number): AssistantModelClient {
   const inner = new ScriptedAssistantModel([
@@ -22,7 +22,10 @@ export function heldTurnModel(holdMs: number): AssistantModelClient {
   ]);
   return {
     async generate(request: AssistantModelRequest): Promise<AssistantModelResponse> {
-      if (request.structuredOutput === undefined) {
+      // The planner's first call of a turn is structured (assistant_reply_plan), so the hold keys on the turn's first step, not on the
+      // absence of structuredOutput. The scope classifier (concierge_scope) is not held.
+      const startsTurn = request.history.at(-1)?.role === "user";
+      if (startsTurn && request.structuredOutput?.name !== "concierge_scope") {
         await new Promise<void>((resolve) => {
           setTimeout(resolve, holdMs);
         });
