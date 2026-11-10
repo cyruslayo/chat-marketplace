@@ -582,8 +582,8 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays,
     <nav id="journey-rail" class="ui-rail-nav" aria-label="${GUEST_JOURNEY.railLabel}" hidden><ol class="ui-rail"></ol></nav>
     <nav id="task-rail" class="ui-task-rail-nav" aria-label="${GUEST_TASK_RAIL.railLabel}" hidden><ol class="ui-task-rail"></ol></nav>
     <main id="main-content" tabindex="-1">
-      ${notice === undefined ? "" : `<div class="ui-banner ui-banner--warning" role="status" data-payment-notice="not-confirmed">${escapeHtml(notice)}</div>`}
-      <section id="transcript" role="log" aria-live="polite" aria-relevant="additions" aria-labelledby="conversation-heading">
+      ${notice === undefined ? "" : `<div class="ui-banner ui-banner--warning" role="status" data-payment-notice="not-confirmed">${escapeHtml(notice)}</div>
+      `}<section id="transcript" role="log" aria-live="polite" aria-relevant="additions" aria-labelledby="conversation-heading">
         <h2 id="conversation-heading" class="conversation-heading">Conversation</h2>
         <header id="task-step-header" class="ui-step-header" hidden></header>
         <section id="vertical-starters" class="ui-vertical-starters" hidden></section>
