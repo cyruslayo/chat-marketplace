@@ -669,7 +669,7 @@ test("Eval 15: Answering 'Am I booked?' using platform truth", async () => {
 
   const statusRes = await runtime.handleTurn("g-eval-15", "Am I booked?");
   assert.equal(statusRes.ok, true);
-  assert.ok(statusRes.messages?.[0]?.includes("Your booking is confirmed under contract reference"));
+  assert.ok(statusRes.messages?.[0]?.includes("Your booking is confirmed."));
 });
 
 // 16. Adversarial injection in prompt/listing treated as data

@@ -68,15 +68,15 @@ export const GUEST_ASSISTANT_COPY = Object.freeze({
   draftReady: "Your Request Draft is ready to review. It has not been submitted.",
   offerInactive: "This Conditional Booking Offer is no longer active. Review the current booking details before continuing.",
   offerAmount: (total: string, due: string, deposit: string) => `The offer's All-In Stay Total is ${total}. The amount due now is ${due}. The refundable security deposit is shown separately as ${deposit}. Review the offer before accepting it.`,
-  confirmedBooking: (contractId: string) => `Your booking is confirmed under contract reference ${contractId}.`,
-  issuedOffer: (offerId: string) => `The Accommodation Provider has issued a Conditional Booking Offer under offer reference ${offerId}.`,
-  disclosedRequest: (requestId: string) => `Your Booking Request ${requestId} has been disclosed and is awaiting the Accommodation Provider's response.`,
+  confirmedBooking: "Your booking is confirmed. Your reservation details are in the stay details beside the chat.",
+  issuedOffer: "The Accommodation Provider has issued a Conditional Booking Offer. Review it in the stay details beside the chat.",
+  disclosedRequest: "Request sent. Waiting for the Operator to respond.",
   noCurrentBooking: "You currently have no active booking or pending request.",
 });
 
 export const GUEST_COMMERCE_ASSISTANT_COPY = Object.freeze({
   searchResults: (count: number) => `I found ${count} current product ${count === 1 ? "offer" : "offers"}. Review the Commerce results below.`,
-  offer: "I found the current Merchant Offer. Review its details on the Commerce surface.",
+  offer: "I found the current Merchant Offer. Review its details below.",
   delivery: (count: number) => `I found ${count} current delivery ${count === 1 ? "option" : "options"}. Review the quotes below.`,
   cart: "I updated the Store Cart. Review its current quantities and prices below.",
   orderStatus: (status: string) => `The current Merchant Order status is ${status}.`,
@@ -90,6 +90,14 @@ export const GUEST_FORBIDDEN_TERMS: readonly RegExp[] = Object.freeze([
   /\bguest liability\b/i,
   /\bescrow\b/i,
   /\bhosts?\b/i,
+  // Issue 06 (guideline §9): internal state names and UI jargon never reach the guest. Two phrases stay legal or
+  // descriptive guest copy: "Dedicated workspace" is a real amenity, and "disclosed"/"undisclosed" appear in counsel's
+  // contract terms ("Undisclosed commercial use", "disclosed Pet Friendly terms"), so the forbidden form is the internal
+  // request state sentence.
+  /\bhas been disclosed\b/i,
+  /\bsurface\b/i,
+  /\bthe workspace\b/i,
+  /\bartifact\b/i,
 ]);
 
 /** Timeline markers for completed guest actions; rendered quietly, never as assistant turns. */
@@ -273,14 +281,14 @@ export type GuestCapabilityStage = "request" | "offer" | "payment" | "booking" |
 export function guestCapabilityReply(stage: GuestCapabilityStage, unit?: { readonly title: string; readonly operatorName?: string | undefined }): string {
   const about = unit === undefined ? "" : ` I can also answer questions about ${unit.title}, such as parking or Wi-Fi.`;
   if (stage === "request")
-    return `Your ${GUEST_GLOSSARY.bookingRequest} is with ${guestOperatorName(unit?.operatorName)} for review; the details are in the workspace.${about}`;
+    return `Your ${GUEST_GLOSSARY.bookingRequest} is with ${guestOperatorName(unit?.operatorName)} for review; the details are in the stay details beside the chat.${about}`;
   if (stage === "offer")
-    return `Your ${GUEST_GLOSSARY.conditionalBookingOffer} is in the workspace. Review it and accept it there if it suits you.${about}`;
+    return `Your ${GUEST_GLOSSARY.conditionalBookingOffer} is in the stay details beside the chat. Review it and accept it there if it suits you.${about}`;
   if (stage === "payment")
-    return `Your payment step is in the workspace.${about}`;
+    return `Your payment step is in the stay details beside the chat.${about}`;
   if (stage === "booking")
-    return `Your booking details are in the workspace.${about}`;
-  return `Your current details are in the workspace.${about}`;
+    return `Your booking details are in the stay details beside the chat.${about}`;
+  return `Your current details are in the stay details beside the chat.${about}`;
 }
 
 /** ADR-0006: names the contracting party only where the contract can form. */
@@ -343,7 +351,7 @@ export function guestDisclosure(text: string): string {
   if (window) return `Complete payment within the ${window[1]}-minute Payment Window shown above.`;
   // ADR 0085: pilot identity verification controls access, not offer acceptance or payment.
   if (text.trim() === "Primary guest identity verification and stay occupancy rules apply strictly to this booking offer.")
-    return "Guest identity verification is required before access. The Primary Guest must follow the disclosed occupancy rules.";
+    return "Guest identity verification is required before access. The Primary Guest must follow the occupancy rules set out for this booking.";
   return GUEST_DISCLOSURE_WORDING.find((entry) => entry.domain.test(text.trim()))?.guest ?? text;
 }
 

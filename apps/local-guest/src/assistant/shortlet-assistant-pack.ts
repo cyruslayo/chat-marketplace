@@ -1049,7 +1049,7 @@ export function executeAssistantTool(
         status = "offer_issued";
         details = {
           offerId: taskState.currentOfferId,
-          status: offer.facts.status,
+          offerStatus: offer.facts.status,
           allInStayTotalKobo: offer.facts.allInStayTotalKobo,
           refundableSecurityDepositKobo: offer.facts.refundableSecurityDepositKobo,
           totalAmountDueNowKobo: offer.facts.totalAmountDueNowKobo,
@@ -1062,12 +1062,12 @@ export function executeAssistantTool(
         status = "request_disclosed";
         details = {
           requestId: taskState.currentBookingRequestId,
-          status: request.facts.status,
+          requestStatus: request.facts.status,
         };
       }
 
       return {
-        result: { status, ...details },
+        result: { ...details, status },
         updatedTaskState: taskState,
       };
     }
@@ -1445,9 +1445,9 @@ function renderShortletReplyBody(plan: AssistantReplyPlan | undefined, results: 
     return GUEST_ASSISTANT_COPY.priceBreakdown(String(data.title ?? "This stay"), total, fees, deposit);
   }
   if (operation.name === "get_booking_status") {
-    if (data.status === "confirmed" && typeof data.contractId === "string") return GUEST_ASSISTANT_COPY.confirmedBooking(data.contractId);
-    if (data.status === "offer_issued" && typeof data.offerId === "string") return GUEST_ASSISTANT_COPY.issuedOffer(data.offerId);
-    if (data.status === "request_disclosed" && typeof data.requestId === "string") return GUEST_ASSISTANT_COPY.disclosedRequest(data.requestId);
+    if (data.status === "confirmed" && typeof data.contractId === "string") return GUEST_ASSISTANT_COPY.confirmedBooking;
+    if (data.status === "offer_issued" && typeof data.offerId === "string") return GUEST_ASSISTANT_COPY.issuedOffer;
+    if (data.status === "request_disclosed" && typeof data.requestId === "string") return GUEST_ASSISTANT_COPY.disclosedRequest;
     return GUEST_ASSISTANT_COPY.noCurrentBooking;
   }
   return GUEST_ASSISTANT_COPY.safeClarification;

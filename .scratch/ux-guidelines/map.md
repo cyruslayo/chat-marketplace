@@ -56,4 +56,6 @@ Frontier: the first open, unblocked, unclaimed issue in number order.
 
 ## Context pointers
 
-(Append one line per resolved issue: issue number, commit, where the evidence is.)
+(Add one line per resolved issue.)
+
+- 06 — guest copy: internal terms and raw IDs removed; receipt "Request sent. Waiting for the Operator to respond." Evidence: `test/guest-internal-terms.test.ts`, `apps/web-agent/src/guest-content.ts`, `apps/local-guest/src/assistant/shortlet-assistant-pack.ts`.

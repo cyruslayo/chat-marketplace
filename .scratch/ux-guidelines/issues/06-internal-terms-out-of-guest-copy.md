@@ -1,6 +1,6 @@
 # 06 · Keep internal terms out of guest copy
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: none
 Phase: 1 (Batch A)
@@ -29,3 +29,29 @@ Guests must never see internal state names or raw IDs (§9).
 - Assistant path: read ADR 0106 in full first. Tests run with the assistant runtime enabled and a cold restore (a new `LocalGuestApp` over the same store) before every event, on a fresh thread, with a staging-like clock (2026-10-27) and guest. `test/assistant-cold-journey.test.ts` is the model.
 
 ## Comments
+
+### ADRs read and applied
+
+| ADR | Constraint | Where it applies |
+| --- | --- | --- |
+| 0106 | The typed reply path supplies wording; a cold restore precedes every event; no deterministic fast path. | AC1 and AC3. `renderShortletReplyBody` supplies the receipt; the AC3 test cold-restores before the status turn. |
+| 0005 | A Request is not a Reservation; the request state is described as sent and waiting for the Operator. | AC1 receipt wording. |
+| 0075 | Restricted identifiers never enter general interaction state or guest-facing copy. | Raw request, offer and contract IDs leave the reply; they remain in the authorized surface/workspace projection. |
+| 0074 | Surfaces keep complete text and authoritative state; they never guess. | The receipt is server-authored from the tool result, not model prose. |
+| 0080 | Chat and deterministic routes carry the same facts. | `GUEST_RECEIPTS.requestSent` and the new receipt both stop before any Reservation claim. |
+
+### Code contradiction found and recorded
+
+- A literal `workspace` in `GUEST_FORBIDDEN_TERMS` would flag the legitimate guest amenity "Dedicated workspace" (`GUEST_AMENITY_LABELS.workspace`), and a literal `disclosed` would flag counsel's contract terms ("Undisclosed commercial use", "disclosed Pet Friendly terms"). The forbidden forms are narrowed to the internal phrases `/\bthe workspace\b/` and `/\bhas been disclosed\b/`; the issue's intent (no internal state names or UI jargon) is kept.
+- The model-path receipt never reached the new wording because `get_booking_status` returned `{ status, ...details }` and `details.status` overwrote the top-level status with the domain status. Fixed to `{ ...details, status }`, with the domain status kept as `requestStatus` / `offerStatus`. This is required for AC1/AC3 and has no effect on the authoritative domain state.
+- AC1 says "keep IDs in secondary details". The reply is a single string, so the raw IDs leave the reply and remain in the authoritative surface/workspace projection shown beside it. No new reply structure was invented.
+
+### Tests and commands
+
+- `npm run check` — 0 errors.
+- `npx tsx --test test/guest-internal-terms.test.ts test/guest-copy-pass.test.ts test/assistant-facility-answers.test.ts test/shortlet-assistant-evals.test.ts` — 71 tests, 71 passed, 0 failed.
+- `npx tsx --test test/landing-page.test.ts` — 33 tests, 33 passed, 0 failed.
+
+## Answer
+
+Guest copy no longer exposes internal state names, UI jargon or raw request/offer/contract IDs. The model-path receipt now reads "Request sent. Waiting for the Operator to respond." and the capability replies point at "the stay details beside the chat". The forbidden-term sweep covers every exported string in `guest-content.ts` and fails when an internal term is added. An assistant-enabled cold-restore journey shows the new receipt after submit. A latent `get_booking_status` result-ordering defect that masked the receipt was fixed.
