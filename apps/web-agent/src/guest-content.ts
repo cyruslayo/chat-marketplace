@@ -655,6 +655,11 @@ export const GUEST_PAYMENT_CALLBACK_COPY = Object.freeze({
   notConfirmedNotice: "We could not confirm your payment. Your reservation is not confirmed. Check the latest booking status.",
 });
 
+/** Issue 11 (guideline §6 stale action, §9 HTTP conflict): a surface changed after the guest last saw it. */
+export const GUEST_CHANGED_ELSEWHERE = Object.freeze({
+  message: "This request changed while you were viewing it. Check the latest status.",
+});
+
 /** Issue 08 (guideline §9, §10): the security-deposit claim surface speaks guest words, never raw domain states or amounts. */
 export const GUEST_DEPOSIT_CLAIM_COPY = Object.freeze({
   title: "Security Deposit Claim",

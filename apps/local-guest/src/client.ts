@@ -27,6 +27,7 @@ import {
   type ModePresentation,
 } from "../../web-agent/src/guest-content.js";
 import { CLIENT_REQUEST_TIMEOUT_MS, CLIENT_TURN_TIMEOUT_MS, TURN_STILL_WORKING_AFTER_MS } from "./turn-budget.js";
+import { changedElsewhereRecovery } from "./stale-surface-response.js";
 import { turnEntriesSince } from "./guest-turn-recovery.js";
 import { assertValidResponseMode, readResponseMode } from "./response-mode.js";
 import { nextAgentMarkState, type AgentMarkEvent, type AgentMarkState } from "./agent-mark-state.js";
@@ -2508,8 +2509,9 @@ async function sendCriteriaEvent(name: string, context: Readonly<Record<string, 
     const response = await postJson("/api/event", { threadId, name, surfaceId: `thread-${threadId}:criteria`, sourceComponentId: "criteria-strip", timestamp: new Date().toISOString(), context });
     if (!response.ok) {
       // AC3: a refused edit is explained next to the strip; the criteria stay as they were.
-      criteriaStatus.textContent = response.message ?? "That change could not be applied.";
-      if (response.code === "STALE_SURFACE" || response.code === "CRITERIA_LOCKED") void refreshServerState();
+      const recovery = changedElsewhereRecovery(response.code);
+      criteriaStatus.textContent = recovery?.message ?? response.message ?? "That change could not be applied.";
+      if (recovery || response.code === "CRITERIA_LOCKED") void refreshServerState();
       return;
     }
     criteriaStatus.textContent = "";
@@ -2595,10 +2597,13 @@ function renderQuickReplies(replies: readonly string[] | undefined): void {
 
 function renderResponse(response: GuestResponse): boolean {
   if (!response.ok) {
-    const message = response.message ?? "That action could not be completed.";
+    // Issue 11 (ADR 0072, 0074): a stale, expired or changed-elsewhere rejection makes the current surface read-only and
+    // refreshes the authoritative state. An artifact mismatch gets guest wording, never the server's internal message.
+    const recovery = changedElsewhereRecovery(response.code);
+    const message = recovery?.message ?? response.message ?? "That action could not be completed.";
     if (response.code === "quota_refusal" || response.code === "CONCIERGE_UNAVAILABLE") setAgentMark({ type: "turn-refused", code: response.code });
-    if (response.code === "STALE_SURFACE" || response.code === "STALE_ACTION" || response.code === "EXPIRED_SURFACE") {
-      shellState = markActiveSurfaceStatus(shellState, response.code === "EXPIRED_SURFACE" ? "expired" : "stale");
+    if (recovery) {
+      shellState = markActiveSurfaceStatus(shellState, recovery.kind);
       if (activePayload) renderSurface({ ...activePayload, status: shellState.activeSurface?.status });
       void refreshServerState();
     }

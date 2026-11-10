@@ -9558,14 +9558,14 @@ Known schemas:
     draftReady: "Your Request Draft is ready to review. It has not been submitted.",
     offerInactive: "This Conditional Booking Offer is no longer active. Review the current booking details before continuing.",
     offerAmount: (total, due, deposit) => `The offer's All-In Stay Total is ${total}. The amount due now is ${due}. The refundable security deposit is shown separately as ${deposit}. Review the offer before accepting it.`,
-    confirmedBooking: (contractId) => `Your booking is confirmed under contract reference ${contractId}.`,
-    issuedOffer: (offerId) => `The Accommodation Provider has issued a Conditional Booking Offer under offer reference ${offerId}.`,
-    disclosedRequest: (requestId) => `Your Booking Request ${requestId} has been disclosed and is awaiting the Accommodation Provider's response.`,
+    confirmedBooking: "Your booking is confirmed. Your reservation details are in the stay details beside the chat.",
+    issuedOffer: "The Accommodation Provider has issued a Conditional Booking Offer. Review it in the stay details beside the chat.",
+    disclosedRequest: "Request sent. Waiting for the Operator to respond.",
     noCurrentBooking: "You currently have no active booking or pending request."
   });
   var GUEST_COMMERCE_ASSISTANT_COPY = Object.freeze({
     searchResults: (count) => `I found ${count} current product ${count === 1 ? "offer" : "offers"}. Review the Commerce results below.`,
-    offer: "I found the current Merchant Offer. Review its details on the Commerce surface.",
+    offer: "I found the current Merchant Offer. Review its details below.",
     delivery: (count) => `I found ${count} current delivery ${count === 1 ? "option" : "options"}. Review the quotes below.`,
     cart: "I updated the Store Cart. Review its current quantities and prices below.",
     orderStatus: (status) => `The current Merchant Order status is ${status}.`,
@@ -9576,7 +9576,15 @@ Known schemas:
     /\bcontrolled catalogue\b/i,
     /\bguest liability\b/i,
     /\bescrow\b/i,
-    /\bhosts?\b/i
+    /\bhosts?\b/i,
+    // Issue 06 (guideline §9): internal state names and UI jargon never reach the guest. Two phrases stay legal or
+    // descriptive guest copy: "Dedicated workspace" is a real amenity, and "disclosed"/"undisclosed" appear in counsel's
+    // contract terms ("Undisclosed commercial use", "disclosed Pet Friendly terms"), so the forbidden form is the internal
+    // request state sentence.
+    /\bhas been disclosed\b/i,
+    /\bsurface\b/i,
+    /\bthe workspace\b/i,
+    /\bartifact\b/i
   ]);
   var GUEST_RECEIPTS = Object.freeze({
     draftCreated: "Draft created",
@@ -9856,6 +9864,60 @@ Known schemas:
     manualHelp: "Pay our business account and upload your receipt. Your booking confirms only after we check the money has arrived. You can't switch until this attempt expires or is declined.",
     lateReview: "A late payment needs review and does not confirm your booking. Contact Shortlet if you sent money after the deadline."
   };
+  var GUEST_PAYMENT_CALLBACK_COPY = Object.freeze({
+    title: "We could not confirm this payment yet",
+    message: "Your reservation is not confirmed. Check your booking status before trying again.",
+    action: "Check your booking status",
+    // Issue 07 AC3: shown on the thread when verification failed but the guest can still read the authoritative status.
+    notConfirmedNotice: "We could not confirm your payment. Your reservation is not confirmed. Check the latest booking status."
+  });
+  var GUEST_CHANGED_ELSEWHERE = Object.freeze({
+    message: "This request changed while you were viewing it. Check the latest status."
+  });
+  var GUEST_DEPOSIT_CLAIM_COPY = Object.freeze({
+    title: "Security Deposit Claim",
+    status: (status) => {
+      switch (status) {
+        case "allocation_pending":
+          return "Your deposit claim is being prepared";
+        case "validated_notification_pending":
+          return "The notice is being sent";
+        case "response_open":
+          return "Waiting for your response";
+        case "guest_accepted":
+          return "You accepted this claim";
+        case "human_review":
+          return "Under human review";
+        case "adjudicated":
+          return "Decision issued";
+        case "no_claim_refund_pending":
+          return "Your deposit refund is pending";
+        case "no_claim_refunded":
+          return "Your deposit has been refunded";
+        case "reconciliation_required":
+          return "This needs support review";
+        default:
+          return "Status unavailable";
+      }
+    },
+    refundStatus: (status) => {
+      switch (status) {
+        case "pending":
+          return "Refund pending";
+        case "settled":
+          return "Refunded";
+        case "reconciliation_required":
+          return "Needs support review";
+        case "not_created":
+          return "Not started";
+        case "not_applicable":
+          return "Not applicable";
+        default:
+          return "Status unavailable";
+      }
+    },
+    response: (response) => response === "accept" ? "you accepted this claim" : response === "dispute" ? "you disputed this claim" : "your response is recorded"
+  });
   var MODE_TEXT_MAX_LENGTH = 400;
   var MODE_BODY_MAX_LENGTH = 600;
   var MODE_STARTERS_MAX = 4;
@@ -10013,6 +10075,14 @@ Known schemas:
   var CLIENT_TURN_TIMEOUT_MS = SERVER_TURN_MAX_MS + CLIENT_TURN_TRANSPORT_MARGIN_MS;
   var CLIENT_REQUEST_TIMEOUT_MS = 1e4;
   var TURN_STILL_WORKING_AFTER_MS = 1e4;
+
+  // apps/local-guest/src/stale-surface-response.ts
+  function changedElsewhereRecovery(code) {
+    if (code === "EXPIRED_SURFACE") return { kind: "expired" };
+    if (code === "STALE_SURFACE" || code === "STALE_ACTION") return { kind: "stale" };
+    if (code === "ARTIFACT_MISMATCH") return { kind: "stale", message: GUEST_CHANGED_ELSEWHERE.message };
+    return void 0;
+  }
 
   // apps/local-guest/src/guest-turn-recovery.ts
   function turnEntriesSince(timeline, text) {
@@ -12093,8 +12163,9 @@ Known schemas:
     try {
       const response = await postJson("/api/event", { threadId, name, surfaceId: `thread-${threadId}:criteria`, sourceComponentId: "criteria-strip", timestamp: (/* @__PURE__ */ new Date()).toISOString(), context });
       if (!response.ok) {
-        criteriaStatus.textContent = response.message ?? "That change could not be applied.";
-        if (response.code === "STALE_SURFACE" || response.code === "CRITERIA_LOCKED") void refreshServerState();
+        const recovery = changedElsewhereRecovery(response.code);
+        criteriaStatus.textContent = recovery?.message ?? response.message ?? "That change could not be applied.";
+        if (recovery || response.code === "CRITERIA_LOCKED") void refreshServerState();
         return;
       }
       criteriaStatus.textContent = "";
@@ -12179,10 +12250,11 @@ Known schemas:
   }
   function renderResponse(response) {
     if (!response.ok) {
-      const message = response.message ?? "That action could not be completed.";
+      const recovery = changedElsewhereRecovery(response.code);
+      const message = recovery?.message ?? response.message ?? "That action could not be completed.";
       if (response.code === "quota_refusal" || response.code === "CONCIERGE_UNAVAILABLE") setAgentMark({ type: "turn-refused", code: response.code });
-      if (response.code === "STALE_SURFACE" || response.code === "STALE_ACTION" || response.code === "EXPIRED_SURFACE") {
-        shellState = markActiveSurfaceStatus(shellState, response.code === "EXPIRED_SURFACE" ? "expired" : "stale");
+      if (recovery) {
+        shellState = markActiveSurfaceStatus(shellState, recovery.kind);
         if (activePayload) renderSurface({ ...activePayload, status: shellState.activeSurface?.status });
         void refreshServerState();
       }
