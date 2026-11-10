@@ -337,7 +337,7 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays,
 <html lang="en-NG" data-theme="system" data-mode="${escapeHtml(mode.id)}">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Shortlet Concierge</title>
   <link rel="stylesheet" href="/shortlet-foundations.css">
   <style>
@@ -502,7 +502,7 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays,
     .criteria-status:empty { display: none; }
     form#composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--space-2); padding: var(--space-2) var(--layout-gutter-mobile) max(var(--space-4), env(safe-area-inset-bottom)); border-top: 1px solid var(--color-border); background: var(--color-surface); position: sticky; bottom: 0; z-index: 10; }
     #composer-label { grid-column: 1 / -1; color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); font-weight: 600; }
-    #composer-input { min-width: 0; width: 100%; min-height: var(--control-min-field); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-pill); font-size: 1rem; background: var(--color-canvas); color: var(--color-text); }
+    #composer-input { min-width: 0; width: 100%; min-height: var(--control-min-field); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-pill); font-size: 1rem; background: var(--color-canvas); color: var(--color-text); field-sizing: content; max-block-size: 8rem; }
     #composer-submit { inline-size: 3rem; min-inline-size: 3rem; min-height: 3rem; padding: 0; border-radius: var(--radius-pill); }
     form#composer[data-focused="true"] { gap: var(--space-1) var(--space-2); padding-block: var(--space-1) max(var(--space-2), env(safe-area-inset-bottom)); background: var(--color-canvas); }
     form#composer[data-focused="true"] #composer-label { font-weight: 400; }
