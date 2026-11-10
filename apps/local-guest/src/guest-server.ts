@@ -28,7 +28,7 @@ import { toDiscoveryProjection, StayDateRange, dateKeyInLagos, type ExtendedStay
 import { billingPeriodStatusText, extendedStayUnitFacts } from "../../web-agent/src/extended-stay-presentation.js";
 import { formatBookingMoney } from "../../web-agent/src/booking-presentation.js";
 import { formatGuestDate } from "../../web-agent/src/guest-content.js";
-import { GUEST_MODES, type ModePresentation } from "../../web-agent/src/guest-content.js";
+import { GUEST_MODES, guestRefusalFor, type ModePresentation } from "../../web-agent/src/guest-content.js";
 import type { BillingPeriodProjection } from "../../../domains/shortlet/src/index.js";
 import { createGuestShell, type RouteModule, type StaticAsset } from "./guest-shell.js";
 import type { GuestCommerceModule, PaymentReferenceKeys } from "./commerce-port.js";
@@ -2809,7 +2809,10 @@ export function createGuestRequestHandler(
     result: GuestTurnResult,
   ): Promise<void> => {
     if (!result.ok) {
-      sendJson(res, 200, result);
+      // Issue 60 (ADR 0075, 0077): every turn/event refusal leaves through here. The mapped class and guest copy replace the raw
+      // server message, except for the few codes that already carry guest copy (keepServerMessage). The code itself is kept.
+      const refusal = guestRefusalFor(result.code);
+      sendJson(res, 200, { ...result, message: refusal.message ?? result.message, refusal: refusal.class });
       return;
     }
     const withOffer = await withSignInOffer(

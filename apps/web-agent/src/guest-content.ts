@@ -26,6 +26,78 @@ export const GUEST_GLOSSARY = Object.freeze({
   operatorFallback: "the Operator",
 });
 
+/**
+ * Issue 60 (ADR 0075, ADR 0077): the closed refusal map. Every `ok:false` code the app can return maps to one class, and the class
+ * decides the guest copy and the client's behaviour. A code that is not listed fails closed to the generic `unavailable` copy.
+ */
+export type RefusalClass = "stale" | "forbidden" | "invalid" | "unavailable" | "busy";
+
+export type RefusalCode =
+  | "ACTION_NOT_AUTHORIZED" | "ACTIVE_TASK" | "ARTIFACT_MISMATCH" | "CARD_CHECKOUT_FAILED" | "CONCIERGE_UNAVAILABLE"
+  | "CONTINUOUS_OCCUPANCY_REFUSED" | "CRITERIA_LOCKED" | "CRITERIA_REJECTED" | "EXPIRED_SURFACE" | "INVALID_ARTIFACT"
+  | "INVALID_CONTEXT" | "INVALID_CRITERIA" | "INVALID_EVENT" | "INVALID_INPUT" | "INVALID_THREAD" | "INVALID_ROUTE"
+  | "NOTHING_TO_UNDO" | "OFFER_MISMATCH" | "PAYMENT_NOT_CONFIRMED" | "PAYSTACK_UNAVAILABLE" | "QUOTE_CHANGED"
+  | "REQUEST_MISMATCH" | "REQUEST_NOT_SUBMITTED" | "STALE_ACTION" | "STALE_SURFACE" | "THREAD_BUSY" | "UNKNOWN_DOMAIN"
+  | "UNKNOWN_TASK" | "UNKNOWN_THREAD" | "UNSUPPORTED_ACTION" | "UNSUPPORTED_EVENT";
+
+/** The copy for each class when a code gives none of its own. */
+export const GUEST_REFUSAL_DEFAULT: Readonly<Record<RefusalClass, string>> = Object.freeze({
+  stale: "These options have changed. Here are the current ones.",
+  forbidden: "That action isn't available here. Please use the options shown.",
+  invalid: "That action could not be completed here. Please try again from the current screen.",
+  unavailable: "Something went wrong. Please try again.",
+  busy: "That's still being processed. Please wait a moment and try again.",
+});
+
+interface GuestRefusalEntry { readonly class: RefusalClass; readonly copy?: string; readonly keepServerMessage?: true; }
+
+export const GUEST_REFUSAL: Readonly<Record<RefusalCode, GuestRefusalEntry>> = Object.freeze({
+  // stale: the guest's view or action no longer matches the server, so the client refreshes.
+  STALE_SURFACE: { class: "stale" },
+  STALE_ACTION: { class: "stale" },
+  EXPIRED_SURFACE: { class: "stale" },
+  ARTIFACT_MISMATCH: { class: "stale" },
+  INVALID_ARTIFACT: { class: "stale" },
+  OFFER_MISMATCH: { class: "stale" },
+  QUOTE_CHANGED: { class: "stale" },
+  REQUEST_MISMATCH: { class: "stale" },
+  // forbidden: the action is not permitted here.
+  ACTION_NOT_AUTHORIZED: { class: "forbidden" },
+  UNSUPPORTED_ACTION: { class: "forbidden" },
+  UNSUPPORTED_EVENT: { class: "forbidden" },
+  ACTIVE_TASK: { class: "forbidden" },
+  // invalid: the request itself is malformed.
+  INVALID_CONTEXT: { class: "invalid" },
+  INVALID_EVENT: { class: "invalid" },
+  INVALID_INPUT: { class: "invalid" },
+  INVALID_CRITERIA: { class: "invalid" },
+  INVALID_ROUTE: { class: "invalid" },
+  INVALID_THREAD: { class: "invalid" },
+  UNKNOWN_TASK: { class: "invalid" },
+  // busy: a run is already in flight on this thread.
+  THREAD_BUSY: { class: "busy" },
+  // unavailable: the platform could not complete the action.
+  CONCIERGE_UNAVAILABLE: { class: "unavailable" },
+  REQUEST_NOT_SUBMITTED: { class: "unavailable" },
+  PAYMENT_NOT_CONFIRMED: { class: "unavailable" },
+  CARD_CHECKOUT_FAILED: { class: "unavailable" },
+  PAYSTACK_UNAVAILABLE: { class: "unavailable" },
+  UNKNOWN_DOMAIN: { class: "unavailable" },
+  UNKNOWN_THREAD: { class: "unavailable" },
+  // Already guest copy built from closed guest content; the server's message is kept.
+  CRITERIA_REJECTED: { class: "invalid", keepServerMessage: true },
+  CRITERIA_LOCKED: { class: "busy", keepServerMessage: true },
+  CONTINUOUS_OCCUPANCY_REFUSED: { class: "invalid", keepServerMessage: true },
+  NOTHING_TO_UNDO: { class: "invalid", keepServerMessage: true },
+});
+
+/** The mapped message and class for an `ok:false` result; an unknown code fails closed to the generic `unavailable` copy. */
+export function guestRefusalFor(code: string): { readonly class: RefusalClass; readonly message: string | null } {
+  const entry = (GUEST_REFUSAL as Readonly<Record<string, GuestRefusalEntry>>)[code];
+  if (entry === undefined) return { class: "unavailable", message: GUEST_REFUSAL_DEFAULT.unavailable };
+  return { class: entry.class, message: entry.keepServerMessage ? null : entry.copy ?? GUEST_REFUSAL_DEFAULT[entry.class] };
+}
+
 /** Server-authored concierge copy for replies whose facts come from current pack projections. */
 export const GUEST_ASSISTANT_COPY = Object.freeze({
   stayClarification: "How many nights will you be staying, and for how many guests?",

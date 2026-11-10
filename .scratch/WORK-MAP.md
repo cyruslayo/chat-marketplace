@@ -347,7 +347,7 @@ Work on branch `fix/chat-hardening` in a dedicated worktree, one writer at a tim
 | [57](shortlet-concierge-launch/issues/57-assistant-open-question-state.md) | resolved | 62 | Open-question state plus the ADR 0106 amendment. |
 | [58](shortlet-concierge-launch/issues/58-structured-quick-replies.md) | resolved | 57 | Structured quick-reply chips (defect 2); captures done. |
 | [59](shortlet-concierge-launch/issues/59-assistant-no-dead-ends.md) | resolved | 57 (58 for chips) | Re-ask the open question instead of the generic fallback; settle pending dates after the verdict. |
-| [60](shortlet-concierge-launch/issues/60-guest-safe-refusals.md) | ready-for-agent | 62 | Guest-safe refusal copy and refused-card handling (defect 3). Shares `client.ts` with 58. Guest UI captures. |
+| [60](shortlet-concierge-launch/issues/60-guest-safe-refusals.md) | claimed | 62 | Offline core done (map, exit, client); real-Chrome ACs and captures remain. |
 | [61](shortlet-concierge-launch/issues/61-terse-follow-up-evals.md) | ready-for-agent | 57, 58, 59 | Terse-follow-up evals: offline, plus a live run by the owner. |
 
 Order: 62 → 57 → 58 → 59 → 60 → 61. Then the batch gate (`npm run build`, `check`, `test:workers`, full `npm test`, capture sweep), merge with approval, and a staging retest of the 9 Nov journey.

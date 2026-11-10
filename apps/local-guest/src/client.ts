@@ -25,6 +25,7 @@ import {
   guestNewConversationCopy,
   type GuestCommittedWorkKind,
   type ModePresentation,
+  type RefusalClass,
 } from "../../web-agent/src/guest-content.js";
 import type { GuestQuickReply } from "./concierge.js";
 import { isQuickReplyList } from "./quick-replies.js";
@@ -155,6 +156,8 @@ interface GuestResponse {
   readonly tasks?: readonly GuestTask[];
   readonly verticals?: readonly GuestVertical[];
   readonly mode?: ModePresentation;
+  /** Issue 60: the server's closed refusal class on an `ok:false` response. An unknown value is ignored (the code list still applies). */
+  readonly refusal?: RefusalClass;
 }
 interface GuestCommittedWork {
   readonly kind: GuestCommittedWorkKind;
@@ -2460,8 +2463,10 @@ async function sendCriteriaEvent(name: string, context: Readonly<Record<string, 
     const response = await postJson("/api/event", { threadId, name, surfaceId: `thread-${threadId}:criteria`, sourceComponentId: "criteria-strip", timestamp: new Date().toISOString(), context });
     if (!response.ok) {
       // AC3: a refused edit is explained next to the strip; the criteria stay as they were.
+      // Issue 60: the same refusal-class handling as a surface action. A stale change refreshes; the mapped copy is shown by the strip.
       criteriaStatus.textContent = response.message ?? "That change could not be applied.";
-      if (response.code === "STALE_SURFACE" || response.code === "CRITERIA_LOCKED") void refreshServerState();
+      const refusal = applyRefusal(response);
+      if (refusal === "stale" || response.code === "CRITERIA_LOCKED") void refreshServerState();
       return;
     }
     criteriaStatus.textContent = "";
@@ -2553,18 +2558,45 @@ function renderQuickReplies(replies: readonly GuestQuickReply[] | undefined): vo
   transcript.scrollTop = transcript.scrollHeight;
 }
 
+/** The last refusal's signature, so an identical consecutive refusal is collapsed into one turn (issue 60). */
+let lastRefusalSignature: string | undefined;
+const REFUSAL_CLASSES: readonly RefusalClass[] = ["stale", "forbidden", "invalid", "unavailable", "busy"];
+
+function isRefusalClass(value: unknown): value is RefusalClass {
+  return typeof value === "string" && (REFUSAL_CLASSES as readonly string[]).includes(value);
+}
+
+/**
+ * Issue 60: applies the server's closed refusal class. A `stale` view is retired, re-rendered and refreshed. A `forbidden` or `invalid`
+ * refusal disables only the tapped control until the next server render of that surface. `busy` keeps the control enabled. The class
+ * falls back to the three legacy stale codes when an older server omits it.
+ */
+function applyRefusal(response: GuestResponse): RefusalClass | undefined {
+  const byCode: RefusalClass | undefined = response.code === "STALE_SURFACE" || response.code === "STALE_ACTION" || response.code === "EXPIRED_SURFACE"
+    ? "stale" : undefined;
+  const cls = isRefusalClass(response.refusal) ? response.refusal : byCode;
+  if (cls === "stale") {
+    shellState = markActiveSurfaceStatus(shellState, response.code === "EXPIRED_SURFACE" ? "expired" : "stale");
+    if (activePayload) renderSurface({ ...activePayload, status: shellState.activeSurface?.status });
+    void refreshServerState();
+  } else if ((cls === "forbidden" || cls === "invalid") && lastActivatedControl?.isConnected) {
+    lastActivatedControl.setAttribute("aria-disabled", "true");
+  }
+  return cls;
+}
+
 function renderResponse(response: GuestResponse): boolean {
   if (!response.ok) {
     const message = response.message ?? "That action could not be completed.";
-    if (response.code === "STALE_SURFACE" || response.code === "STALE_ACTION" || response.code === "EXPIRED_SURFACE") {
-      shellState = markActiveSurfaceStatus(shellState, response.code === "EXPIRED_SURFACE" ? "expired" : "stale");
-      if (activePayload) renderSurface({ ...activePayload, status: shellState.activeSurface?.status });
-      void refreshServerState();
-    }
-    addTurn("assistant", message);
+    const cls = applyRefusal(response);
+    const signature = `${response.code ?? ""}|${cls ?? ""}|${message}`;
+    const duplicate = signature === lastRefusalSignature;
+    lastRefusalSignature = signature;
+    if (!duplicate) addTurn("assistant", message);
     announce(message, true);
     return false;
   }
+  lastRefusalSignature = undefined;
   renderJourney(response.journey);
   renderCriteria(response.criteria);
   renderTaskRail(response.tasks);
@@ -2667,6 +2699,8 @@ async function sendTurn(text: string): Promise<void> {
 }
 
 async function sendEvent(action: { readonly name: string; readonly surfaceId: string; readonly sourceComponentId: string; readonly timestamp: string; readonly context: unknown }): Promise<void> {
+  // Issue 60: a control disabled by a forbidden or invalid refusal stays inert until the next server render of its surface.
+  if (lastActivatedControl?.getAttribute("aria-disabled") === "true") return;
   const current = shellState.activeSurface;
   if (!current || current.surfaceId !== action.surfaceId || !canUseSurfaceActions(current.status)) {
     addTurn("assistant", fallbackSummary(current ?? { surfaceId: action.surfaceId, mode: "inline-surface", status: "stale", summary: "This workspace" }));

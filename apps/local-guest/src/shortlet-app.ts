@@ -5033,18 +5033,16 @@ export class LocalGuestApp {
         surfaces: [surface],
       };
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "The Booking Request could not be submitted.";
-      if (/phone number is required/i.test(message))
+      // Issue 60 (ADR 0075): the domain error text is read only for the local phone routing decision and never reaches the guest.
+      const detail = error instanceof Error ? error.message : "";
+      if (/phone number is required/i.test(detail))
         return this.#contactSurface(thread, "phone", event.context ?? {});
       this.#emitTransition(thread, "booking_request.delivery_failed", {
         aggregateType: "request_draft",
         aggregateId: thread.draftId,
         reasonCode: "REQUEST_DELIVERY_FAILED",
       });
-      return { ok: false, code: "REQUEST_NOT_SUBMITTED", message };
+      return { ok: false, code: "REQUEST_NOT_SUBMITTED", message: "The Booking Request could not be submitted. Please try again." };
     }
   }
 

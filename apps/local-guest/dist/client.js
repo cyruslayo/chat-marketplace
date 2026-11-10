@@ -9517,6 +9517,52 @@ Known schemas:
     revalidation: "We re-check price and availability when you send",
     operatorFallback: "the Operator"
   });
+  var GUEST_REFUSAL_DEFAULT = Object.freeze({
+    stale: "These options have changed. Here are the current ones.",
+    forbidden: "That action isn't available here. Please use the options shown.",
+    invalid: "That action could not be completed here. Please try again from the current screen.",
+    unavailable: "Something went wrong. Please try again.",
+    busy: "That's still being processed. Please wait a moment and try again."
+  });
+  var GUEST_REFUSAL = Object.freeze({
+    // stale: the guest's view or action no longer matches the server, so the client refreshes.
+    STALE_SURFACE: { class: "stale" },
+    STALE_ACTION: { class: "stale" },
+    EXPIRED_SURFACE: { class: "stale" },
+    ARTIFACT_MISMATCH: { class: "stale" },
+    INVALID_ARTIFACT: { class: "stale" },
+    OFFER_MISMATCH: { class: "stale" },
+    QUOTE_CHANGED: { class: "stale" },
+    REQUEST_MISMATCH: { class: "stale" },
+    // forbidden: the action is not permitted here.
+    ACTION_NOT_AUTHORIZED: { class: "forbidden" },
+    UNSUPPORTED_ACTION: { class: "forbidden" },
+    UNSUPPORTED_EVENT: { class: "forbidden" },
+    ACTIVE_TASK: { class: "forbidden" },
+    // invalid: the request itself is malformed.
+    INVALID_CONTEXT: { class: "invalid" },
+    INVALID_EVENT: { class: "invalid" },
+    INVALID_INPUT: { class: "invalid" },
+    INVALID_CRITERIA: { class: "invalid" },
+    INVALID_ROUTE: { class: "invalid" },
+    INVALID_THREAD: { class: "invalid" },
+    UNKNOWN_TASK: { class: "invalid" },
+    // busy: a run is already in flight on this thread.
+    THREAD_BUSY: { class: "busy" },
+    // unavailable: the platform could not complete the action.
+    CONCIERGE_UNAVAILABLE: { class: "unavailable" },
+    REQUEST_NOT_SUBMITTED: { class: "unavailable" },
+    PAYMENT_NOT_CONFIRMED: { class: "unavailable" },
+    CARD_CHECKOUT_FAILED: { class: "unavailable" },
+    PAYSTACK_UNAVAILABLE: { class: "unavailable" },
+    UNKNOWN_DOMAIN: { class: "unavailable" },
+    UNKNOWN_THREAD: { class: "unavailable" },
+    // Already guest copy built from closed guest content; the server's message is kept.
+    CRITERIA_REJECTED: { class: "invalid", keepServerMessage: true },
+    CRITERIA_LOCKED: { class: "busy", keepServerMessage: true },
+    CONTINUOUS_OCCUPANCY_REFUSED: { class: "invalid", keepServerMessage: true },
+    NOTHING_TO_UNDO: { class: "invalid", keepServerMessage: true }
+  });
   var GUEST_ASSISTANT_COPY = Object.freeze({
     stayClarification: "How many nights will you be staying, and for how many guests?",
     // Issue 08 (ADR 0106): an area the server does not know is refused with the closed list of areas it can search.
@@ -9537,6 +9583,18 @@ Known schemas:
     dateConfirmChip: "Yes",
     dateChangeChip: "Change dates",
     safeClarification: "I can help you find and compare stays, explain pricing, or check a booking status. What would you like to do?",
+    // Issue 59 (ADR 0106 amendment, ADR 0075): the fixed copy that re-asks the closed question the assistant last asked, when a terse
+    // answer was not understood. One sentence per code; no guest text is echoed and no model output is used.
+    openQuestion: Object.freeze({
+      where: "Which area would you like to stay in?",
+      party_size: "How many guests are staying?",
+      check_in: "Which day would you like to check in?",
+      nights: "How many nights would you like to stay?",
+      stay_length: "How long would you like to stay?",
+      pick_result: "Which one would you like to see?",
+      date_confirm: 'Shall I use that date? Reply "yes", or tell me different dates.',
+      location_confirm: 'Shall I search that area instead? Reply "yes", or tell me another area.'
+    }),
     // Shown when a turn is slower than a normal one; the guest is not told the request failed.
     stillWorking: "Still working on your request. A stay search can take a little longer, so please keep this page open.",
     // ADR 0067 governs the support window and active-stay on-call coverage.
@@ -12067,7 +12125,8 @@ Known schemas:
       const response = await postJson("/api/event", { threadId, name, surfaceId: `thread-${threadId}:criteria`, sourceComponentId: "criteria-strip", timestamp: (/* @__PURE__ */ new Date()).toISOString(), context });
       if (!response.ok) {
         criteriaStatus.textContent = response.message ?? "That change could not be applied.";
-        if (response.code === "STALE_SURFACE" || response.code === "CRITERIA_LOCKED") void refreshServerState();
+        const refusal = applyRefusal(response);
+        if (refusal === "stale" || response.code === "CRITERIA_LOCKED") void refreshServerState();
         return;
       }
       criteriaStatus.textContent = "";
@@ -12160,18 +12219,35 @@ Known schemas:
     transcript.appendChild(group);
     transcript.scrollTop = transcript.scrollHeight;
   }
+  var lastRefusalSignature;
+  var REFUSAL_CLASSES = ["stale", "forbidden", "invalid", "unavailable", "busy"];
+  function isRefusalClass(value) {
+    return typeof value === "string" && REFUSAL_CLASSES.includes(value);
+  }
+  function applyRefusal(response) {
+    const byCode = response.code === "STALE_SURFACE" || response.code === "STALE_ACTION" || response.code === "EXPIRED_SURFACE" ? "stale" : void 0;
+    const cls = isRefusalClass(response.refusal) ? response.refusal : byCode;
+    if (cls === "stale") {
+      shellState = markActiveSurfaceStatus(shellState, response.code === "EXPIRED_SURFACE" ? "expired" : "stale");
+      if (activePayload) renderSurface({ ...activePayload, status: shellState.activeSurface?.status });
+      void refreshServerState();
+    } else if ((cls === "forbidden" || cls === "invalid") && lastActivatedControl?.isConnected) {
+      lastActivatedControl.setAttribute("aria-disabled", "true");
+    }
+    return cls;
+  }
   function renderResponse(response) {
     if (!response.ok) {
       const message = response.message ?? "That action could not be completed.";
-      if (response.code === "STALE_SURFACE" || response.code === "STALE_ACTION" || response.code === "EXPIRED_SURFACE") {
-        shellState = markActiveSurfaceStatus(shellState, response.code === "EXPIRED_SURFACE" ? "expired" : "stale");
-        if (activePayload) renderSurface({ ...activePayload, status: shellState.activeSurface?.status });
-        void refreshServerState();
-      }
-      addTurn("assistant", message);
+      const cls = applyRefusal(response);
+      const signature = `${response.code ?? ""}|${cls ?? ""}|${message}`;
+      const duplicate = signature === lastRefusalSignature;
+      lastRefusalSignature = signature;
+      if (!duplicate) addTurn("assistant", message);
       announce(message, true);
       return false;
     }
+    lastRefusalSignature = void 0;
     renderJourney(response.journey);
     renderCriteria(response.criteria);
     renderTaskRail(response.tasks);
@@ -12265,6 +12341,7 @@ Known schemas:
     }
   }
   async function sendEvent(action) {
+    if (lastActivatedControl?.getAttribute("aria-disabled") === "true") return;
     const current = shellState.activeSurface;
     if (!current || current.surfaceId !== action.surfaceId || !canUseSurfaceActions(current.status)) {
       addTurn("assistant", fallbackSummary(current ?? { surfaceId: action.surfaceId, mode: "inline-surface", status: "stale", summary: "This workspace" }));
