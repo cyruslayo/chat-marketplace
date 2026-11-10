@@ -646,6 +646,15 @@ export const GUEST_PAYMENT_COPY = {
   lateReview: "A late payment needs review and does not confirm your booking. Contact Shortlet if you sent money after the deadline.",
 } as const;
 
+/** Issue 07 (guideline §9/§10, ADR 0047/0046): a payment-provider return that cannot be verified. Problem, effect, next action. */
+export const GUEST_PAYMENT_CALLBACK_COPY = Object.freeze({
+  title: "We could not confirm this payment yet",
+  message: "Your reservation is not confirmed. Check your booking status before trying again.",
+  action: "Check your booking status",
+  // Issue 07 AC3: shown on the thread when verification failed but the guest can still read the authoritative status.
+  notConfirmedNotice: "We could not confirm your payment. Your reservation is not confirmed. Check the latest booking status.",
+});
+
 /**
  * Agent Mode presentation (ADR 0107): the copy a mode gives the guest. The chat shell, the no-JS conversation page and the
  * client announcements render from one presentation, so a second mode supplies its own copy without touching the shell.

@@ -59,3 +59,4 @@ Frontier: the first open, unblocked, unclaimed issue in number order.
 (Add one line per resolved issue.)
 
 - 06 — guest copy: internal terms and raw IDs removed; receipt "Request sent. Waiting for the Operator to respond." Evidence: `test/guest-internal-terms.test.ts`, `apps/web-agent/src/guest-content.ts`, `apps/local-guest/src/assistant/shortlet-assistant-pack.ts`.
+- 07 — payment-callback failures: standard guest page, no false success; thread shows a not-confirmed banner. Evidence: `test/payment-callback-page.test.ts`, `apps/local-guest/src/guest-server.ts`, `.scratch/ux-guidelines/screenshots/07/`.

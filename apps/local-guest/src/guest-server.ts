@@ -1,4 +1,4 @@
-import { GUEST_PHONE_COPY, GUEST_PAYMENT_COPY } from "../../web-agent/src/guest-content.js";
+import { GUEST_PHONE_COPY, GUEST_PAYMENT_COPY, GUEST_PAYMENT_CALLBACK_COPY } from "../../web-agent/src/guest-content.js";
 import { generatePlatformId } from "../../../packages/platform-core/src/index.js";
 import {
   createServer,
@@ -332,7 +332,7 @@ import {
 /**
  * The chat shell (ADR 0107): rendered from the Agent Mode presentation, stays by default. Hosts pass nothing and get stays.
  */
-export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays): string {
+export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays, notice?: string): string {
   return `<!DOCTYPE html>
 <html lang="en-NG" data-theme="system" data-mode="${escapeHtml(mode.id)}">
 <head>
@@ -582,6 +582,7 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays)
     <nav id="journey-rail" class="ui-rail-nav" aria-label="${GUEST_JOURNEY.railLabel}" hidden><ol class="ui-rail"></ol></nav>
     <nav id="task-rail" class="ui-task-rail-nav" aria-label="${GUEST_TASK_RAIL.railLabel}" hidden><ol class="ui-task-rail"></ol></nav>
     <main id="main-content" tabindex="-1">
+      ${notice === undefined ? "" : `<div class="ui-banner ui-banner--warning" role="status" data-payment-notice="not-confirmed">${escapeHtml(notice)}</div>`}
       <section id="transcript" role="log" aria-live="polite" aria-relevant="additions" aria-labelledby="conversation-heading">
         <h2 id="conversation-heading" class="conversation-heading">Conversation</h2>
         <header id="task-step-header" class="ui-step-header" hidden></header>
@@ -1227,6 +1228,25 @@ function sendPageError(
       action: { href: "/", label: "Back to your conversation" },
     }),
   );
+}
+
+/**
+ * Issue 07 (ADR 0047, 0046, 0080): a payment-provider return that cannot be verified gets a guest page, never raw JSON.
+ * The page states the problem, the effect and the next action, and never claims a payment or Reservation succeeded.
+ */
+export function renderPaymentCallbackFailureHtml(status: number, code: string, href = "/"): string {
+  return errorPage({
+    status,
+    code,
+    title: GUEST_PAYMENT_CALLBACK_COPY.title,
+    message: GUEST_PAYMENT_CALLBACK_COPY.message,
+    action: { href, label: GUEST_PAYMENT_CALLBACK_COPY.action },
+  });
+}
+
+function sendPaymentCallbackFailure(res: HttpResponseLike, status: number, code: string, href = "/"): void {
+  res.writeHead(status, GUEST_HTML_HEADERS);
+  res.end(renderPaymentCallbackFailureHtml(status, code, href));
 }
 
 /**
@@ -3723,7 +3743,8 @@ export function createGuestRequestHandler(
         }
       }
       res.writeHead(200, GUEST_HTML_HEADERS);
-      res.end(renderGuestShellHtml());
+      const paymentNotice = url.searchParams.get("payment") === "not-confirmed" ? GUEST_PAYMENT_CALLBACK_COPY.notConfirmedNotice : undefined;
+      res.end(renderGuestShellHtml(GUEST_MODES.stays, paymentNotice));
       return;
     }
 
@@ -5050,7 +5071,7 @@ export function createGuestRequestHandler(
       // ADR-0087: a callback is only a return signal; verification below is
       // the sole path allowed to advance the existing payment transition.
       if (!payments) {
-        sendJson(res, 503, { ok: false, code: "PAYSTACK_UNAVAILABLE" });
+        sendPaymentCallbackFailure(res, 503, "PAYSTACK_UNAVAILABLE");
         return;
       }
       const session = await resolveBrowserSession(
@@ -5065,7 +5086,7 @@ export function createGuestRequestHandler(
       );
       const reference = url.searchParams.get("reference");
       if (!session || !reference) {
-        sendJson(res, 400, { ok: false, code: "PAYMENT_CALLBACK_INVALID" });
+        sendPaymentCallbackFailure(res, 400, "PAYMENT_CALLBACK_INVALID");
         return;
       }
       const checkout =
@@ -5082,12 +5103,12 @@ export function createGuestRequestHandler(
           res.writeHead(303, { Location: `/bookings/periods/${encodeURIComponent(periodOfferId)}` });
           res.end();
         } catch {
-          sendJson(res, 400, { ok: false, code: "PERIOD_PAYMENT_CALLBACK_REJECTED" });
+          sendPaymentCallbackFailure(res, 400, "PERIOD_PAYMENT_CALLBACK_REJECTED", `/bookings/periods/${encodeURIComponent(periodOfferId)}`);
         }
         return;
       }
       if (!checkout) {
-        sendJson(res, 400, { ok: false, code: "PAYMENT_CALLBACK_UNKNOWN" });
+        sendPaymentCallbackFailure(res, 400, "PAYMENT_CALLBACK_UNKNOWN");
         return;
       }
       const principal: CommandPrincipal = {
@@ -5120,10 +5141,7 @@ export function createGuestRequestHandler(
           session.identity.principalIds,
         );
         if (!threadId) {
-          sendJson(res, 404, {
-            ok: false,
-            code: "PAYMENT_CALLBACK_THREAD_UNKNOWN",
-          });
+          sendPaymentCallbackFailure(res, 404, "PAYMENT_CALLBACK_THREAD_UNKNOWN");
           return;
         }
         await app.environment.cardPaymentApp.verifyAndConfirmPaystack(
@@ -5144,14 +5162,11 @@ export function createGuestRequestHandler(
         );
         if (threadId) {
           res.writeHead(303, {
-            Location: `/?threadId=${encodeURIComponent(threadId)}`,
+            Location: `/?threadId=${encodeURIComponent(threadId)}&payment=not-confirmed`,
           });
           res.end();
         } else
-          sendJson(res, 400, {
-            ok: false,
-            code: "PAYMENT_CALLBACK_REJECTED",
-          });
+          sendPaymentCallbackFailure(res, 400, "PAYMENT_CALLBACK_REJECTED");
       }
       return;
     }
