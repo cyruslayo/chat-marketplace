@@ -51,7 +51,7 @@ Frontier: the first open, unblocked, unclaimed issue in number order.
 
 - **"Amount Due Now"** (guideline §9/§10) versus the current `GUEST_FACT_LABELS.amountDueNow` = "Total to complete booking". Raised in 05.
 - **Server-computed total plus deposit** in `discovery-a2ui.ts:147`. **Decided in 10:** render the existing projected `amountDueNowKobo`; no presentation-level addition, no follow-up domain task.
-- **Whether the owner maintains `@cylayo/weaver-web`.** This decides where 13 and 16 are fixed.
+- **Whether the owner maintains `@cylayo/weaver-web`.** **Decided:** yes, but the published 0.2.1/0.3.1 ignore the A2UI accessibility labels and there is no newer release, so 13 (and 16, which found no guest Modal) use the owner-approved client fallback.
 - **Counsel-approved Extended Stay text.** Supplied in 28.
 
 ## Context pointers
@@ -64,3 +64,5 @@ Frontier: the first open, unblocked, unclaimed issue in number order.
 - 09 — dates: stay dates and calendar days use `en-NG`; contractual times are `Africa/Lagos` WAT; date-only values stay in UTC. Evidence: `test/guest-date-format.test.ts`, `apps/web-agent/src/booking-presentation.ts`.
 - 11 — changed elsewhere: `ARTIFACT_MISMATCH` and stale/conflict rejections mark the surface out of date, refresh state, and show the changed-elsewhere sentence; forged ids still fail closed. Evidence: `test/guest-changed-elsewhere.test.ts`, `apps/local-guest/src/stale-surface-response.ts`, `apps/local-guest/src/client.ts`.
 - 10 — discovery totals: the budget note renders the server-projected `amountDueNowKobo`, never a presentation sum. Evidence: `test/discovery-budget-note.test.ts`, `apps/web-agent/src/discovery-a2ui.ts`, `domains/shortlet/src/browse.ts:372`.
+- 13 — accessibility labels: the client applies A2UI `accessibility.label` after mount, keeping the visible label (owner-approved client fallback; published Weaver ignores it). Evidence: `apps/local-guest/src/a2ui-accessibility.ts`, `test/a2ui-accessibility.test.ts`, `test/guest-discovery-consistency-chromium.test.ts`.
+- 16 — guest Modal: no guest A2UI builder emits Modal, so no native-dialog change is needed. Evidence: `test/guest-modal-usage.test.ts`.

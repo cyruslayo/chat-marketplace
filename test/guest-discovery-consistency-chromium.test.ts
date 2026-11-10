@@ -188,3 +188,17 @@ test("With three or more results there is no \"See both side by side\"; See all 
     await tab.waitForFunction("[...document.querySelectorAll('#active-workspace .stay-card__compare')].filter((button) => button.getClientRects().length > 0).length === 3", 15_000);
   } finally { await browser.close(); await fixture.close(); }
 });
+
+test("Issue 13 AC1: a discovery card's View action has an accessible name that includes the Unit name", async () => {
+  const fixture = await restartFixture();
+  const browser = await launchRealBrowser();
+  try {
+    await fixture.advance("discovery");
+    const tab = await browser.createTab();
+    await openChat(tab, fixture.base, fixture.cookie, fixture.threadId, 1280);
+    const tree = await tab.getAccessibilityTree();
+    const buttons = tree.filter((node) => node.role === "button");
+    const view = buttons.find((node) => node.name.includes("View apartment") && node.name.includes("Luxury 2-Bedroom Apartment in Old Ikoyi"));
+    assert.ok(view, `the View action carries the unit name; buttons: ${JSON.stringify(buttons.map((node) => node.name))}`);
+  } finally { await browser.close(); await fixture.close(); }
+});

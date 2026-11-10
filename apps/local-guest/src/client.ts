@@ -28,6 +28,7 @@ import {
 } from "../../web-agent/src/guest-content.js";
 import { CLIENT_REQUEST_TIMEOUT_MS, CLIENT_TURN_TIMEOUT_MS, TURN_STILL_WORKING_AFTER_MS } from "./turn-budget.js";
 import { changedElsewhereRecovery } from "./stale-surface-response.js";
+import { applyAccessibilityLabels } from "./a2ui-accessibility.js";
 import { turnEntriesSince } from "./guest-turn-recovery.js";
 import { assertValidResponseMode, readResponseMode } from "./response-mode.js";
 import { nextAgentMarkState, type AgentMarkEvent, type AgentMarkState } from "./agent-mark-state.js";
@@ -2084,6 +2085,8 @@ if (
   mount.dataset.renderer = "weaver";
   mount.dataset.surfaceId = surface.surfaceId;
   enhanceSurfacePresentation(mount, activeWorkspace.dataset.surfaceKind ?? "general");
+  // Issue 13 (ADR 0074/0078): Weaver ignores the A2UI accessibility label, so the browser applies it after mount.
+  applyAccessibilityLabels(mount, surface.a2uiMessages);
   if (surface.requestScreen && surface.waiting?.kind === "operator-response" && presentation.status === "active" && !mount.querySelector(".request-screen")) {
     // ADR-0074/0080: a partial older surface retains all waiting guidance as well as its readable Weaver facts.
     mount.before(renderWaiting(surface.waiting));

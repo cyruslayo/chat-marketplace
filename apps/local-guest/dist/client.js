@@ -10084,6 +10084,50 @@ Known schemas:
     return void 0;
   }
 
+  // apps/local-guest/src/a2ui-accessibility.ts
+  function isRecord3(value) {
+    return typeof value === "object" && value !== null;
+  }
+  function accessibleNameFor(visibleText, label) {
+    return label.toLocaleLowerCase().includes(visibleText.toLocaleLowerCase()) ? label : `${visibleText}: ${label}`;
+  }
+  function labelledControls(messages) {
+    const components = /* @__PURE__ */ new Map();
+    for (const message of messages) {
+      if (!isRecord3(message) || !isRecord3(message.updateComponents)) continue;
+      const list = message.updateComponents.components;
+      if (!Array.isArray(list)) continue;
+      for (const component of list) {
+        if (!isRecord3(component) || typeof component.id !== "string" || typeof component.component !== "string") continue;
+        components.set(component.id, component);
+      }
+    }
+    const controls = [];
+    for (const component of components.values()) {
+      if (component.component !== "Button") continue;
+      const label = component.accessibility?.label;
+      if (typeof label !== "string" || label.trim() === "") continue;
+      const visibleText = component.child === void 0 ? void 0 : components.get(component.child)?.text;
+      if (typeof visibleText !== "string" || visibleText.trim() === "") continue;
+      const visible = visibleText.trim();
+      const accessible = label.trim();
+      controls.push({ visibleText: visible, accessibleLabel: accessible, name: accessibleNameFor(visible, accessible) });
+    }
+    return controls;
+  }
+  function applyAccessibilityLabels(mount, messages) {
+    const controls = labelledControls(messages);
+    if (controls.length === 0) return;
+    const buttons = Array.from(mount.querySelectorAll('button[data-a2ui-component="Button"]'));
+    const used = /* @__PURE__ */ new Set();
+    for (const control of controls) {
+      const button = buttons.find((candidate) => !used.has(candidate) && candidate.textContent?.trim() === control.visibleText);
+      if (!button) continue;
+      used.add(button);
+      button.setAttribute("aria-label", control.name);
+    }
+  }
+
   // apps/local-guest/src/guest-turn-recovery.ts
   function turnEntriesSince(timeline, text) {
     for (let index = timeline.length - 1; index >= 0; index -= 1) {
@@ -10463,7 +10507,7 @@ Known schemas:
     }
     return created;
   }
-  function isRecord3(value) {
+  function isRecord4(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
   }
   function isSafeImageUrl(value) {
@@ -10923,13 +10967,13 @@ Known schemas:
   function viewUnitIds(payload) {
     const ids = [];
     for (const message of payload?.a2uiMessages ?? []) {
-      if (!isRecord3(message) || !isRecord3(message.updateComponents) || !Array.isArray(message.updateComponents.components))
+      if (!isRecord4(message) || !isRecord4(message.updateComponents) || !Array.isArray(message.updateComponents.components))
         continue;
       for (const component of message.updateComponents.components) {
-        if (!isRecord3(component) || !isRecord3(component.action) || !isRecord3(component.action.event))
+        if (!isRecord4(component) || !isRecord4(component.action) || !isRecord4(component.action.event))
           continue;
         const context = component.action.event.context;
-        if (component.action.event.name === "shortlet.discovery.view-unit" && isRecord3(context) && typeof context.unitId === "string")
+        if (component.action.event.name === "shortlet.discovery.view-unit" && isRecord4(context) && typeof context.unitId === "string")
           ids.push(context.unitId);
       }
     }
@@ -11230,20 +11274,20 @@ Known schemas:
     return Array.isArray(value) && value.every((item) => typeof item === "string");
   }
   function isWaitingState(value) {
-    return isRecord3(value) && ["operator-response", "offer-payment-window", "payment-window"].includes(
+    return isRecord4(value) && ["operator-response", "offer-payment-window", "payment-window"].includes(
       String(value.kind)
     ) && typeof value.heading === "string" && typeof value.deadlineText === "string" && typeof value.deadlineAt === "string" && Number.isFinite(Date.parse(value.deadlineAt)) && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow)) && isStringList(value.outcomes) && isStringList(value.meanwhile);
   }
   function isConfirmation(value) {
-    return isRecord3(value) && typeof value.bookingReference === "string" && value.bookingReference !== "" && typeof value.depositCollected === "boolean" && isStringList(value.steps) && isSafeInternalRoute(value.conversationHref) && isSafeInternalRoute(value.detailsHref) && typeof value.details === "string";
+    return isRecord4(value) && typeof value.bookingReference === "string" && value.bookingReference !== "" && typeof value.depositCollected === "boolean" && isStringList(value.steps) && isSafeInternalRoute(value.conversationHref) && isSafeInternalRoute(value.detailsHref) && typeof value.details === "string";
   }
   function isSignInOffer(value) {
-    return isRecord3(value) && typeof value.email === "string" && typeof value.returnPath === "string";
+    return isRecord4(value) && typeof value.email === "string" && typeof value.returnPath === "string";
   }
   function isRequestScreen(value) {
-    if (!isRecord3(value) || typeof value.state !== "string" || !["draft", "review", "sent", "not-accepted"].includes(value.state) || typeof value.tone !== "string" || !["neutral", "warning", "danger"].includes(value.tone) || typeof value.title !== "string" || typeof value.status !== "string" || !isStringList(value.steps) || !isStringList(value.notes))
+    if (!isRecord4(value) || typeof value.state !== "string" || !["draft", "review", "sent", "not-accepted"].includes(value.state) || typeof value.tone !== "string" || !["neutral", "warning", "danger"].includes(value.tone) || typeof value.title !== "string" || typeof value.status !== "string" || !isStringList(value.steps) || !isStringList(value.notes))
       return false;
-    const action = (candidate) => isRecord3(candidate) && isSafeInternalRoute(candidate.path) && typeof candidate.label === "string" && (candidate.surfaceId === void 0 || typeof candidate.surfaceId === "string");
+    const action = (candidate) => isRecord4(candidate) && isSafeInternalRoute(candidate.path) && typeof candidate.label === "string" && (candidate.surfaceId === void 0 || typeof candidate.surfaceId === "string");
     if (!action(value.primary) || value.secondary !== void 0 && !action(value.secondary))
       return false;
     if (["banner", "provider", "guests", "sentAt"].some(
@@ -11254,22 +11298,22 @@ Known schemas:
       return false;
     if (value.changeHref !== void 0 && !isSafeInternalRoute(value.changeHref))
       return false;
-    return value.deadline === void 0 || isRecord3(value.deadline) && typeof value.deadline.iso === "string" && Number.isFinite(Date.parse(value.deadline.iso)) && typeof value.deadline.text === "string";
+    return value.deadline === void 0 || isRecord4(value.deadline) && typeof value.deadline.iso === "string" && Number.isFinite(Date.parse(value.deadline.iso)) && typeof value.deadline.text === "string";
   }
   function isOfferScreen(value) {
-    if (!isRecord3(value) || !["live", "expired", "accepted", "closed"].includes(String(value.state)) || ["title", "status", "provider", "consequence", "amount"].some(
+    if (!isRecord4(value) || !["live", "expired", "accepted", "closed"].includes(String(value.state)) || ["title", "status", "provider", "consequence", "amount"].some(
       (key3) => typeof value[key3] !== "string"
-    ) || typeof value.deadlineIso !== "string" || !Number.isFinite(Date.parse(value.deadlineIso)) || typeof value.serverNow !== "string" || !Number.isFinite(Date.parse(value.serverNow)) || !isStringList(value.steps) || !isStringList(value.notes) || !Array.isArray(value.policies) || !value.policies.every((section) => isRecord3(section) && typeof section.heading === "string" && isStringList(section.items)) || !isSafeInternalRoute(value.conversationPath) || value.searchPath !== void 0 && !isSafeInternalRoute(value.searchPath))
+    ) || typeof value.deadlineIso !== "string" || !Number.isFinite(Date.parse(value.deadlineIso)) || typeof value.serverNow !== "string" || !Number.isFinite(Date.parse(value.serverNow)) || !isStringList(value.steps) || !isStringList(value.notes) || !Array.isArray(value.policies) || !value.policies.every((section) => isRecord4(section) && typeof section.heading === "string" && isStringList(section.items)) || !isSafeInternalRoute(value.conversationPath) || value.searchPath !== void 0 && !isSafeInternalRoute(value.searchPath))
       return false;
-    return value.accept === void 0 || value.state === "live" && isRecord3(value.accept) && isSafeInternalRoute(value.accept.path) && typeof value.accept.surfaceId === "string" && value.accept.surfaceId !== "";
+    return value.accept === void 0 || value.state === "live" && isRecord4(value.accept) && isSafeInternalRoute(value.accept.path) && typeof value.accept.surfaceId === "string" && value.accept.surfaceId !== "";
   }
   function isPaymentScreen(value) {
-    return isRecord3(value) && ["ready", "handoff"].includes(String(value.state)) && ["success", "warning", "danger", "neutral"].includes(String(value.tone)) && ["title", "status", "explanation"].every(
+    return isRecord4(value) && ["ready", "handoff"].includes(String(value.state)) && ["success", "warning", "danger", "neutral"].includes(String(value.tone)) && ["title", "status", "explanation"].every(
       (key3) => typeof value[key3] === "string"
-    ) && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow)) && (value.deadlineIso === void 0 || typeof value.deadlineIso === "string" && Number.isFinite(Date.parse(value.deadlineIso))) && isStringList(value.steps) && (value.choice === void 0 || value.state === "ready" && isRecord3(value.choice) && isSafeInternalRoute(value.choice.action) && typeof value.choice.providerTransfer === "boolean" && typeof value.choice.amount === "string" && (value.choice.manualAction === void 0 || isSafeInternalRoute(value.choice.manualAction)));
+    ) && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow)) && (value.deadlineIso === void 0 || typeof value.deadlineIso === "string" && Number.isFinite(Date.parse(value.deadlineIso))) && isStringList(value.steps) && (value.choice === void 0 || value.state === "ready" && isRecord4(value.choice) && isSafeInternalRoute(value.choice.action) && typeof value.choice.providerTransfer === "boolean" && typeof value.choice.amount === "string" && (value.choice.manualAction === void 0 || isSafeInternalRoute(value.choice.manualAction)));
   }
   function isSurfacePayload(value) {
-    if (!isRecord3(value) || typeof value.surfaceId !== "string" || value.surfaceId.trim() === "" || !Array.isArray(value.a2uiMessages))
+    if (!isRecord4(value) || typeof value.surfaceId !== "string" || value.surfaceId.trim() === "" || !Array.isArray(value.a2uiMessages))
       return false;
     if (value.mode !== void 0 && value.mode !== "text" && value.mode !== "inline-surface" && value.mode !== "focused-surface")
       return false;
@@ -11309,36 +11353,36 @@ Known schemas:
     upcoming: "not started"
   };
   function isJourney(value) {
-    if (!isRecord3(value) || typeof value.current !== "string" || !Array.isArray(value.steps) || value.steps.length === 0)
+    if (!isRecord4(value) || typeof value.current !== "string" || !Array.isArray(value.steps) || value.steps.length === 0)
       return false;
     return value.steps.every(
-      (step) => isRecord3(step) && typeof step.id === "string" && typeof step.label === "string" && typeof step.state === "string" && step.state in JOURNEY_STATE_TEXT
+      (step) => isRecord4(step) && typeof step.id === "string" && typeof step.label === "string" && typeof step.state === "string" && step.state in JOURNEY_STATE_TEXT
     );
   }
   function isCriteria(value) {
-    if (!isRecord3(value) || typeof value.key !== "string" || typeof value.editable !== "boolean" || typeof value.canUndo !== "boolean")
+    if (!isRecord4(value) || typeof value.key !== "string" || typeof value.editable !== "boolean" || typeof value.canUndo !== "boolean")
       return false;
     if (!Array.isArray(value.areas) || !value.areas.every(
-      (area) => isRecord3(area) && typeof area.id === "string" && typeof area.label === "string"
+      (area) => isRecord4(area) && typeof area.id === "string" && typeof area.label === "string"
     ))
       return false;
-    const labelled = (field2) => field2 === void 0 || isRecord3(field2) && typeof field2.label === "string";
+    const labelled = (field2) => field2 === void 0 || isRecord4(field2) && typeof field2.label === "string";
     return labelled(value.where) && labelled(value.when) && labelled(value.guests) && labelled(value.budget);
   }
   function isGuestTask(value) {
-    if (!isRecord3(value) || typeof value.taskId !== "string" || typeof value.domain !== "string" || typeof value.domainLabel !== "string" || typeof value.status !== "string" || typeof value.active !== "boolean")
+    if (!isRecord4(value) || typeof value.taskId !== "string" || typeof value.domain !== "string" || typeof value.domainLabel !== "string" || typeof value.status !== "string" || typeof value.active !== "boolean")
       return false;
     if (value.tone !== void 0 && !["info", "success", "warning", "danger"].includes(String(value.tone)))
       return false;
     return value.badge === void 0 || typeof value.badge === "number" && Number.isInteger(value.badge) && value.badge >= 0;
   }
   function isGuestVertical(value) {
-    if (!isRecord3(value) || typeof value.domain !== "string" || typeof value.label !== "string")
+    if (!isRecord4(value) || typeof value.domain !== "string" || typeof value.label !== "string")
       return false;
     return value.description === void 0 || typeof value.description === "string";
   }
   function readGuestResponse(value) {
-    if (!isRecord3(value) || typeof value.ok !== "boolean")
+    if (!isRecord4(value) || typeof value.ok !== "boolean")
       throw new Error("Invalid server response");
     if (value.messages !== void 0 && (!Array.isArray(value.messages) || value.messages.some((message) => typeof message !== "string")))
       throw new Error("Invalid response messages");
@@ -11632,7 +11676,7 @@ Known schemas:
   var sheetQuery = window.matchMedia("(max-width: 63.999rem)");
   var sheetInHistory = isSheetState(history.state);
   function isSheetState(state) {
-    return isRecord3(state) && state.shortletSheet === true;
+    return isRecord4(state) && state.shortletSheet === true;
   }
   function sheetOpen() {
     return sheetQuery.matches && shellState.activeSurface?.mode === "focused-surface" && shellState.focusedSurfaceOpen && !activeWorkspace.hidden;
@@ -11640,7 +11684,7 @@ Known schemas:
   function syncSheetHistory() {
     const open = sheetOpen();
     if (open && !sheetInHistory) {
-      history.pushState({ ...isRecord3(history.state) ? history.state : {}, shortletSheet: true }, "");
+      history.pushState({ ...isRecord4(history.state) ? history.state : {}, shortletSheet: true }, "");
       sheetInHistory = true;
     } else if (!open && sheetInHistory) {
       sheetInHistory = false;
@@ -11750,7 +11794,7 @@ Known schemas:
     }
     for (const message of surface.a2uiMessages) {
       const processed = weaver.runtime.process(message);
-      if (processed.ok && isRecord3(message) && "createSurface" in message) createdSurfaceIds.add(surface.surfaceId);
+      if (processed.ok && isRecord4(message) && "createSurface" in message) createdSurfaceIds.add(surface.surfaceId);
       if (!processed.ok) {
         trackTelemetry("weaver-rendering-failure");
         trackTelemetry("fallback-rendered");
@@ -11778,6 +11822,7 @@ Known schemas:
     mount.dataset.renderer = "weaver";
     mount.dataset.surfaceId = surface.surfaceId;
     enhanceSurfacePresentation(mount, activeWorkspace.dataset.surfaceKind ?? "general");
+    applyAccessibilityLabels(mount, surface.a2uiMessages);
     if (surface.requestScreen && surface.waiting?.kind === "operator-response" && presentation.status === "active" && !mount.querySelector(".request-screen")) {
       mount.before(renderWaiting(surface.waiting));
     }
@@ -12537,14 +12582,14 @@ Known schemas:
     }
   }
   function isCommittedWork(value) {
-    return isRecord3(value) && (value.kind === "request" || value.kind === "offer" || value.kind === "reservation") && typeof value.threadId === "string" && typeof value.route === "string" && value.route.startsWith("/") && (value.unitTitle === void 0 || typeof value.unitTitle === "string");
+    return isRecord4(value) && (value.kind === "request" || value.kind === "offer" || value.kind === "reservation") && typeof value.threadId === "string" && typeof value.route === "string" && value.route.startsWith("/") && (value.unitTitle === void 0 || typeof value.unitTitle === "string");
   }
   async function fetchCommittedWork() {
     try {
       const response = await fetch("/api/committed-work", { signal: AbortSignal.timeout(CLIENT_REQUEST_TIMEOUT_MS) });
       if (!response.ok) return null;
       const body = await response.json();
-      if (!isRecord3(body) || body.ok !== true || !Array.isArray(body.committedWork) || !body.committedWork.every(isCommittedWork)) return null;
+      if (!isRecord4(body) || body.ok !== true || !Array.isArray(body.committedWork) || !body.committedWork.every(isCommittedWork)) return null;
       return body.committedWork;
     } catch {
       return null;
