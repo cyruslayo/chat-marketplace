@@ -27,8 +27,17 @@ export const GUEST_GLOSSARY = Object.freeze({
 });
 
 /** Server-authored concierge copy for replies whose facts come from current pack projections. */
+/** Issue 19 (ADR 0092: a month is 30 nights): the show-back words for a stay the guest stated in months. The only source of this wording. */
+export function guestStayMonthsWords(count: number): string {
+  return count === 1 ? "(1 month)" : `(${count} months)`;
+}
+
 export const GUEST_ASSISTANT_COPY = Object.freeze({
   stayClarification: "How many nights will you be staying, and for how many guests?",
+  // Issue 19 (ADR 0106): a model's nights that differ from the length the guest typed are refused, and that length is shown back.
+  // Owner decision (8 Nov 2026): the wording of the denial sentence. A months length shows its months in brackets.
+  statedStay: (nights: number, stated?: { readonly unit: "night" | "week" | "fortnight" | "month"; readonly count: number }) =>
+    `Just to check: you’d like ${nights} nights${stated?.unit === "month" ? ` ${guestStayMonthsWords(stated.count)}` : ""}. Shall I search for that?`,
   // Issue 08 (ADR 0106): an area the server does not know is refused with the closed list of areas it can search.
   areaClarification: (examples: string) => `I couldn't find that area. Which area should I search? For example: ${examples}.`,
   // Issue 07 (ADR 0106, ADR 0015): a budget the server cannot read from the guest's own words is refused, never searched as a guessed amount.
@@ -39,8 +48,9 @@ export const GUEST_ASSISTANT_COPY = Object.freeze({
   unitDatesClarification: "Add your check-in and checkout dates to see this apartment's price for your stay. Please write them with the day, month and year, for example 20 November 2026 to 23 November 2026.",
   // Issue 04 (ADR 0106 2 Nov 2026, ADR 0080, ADR 0077): the show-back of a relative date the guest must confirm. The deterministic
   // path says the same sentence (concierge.ts), so both paths show the same dates before a search.
-  dateShowBack: (arriving: string, leaving: string, nights: number, guests: number, place: string) =>
-    `Just to check: arriving ${arriving} and leaving ${leaving} (${nights} ${nights === 1 ? "night" : "nights"}), ${guests} ${guests === 1 ? "guest" : "guests"} in ${place}. Shall I search these dates? Reply "yes", or tell me different dates.`,
+  // Issue 19: a stay the guest stated in months shows its nights first and the months in brackets ("60 nights (2 months)").
+  dateShowBack: (arriving: string, leaving: string, nights: number, guests: number, place: string, stated?: { readonly unit: "night" | "week" | "fortnight" | "month"; readonly count: number }) =>
+    `Just to check: arriving ${arriving} and leaving ${leaving}${stated?.unit === "month" ? `, ${nights} nights ${guestStayMonthsWords(stated.count)}` : ` (${nights} ${nights === 1 ? "night" : "nights"})`}, ${guests} ${guests === 1 ? "guest" : "guests"} in ${place}. Shall I search these dates? Reply "yes", or tell me different dates.`,
   // Issue 04: an ambiguous phrase names its candidate days; one chip per day, and a tap chooses it.
   // Issue 13b (ADR 0106, 2 Nov 2026; ADR 0080): the same date check while a Request Draft is open. "yes" updates the draft; nothing is searched.
   draftDateShowBack: (arriving: string, leaving: string, nights: number, guests: number) =>
@@ -848,4 +858,111 @@ export function validateModePresentation(value: unknown): ModePresentation | und
   };
   deepFreeze(presentation);
   return presentation;
+}
+
+/**
+ * Monthly-stays issue 17 (ADR 0092, ADR 0077): the Notice to End copy, one source for the chat workspace and the standalone
+ * page. The action, heading, confirm and back labels were proposed in the issue and are awaiting owner confirmation (Comments).
+ */
+export const GUEST_NOTICE_COPY = Object.freeze({
+  action: "Give notice to end your stay",
+  heading: "End your stay early",
+  confirm: "Give notice",
+  back: "Keep my stay",
+  recordedBack: "Back to my stay",
+  /** Issue 18 (proposed for owner confirmation, 8 Nov 2026): refusals and the typed-confirmation reply. */
+  notExtended: "Giving notice applies to an Extended Stay. This is a Short Stay, so it cannot be ended early from here.",
+  notVerified: "You can give notice once you have checked in at the property.",
+  unavailable: "Notice to End is not available for this stay right now.",
+  cardOpened: "Here are the terms for giving notice. Press Give notice on the card to confirm.",
+  given: "Notice given. Your stay now ends on the new last night.",
+  stale: "The notice terms have changed. Ask again to see the current terms.",
+  newLastNight: "New last night",
+  newCheckOut: "New checkout",
+  refund: "Refund for paid nights after it",
+  owed: "Still to pay before then",
+  recordedHeading: "Notice given",
+  recordedLead: "Your stay now ends on the new last night below. Refunds are paid by hand, as the terms say.",
+});
+
+/**
+ * Monthly-stays issue 09 (ADR 0092 Extensions). Labels "Extend your stay" and "Request extension" are proposed for owner
+ * confirmation (8 Nov 2026); every other string here is new and listed in the issue's Comments for the owner.
+ */
+export const GUEST_EXTENSION_COPY = Object.freeze({
+  action: "Extend your stay",
+  heading: "Extend your stay",
+  confirm: "Request extension",
+  back: "Not now",
+  /** Refusals (a guest refusal, never an error): the reason names the one thing that stops the extension. */
+  notExtended: "Extending applies to an Extended Stay. A Short Stay cannot be extended to 30 nights or more from here.",
+  noticeInForce: "A Notice to End is in force, so this stay cannot be extended.",
+  pending: "An extension request is already waiting for the Operator.",
+  unavailable: "The unit is not available for every added night, so the stay cannot be extended.",
+  inspection: "The inspection or Management Authority does not cover the new checkout, so the stay cannot be extended.",
+  tooLong: "An Extended Stay is at most 180 nights in total, so the stay cannot be extended further.",
+  notAvailable: "This stay cannot be extended right now.",
+  cardOpened: "Here is the extension and what it adds. Press Request extension on the card to send it to the Operator. Nothing is agreed until the Operator approves.",
+  requested: "Extension requested. The Operator will reply by the time shown below. Nothing is added until they approve.",
+  approved: "Extension agreed. Your stay now ends on the new checkout.",
+  declined: "The Operator could not extend your stay. Nothing has changed.",
+  expired: "The Operator did not reply in time, so the extension was not made. Nothing has changed.",
+  stale: "The extension terms have changed. Ask again to see the current terms.",
+  addedNights: "Added nights",
+  newCheckOut: "New checkout",
+  addedAmount: "Added amount (paid as each period falls due)",
+  dueDate: "Due date for the added period",
+  respondBy: "Operator replies by",
+});
+
+export interface ExtensionFactsInput {
+  readonly addedNights: number;
+  readonly newCheckOut: string;
+  readonly addedAmountKobo: number;
+  /** The added period's due date: its Period Payment falls due 7 days before its first night (ADR 0092). */
+  readonly periodDueDate: string;
+}
+
+export interface ExtensionFactRow {
+  readonly key: "addedNights" | "newCheckOut" | "addedAmount" | "dueDate" | "respondBy";
+  readonly label: string;
+  readonly value: string;
+  readonly raw: string;
+}
+
+/** The extension facts in one order for the page and the chat card (ADR 0077, 0080). `money` formats kobo for the surface. */
+export function extensionFactRows(facts: ExtensionFactsInput, money: (kobo: number) => string, respondBy?: string): readonly ExtensionFactRow[] {
+  return [
+    { key: "addedNights", label: GUEST_EXTENSION_COPY.addedNights, value: `${facts.addedNights} ${facts.addedNights === 1 ? "night" : "nights"}`, raw: String(facts.addedNights) },
+    { key: "newCheckOut", label: GUEST_EXTENSION_COPY.newCheckOut, value: formatGuestDate(facts.newCheckOut) ?? facts.newCheckOut, raw: facts.newCheckOut },
+    { key: "addedAmount", label: GUEST_EXTENSION_COPY.addedAmount, value: money(facts.addedAmountKobo), raw: String(facts.addedAmountKobo) },
+    { key: "dueDate", label: GUEST_EXTENSION_COPY.dueDate, value: formatGuestDate(facts.periodDueDate) ?? facts.periodDueDate, raw: facts.periodDueDate },
+    ...(respondBy === undefined ? [] : [{ key: "respondBy" as const, label: GUEST_EXTENSION_COPY.respondBy, value: respondBy, raw: respondBy }]),
+  ];
+}
+
+/** The Notice to End facts as the domain calculated them (issue 18 AC1): one helper for the page and the chat card. */
+export interface NoticeFactsInput {
+  readonly newLastNight: string;
+  readonly newCheckOut: string;
+  readonly refundKobo: number;
+  readonly owedKobo: number;
+}
+
+/** One fact row: its copy label, the value shown, and the raw value a test or a hook reads. */
+export interface NoticeFactRow {
+  readonly key: "newLastNight" | "newCheckOut" | "refund" | "owed";
+  readonly label: string;
+  readonly value: string;
+  readonly raw: string;
+}
+
+/** The four facts in the issue 17 order. `money` formats kobo for the surface that shows them. */
+export function noticeFactRows(facts: NoticeFactsInput, money: (kobo: number) => string): readonly NoticeFactRow[] {
+  return [
+    { key: "newLastNight", label: GUEST_NOTICE_COPY.newLastNight, value: formatGuestDate(facts.newLastNight) ?? facts.newLastNight, raw: facts.newLastNight },
+    { key: "newCheckOut", label: GUEST_NOTICE_COPY.newCheckOut, value: formatGuestDate(facts.newCheckOut) ?? facts.newCheckOut, raw: facts.newCheckOut },
+    { key: "refund", label: GUEST_NOTICE_COPY.refund, value: money(facts.refundKobo), raw: String(facts.refundKobo) },
+    { key: "owed", label: GUEST_NOTICE_COPY.owed, value: money(facts.owedKobo), raw: String(facts.owedKobo) },
+  ];
 }

@@ -254,6 +254,19 @@ function inspectionCoversCheckout(inspection: any, today: string, checkout: stri
   }
 }
 
+/**
+ * Monthly-stays issue 09 (ADR 0056, ADR 0057): the inspection and Management Authority of a unit cover the checkout, by the
+ * booking path's own rules (`isEligibleUnit`). Used for an extension's new checkout, which may fall after the original stay.
+ */
+export function inspectionAndAuthorityCoverCheckout(unit: any, now: Date, checkout: string): boolean {
+  const today = dateKeyInLagos(now, "now");
+  return unit?.inspection?.status === "passed"
+    && unit.inspection.materialChangePending === false
+    && inspectionCoversCheckout(unit.inspection, today, checkout)
+    && INSPECTION_SCOPE.every((item) => unit.inspection.scope?.includes(item))
+    && authorityCoversCheckout(unit.managementAuthority, unit.propertyId, today, checkout);
+}
+
 export function isEligibleUnit(unit: any, now: Date = new Date(), dateRange?: EligibilityThrough | null): boolean {
   const today = dateKeyInLagos(now, "now");
   const checkout = dateRange?.checkOut ?? dateKeyInLagos(now, "now");

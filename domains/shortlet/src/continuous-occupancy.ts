@@ -49,8 +49,22 @@ export interface ContinuousOccupancyAssessment {
 
 const DAY_MS = 86_400_000;
 
-/** The one fail-closed refusal for a stay that cannot be checked: unresolved tenant, Property, Primary Guest or status. */
-const UNRESOLVED = "These dates cannot be checked against your other stays at this property.";
+/**
+ * The guest wording for every Continuous Occupancy refusal (ADR 0077: one source). Owner-approved 8 Nov 2026 (issue 07).
+ * The sentences name only nights and the limit, never a guest, request or contract id (ADR 0075).
+ */
+export const CONTINUOUS_OCCUPANCY_WORDING = {
+  /** A chain of Short Stays over the 29-night limit. "30" is derived from `MAX_STAY_NIGHTS + 1`. */
+  shortChain: (total: number): string =>
+    `These dates run straight on from your other stay at this property, making ${total} nights in a row. For ${MAX_STAY_NIGHTS + 1} nights or more, book one stay for the whole time instead.`,
+  /** A chain with an Extended Stay over the policy's `maximumNights`. */
+  extendedChain: (total: number, maximumNights: number): string =>
+    `These dates run straight on from your other stay at this property, making ${total} nights in a row. The longest stay we can book is ${maximumNights} nights.`,
+  /** The fail-closed refusal: the check could not run (unresolved tenant, Property, Primary Guest, status or policy). */
+  unresolved: "We couldn\u2019t check these dates against your other stays at this property. Please try again, or ask us for help.",
+} as const;
+
+const UNRESOLVED = CONTINUOUS_OCCUPANCY_WORDING.unresolved;
 
 function nightsBetween(checkIn: string, checkOut: string): number {
   const start = Date.parse(`${checkIn}T00:00:00Z`);
@@ -112,19 +126,13 @@ export function assessContinuousOccupancy(
   return { allowed: totalNights <= limit, totalNights, limit, chain, extendedChain };
 }
 
-/** The refusal for a chain over its limit. Wording for owner confirmation (issue 06, Comments). */
+/** The refusal for a chain over its limit. The sentence comes from `CONTINUOUS_OCCUPANCY_WORDING` (issue 07). */
 export function continuousOccupancyRefusal(assessment: ContinuousOccupancyAssessment): ContinuousOccupancyError {
   const { totalNights, limit, extendedChain } = assessment;
-  if (extendedChain) {
-    return new ContinuousOccupancyError(
-      `These dates join another stay of yours at this property, making ${totalNights} nights, more than the ${limit}-night maximum.`,
-      { total: totalNights, limit },
-    );
-  }
-  return new ContinuousOccupancyError(
-    `These dates join another stay of yours at this property, making ${totalNights} nights. A stay of ${MAX_STAY_NIGHTS + 1} nights or more must be booked as one Extended Stay.`,
-    { total: totalNights, limit },
-  );
+  const message = extendedChain
+    ? CONTINUOUS_OCCUPANCY_WORDING.extendedChain(totalNights, limit)
+    : CONTINUOUS_OCCUPANCY_WORDING.shortChain(totalNights);
+  return new ContinuousOccupancyError(message, { total: totalNights, limit });
 }
 
 /** A Booking Request as the ledger reads it. `status` is the projected status at the ledger's clock (ADR 0041, 0043). */

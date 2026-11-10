@@ -106,11 +106,11 @@ const MONTH_NUMBERS: Readonly<Record<string, number>> = Object.freeze({
   oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
 });
 const ABBREVIATED_WEEKDAYS: Readonly<Partial<Record<string, StayDateWeekday>>> = Object.freeze({ sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 });
-const NUMBER_WORDS: Readonly<Record<string, number>> = Object.freeze({
+export const NUMBER_WORDS: Readonly<Record<string, number>> = Object.freeze({
   a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
 });
 /** Calendar units for "in N days" and "in N weeks". */
-const DAYS_PER_WEEK = 7;
+export const DAYS_PER_WEEK = 7;
 
 const MONTH_WITH_MAY = "(?<month>jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
 const MONTH_WITHOUT_MAY = "(?<month>jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|june?|july?|aug(?:ust)?|sept?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";

@@ -1,0 +1,245 @@
+== width 320px ==
+  hero phone top 675px, bottom 1660px (viewport height 10462px at this capture)
+theme light (page height 10462px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 2
+    - button.landing-suggest "Lekki, 3 nights from Friday, 4 of us" at 298,559 254x44
+    - button.landing-suggest "Ikoyi, 60 nights from 5 Jan, relocating" at 560,559 275x44
+  visible controls checked: 24 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 205; text under 12px: 0
+  longest prose line: 45 characters (limit 75)
+    - .landing-lede "Say what you need, for a few n...": 35
+    - .landing-caption__body "Area, dates and guests come fr...": 33
+    - .landing-caption__body "Fewer results, by design: only...": 36
+    - .landing-caption__body "Dates, guests and total sit on...": 34
+    - .landing-caption__body "The Operator is the verified c...": 34
+    - .landing-caption__body "The offer shows exactly what y...": 36
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 43
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 40
+    - .landing-faq__item > p "No payment is due, and you can...": 35
+    - .landing-faq__item > p "Yes, from 30 nights up to 6 mo...": 43
+    - .landing-faq__item > p "Not online for this pilot. Any...": 45
+  sizes (px): H1 36, H2 28.0006, H3 22.0006, lede 17, caption 16.0006, eyebrow 13, faqQuestion 17.0006, faqAnswer 15.0006, bubble 15, chip 14, rail 12, pain 15
+  hero phone top 675px, bottom 1660px (viewport height 10462px at this capture)
+theme dark (page height 10462px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 2
+    - button.landing-suggest "Lekki, 3 nights from Friday, 4 of us" at 298,559 254x44
+    - button.landing-suggest "Ikoyi, 60 nights from 5 Jan, relocating" at 560,559 275x44
+  visible controls checked: 24 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 205; text under 12px: 0
+  longest prose line: 45 characters (limit 75)
+    - .landing-lede "Say what you need, for a few n...": 35
+    - .landing-caption__body "Area, dates and guests come fr...": 33
+    - .landing-caption__body "Fewer results, by design: only...": 36
+    - .landing-caption__body "Dates, guests and total sit on...": 34
+    - .landing-caption__body "The Operator is the verified c...": 34
+    - .landing-caption__body "The offer shows exactly what y...": 36
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 43
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 40
+    - .landing-faq__item > p "No payment is due, and you can...": 35
+    - .landing-faq__item > p "Yes, from 30 nights up to 6 mo...": 43
+    - .landing-faq__item > p "Not online for this pilot. Any...": 45
+  sizes (px): H1 36, H2 28.0006, H3 22.0006, lede 17, caption 16.0006, eyebrow 13, faqQuestion 17.0006, faqAnswer 15.0006, bubble 15, chip 14, rail 12, pain 15
+
+== width 390px ==
+  hero phone top 661px, bottom 1542px (viewport height 9382px at this capture)
+theme light (page height 9382px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 2
+    - button.landing-suggest "Lekki, 3 nights from Friday, 4 of us" at 300,545 254x44
+    - button.landing-suggest "Ikoyi, 60 nights from 5 Jan, relocating" at 562,545 275x44
+  visible controls checked: 24 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 205; text under 12px: 0
+  longest prose line: 54 characters (limit 75)
+    - .landing-lede "Say what you need, for a few n...": 45
+    - .landing-caption__body "Area, dates and guests come fr...": 42
+    - .landing-caption__body "Fewer results, by design: only...": 45
+    - .landing-caption__body "Dates, guests and total sit on...": 41
+    - .landing-caption__body "The Operator is the verified c...": 46
+    - .landing-caption__body "The offer shows exactly what y...": 43
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 52
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 51
+    - .landing-faq__item > p "No payment is due, and you can...": 48
+    - .landing-faq__item > p "Yes, from 30 nights up to 6 mo...": 54
+    - .landing-faq__item > p "Not online for this pilot. Any...": 49
+  sizes (px): H1 38.3327, H2 29.1673, H3 22.7298, lede 17.2188, caption 16.0736, eyebrow 13, faqQuestion 17.0736, faqAnswer 15.0736, bubble 15, chip 14, rail 12, pain 15
+  hero phone top 661px, bottom 1542px (viewport height 9382px at this capture)
+theme dark (page height 9382px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 2
+    - button.landing-suggest "Lekki, 3 nights from Friday, 4 of us" at 300,545 254x44
+    - button.landing-suggest "Ikoyi, 60 nights from 5 Jan, relocating" at 562,545 275x44
+  visible controls checked: 24 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 205; text under 12px: 0
+  longest prose line: 54 characters (limit 75)
+    - .landing-lede "Say what you need, for a few n...": 45
+    - .landing-caption__body "Area, dates and guests come fr...": 42
+    - .landing-caption__body "Fewer results, by design: only...": 45
+    - .landing-caption__body "Dates, guests and total sit on...": 41
+    - .landing-caption__body "The Operator is the verified c...": 46
+    - .landing-caption__body "The offer shows exactly what y...": 43
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 52
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 51
+    - .landing-faq__item > p "No payment is due, and you can...": 48
+    - .landing-faq__item > p "Yes, from 30 nights up to 6 mo...": 54
+    - .landing-faq__item > p "Not online for this pilot. Any...": 49
+  sizes (px): H1 38.3327, H2 29.1673, H3 22.7298, lede 17.2188, caption 16.0736, eyebrow 13, faqQuestion 17.0736, faqAnswer 15.0736, bubble 15, chip 14, rail 12, pain 15
+
+== width 768px ==
+  hero phone top 677px, bottom 1352px (viewport height 8098px at this capture)
+theme light (page height 8098px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 27 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 208; text under 12px: 0
+  longest prose line: 72 characters (limit 75)
+    - .landing-lede "Say what you need, for a few n...": 56
+    - .landing-caption__body "Area, dates and guests come fr...": 65
+    - .landing-caption__body "Fewer results, by design: only...": 71
+    - .landing-caption__body "Dates, guests and total sit on...": 72
+    - .landing-caption__body "The Operator is the verified c...": 69
+    - .landing-caption__body "The offer shows exactly what y...": 70
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 66
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 66
+    - .landing-faq__item > p "No payment is due, and you can...": 57
+    - .landing-faq__item > p "Yes, from 30 nights up to 6 mo...": 72
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 50.9325, H2 35.4675, H3 26.6675, lede 18.4, caption 16.4675, eyebrow 13, faqQuestion 17.4675, faqAnswer 15.4675, bubble 15, chip 14, rail 12, pain 15
+  hero phone top 677px, bottom 1352px (viewport height 8098px at this capture)
+theme dark (page height 8098px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 27 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 208; text under 12px: 0
+  longest prose line: 72 characters (limit 75)
+    - .landing-lede "Say what you need, for a few n...": 56
+    - .landing-caption__body "Area, dates and guests come fr...": 65
+    - .landing-caption__body "Fewer results, by design: only...": 71
+    - .landing-caption__body "Dates, guests and total sit on...": 72
+    - .landing-caption__body "The Operator is the verified c...": 69
+    - .landing-caption__body "The offer shows exactly what y...": 70
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 66
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 66
+    - .landing-faq__item > p "No payment is due, and you can...": 57
+    - .landing-faq__item > p "Yes, from 30 nights up to 6 mo...": 72
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 50.9325, H2 35.4675, H3 26.6675, lede 18.4, caption 16.4675, eyebrow 13, faqQuestion 17.4675, faqAnswer 15.4675, bubble 15, chip 14, rail 12, pain 15
+
+== width 1280px ==
+  hero phone top 759px, bottom 1239px (viewport height 6813px at this capture)
+theme light (page height 6813px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 27 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 208; text under 12px: 0
+  longest prose line: 72 characters (limit 75)
+    - .landing-lede "Say what you need, for a few n...": 56
+    - .landing-caption__body "Area, dates and guests come fr...": 65
+    - .landing-caption__body "Fewer results, by design: only...": 71
+    - .landing-caption__body "Dates, guests and total sit on...": 72
+    - .landing-caption__body "The Operator is the verified c...": 69
+    - .landing-caption__body "The offer shows exactly what y...": 70
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 66
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 66
+    - .landing-faq__item > p "No payment is due, and you can...": 57
+    - .landing-faq__item > p "Yes, from 30 nights up to 6 mo...": 72
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 67.999, H2 44, H3 32, lede 20, caption 17, eyebrow 13, faqQuestion 18, faqAnswer 16, bubble 15, chip 14, rail 12, pain 15
+  hero phone top 759px, bottom 1239px (viewport height 6813px at this capture)
+theme dark (page height 6813px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 0
+  visible controls checked: 27 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 208; text under 12px: 0
+  longest prose line: 72 characters (limit 75)
+    - .landing-lede "Say what you need, for a few n...": 56
+    - .landing-caption__body "Area, dates and guests come fr...": 65
+    - .landing-caption__body "Fewer results, by design: only...": 71
+    - .landing-caption__body "Dates, guests and total sit on...": 72
+    - .landing-caption__body "The Operator is the verified c...": 69
+    - .landing-caption__body "The offer shows exactly what y...": 70
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 66
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 66
+    - .landing-faq__item > p "No payment is due, and you can...": 57
+    - .landing-faq__item > p "Yes, from 30 nights up to 6 mo...": 72
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 67.999, H2 44, H3 32, lede 20, caption 17, eyebrow 13, faqQuestion 18, faqAnswer 16, bubble 15, chip 14, rail 12, pain 15
+
+== 1280 at 200% zoom (640 CSS px) ==
+  hero phone top 592px, bottom 1289px (viewport height 8254px at this capture)
+theme light (page height 8254px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 1
+    - button.landing-suggest "Ikoyi, 60 nights from 5 Jan, relocating" at 570,491 275x44
+  visible controls checked: 24 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 205; text under 12px: 0
+  longest prose line: 72 characters (limit 75)
+    - .landing-lede "Say what you need, for a few n...": 56
+    - .landing-caption__body "Area, dates and guests come fr...": 65
+    - .landing-caption__body "Fewer results, by design: only...": 71
+    - .landing-caption__body "Dates, guests and total sit on...": 72
+    - .landing-caption__body "The Operator is the verified c...": 69
+    - .landing-caption__body "The offer shows exactly what y...": 70
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 66
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 66
+    - .landing-faq__item > p "No payment is due, and you can...": 57
+    - .landing-faq__item > p "Yes, from 30 nights up to 6 mo...": 72
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 46.6659, H2 33.3341, H3 25.3341, lede 18, caption 16.3341, eyebrow 13, faqQuestion 17.3341, faqAnswer 15.3341, bubble 15, chip 14, rail 12, pain 15
+  hero phone top 592px, bottom 1289px (viewport height 8254px at this capture)
+theme dark (page height 8254px)
+  horizontal overflow (document): none
+  horizontal overflow (body): none
+  elements past the viewport edge: 1
+    - button.landing-suggest "Ikoyi, 60 nights from 5 Jan, relocating" at 570,491 275x44
+  visible controls checked: 24 (hidden native radio/checkbox inputs excluded: 0)
+  journey rail labels broken mid-word or overflowing: 0
+  controls under 44x44: 0
+  text nodes checked: 205; text under 12px: 0
+  longest prose line: 72 characters (limit 75)
+    - .landing-lede "Say what you need, for a few n...": 56
+    - .landing-caption__body "Area, dates and guests come fr...": 65
+    - .landing-caption__body "Fewer results, by design: only...": 71
+    - .landing-caption__body "Dates, guests and total sit on...": 72
+    - .landing-caption__body "The Operator is the verified c...": 69
+    - .landing-caption__body "The offer shows exactly what y...": 70
+    - .landing-faq__item > p "Not yet. They’re held for you ...": 66
+    - .landing-faq__item > p "The All-In Stay Total covers e...": 66
+    - .landing-faq__item > p "No payment is due, and you can...": 57
+    - .landing-faq__item > p "Yes, from 30 nights up to 6 mo...": 72
+    - .landing-faq__item > p "Not online for this pilot. Any...": 69
+  sizes (px): H1 46.6659, H2 33.3341, H3 25.3341, lede 18, caption 16.3341, eyebrow 13, faqQuestion 17.3341, faqAnswer 15.3341, bubble 15, chip 14, rail 12, pain 15
+
+== first viewport, motion allowed, no scrolling ==
+  390x800: hero H1 135..296px (inside the first viewport); reassurance 605..645px (inside); hero composer 435..529px (inside the first viewport); CTA 435..645px; scrollY 0; guest message shown on load: true
+  360x640: hero H1 123..224px (inside the first viewport); reassurance 507..547px (inside); hero composer 337..431px (inside the first viewport); CTA 337..547px; scrollY 0; guest message shown on load: true
+  320x568: hero H1 123..257px (inside the first viewport); reassurance 540..580px (NOT inside); hero composer 371..464px (inside the first viewport); CTA 371..580px; scrollY 0; guest message shown on load: true
+

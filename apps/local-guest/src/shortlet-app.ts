@@ -166,6 +166,7 @@ import {
 } from "../../web-agent/src/confirmation-presentation.js";
 import type { ConditionalOfferArtifact } from "../../../apps/web/src/conditional-offer-artifact.js";
 import type { BookingContractArtifact } from "../../../apps/web/src/booking-contract-artifact.js";
+import { projectContractArtifact } from "./assistant/contract-artifact-projection.js";
 import type { CardPaymentApplication } from "../../../apps/web/src/card-payment-application.js";
 import {
   LocalGuestEnvironment,
@@ -215,6 +216,8 @@ import { ContinuousOccupancyError } from "../../../domains/shortlet/src/index.js
 import {
   amenityQuestions,
   extractStayRequestFacts,
+  type StatedStayLength,
+  stayNightsLabel,
   formatGuestDay,
   mergeStayRequestContext,
   resolveStayRequestContext,
@@ -227,6 +230,7 @@ import {
 import {
   AssistantRuntime,
   type AssistantControlOutcome,
+  type AssistantShellReferences,
   type AssistantShortletRestoreInput,
   type AssistantTaskRailEntry,
   type AssistantVertical,
@@ -515,6 +519,16 @@ const GUEST_PHONE_SUBMIT_EVENT = "shortlet.guest-contact.submit-phone";
 const GUEST_EMAIL_SUBMIT_EVENT = "shortlet.guest-contact.submit-email";
 
 const PENDING_ACTION_STAGE = "pending_action";
+/**
+ * Issue 19 (owner decision, 8 Nov 2026): the persisted stated length as the criteria strip reads it, only while it holds the strip's
+ * nights. A length whose nights differ from the held stay is not shown (a changed night count drops its months show-back).
+ */
+function statedStayLengthPart(context: PersistedAssistantContext): { readonly stayLength?: StatedStayLength } {
+  const stated = context.statedStay;
+  if (stated === undefined || context.nights !== stated.nights) return {};
+  return { stayLength: { unit: stated.unit, count: stated.count, nights: stated.nights } };
+}
+
 /** Issue 03a: the criteria strip is shell chrome with one server-known id per thread. */
 const CRITERIA_STAGE = "criteria";
 export const CRITERIA_EDIT_EVENT = "shortlet.criteria.edit";
@@ -1011,7 +1025,7 @@ export class LocalGuestApp {
       });
     }
 
-    return acknowledged(this.#executeDiscovery(thread, resolution.filters));
+    return acknowledged(this.#executeDiscovery(thread, resolution.filters, { stayLength: resolution.stayLength }));
   }
 
   #guestStage(thread: GuestThreadState): GuestStage {
@@ -1105,7 +1119,7 @@ export class LocalGuestApp {
   #executeDiscovery(
     thread: GuestThreadState,
     filters: StayRequestFilters,
-    options: { readonly recordHistory?: boolean } = {},
+    options: { readonly recordHistory?: boolean; /** Issue 19: the length the guest stated in months or weeks, for the reply. */ readonly stayLength?: StatedStayLength } = {},
   ): GuestTurnResult {
     if (options.recordHistory !== false && thread.discoveryContext) {
       thread.searchHistory.push({ ...thread.discoveryContext });
@@ -1124,6 +1138,8 @@ export class LocalGuestApp {
       createSurfaceId: () => thread.discoverySurfaceId,
     });
     const result = adapter.search({ ...filters });
+    // Issue 19 (ADR 0092): a stay stated in months shows its nights and the months in brackets; nights and weeks show the dates only.
+    const statedMonths = options.stayLength?.unit === "month" ? `, ${stayNightsLabel(options.stayLength.nights, options.stayLength)}` : "";
     thread.discoveryArtifact = result.artifact;
     // ADR 0106: the results on screen name this artifact, so a cold restore keeps this id.
     thread.discoveryArtifactId = result.artifact.id;
@@ -1137,7 +1153,7 @@ export class LocalGuestApp {
     return {
       ok: true,
       messages: [
-        `I found ${result.artifact.facts.results.length} eligible place${result.artifact.facts.results.length === 1 ? "" : "s"} in ${filters.location}${filters.maxPriceKobo === undefined ? "" : ` within your ${formatNgnKobo(filters.maxPriceKobo)} budget (${GUEST_GLOSSARY.allInStayTotal})`} for your stay from ${formatGuestDay(filters.checkIn)} to ${formatGuestDay(filters.checkOut)}. You can view the details below.`,
+        `I found ${result.artifact.facts.results.length} eligible place${result.artifact.facts.results.length === 1 ? "" : "s"} in ${filters.location}${filters.maxPriceKobo === undefined ? "" : ` within your ${formatNgnKobo(filters.maxPriceKobo)} budget (${GUEST_GLOSSARY.allInStayTotal})`} for your stay from ${formatGuestDay(filters.checkIn)} to ${formatGuestDay(filters.checkOut)}${statedMonths}. You can view the details below.`,
       ],
       surfaces: [
         {
@@ -1404,7 +1420,8 @@ export class LocalGuestApp {
         event.name === ASSISTANT_CANCEL_ACTION_EVENT ||
         event.name === TASK_START_EVENT ||
         event.name === TASK_SWITCH_EVENT ||
-        event.name === COMMERCE_CHECKOUT_CONFIRM_ACTION
+        event.name === COMMERCE_CHECKOUT_CONFIRM_ACTION ||
+        this.#assistantRuntime.acceptsPackEvent(event.name)
       ) {
         // Issue 03 follow-up (ADR 0074, ADR 0070): the runtime authorises a confirm or cancel by the surface id in the event
         // context. The surface the guest acted on is the event's own surface id, so the two must agree, or the event is
@@ -1427,7 +1444,11 @@ export class LocalGuestApp {
             message: output.message ?? "The action failed.",
           };
         }
-        return this.#assistantResult(output);
+        // Issue 18 AC7: an assistant event is remembered the way a turn is, so its pending card (and the task state that holds it) is
+        // written to the guest thread and survives a cold restore. No timeline text is added (userText is undefined).
+        const eventResult = this.#assistantResult(output);
+        if (eventResult.ok) this.#rememberResult(threadId, undefined, eventResult);
+        return eventResult;
       }
     }
 
@@ -3105,9 +3126,29 @@ export class LocalGuestApp {
     return thread;
   }
 
+  /**
+   * Issue 20 (ADR 0106 amended 8 Nov 2026; ADR 0093): a context with no area keeps only the guest's own facts that need no area. A
+   * check-in counts only when the guest typed it (isDemoDate false), and its checkout and nights come with it. The stated length, party size
+   * and bedrooms need no area. Nothing else is kept, and an empty context is not saved.
+   */
+  #partialAssistantContext(state: AssistantTaskState): PersistedAssistantContext | null {
+    const stay = state.stayIntent;
+    const checkIn = stay.isDemoDate === false && typeof stay.checkIn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(stay.checkIn) ? stay.checkIn : undefined;
+    const checkOut = checkIn !== undefined && typeof stay.checkOut === "string" && /^\d{4}-\d{2}-\d{2}$/.test(stay.checkOut) ? stay.checkOut : undefined;
+    const context: PersistedAssistantContext = {
+      ...(checkIn === undefined ? {} : { checkIn, isDemoDate: false }),
+      ...(checkOut === undefined ? {} : { checkOut }),
+      ...(checkIn !== undefined && Number.isSafeInteger(stay.nights) && (stay.nights ?? 0) > 0 ? { nights: stay.nights } : {}),
+      ...(stay.statedStay ? { statedStay: { nights: stay.statedStay.nights, unit: stay.statedStay.unit, count: stay.statedStay.count } } : {}),
+      ...(Number.isSafeInteger(stay.partySize) && (stay.partySize ?? 0) > 0 ? { partySize: stay.partySize } : {}),
+      ...(Number.isSafeInteger(stay.bedrooms) && (stay.bedrooms ?? -1) >= 0 ? { bedrooms: stay.bedrooms } : {}),
+    };
+    return Object.keys(context).length === 0 ? null : context;
+  }
+
   #assistantContextFromState(state: AssistantTaskState): PersistedAssistantContext | null {
     const city = state.stayIntent.location;
-    if (city !== "Lagos" && city !== "Abuja") return null;
+    if (city !== "Lagos" && city !== "Abuja") return this.#partialAssistantContext(state);
     const knownNeighbourhoods = new Set(this.#environment.unitRepository.findAll().map((unit) => unit.location.neighbourhood));
     const neighbourhood = state.stayIntent.neighbourhood;
     // Issue 08: the closed amenity catalogue (ADR 0106) is the only source of persisted amenity ids.
@@ -3128,6 +3169,8 @@ export class LocalGuestApp {
       ...(typeof state.stayIntent.isDemoDate === "boolean" ? { isDemoDate: state.stayIntent.isDemoDate } : {}),
       ...(state.stayIntent.checkOut && /^\d{4}-\d{2}-\d{2}$/.test(state.stayIntent.checkOut) ? { checkOut: state.stayIntent.checkOut } : {}),
       ...(Number.isSafeInteger(state.stayIntent.nights) && (state.stayIntent.nights ?? 0) > 0 ? { nights: state.stayIntent.nights } : {}),
+      // Issue 19 (ADR 0106, amended 8 Nov 2026): the stated length is persisted with the context, and nothing else is added.
+      ...(state.stayIntent.statedStay ? { statedStay: { nights: state.stayIntent.statedStay.nights, unit: state.stayIntent.statedStay.unit, count: state.stayIntent.statedStay.count } } : {}),
       ...(Number.isSafeInteger(state.stayIntent.partySize) && (state.stayIntent.partySize ?? 0) > 0 ? { partySize: state.stayIntent.partySize } : {}),
       ...(Number.isSafeInteger(state.stayIntent.bedrooms) && (state.stayIntent.bedrooms ?? -1) >= 0 ? { bedrooms: state.stayIntent.bedrooms } : {}),
       // Issue 06 (ADR 0015): a budget is persisted with its meaning, stay or night; without one it is not persisted.
@@ -3144,11 +3187,30 @@ export class LocalGuestApp {
    * the runtime and the sync adopts that artifact; a cold restore re-queries the context (ADR 0077/0080) and passes the persisted
    * `keepArtifactId`, so the re-queried facts take over the id the guest's card already names (ADR 0106).
    */
+  /** Issue 20: the strip's criteria from a persisted context alone (no search, no results). */
+  #assistantContextCriteria(thread: GuestThreadState, context: PersistedAssistantContext): void {
+    thread.discoveryArtifact = null;
+    thread.discoveryArtifactId = null;
+    thread.unitDetail = null;
+    thread.searchHistory = [];
+    thread.discoveryContext = {
+      ...(context.city === undefined ? {} : { city: context.city }),
+      ...(context.neighbourhood ? { neighbourhood: context.neighbourhood } : {}),
+      ...(context.checkIn ? { checkIn: context.checkIn, datesConfirmed: true } : {}),
+      ...(context.nights === undefined ? {} : { nights: context.nights }),
+      ...statedStayLengthPart(context),
+      ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
+      ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
+    };
+  }
+
   #assistantContextSearch(
     thread: GuestThreadState,
     context: PersistedAssistantContext,
     currentArtifact?: DiscoveryArtifactProjection,
     keepArtifactId: string | null = null,
+    // Issue 20 (owner rule: a clarification turn runs no search): without `mayQuery` the context only sets the criteria, so no discovery query runs.
+    mayQuery = true,
   ): void {
     // Issue 04 (ADR 0106, 2 Nov 2026): a pending date show-back is not a search. A restore must not rebuild results for its dates.
     if (context.pendingDate !== undefined) {
@@ -3162,10 +3224,17 @@ export class LocalGuestApp {
         city: context.city,
         ...(context.neighbourhood ? { neighbourhood: context.neighbourhood } : {}),
         ...(context.nights === undefined ? {} : { nights: context.nights }),
+        ...statedStayLengthPart(context),
         ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
         ...(pendingCheckIn === undefined ? {} : { checkIn: pendingCheckIn }),
         datesConfirmed: false,
       };
+      return;
+    }
+    // Issue 20 (ADR 0106 amended 8 Nov 2026): a context with no area, or one with no search to rebuild, keeps the guest's own criteria
+    // for the strip and runs no discovery query. It clears the held results, which a search would have to match.
+    if (context.city === undefined || !mayQuery) {
+      this.#assistantContextCriteria(thread, context);
       return;
     }
     const budgetTotal = persistedBudgetTotal(context);
@@ -3202,6 +3271,7 @@ export class LocalGuestApp {
         ...(context.neighbourhood ? { neighbourhood: context.neighbourhood } : {}),
         ...(context.checkIn ? { checkIn: context.checkIn, datesConfirmed: true } : {}),
         ...(context.nights === undefined ? {} : { nights: context.nights }),
+        ...statedStayLengthPart(context),
         ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
         ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
         ...(context.maxBudgetKobo === undefined || context.maxBudgetPer === undefined ? {} : { budget: { kobo: context.maxBudgetKobo, per: context.maxBudgetPer } }),
@@ -3224,11 +3294,14 @@ export class LocalGuestApp {
     if (!thread.assistantContext) return;
     const runtime = this.#assistantRuntime;
     const currentArtifact = runtime?.hasThread(thread.threadId) ? runtime.getThread(thread.threadId).discoveryArtifact : undefined;
+    const held = isDiscoveryArtifactProjection(currentArtifact) ? currentArtifact : undefined;
+    // Issue 20: a restore rebuilds the results only for a thread that has searched (a held result or a search history); a clarification-only context does not.
     this.#assistantContextSearch(
       thread,
       thread.assistantContext,
-      isDiscoveryArtifactProjection(currentArtifact) ? currentArtifact : undefined,
+      held,
       thread.discoveryArtifactId,
+      held !== undefined || thread.searchHistory.length > 0,
     );
   }
 
@@ -3280,15 +3353,11 @@ export class LocalGuestApp {
     return this.#assistantRuntime?.threadBusy(threadId) === true;
   }
 
-  #restoreAssistantFromGuestThread(threadId: string, thread: GuestThreadState): void {
-    const runtime = this.#assistantRuntime;
-    const context = thread.assistantContext;
-    // Issue 06 (ADR 0070): a restore never rewrites a thread a mutating run is changing; that run commits its own delta.
-    if (!runtime || !context || runtime.hasThread(threadId) || runtime.threadBusy(threadId)) return;
-    // ADR 0070/0075/0093: load only the owner-checked, minimal projection; never restore model or provider history.
-    if (!thread.discoveryArtifact) this.#rebuildAssistantDiscovery(thread);
-    const shortlist = this.#assistantShortlist(thread);
-    const selected = context.selectedUnitId ? shortlist.find((stay) => stay.unitId === context.selectedUnitId) : undefined;
+  /**
+   * ADR 0106: the references the shell holds for the thread (draft, request, offer, and the reservation and contract the offer's
+   * snapshot names). The cold restore and the warm runtime both derive their shell-owned state from this one place.
+   */
+  #assistantShellReferences(thread: GuestThreadState): AssistantShellReferences {
     let currentContractId: string | undefined;
     let currentReservationId: string | undefined;
     if (thread.offerId) {
@@ -3301,15 +3370,45 @@ export class LocalGuestApp {
         } catch { /* Invalid persisted metadata cannot restore domain status. */ }
       }
     }
+    return {
+      ...(thread.draftId ? { currentDraftId: thread.draftId } : {}),
+      ...(thread.requestId ? { currentBookingRequestId: thread.requestId } : {}),
+      ...(thread.offerId ? { currentOfferId: thread.offerId } : {}),
+      ...(currentReservationId ? { currentReservationId } : {}),
+      ...(currentContractId ? { currentContractId } : {}),
+    };
+  }
+
+  #restoreAssistantFromGuestThread(threadId: string, thread: GuestThreadState): void {
+    const runtime = this.#assistantRuntime;
+    const context = thread.assistantContext;
+    // Issue 06 (ADR 0070): a restore never rewrites a thread a mutating run is changing; that run commits its own delta.
+    if (!runtime || runtime.threadBusy(threadId)) return;
+    // ADR 0106 (warm session runtime): a runtime that already holds the thread is not rebuilt, but the shell advances the thread
+    // outside the assistant (a Request to Book makes a draft, a request is confirmed into an offer, a payment confirms the stay).
+    // Those references are adopted here, so the next turn sees what a cold restore sees. The history and the open surfaces are kept.
+    if (runtime.hasThread(threadId)) {
+      const warm = runtime.getThread(threadId);
+      const activeTask = warm.tasks.find((task) => task.taskId === warm.activeTaskId);
+      if (activeTask?.domain === "shortlet") runtime.adoptShellReferences(threadId, this.#assistantShellReferences(thread));
+      return;
+    }
+    if (!context) return;
+    // ADR 0070/0075/0093: load only the owner-checked, minimal projection; never restore model or provider history.
+    if (!thread.discoveryArtifact) this.#rebuildAssistantDiscovery(thread);
+    const shortlist = this.#assistantShortlist(thread);
+    const selected = context.selectedUnitId ? shortlist.find((stay) => stay.unitId === context.selectedUnitId) : undefined;
+    const shellReferences = this.#assistantShellReferences(thread);
     const state: AssistantTaskState = {
       goal: shortlist.length ? "find_stay" : null,
       stayIntent: {
-        location: context.city,
+        ...(context.city === undefined ? {} : { location: context.city }),
         ...(context.neighbourhood ? { neighbourhood: context.neighbourhood } : {}),
         ...(context.checkIn ? { checkIn: context.checkIn } : {}),
         ...(typeof context.isDemoDate === "boolean" ? { isDemoDate: context.isDemoDate } : {}),
         ...(context.checkOut ? { checkOut: context.checkOut } : {}),
         ...(context.nights === undefined ? {} : { nights: context.nights }),
+        ...(context.statedStay ? { statedStay: { nights: context.statedStay.nights, unit: context.statedStay.unit, count: context.statedStay.count } } : {}),
         ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
         ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
         ...(context.maxBudgetKobo === undefined || context.maxBudgetPer === undefined ? {} : { maxBudgetKobo: context.maxBudgetKobo, maxBudgetPer: context.maxBudgetPer }),
@@ -3319,11 +3418,7 @@ export class LocalGuestApp {
       },
       shortlist,
       ...(selected ? { selectedStayRef: selected.stayRef } : {}),
-      ...(thread.draftId ? { currentDraftId: thread.draftId } : {}),
-      ...(thread.requestId ? { currentBookingRequestId: thread.requestId } : {}),
-      ...(thread.offerId ? { currentOfferId: thread.offerId } : {}),
-      ...(currentReservationId ? { currentReservationId } : {}),
-      ...(currentContractId ? { currentContractId } : {}),
+      ...shellReferences,
       pendingAction: thread.pendingAction,
       replacedPendingAction: thread.replacedPendingAction,
       pendingDraftReplacement: thread.pendingDraftReplacement,
@@ -3372,7 +3467,9 @@ export class LocalGuestApp {
     if (context) {
       thread.assistantContext = context;
       const runtimeArtifact = isDiscoveryArtifactProjection(assistant.discoveryArtifact) ? assistant.discoveryArtifact : undefined;
-      this.#assistantContextSearch(thread, context, runtimeArtifact ?? thread.discoveryArtifact ?? undefined);
+      // Issue 20: the sync re-queries only a thread that already holds results; a clarification that saves facts runs no search.
+      const held = runtimeArtifact ?? thread.discoveryArtifact ?? undefined;
+      this.#assistantContextSearch(thread, context, held, null, held !== undefined);
     }
     if (assistant.taskState.currentDraftId) thread.draftId = assistant.taskState.currentDraftId;
     if (assistant.taskState.currentBookingRequestId) thread.requestId = assistant.taskState.currentBookingRequestId;
@@ -4070,7 +4167,7 @@ export class LocalGuestApp {
           ? this.#clarificationChips(thread, resolution.next)
           : {}),
       };
-    const result = this.#executeDiscovery(thread, resolution.filters);
+    const result = this.#executeDiscovery(thread, resolution.filters, { stayLength: resolution.stayLength });
     this.#reconcileAssistantStay(thread);
     return result;
   }
@@ -4120,6 +4217,8 @@ export class LocalGuestApp {
               ? { checkIn: next.checkIn }
               : {}),
             nights: edit.nights,
+            // Issue 19 (owner decision, 8 Nov 2026): a nights chip edit replaces the stated length (a chip edit is unit night).
+            ...(edit.nights === undefined ? {} : { statedStay: { nights: edit.nights, unit: "night" as const, count: edit.nights } }),
           }
         : { partySize: edit.partySize };
     this.#recordAssistantStayFacts(thread, facts);
@@ -4128,7 +4227,7 @@ export class LocalGuestApp {
   /** ADR 0106: records the chip's stay facts in the assistant task state and keeps the persisted context in step. */
   #recordAssistantStayFacts(
     thread: GuestThreadState,
-    facts: { readonly checkIn?: string; readonly nights?: number; readonly partySize?: number; readonly budget?: StayBudget | null },
+    facts: { readonly checkIn?: string; readonly nights?: number; readonly statedStay?: { readonly nights: number; readonly unit: "night" | "week" | "month"; readonly count: number }; readonly partySize?: number; readonly budget?: StayBudget | null },
   ): void {
     const runtime = this.#assistantRuntime;
     if (!runtime || !runtime.hasThread(thread.threadId)) return;
@@ -4210,6 +4309,7 @@ export class LocalGuestApp {
     this.#recordAssistantArea(thread, previous);
     const result = this.#executeDiscovery(thread, resolution.filters, {
       recordHistory: false,
+      stayLength: resolution.stayLength,
     });
     this.#reconcileAssistantStay(thread);
     return result.ok
@@ -4235,10 +4335,8 @@ export class LocalGuestApp {
               [context.neighbourhood, context.city].filter(Boolean).join(", "),
           };
     const nights = context.nights;
-    const nightsLabel =
-      nights === undefined
-        ? ""
-        : `${nights} ${nights === 1 ? "night" : "nights"}`;
+    // Issue 19 (decision 2): a stay stated in months shows its months in brackets; the chip value stays the number of nights.
+    const nightsLabel = nights === undefined ? "" : stayNightsLabel(nights, context.stayLength);
     const checkOut =
       context.checkIn !== undefined && nights !== undefined
         ? new Date(
@@ -5277,16 +5375,7 @@ export class LocalGuestApp {
   }
 
   #contractArtifact(contractId: string): BookingContractArtifact {
-    const artifact = this.#environment.contractApp.getArtifact(
-      contractId,
-      this.#environment.guestPrincipal(),
-    );
-    const unit = this.#environment.unitRepository.findById(
-      artifact.facts.unitId,
-    );
-    return unit
-      ? { ...artifact, facts: { ...artifact.facts, unitTitle: unit.title } }
-      : artifact;
+    return projectContractArtifact(this.#environment, contractId);
   }
 
   #confirmedBookingFallback(artifact: BookingContractArtifact): string {

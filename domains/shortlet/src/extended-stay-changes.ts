@@ -1,6 +1,8 @@
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
+import { extensionAwaitingOperator } from "./extended-stay-extension.js";
 import type { BookingContract } from "./card-payment.js";
 import type { CancellationEconomics } from "./cancellation-noshow.js";
+import type { CheckInSupportStore } from "./checkin-support.js";
 import { EXTENDED_CANCELLATION_POLICY_VERSION, NOTICE_TO_END_DAYS, noticeToEndTerms, type ExtendedStayPolicy } from "./extended-stay.js";
 import { ownerShareAfterCancellation, type OwnerPeriodNoticeAdjustment, type OwnerPeriodNoticeLedger } from "./owner-payable.js";
 import type { BillingPeriodQuote } from "./quote.js";
@@ -176,6 +178,24 @@ export interface NoticeToEndManagerOptions {
   readonly clock: () => Date;
 }
 
+/** What the guest is shown before confirming (ADR 0060): the domain's calculation at the notice date, with no change. */
+export interface NoticePreview extends NoticeCalculation {
+  readonly contractId: string;
+  readonly contractVersion: number;
+  /** The sum of the refunds in `refundsByPeriod`, in kobo. */
+  readonly refundKobo: number;
+  readonly noticeToEndTerms: string;
+}
+
+/**
+ * The confirmation the guest submits (monthly-stays issue 17). It binds the notice to what was shown: the notice date and
+ * the contract version. A confirmation for another date or version is refused, so a stale page never commits.
+ */
+export interface NoticeConfirmation {
+  readonly noticeDate: string;
+  readonly contractVersion: number;
+}
+
 export interface NoticeToEndResult extends NoticeCalculation {
   readonly amendmentId: string;
   readonly contractId: string;
@@ -202,33 +222,42 @@ export class NoticeToEndManager {
     this.#o = options;
   }
 
-  giveNotice(contractId: string, principal: CommandPrincipal): NoticeToEndResult {
-    if (!this.#o.extendedStayPolicy) {
-      throw new Error("Notice to End needs an Extended Stay policy (ADR 0092)");
-    }
-    const contract = this.#o.contracts.getContract(contractId);
-    if (!guestAuthorized(contract, principal)) throw new Error("Notice to End is not authorized for this principal");
-    billingPeriodsOf(contract);
-    if (contract.noticeToEnd) throw new Error("A Notice to End is already recorded for this contract");
-    if (this.#o.failures.hasOpenFailure(contract.reservationId)) {
-      throw new Error("An operator or platform failure applies its ADR 0061 remedy; a voluntary Notice to End is not available");
-    }
-    if (!this.#o.arrival.hasVerifiedAccess(contract.reservationId)) throw new Error("A Notice to End is available only after Verified Access");
+  /** The calculation the guest is shown before confirming. Reads only: nothing is recorded (ADR 0060). */
+  previewNotice(contractId: string, principal: CommandPrincipal): NoticePreview {
+    const { contract, calculation } = this.#prepare(contractId, principal);
+    return Object.freeze({
+      ...calculation,
+      contractId,
+      contractVersion: contract.contractVersion,
+      refundKobo: calculation.refundsByPeriod.reduce((sum, entry) => sum + entry.amountKobo, 0),
+      noticeToEndTerms: noticeToEndTerms(this.#o.demoTerms === true),
+    });
+  }
 
-    const now = this.#o.clock();
-    const noticeDate = new Date(now.getTime() + WAT_OFFSET_MS).toISOString().slice(0, 10);
-    const periods = billingPeriodsOf(contract);
-    const paidPeriodIndices = new Set(
-      this.#o.periods.projectBillingPeriods(contract.offerId, now).filter((period) => period.status === "paid").map((period) => period.periodIndex),
-    );
-    const calculation = calculateNoticeToEnd({ contract, periods, paidPeriodIndices, noticeDate });
+  /**
+   * Records the Notice to End. With a confirmation, the notice is committed only when the date and contract version still
+   * match what the guest was shown (fail closed: a stale or forged confirmation changes nothing).
+   */
+  giveNotice(contractId: string, principal: CommandPrincipal, confirmation?: NoticeConfirmation): NoticeToEndResult {
+    const { contract, periods, calculation, now } = this.#prepare(contractId, principal);
+    if (confirmation !== undefined && (confirmation.contractVersion !== contract.contractVersion || confirmation.noticeDate !== calculation.noticeDate)) {
+      throw new Error("The Notice to End no longer matches the stay; review it again before giving notice");
+    }
     const amendmentId = `notice-to-end:${contract.contractId}:${contract.contractVersion}`;
+    const refundKobo = calculation.refundsByPeriod.reduce((sum, entry) => sum + entry.amountKobo, 0);
 
     const committed = this.#o.contracts.mutateContract(contractId, contract.contractVersion, (current) => ({
       ...current,
       contractVersion: current.contractVersion + 1,
       dates: { checkIn: current.dates.checkIn, checkOut: calculation.newCheckOut, nights: nightsBetween(current.dates.checkIn, calculation.newCheckOut) },
-      noticeToEnd: { amendmentId, noticeDate, effectiveDate: calculation.effectiveDate, newLastNight: calculation.newLastNight },
+      noticeToEnd: {
+        amendmentId,
+        noticeDate: calculation.noticeDate,
+        effectiveDate: calculation.effectiveDate,
+        newLastNight: calculation.newLastNight,
+        refundKobo,
+        owedKobo: calculation.owedKobo,
+      },
     }));
 
     // ADR 0092: each refunded period's owner payable falls by the owner's share of the refunded nights. Only paid periods
@@ -280,6 +309,32 @@ export class NoticeToEndManager {
     });
   }
 
+  /** The guards every Notice to End path shares (preview and commit), then the domain calculation at the clock's WAT date. */
+  #prepare(contractId: string, principal: CommandPrincipal): { contract: BookingContract; periods: readonly BillingPeriodQuote[]; calculation: NoticeCalculation; now: Date } {
+    if (!this.#o.extendedStayPolicy) {
+      throw new Error("Notice to End needs an Extended Stay policy (ADR 0092)");
+    }
+    const contract = this.#o.contracts.getContract(contractId);
+    if (!guestAuthorized(contract, principal)) throw new Error("Notice to End is not authorized for this principal");
+    billingPeriodsOf(contract);
+    if (contract.noticeToEnd) throw new Error("A Notice to End is already recorded for this contract");
+    // Monthly-stays issue 09 (ADR 0092 Extensions): a Notice to End and an extension request exclude each other while the request awaits the Operator.
+    if (extensionAwaitingOperator(contract, this.#o.clock())) throw new Error("An extension request is awaiting the Operator; a Notice to End is not available until it is decided");
+    if (this.#o.failures.hasOpenFailure(contract.reservationId)) {
+      throw new Error("An operator or platform failure applies its ADR 0061 remedy; a voluntary Notice to End is not available");
+    }
+    if (!this.#o.arrival.hasVerifiedAccess(contract.reservationId)) throw new Error("A Notice to End is available only after Verified Access");
+
+    const now = this.#o.clock();
+    const noticeDate = new Date(now.getTime() + WAT_OFFSET_MS).toISOString().slice(0, 10);
+    const periods = billingPeriodsOf(contract);
+    const paidPeriodIndices = new Set(
+      this.#o.periods.projectBillingPeriods(contract.offerId, now).filter((period) => period.status === "paid").map((period) => period.periodIndex),
+    );
+    const calculation = calculateNoticeToEnd({ contract, periods, paidPeriodIndices, noticeDate });
+    return { contract, periods, calculation, now };
+  }
+
   #paymentSource(contract: BookingContract, periodIndex: number): { paymentMethod: "fresh_card" | "bank_transfer"; reference: string } {
     if (periodIndex === 1) {
       const details = contract.paymentDetails;
@@ -291,4 +346,45 @@ export class NoticeToEndManager {
     if (!record) throw new Error(`No verified payment is recorded for Billing Period ${periodIndex}`);
     return { paymentMethod: "fresh_card", reference: record.pspReference };
   }
+}
+
+/**
+ * The Check-In Support state as the Notice to End guards read it (ADR 0061, ADR 0089). Verified Access, or a late voluntary
+ * arrival, is the precondition. An open failure of any kind (failed access, human review, or a Blocking Fulfilment Complaint
+ * not yet resolved) sends the stay to its ADR 0061 remedy instead. A store that cannot be read throws (fail closed).
+ */
+export function checkInNoticePorts(store: CheckInSupportStore): { readonly arrival: NoticeToEndManagerOptions["arrival"]; readonly failures: NoticeToEndManagerOptions["failures"] } {
+  return {
+    arrival: {
+      hasVerifiedAccess: (reservationId: string) => {
+        const status = store.load(reservationId)?.result?.status;
+        return status === "verified_access" || status === "late_voluntary_arrival";
+      },
+    },
+    failures: {
+      hasOpenFailure: (reservationId: string) => {
+        // No check-in record means no failure is on file. Verified Access is checked separately, so a stay without it is still refused.
+        const state = store.load(reservationId);
+        if (state === null) return false;
+        const status = state.result?.status;
+        if (status === "failed_access" || status === "under_human_review") return true;
+        return state.complaints.some((complaint) => complaint.status !== "resolved");
+      },
+    },
+  };
+}
+
+/**
+ * The refund for a Notice to End is recorded against its amendment and paid out by hand (ADR 0089: payouts stay manual).
+ * This port makes no provider call. It returns a stable reference per amendment and period, so a retry never refunds twice.
+ */
+export function recordedNoticeRefundPort(): NoticeRefundPort {
+  return {
+    initiateOrGetRefund: ({ amendmentId, periodIndex, amountKobo }) => ({
+      refundId: `notice-refund:${amendmentId}:${periodIndex}`,
+      status: "pending",
+      amountKobo,
+      currency: "NGN",
+    }),
+  };
 }

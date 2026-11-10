@@ -155,6 +155,8 @@ export interface AssistantDomainPack {
    * turn is classified. Pure over that state; the runtime calls it once per guest turn.
    */
   settlePendingGuestFacts?(text: string, taskState: AssistantTaskState, now: Date): void;
+  /** Issue 20 (ADR 0106, amended 8 Nov 2026): saves the stay facts the guest's own words give on an in-scope turn. Never a planner proposal. */
+  recordGuestFacts?(text: string, taskState: AssistantTaskState, now: Date): void;
   /** Pack-owned minimal facts for model history. Raw execution results remain local to the platform. */
   projectToolResult?(name: string, result: Record<string, unknown>, limits: { readonly maxItems: number }): Record<string, unknown>;
   /** Canonical bounded facts used when older operation pairs leave retained history. */
@@ -201,6 +203,15 @@ export interface AssistantDomainPack {
   /** Re-reads authoritative truth before a proposed booking request is confirmed. */
   revalidateProposal(action: PendingAssistantAction): { readonly ok: true } | { readonly ok: false; readonly code: string; readonly message: string };
   /** Optional pack-owned command adapter; the pack must route through the platform ActionSpec gate. */
+  /** Issue 18: button events a pack opens its own confirmation card from, routed by name (no planner call). */
+  readonly openActionNames?: readonly string[];
+  handleOpenAction?(input: {
+    readonly actionName: string;
+    readonly context: Record<string, unknown>;
+    readonly taskState: AssistantTaskState;
+    readonly threadId: string;
+    readonly now: Date;
+  }): { readonly ok: true; readonly pendingAction: PendingAssistantAction; readonly message: string } | { readonly ok: false; readonly code: string; readonly message: string };
   handlePlatformAction?(input: { readonly actionName: string; readonly context: Record<string, unknown>; readonly principal: CommandPrincipal; readonly taskId: string; readonly activeSurfaceId?: string }): { readonly ok: true; readonly message: string; readonly surface?: AssistantTurnSurface } | { readonly ok: false; readonly code: string; readonly message: string };
 }
 

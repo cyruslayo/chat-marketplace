@@ -6,7 +6,7 @@ import type { AssistantDiagnosticEvent } from "../apps/local-guest/src/assistant
 import { ASSISTANT_CONTROL_COPY } from "../apps/local-guest/src/assistant/control-copy.js";
 import { datedFixture, firstButtonAction, isScopeRequest, classifiedMessage, latestUserText, lastRoleIsTool, LIVE_LIKE_CLOCK, OPENROUTER, scopeVerdict, scriptedPlanner, wireDatedApp, type ScopeSlots, type ScriptedTurn } from "./helpers/guest-date-fixtures.js";
 import { clientWith, completion } from "./helpers/openai-compatible-client.js";
-import { addDays } from "./helpers/demo-extended-journey.js";
+import { addDays, extendUnit } from "./helpers/demo-extended-journey.js";
 
 // ADR 0023 as amended 1 Nov 2026 (Continuous Occupancy at one Property, 29 nights in total for Short Stays), ADR 0106
 // (a refusal is a rejected tool call, tool_denial, never CONCIERGE_UNAVAILABLE; cold restore before every event), ADR 0075
@@ -65,7 +65,7 @@ test("AC8: With the assistant runtime enabled and a cold restore before every ev
     const outcome = await wireDatedApp(environment, model, diagnostics).app.handleEventAsync(threadId, firstButtonAction(detail.surfaces[0]!));
     assert.equal(outcome.ok, false, "the refusal is a refusal");
     assert.equal(outcome.ok === false ? outcome.code : undefined, "CONTINUOUS_OCCUPANCY_REFUSED", "the refusal is not CONCIERGE_UNAVAILABLE");
-    assert.equal(outcome.ok === false ? outcome.message : undefined, "These dates join another stay of yours at this property, making 30 nights. A stay of 30 nights or more must be booked as one Extended Stay.", "the refusal names the 30-night total");
+    assert.equal(outcome.ok === false ? outcome.message : undefined, "These dates run straight on from your other stay at this property, making 30 nights in a row. For 30 nights or more, book one stay for the whole time instead.", "the refusal names the 30-night total");
     assert.notEqual(outcome.ok === false ? outcome.message : "", ASSISTANT_CONTROL_COPY.unavailable, "the control copy is not shown");
   } finally {
     f.close();
@@ -139,7 +139,7 @@ test("AC8 (planner): a planner prepare_request_draft that would breach Continuou
     const draft = successOf(await wireDatedApp(environment, model, diagnostics).app.handleTurn(threadId, DRAFT_TEXT), "prepare the request draft");
 
     // The planner's tool call was rejected with the server's own sentence: no draft surface, no new request, no hold.
-    assert.deepEqual(draft.messages, ["These dates join another stay of yours at this property, making 30 nights. A stay of 30 nights or more must be booked as one Extended Stay."], "the refusal sentence reaches the guest");
+    assert.deepEqual(draft.messages, ["These dates run straight on from your other stay at this property, making 30 nights in a row. For 30 nights or more, book one stay for the whole time instead."], "the refusal sentence reaches the guest");
     assert.equal(draft.surfaces.length, 0, "no Request Draft surface is created");
     assert.equal(draft.messages.includes(ASSISTANT_CONTROL_COPY.unavailable), false, "the control copy is not shown");
     // The prepare_request_draft call failed in its application operation, and the turn stopped as a tool_denial (ADR 0106).
@@ -148,6 +148,88 @@ test("AC8 (planner): a planner prepare_request_draft that would breach Continuou
     assert.ok(diagnostics.some((event) => event.stage === "turn_stop" && event.stopReason === "tool_denial"), "the turn stops as tool_denial");
     assert.equal(environment.interactionStore.listBookingRequestIds().length, requestsBefore, "no new Booking Request is created");
     assert.equal(environment.calendar.getAuthoritativeAvailability({ unitId: unit.id, checkIn: CHECK_IN, checkOut: addDays(CHECK_IN, NIGHTS), clock: LIVE_LIKE_CLOCK }).isAvailable, true, "no nights are held for the refused stay");
+  } finally {
+    f.close();
+  }
+});
+
+// Issue 07 (owner-approved 8 Nov 2026): the extended-chain and fail-closed sentences reach the guest through the assistant too.
+// The candidate is 31 nights and ends where a 150-night Extended Stay begins: 181 nights in a row, over the 180-night maximum.
+const EXTENDED_NIGHTS = 31;
+const EXTENDED_PRIOR_NIGHTS = 150;
+const EXTENDED_TEXT = "Ikoyi for 31 nights, 2 guests from 14 December 2026";
+const EXTENDED_SLOTS = { city: "Lagos", neighbourhood: "Old Ikoyi", checkIn: CHECK_IN, nights: EXTENDED_NIGHTS, guests: 2 };
+
+test("AC9 (issue 07): the extended-chain sentence reaches the guest through the assistant as a refusal, not CONCIERGE_UNAVAILABLE", async () => {
+  const diagnostics: AssistantDiagnosticEvent[] = [];
+  const model = scriptedPlanner({ [EXTENDED_TEXT]: { slots: EXTENDED_SLOTS, search: { ...EXTENDED_SLOTS } } }).client;
+  const f = datedFixture(model, diagnostics, { clock: LIVE_LIKE_CLOCK, stagingGuest: true });
+  const environment: LocalGuestEnvironment = f.environment;
+  const threadId = "g-0cc0000907";
+  try {
+    // The Unit carries Extended Stay terms, so a 31-night search is offered here.
+    const seeded = environment.unitRepository.findAll()[0]!;
+    environment.unitRepository.save(extendUnit(seeded, {}));
+    const search = successOf(await wireDatedApp(environment, model, diagnostics).app.handleTurn(threadId, EXTENDED_TEXT), "search");
+    assert.ok(search.surfaces.length > 0, "the 31-night search shows a discovery surface");
+
+    // The guest's own 150-night Extended Stay starts on the candidate's checkout: a pending request counts (ADR 0023, 0092).
+    environment.guestContactApp.submitPhone({ phoneNumber: "+234 801 234 5678" }, environment.guestPrincipal());
+    const unit = environment.unitRepository.findAll().find((candidate) => candidate.id === seeded.id)!;
+    const priorCheckIn = addDays(CHECK_IN, EXTENDED_NIGHTS);
+    const prior = environment.bookingRequestApp.createDraft({
+      unitId: unit.id,
+      primaryGuest: { id: environment.config.guestId, name: environment.config.guestName },
+      occupants: environment.demoOccupants(1),
+      selfBookingAttestation: environment.selfBookingAttestation(),
+      checkIn: priorCheckIn,
+      checkOut: addDays(priorCheckIn, EXTENDED_PRIOR_NIGHTS),
+    }, environment.guestPrincipal());
+    environment.bookingRequestApp.disclose(prior.draftId, environment.guestPrincipal());
+
+    const detail = successOf(await wireDatedApp(environment, model, diagnostics).app.handleEventAsync(threadId, firstButtonAction(search.surfaces[0]!)), "View");
+    const outcome = await wireDatedApp(environment, model, diagnostics).app.handleEventAsync(threadId, firstButtonAction(detail.surfaces[0]!));
+    assert.equal(outcome.ok, false, "the refusal is a refusal");
+    assert.equal(outcome.ok === false ? outcome.code : undefined, "CONTINUOUS_OCCUPANCY_REFUSED", "the refusal is not CONCIERGE_UNAVAILABLE");
+    assert.equal(outcome.ok === false ? outcome.message : undefined, "These dates run straight on from your other stay at this property, making 181 nights in a row. The longest stay we can book is 180 nights.", "the approved extended-chain sentence reaches the guest");
+  } finally {
+    f.close();
+  }
+});
+
+test("AC10 (issue 07): the fail-closed sentence reaches the guest through the assistant when the check cannot run", async () => {
+  const diagnostics: AssistantDiagnosticEvent[] = [];
+  const model = scriptedPlanner(scriptFor()).client;
+  const f = datedFixture(model, diagnostics, { clock: LIVE_LIKE_CLOCK, stagingGuest: true });
+  const environment: LocalGuestEnvironment = f.environment;
+  const threadId = "g-0cc0000a01";
+  try {
+    const search = successOf(await wireDatedApp(environment, model, diagnostics).app.handleTurn(threadId, TEXT), "search");
+    const shown = JSON.stringify(search.surfaces[0]!.a2uiMessages);
+    const unit = environment.unitRepository.findAll().find((candidate) => shown.includes(candidate.id));
+    assert.ok(unit, "the search shows a unit of this composition");
+    const other = environment.unitRepository.findAll().find((candidate) => candidate.id !== unit.id);
+    assert.ok(other, "a second unit exists for the guest's counted stay");
+    environment.guestContactApp.submitPhone({ phoneNumber: "+234 801 234 5678" }, environment.guestPrincipal());
+    // A pending stay the guest already holds at the second Unit. It is counted (ADR 0023) while that Unit still has a Property.
+    const prior = environment.bookingRequestApp.createDraft({
+      unitId: other.id,
+      primaryGuest: { id: environment.config.guestId, name: environment.config.guestName },
+      occupants: environment.demoOccupants(1),
+      selfBookingAttestation: environment.selfBookingAttestation(),
+      checkIn: addDays(CHECK_IN, -PRIOR_NIGHTS),
+      checkOut: addDays(CHECK_IN, -PRIOR_NIGHTS + 2),
+    }, environment.guestPrincipal());
+    environment.bookingRequestApp.disclose(prior.draftId, environment.guestPrincipal());
+    const detail = successOf(await wireDatedApp(environment, model, diagnostics).app.handleEventAsync(threadId, firstButtonAction(search.surfaces[0]!)), "View");
+    // The check cannot run: the counted stay's Unit no longer resolves to a Property, so the guard fails closed (ADR 0023).
+    environment.unitRepository.save({ ...other, propertyId: "" } as typeof other);
+    const requestsBefore = environment.interactionStore.listBookingRequestIds().length;
+    const outcome = await wireDatedApp(environment, model, diagnostics).app.handleEventAsync(threadId, firstButtonAction(detail.surfaces[0]!));
+    assert.equal(outcome.ok, false, "the request is refused");
+    assert.equal(outcome.ok === false ? outcome.code : undefined, "CONTINUOUS_OCCUPANCY_REFUSED", "the refusal is not CONCIERGE_UNAVAILABLE");
+    assert.equal(outcome.ok === false ? outcome.message : undefined, "We couldn\u2019t check these dates against your other stays at this property. Please try again, or ask us for help.", "the approved fail-closed sentence reaches the guest");
+    assert.equal(environment.interactionStore.listBookingRequestIds().length, requestsBefore, "no new Booking Request is created when the check cannot run");
   } finally {
     f.close();
   }

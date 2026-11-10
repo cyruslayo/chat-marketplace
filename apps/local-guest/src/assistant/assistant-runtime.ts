@@ -65,6 +65,7 @@ import {
 import {
   isExplicitConfirmation,
   isExplicitCancellation,
+  isTextConfirmable,
   type PendingAssistantAction,
 } from "./pending-actions.js";
 import {
@@ -222,6 +223,17 @@ export interface AssistantRuntimeOptions {
   /** Issue 05: the configured primary model id, written as `gen_ai.request.model`. The host supplies it. */
   readonly modelName?: string;
 }
+
+/** ADR 0106: the references the shell owns for the guest's thread (the draft, request, offer, reservation and contract it holds). */
+export interface AssistantShellReferences {
+  readonly currentDraftId?: string;
+  readonly currentBookingRequestId?: string;
+  readonly currentOfferId?: string;
+  readonly currentReservationId?: string;
+  readonly currentContractId?: string;
+}
+
+const SHELL_REFERENCE_KEYS = ["currentDraftId", "currentBookingRequestId", "currentOfferId", "currentReservationId", "currentContractId"] as const;
 
 export interface AssistantShortletRestoreInput {
   readonly principalId: string;
@@ -732,6 +744,24 @@ export class AssistantRuntime {
     return this.#threads.has(threadId);
   }
 
+  /**
+   * ADR 0106: the shell advances the guest's thread outside the assistant (a Request to Book makes a draft, a confirmed request
+   * becomes an offer, a payment confirms a stay). A warm thread is not rebuilt, so it adopts those references here, exactly as a
+   * cold restore derives them. Only the five shell references change: the history, surfaces and pending action are kept.
+   */
+  adoptShellReferences(threadId: string, references: AssistantShellReferences): boolean {
+    if (!this.hasThread(threadId) || this.threadBusy(threadId)) return false;
+    const thread = this.getThread(threadId);
+    const state = thread.taskState;
+    for (const key of SHELL_REFERENCE_KEYS) {
+      const value = references[key];
+      if (value === undefined) delete state[key];
+      else state[key] = value;
+    }
+    syncActiveTask(thread);
+    return true;
+  }
+
   /** Restores only app-validated canonical Shortlet state; no model history or provider metadata is accepted. */
   restoreShortletState(threadId: string, input: AssistantShortletRestoreInput): boolean {
     // Issue 06: a restore never rewrites a thread that a mutating run is changing; that run commits its own delta.
@@ -771,7 +801,7 @@ export class AssistantRuntime {
    * - A party size is recorded as a positive integer. A model-proposed fact is never recorded through this path.
    * - A budget chip (issue 06, ADR 0015) records its amount and whether it is for the stay or per night; `null` clears it.
    */
-  recordGuestStay(threadId: string, facts: { readonly checkIn?: string; readonly nights?: number; readonly partySize?: number; readonly budget?: { readonly kobo: number; readonly per: AssistantBudgetPer } | null }): boolean {
+  recordGuestStay(threadId: string, facts: { readonly checkIn?: string; readonly nights?: number; readonly statedStay?: { readonly nights: number; readonly unit: "night" | "week" | "month"; readonly count: number }; readonly partySize?: number; readonly budget?: { readonly kobo: number; readonly per: AssistantBudgetPer } | null }): boolean {
     if (this.threadBusy(threadId)) return false;
     const thread = this.#threads.get(threadId);
     if (!thread) return false;
@@ -791,6 +821,8 @@ export class AssistantRuntime {
       if (checkOut !== null) {
         stay.nights = facts.nights;
         stay.checkOut = checkOut;
+        // Issue 19 (owner decision, 8 Nov 2026): a nights chip edit replaces the stated length with its nights (unit night).
+        if (facts.statedStay !== undefined) stay.statedStay = { ...facts.statedStay };
       }
     }
     if (facts.partySize !== undefined && Number.isSafeInteger(facts.partySize) && facts.partySize > 0) stay.partySize = facts.partySize;
@@ -1011,6 +1043,10 @@ export class AssistantRuntime {
     }
 
     if (tx.taskState.pendingAction && !tx.taskState.pendingAction.executed) {
+      if (isExplicitConfirmation(text) && !isTextConfirmable(tx.taskState.pendingAction.type)) {
+        // Issue 18 AC3: this card confirms only through its own button. The card stays open and nothing is executed.
+        return { ok: true, messages: [ASSISTANT_CONTROL_COPY.useCardButtons], surfaces: [], tasks: this.getTaskRail(threadId) };
+      }
       if (isExplicitConfirmation(text)) {
         // A confirmation that throws (not a stale proposal) has already dropped and committed the proposal. The turn returns the
         // closed unavailable code rather than throwing out of the chat turn.
@@ -1119,7 +1155,6 @@ export class AssistantRuntime {
     validatedTurnToolNames = toolNamesForValidatedIntents(packForScope, assessment.intents);
     taskSwitchPermitted = assessment.intents.includes("task_switch");
     candidateHistory.push({ role: "user", text: redactSensitiveData(discardUserInput ? text : originalUserText) as string });
-
     const userTextHistory: string[] = [...(thread.canonicalUserFactHistory ?? []), ...candidateHistory
       .filter((s): s is Extract<AssistantConversationStep, { role: "user" }> => s.role === "user")
       .map((s) => s.text)];
@@ -1130,6 +1165,9 @@ export class AssistantRuntime {
     let finalAssistantReply: string | undefined;
     // Issue 10: chips for a `clarify_stay` reply, from the pack's clarification hook; never set for other reply kinds.
     let finalQuickReplies: readonly string[] | undefined;
+    // Issue 20 (ADR 0106, amended 8 Nov 2026): a planner reply that asks for a missing stay fact (clarify_stay), with no successful operation,
+    // saves the guest's own facts at commit. Any other reply saves nothing from this turn.
+    let clarifiesStay = false;
     let activeStage: AssistantDiagnosticStage = "provider_request";
     let activeToolName: string | undefined;
     let hasSuccessfulApplicationOperation = false;
@@ -1210,6 +1248,7 @@ export class AssistantRuntime {
             ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
           finalQuickReplies = quickRepliesForReply(candidatePack(), plan, latestResults, tx.taskState);
           candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
+          clarifiesStay = plan?.kind === "clarify_stay";
           stopReason = "reply";
           break;
         }
@@ -1418,6 +1457,7 @@ export class AssistantRuntime {
         candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
       }
 
+      if (clarifiesStay && !hasSuccessfulApplicationOperation && !discardUserInput) candidatePack().recordGuestFacts?.(originalUserText, tx.taskState, this.#environment.clock());
       // 4. Commit Transaction (Item 24)
       this.#commitHistory(thread, candidateHistory, candidatePack(), tx.taskState);
       tx.commit(thread, { state: true, tasks: true, discovery: true, lastSurfaces: tx.surfaces.length > 0 ? tx.surfaces : tx.lastSurfaces });
@@ -1469,6 +1509,9 @@ export class AssistantRuntime {
         // details is a rejected tool call. The turn keeps the guest's message, commits no new task state, and asks the guest.
         controlOutcome = "tool_denial";
         recordOutcome(controlOutcome);
+        // Issue 20: a search missing its stay details asks the guest for the missing fact, so the guest's own facts are saved. Any other
+        // refused call (a date or budget the guest did not give, a length the guest did not state) saves nothing from this turn.
+        if (error instanceof AssistantStayDetailsError && !discardUserInput) candidatePack().recordGuestFacts?.(originalUserText, thread.taskState, this.#environment.clock());
         candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
         this.#commitHistory(thread, candidateHistory, candidatePack(), thread.taskState);
         // A pack's guest-facing refusal carries its own sentence (ADR 0106; no guest identifier, ADR 0075).
@@ -1545,6 +1588,11 @@ export class AssistantRuntime {
     } catch {
       // Telemetry must never affect the authoritative workflow.
     }
+  }
+
+  /** Issue 18: true when a registered pack declares this button event (a pack's own card opener), so the shell forwards it by name. */
+  acceptsPackEvent(eventName: string): boolean {
+    return this.#packs.ids().some((id) => this.#packs.packFor(id)?.openActionNames?.includes(eventName) === true);
   }
 
   handleAssistantEvent(threadId: string, eventName: string, context: AssistantEventContext | null | undefined): AssistantTurnOutput {
@@ -1632,7 +1680,10 @@ export class AssistantRuntime {
 
     if (eventName === ASSISTANT_CONFIRM_ACTION_EVENT || eventName === ASSISTANT_CANCEL_ACTION_EVENT) {
       // ADR-0074: only the current authoritative surface retains action authority.
-      const activeSurfaceId = tx.activeSurfaces.get(PENDING_ACTION_STAGE);
+      // ADR 0074, issue 18 AC6/AC7: the card's id is derived from the persisted pending action, so a cold restore re-keys it rather
+      // than relying on the turn's in-memory stage map (which a restored app does not hold).
+      const pendingForSurface = tx.taskState.pendingAction;
+      const activeSurfaceId = pendingForSurface ? pendingActionSurfaceId(threadId, pendingForSurface.id) : undefined;
       if (!activeSurfaceId || context?.surfaceId !== activeSurfaceId) {
         return { ok: false, code: "STALE_SURFACE", message: "That action is no longer active." };
       }
@@ -1681,6 +1732,28 @@ export class AssistantRuntime {
         surfaces: execution.surfaces,
         tasks: this.getTaskRail(threadId),
       };
+    }
+
+    // Issue 18 (ADR 0099, 0074, 0106): a pack's own button opens the pack's own confirmation card, routed by the event name the pack
+    // declares. No planner call. The pack checks the pressed surface is current; the runtime only places the card it returns.
+    const opener = this.#packs.ids().map((id) => this.#packs.packFor(id)).find((candidate) => candidate?.openActionNames?.includes(eventName));
+    if (opener?.handleOpenAction) {
+      const opened = opener.handleOpenAction({
+        actionName: eventName,
+        context: (context ?? {}) as Record<string, unknown>,
+        taskState: tx.taskState,
+        threadId,
+        now: this.#environment.clock(),
+      });
+      if (!opened.ok) return { ok: false, code: opened.code, message: opened.message };
+      const surfaceId = pendingActionSurfaceId(threadId, opened.pendingAction.id);
+      tx.taskState.replacedPendingAction = null;
+      tx.taskState.pendingAction = opened.pendingAction;
+      tx.supersede(PENDING_ACTION_STAGE);
+      tx.place(PENDING_ACTION_STAGE, surfaceId);
+      const surface = { surfaceId, a2uiMessages: opener.pendingActionSurface(opened.pendingAction, surfaceId) };
+      tx.commit(thread, { state: true, tasks: false, discovery: false, lastSurfaces: [surface] });
+      return { ok: true, messages: [opened.message], surfaces: [surface], tasks: this.getTaskRail(threadId) };
     }
 
     return { ok: false, code: "UNSUPPORTED_EVENT", message: "Unknown assistant action." };

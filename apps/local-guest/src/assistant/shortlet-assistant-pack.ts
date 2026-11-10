@@ -1,11 +1,13 @@
 import { draftRevisionRequest } from "./shortlet-draft-revision.js";
 import { generatePlatformId } from "../../../../packages/platform-core/src/index.js";
-import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantGuestRefusalError, AssistantStayDetailsError, containsGuestDate } from "./date-tokens.js";
+import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantGuestRefusalError, AssistantStayDetailsError, containsGuestDate, isDateGovernedByCheckOut, mentionsCheckOut } from "./date-tokens.js";
 import { ContinuousOccupancyError, StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, MAX_STAY_NIGHTS, BOOKING_HORIZON_DAYS, dateKeyInLagos, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
-import { SEARCH_AREAS, formatGuestDay, locationConflictQuestion, quickRepliesFor, resolveLocationMention, stayBudgetKobo, stayCriteriaGap, unsupportedPreferenceNote, viewResultIntent, type PendingLocationChange } from "../concierge.js";
+import { SEARCH_AREAS, extractStayRequestFacts, formatGuestDay, locationConflictQuestion, quickRepliesFor, resolveLocationMention, stayBudgetKobo, stayCriteriaGap, unsupportedPreferenceNote, viewResultIntent, type PendingLocationChange } from "../concierge.js";
 import { phraseIsGuestAuthored, readCheckInPhrase, type CheckInPhraseReading } from "./date-phrases.js";
 import { isExplicitConfirmation } from "./pending-actions.js";
 import { extractBudget, type StayBudget } from "../stay-budget.js";
+import { DEFAULT_STAY_DATE_POLICY, EXTENDED_STAY_POLICY, readStayLength, resolveStayDatePhrases, type StayLengthUnit } from "../../../../domains/shortlet/src/index.js";
+import { stayLengthLimitRefusal } from "../concierge.js";
 import { FACILITY_KEYS, facilityFor, normalizeRequiredAmenities, unsupportedAmenityLabelFor } from "../stay-vocabulary.js";
 import {
   discoveryArtifactToA2UI,
@@ -24,13 +26,20 @@ import { GUEST_ASSISTANT_COPY, GUEST_AMENITY_IDS, GUEST_CHANGE_EXPLANATION, GUES
 import type { LocalGuestEnvironment } from "../fixture.js";
 import type { AssistantToolDefinition } from "./assistant-model.js";
 import type {
+  AssistantStatedStay,
+  AssistantStayIntent,
   AssistantStayReference,
   AssistantTaskState,
 } from "./assistant-state.js";
 import type { PendingAssistantAction } from "./pending-actions.js";
 import type { ConciergeIntent, ScopeAssessment } from "./scope-classifier.js";
 import { pendingActionToA2UI } from "./pending-action-a2ui.js";
-import { SHORTLET_STAGE_HANDLERS, proposalStillAuthorised } from "./shortlet-stage-handlers.js";
+import { BOOKING_STAGE, SHORTLET_STAGE_HANDLERS, proposalStillAuthorised } from "./shortlet-stage-handlers.js";
+import { GUEST_NOTICE_COPY } from "../../../web-agent/src/guest-content.js";
+import { EXTENSION_OPEN_EVENT, NOTICE_OPEN_EVENT } from "../../../web-agent/src/booking-contract-a2ui.js";
+import { GUEST_EXTENSION_COPY } from "../../../web-agent/src/guest-content.js";
+import { proposeExtension } from "./extension-proposal.js";
+import type { NoticePreview } from "../../../../domains/shortlet/src/index.js";
 import {
   ASSISTANT_PLATFORM_PREAMBLE,
   type AssistantClarificationKind,
@@ -194,6 +203,20 @@ export const ASSISTANT_TOOL_DEFINITIONS: readonly AssistantToolDefinition[] = [
     },
   },
   {
+    name: "propose_notice_to_end",
+    description: "Offer the Notice to End card for the confirmed Extended Stay when the Guest asks to end it early. This only previews the card; the Guest confirms with the card's own button. Nothing is recorded by this tool.",
+    category: "proposal",
+    parametersSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
+  },
+  {
+    // Monthly-stays issue 09 (ADR 0092 Extensions): a preview only; the card's own button sends the request. It takes no nights from
+    // the model: the card adds one Billing Period (or the nights left under the maximum), so the guest sees the exact dates first.
+    name: "propose_extension",
+    description: "Offer the extension card for the confirmed Extended Stay when the Guest asks to stay longer. It previews one added Billing Period with its amount and due date. This only previews the card; the Guest sends the request with the card's own button, and the Operator decides. Nothing is requested by this tool.",
+    category: "proposal",
+    parametersSchema: { type: "object", properties: {}, required: [], additionalProperties: false },
+  },
+  {
     name: "propose_accept_offer",
     description: "Propose accepting the active Conditional Booking Offer. Requires guest confirmation.",
     category: "proposal",
@@ -242,6 +265,10 @@ export function assistantToolsForState(taskState: AssistantTaskState, policy?: E
       case "propose_accept_offer":
         return taskState.currentOfferId !== undefined;
       case "propose_start_payment":
+        return taskState.currentOfferId !== undefined;
+      case "propose_notice_to_end":
+        return taskState.currentOfferId !== undefined;
+      case "propose_extension":
         return taskState.currentOfferId !== undefined;
       default:
         return true;
@@ -309,6 +336,164 @@ function normalizeGuestWords(text: string): string {
  * authored state (a chip or an earlier phrase), so repeating it changes nothing and grants the model no new amount. Any other phrase is
  * refused. Owner decision needed: see issue 07 Comments.
  */
+/**
+ * Issue 19 (ADR 0106, 27 Oct and 2 Nov 2026 amendments; ADR 0092; owner decision 8 Nov 2026): a stay length the guest typed (nights,
+ * weeks or months) is guest-authored, read here on the server from the guest's own words and never from the model.
+ * The length is kept as `stayIntent.statedStay`: recordGuestStatedStay sets it at each turn start, a nights chip edit and a check-out the
+ * guest gave set it too, and it is persisted with the assistant context, so it binds after a cold restore. The current turn's text
+ * decides first. A vague current length (a few months, 2-3 months) authorizes no nights beyond the ones the task already holds.
+ * Otherwise the stated length binds until the guest types a new length or edits the nights.
+ */
+export type GuestStatedStay =
+  | { readonly kind: "length"; readonly unit: StayLengthUnit; readonly count: number; readonly nights: number }
+  | { readonly kind: "vague" };
+
+export function guestStatedStay(userTextHistory: readonly string[], stated: AssistantStatedStay | undefined): GuestStatedStay | undefined {
+  const current = userTextHistory.at(-1);
+  const now = current === undefined ? undefined : readStayLength(current);
+  if (now?.kind === "length") return now;
+  if (now?.kind === "vague") return { kind: "vague" };
+  return stated === undefined ? undefined : { kind: "length", unit: stated.unit, count: stated.count, nights: stated.nights };
+}
+
+/** The closed stated-length shape the task keeps: a fortnight is two weeks (owner decision, 8 Nov 2026). */
+export function statedStayOf(length: { readonly unit: StayLengthUnit; readonly count: number; readonly nights: number }): AssistantStatedStay {
+  if (length.unit === "fortnight") return { unit: "week", count: 2 * length.count, nights: length.nights };
+  return { unit: length.unit, count: length.count, nights: length.nights };
+}
+
+/**
+ * Issue 19 (owner decision, 8 Nov 2026): a length the guest types in this turn replaces the stated length, and is recorded before the
+ * turn is classified. A vague or absent length keeps the stated length (a vague one authorizes only the nights the task holds).
+ */
+export function recordGuestStatedStay(text: string, stayIntent: AssistantStayIntent, policy?: ExtendedStayPolicy): void {
+  const reading = readStayLength(text, policy);
+  if (reading.kind === "length") stayIntent.statedStay = statedStayOf(reading);
+}
+
+/**
+ * Issue 20 (ADR 0106, amended 8 Nov 2026; ADR 0093): the stay facts the guest's own words give on an in-scope turn, saved so a clarification
+ * keeps them across a cold restore. Only the guest's text is read: the closed area list, one day the guest typed that the date rules accept,
+ * and the party size and bedrooms the deterministic readers read. Nothing the planner or the classifier proposed is an input, and a refused
+ * date is not saved.
+ * - Area: a different held city is not switched here (issue 09 asks first); the same or no held city takes the guest's area.
+ * - Check-in: exactly one day the guest typed (an ISO token or an English day-month literal) that the booking horizon and the stay rules
+ *   accept (ADR 0055, ADR 0023), and that is not a checkout. Two days, a checkout, a span ("next month") or a refused date saves nothing.
+ *   A new check-in replaces the held dates, as a chip edit does; its checkout and nights then come only from the stated length.
+ * - Stated length: recorded by recordGuestStatedStay (issue 19). With a guest check-in it gives the checkout by the chip rule
+ *   (validatedCheckOutForNights); an invalid stay records neither nights nor checkout.
+ */
+export function recordGuestAuthoredFacts(text: string, stayIntent: AssistantStayIntent, now: Date, policy?: ExtendedStayPolicy): void {
+  const location = resolveLocationMention(text);
+  if (location !== undefined && (stayIntent.location === undefined || stayIntent.location === location.city)) {
+    stayIntent.location = location.city;
+    if (location.neighbourhood !== undefined) stayIntent.neighbourhood = location.neighbourhood;
+  }
+  const typed = extractStayRequestFacts(text);
+  if (typed.partySize !== undefined) stayIntent.partySize = typed.partySize;
+  if (typed.bedrooms !== undefined) stayIntent.bedrooms = typed.bedrooms;
+  const typedDates = guestTypedDates(text, now, policy);
+  if (typedDates?.checkOut !== undefined && typedDates.nights !== undefined) {
+    // A stay the guest typed (a range) is a new check-in, checkout and length, as a chip edit sets them (unit night).
+    stayIntent.checkIn = typedDates.checkIn;
+    stayIntent.isDemoDate = false;
+    stayIntent.checkOut = typedDates.checkOut;
+    stayIntent.nights = typedDates.nights;
+    stayIntent.statedStay = { nights: typedDates.nights, unit: "night", count: typedDates.nights };
+  } else if (typedDates !== undefined && (stayIntent.checkIn !== typedDates.checkIn || stayIntent.isDemoDate !== false)) {
+    stayIntent.checkIn = typedDates.checkIn;
+    stayIntent.isDemoDate = false;
+    stayIntent.checkOut = undefined;
+    stayIntent.nights = undefined;
+  }
+  const stated = stayIntent.statedStay;
+  if (stayIntent.isDemoDate === false && stayIntent.checkIn !== undefined && stated !== undefined) {
+    const checkOut = validatedCheckOutForNights(stayIntent.checkIn, stated.nights, now, policy);
+    if (checkOut !== null) {
+      stayIntent.nights = stated.nights;
+      stayIntent.checkOut = checkOut;
+    }
+  }
+}
+
+/** Issue 20 (coordinator): the dates the guest typed in one message, read by the shared stay-date resolver: one check-in day, or a check-in and its checkout. */
+export interface GuestTypedDates {
+  readonly checkIn: string;
+  readonly checkOut?: string;
+  readonly nights?: number;
+}
+
+/** The words that join two literal days into a stay ("5 Jan to 8 Jan", "from 5 Jan until 8 Jan"). */
+const RANGE_CONNECTIVE = /^\s*(?:to|until|till|through|-|–|—)\s*$/i;
+
+/**
+ * Issue 20 (ADR 0106, ADR 0023, ADR 0092, ADR 0055): one day, or a stay the guest typed. A literal range ("5–8 Jan") or two literal days
+ * joined by "to", "until", "till" or "through" is a check-in and its checkout, and must be a valid stay (StayDateRange). Anything
+ * ambiguous saves nothing: a relative phrase, a span, a refused literal, two check-ins, a checkout that is not after the check-in, or a
+ * checkout keyword (the roles of the dates are then unclear).
+ */
+function guestTypedDates(text: string, now: Date, policy?: ExtendedStayPolicy): GuestTypedDates | undefined {
+  const found = resolveStayDatePhrases(text, now, DEFAULT_STAY_DATE_POLICY);
+  if (found.some((entry) => entry.kind !== "day" || entry.source !== "literal")) return undefined;
+  if (mentionsCheckOut(text)) return undefined;
+  const items: { readonly date: string; readonly endDate?: string; readonly start: number; readonly end: number }[] = found.map((entry) => ({
+    date: entry.kind === "day" ? entry.date : "",
+    ...(entry.kind === "day" && entry.endDate !== undefined ? { endDate: entry.endDate } : {}),
+    start: entry.span.start,
+    end: entry.span.end,
+  }));
+  // A range ("5–8 Jan") is also read as its inner day ("8 Jan"): that day is part of the range, not a second date.
+  const ranged = items.filter((item) => item.endDate !== undefined);
+  const readings = items.filter((item) => item.endDate !== undefined || !ranged.some((range) => item.start >= range.start && item.end <= range.end));
+  items.length = 0;
+  items.push(...readings);
+  for (const match of text.matchAll(/(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)/g)) {
+    const start = match.index ?? 0;
+    const end = start + match[0].length;
+    if (!items.some((item) => start < item.end && item.start < end)) items.push({ date: match[0], start, end });
+  }
+  const ranges = items.filter((item) => item.endDate !== undefined);
+  if (ranges.length === 1 && items.length === 1) {
+    const [range] = ranges;
+    return range?.endDate === undefined ? undefined : validatedStay(range.date, range.endDate, now, policy);
+  }
+  if (ranges.length !== 0) return undefined;
+  if (items.length === 1) {
+    const [only] = items;
+    if (only === undefined || isDateGovernedByCheckOut(text, only.date, now)) return undefined;
+    return validatedStay(only.date, undefined, now, policy);
+  }
+  if (items.length !== 2) return undefined;
+  const [first, second] = [...items].sort((a, b) => a.start - b.start);
+  if (first === undefined || second === undefined || !RANGE_CONNECTIVE.test(text.slice(first.end, second.start))) return undefined;
+  return validatedStay(first.date, second.date, now, policy);
+}
+
+/** A check-in, with its checkout when given: the stay must pass StayDateRange (ADR 0023 length, ADR 0055 horizon). */
+function validatedStay(checkIn: string, checkOut: string | undefined, now: Date, policy?: ExtendedStayPolicy): GuestTypedDates | undefined {
+  if (checkOut === undefined) return validatedCheckOutForNights(checkIn, 1, now, policy) === null ? undefined : { checkIn };
+  const nights = nightsBetween(checkIn, checkOut);
+  if (nights === undefined || nights < 1) return undefined;
+  return validatedCheckOutForNights(checkIn, nights, now, policy) === checkOut ? { checkIn, checkOut, nights } : undefined;
+}
+
+/**
+ * The nights a search or draft uses under the guest's stated length. A model's different nights are a rejected tool call
+ * (tool_denial, AssistantGuestRefusalError), and the reply shows the guest's length back. A length outside the stay rules
+ * is refused with the existing limit (ADR 0023, ADR 0092).
+ */
+export function guestStatedNights(nights: number | undefined, stay: GuestStatedStay | undefined, heldNights: number | undefined, policy?: ExtendedStayPolicy): number | undefined {
+  if (stay === undefined) return nights;
+  if (stay.kind === "vague") {
+    if (nights !== undefined && nights !== heldNights) throw new AssistantGuestRefusalError(GUEST_ASSISTANT_COPY.stayClarification);
+    return nights;
+  }
+  if (nights !== undefined && nights !== stay.nights) throw new AssistantGuestRefusalError(GUEST_ASSISTANT_COPY.statedStay(stay.nights, stay));
+  const refusal = stayLengthLimitRefusal(stay.nights, policy);
+  if (refusal !== undefined) throw new AssistantGuestRefusalError(refusal);
+  return stay.nights;
+}
+
 function guestStatedBudget(phrase: string, userTextHistory: readonly string[], held: StayBudget | undefined): StayBudget {
   const wanted = normalizeGuestWords(phrase);
   const escaped = wanted.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -533,6 +718,7 @@ export function settlePendingStayDate(text: string, taskState: AssistantTaskStat
     if (checkOut === null) return;
     taskState.stayIntent.checkOut = checkOut;
     taskState.stayIntent.nights = stayNights;
+    taskState.stayIntent.statedStay = { nights: stayNights, unit: "night", count: stayNights };
     return;
   }
   const nights = taskState.stayIntent.nights;
@@ -740,6 +926,10 @@ export function executeAssistantTool(
         }
       }
 
+      // Issue 19: a length the guest typed holds for the nights the search uses. A checkout the guest gave wins over a duration (ADR 0106).
+      if (dateWords.checkOut === undefined && checkOutRelative === undefined) {
+        nights = guestStatedNights(nights, guestStatedStay(context.userTextHistory, taskState.stayIntent.statedStay), taskState.stayIntent.nights, context.environment.extendedStayPolicy);
+      }
       // ADR 0106: a search with stay details must name both nights and party size (in this call or the task state).
       // A missing value is a rejected tool call answered with the fixed stay clarification, not an application fault.
       if (hasStayDetails && (nights === undefined || guests === undefined)) {
@@ -890,6 +1080,8 @@ export function executeAssistantTool(
         ...(dateContext ? { isDemoDate: dateContext.isDemoDate } : {}),
         ...(checkOut ? { checkOut } : {}),
         ...(nights !== undefined ? { nights } : {}),
+        // Issue 19 (owner decision, 8 Nov 2026): a check-out the guest wrote replaces the stated length with its nights.
+        ...(dateWords.checkOut !== undefined && nights !== undefined ? { statedStay: { nights, unit: "night" as const, count: nights } } : {}),
         ...(guests !== undefined ? { partySize: guests } : {}),
         ...(bedrooms !== undefined ? { bedrooms } : {}),
         ...(statedBudget !== undefined ? { maxBudgetKobo: statedBudget.kobo, maxBudgetPer: statedBudget.per } : {}),
@@ -1156,7 +1348,9 @@ export function executeAssistantTool(
       const stayRef = String(args.stayRef ?? "").trim();
       const stay = taskState.shortlist.find((candidate) => candidate.stayRef === stayRef);
       if (!stay) throw new Error(`Stay reference '${stayRef}' is not in the current shortlist.`);
-      const nights = Number(args.nights);
+      // Issue 19: the guest's stated length holds for a draft too (ADR 0106); without one the model's nights are read as before.
+      const requestedNights = args.nights == null ? undefined : Number(args.nights);
+      const nights = guestStatedNights(requestedNights, guestStatedStay(context.userTextHistory, taskState.stayIntent.statedStay), taskState.stayIntent.nights, context.environment.extendedStayPolicy) ?? Number(args.nights);
       const guests = Number(args.guests);
       // ADR 0023 as amended / ADR 0106: an out-of-range length is a rejected tool call (tool_denial), never a thrown error.
       if (!Number.isSafeInteger(nights) || nights < 1 || (nights > MAX_STAY_NIGHTS && !isExtendedStayLength(nights, context.environment.extendedStayPolicy))) throw new AssistantStayDetailsError("nights must fit the configured Short Stay or Extended Stay range");
@@ -1228,6 +1422,36 @@ export function executeAssistantTool(
         updatedTaskState: taskState,
         effectCode: "request_draft_created_availability_checked_not_reserved",
         requestDraftSurface: { draftId: draft.draftId, surfaceId, a2uiMessages: requestDraftArtifactToA2UI({ artifact, surfaceId }) },
+      };
+    }
+
+    case "propose_notice_to_end": {
+      // Issue 18 (ADR 0106, 0080): a preview only. The card's own button records notice; this tool records nothing.
+      const offerId = taskState.currentOfferId;
+      const contractId = offerId === undefined ? undefined : context.environment.cardPaymentApp.getBookingContract(offerId)?.contractId;
+      if (contractId === undefined) throw new AssistantGuestRefusalError(GUEST_NOTICE_COPY.notExtended);
+      const pendingAction = proposeNoticeToEnd({ environment: context.environment, contractId, threadId: context.threadId, now: context.now });
+      // Issue 18 (ADR 0106): the open proposal is held in the task state, as the other proposal tools hold theirs, so it survives a
+      // cold restore. Without this line the card is shown once and then cannot be re-keyed or confirmed (STALE_SURFACE).
+      taskState.pendingAction = pendingAction;
+      return {
+        result: { actionId: pendingAction.id, proposedAction: "give_notice", summary: pendingAction.summary, requiresConfirmation: true, message: GUEST_NOTICE_COPY.cardOpened },
+        updatedTaskState: taskState,
+        pendingActionCreated: pendingAction,
+      };
+    }
+
+    case "propose_extension": {
+      // Monthly-stays issue 09 (ADR 0106, 0080): a preview only. The card's Request extension button records the request.
+      const offerId = taskState.currentOfferId;
+      const contractId = offerId === undefined ? undefined : context.environment.cardPaymentApp.getBookingContract(offerId)?.contractId;
+      if (contractId === undefined) throw new AssistantGuestRefusalError(GUEST_EXTENSION_COPY.notExtended);
+      const pendingAction = proposeExtension({ environment: context.environment, contractId, threadId: context.threadId, now: context.now });
+      taskState.pendingAction = pendingAction;
+      return {
+        result: { actionId: pendingAction.id, proposedAction: "request_extension", summary: pendingAction.summary, requiresConfirmation: true, message: GUEST_EXTENSION_COPY.cardOpened },
+        updatedTaskState: taskState,
+        pendingActionCreated: pendingAction,
       };
     }
 
@@ -1371,7 +1595,7 @@ function renderShortletReplyBody(plan: AssistantReplyPlan | undefined, results: 
   const kindForTool: Readonly<Record<string, string>> = {
     search_stays: "show_results", get_unit_details: "show_details", compare_stays: "compare",
     explain_stay_price: "explain_price", get_booking_status: "show_status", get_offer_status: "show_status",
-    prepare_request_draft: "propose_action", propose_request_to_book: "propose_action", propose_accept_offer: "propose_action", propose_start_payment: "propose_action",
+    prepare_request_draft: "propose_action", propose_request_to_book: "propose_action", propose_accept_offer: "propose_action", propose_start_payment: "propose_action", propose_notice_to_end: "propose_action", propose_extension: "propose_action",
   };
   const selected = plan ? successfulResults.find((result) => plan.references.includes(result.name) && kindForTool[result.name] === plan.kind) : undefined;
   const operation = selected ?? successfulResults[0];
@@ -1381,6 +1605,11 @@ function renderShortletReplyBody(plan: AssistantReplyPlan | undefined, results: 
       ? stayCriteriaGap({ city: taskState.stayIntent.location, partySize: taskState.stayIntent.partySize, checkIn: taskState.stayIntent.checkIn, nights: taskState.stayIntent.nights })
       : undefined;
     if (plan?.kind === "clarify_stay" && gap !== undefined && "next" in gap && gap.next === "when") return GUEST_ASSISTANT_COPY.datesClarification;
+    // Issue 19 (ADR 0092, ADR 0023): a length the guest typed beyond the stay rules gets the existing limit sentence, even when the planner's
+    // call was rejected at its schema and no search ran. The deployment policy is EXTENDED_STAY_POLICY (every composition supplies it).
+    const typedLength = readStayLength(userText);
+    const typedLimit = typedLength.kind === "length" ? stayLengthLimitRefusal(typedLength.nights, EXTENDED_STAY_POLICY) : undefined;
+    if (typedLimit !== undefined) return typedLimit;
     return plan?.kind === "clarify_stay" || /how many|nights|\bstay\b|somewhere|\bplace\b|lagos|abuja|lekki|ikoyi/i.test(userText)
       ? GUEST_ASSISTANT_COPY.stayClarification
       : GUEST_ASSISTANT_COPY.safeClarification;
@@ -1395,7 +1624,7 @@ function renderShortletReplyBody(plan: AssistantReplyPlan | undefined, results: 
     const money = (value: unknown) => `₦${(Number(value) / 100).toLocaleString("en-NG")}`;
     return GUEST_ASSISTANT_COPY.offerAmount(...amounts.map(money) as [string, string, string]);
   }
-  if (typeof data.message === "string" && ["propose_request_to_book", "propose_accept_offer", "propose_start_payment", "get_offer_status"].includes(operation.name)) return data.message;
+  if (typeof data.message === "string" && ["propose_request_to_book", "propose_accept_offer", "propose_start_payment", "propose_notice_to_end", "propose_extension", "get_offer_status"].includes(operation.name)) return data.message;
   if (operation.name === "search_stays") {
     if (typeof data.resultCount !== "number" || typeof data.neighbourhood !== "string" && typeof data.location !== "string") return GUEST_ASSISTANT_COPY.safeClarification;
     const count = data.resultCount;
@@ -1515,6 +1744,44 @@ function sentStageReply(taskState: AssistantTaskState, environment: LocalGuestEn
 }
 
 /** The shortlet pack: prompt section, tools and surface projections for the shortlet domain. */
+/**
+ * Issue 18 (ADR 0080, 0092, 0060, 0074): the Notice to End card for the confirmed Extended Stay. It previews only: the notice
+ * date and contract version it shows are bound into the card, and nothing is recorded here. A stay that cannot take notice is a
+ * guest refusal (tool_denial or a refused button), never CONCIERGE_UNAVAILABLE (ADR 0106).
+ */
+function proposeNoticeToEnd(input: { readonly environment: LocalGuestEnvironment; readonly contractId: string; readonly threadId: string; readonly now: Date }): PendingAssistantAction {
+  let preview: NoticePreview;
+  try {
+    preview = input.environment.noticeToEnd.previewNotice(input.contractId, input.environment.guestPrincipal());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (message.includes("Verified Access")) throw new AssistantGuestRefusalError(GUEST_NOTICE_COPY.notVerified);
+    if (message.includes("Extended Stays")) throw new AssistantGuestRefusalError(GUEST_NOTICE_COPY.notExtended);
+    throw new AssistantGuestRefusalError(GUEST_NOTICE_COPY.unavailable);
+  }
+  const actionId = generatePlatformId("pa");
+  return {
+    id: actionId,
+    threadId: input.threadId,
+    guestActorId: input.environment.config.guestId,
+    tenantId: input.environment.config.tenantId,
+    type: "give_notice",
+    authoritativeReferences: {
+      contractId: input.contractId,
+      noticeDate: preview.noticeDate,
+      contractVersion: preview.contractVersion,
+      newLastNight: preview.newLastNight,
+      newCheckOut: preview.newCheckOut,
+      refundKobo: preview.refundKobo,
+      owedKobo: preview.owedKobo,
+    },
+    summary: preview.noticeToEndTerms,
+    createdAt: input.now.toISOString(),
+    expiresAt: new Date(input.now.getTime() + 15 * 60 * 1000).toISOString(),
+    executed: false,
+  };
+}
+
 export function createShortletAssistantPack(environment: LocalGuestEnvironment): AssistantDomainPack {
   return {
     id: "shortlet",
@@ -1540,6 +1807,11 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
       request: ["get_unit_details", "prepare_request_draft", "propose_request_to_book"],
       accept: ["get_offer_status", "propose_accept_offer"],
       payment: ["get_offer_status", "propose_start_payment"],
+      // Issue 18: a guest who asks to end a confirmed stay early is offered the notice card only (the tool previews and records nothing).
+      // A support request (for example "the water is off") has no tool; it is not a notice request.
+      end_booking: ["propose_notice_to_end"],
+      // Monthly-stays issue 09: a guest who asks to stay longer is offered the extension card only. Never a support request.
+      extend_booking: ["propose_extension"],
     },
     // ADR 0005, 0060, 0080, 0106 (issue 12): a sent Booking Request, offer, payment or Reservation answers a change with its explanation
     // and no planner call. Before anything is sent this returns undefined and the turn goes to the planner as a search.
@@ -1579,7 +1851,11 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     clarificationQuickReplies: clarificationChipsFor,
     replyClarificationKind: (results) => locationChangeReplyKind(results) ?? dateChangeReplyKind(results),
     executeTool: executeAssistantTool,
-    settlePendingGuestFacts: (text, state, now) => settlePendingStayDate(text, state, now, environment.extendedStayPolicy),
+    settlePendingGuestFacts: (text, state, now) => {
+      settlePendingStayDate(text, state, now, environment.extendedStayPolicy);
+      recordGuestStatedStay(text, state.stayIntent, environment.extendedStayPolicy);
+    },
+    recordGuestFacts: (text, state, now) => recordGuestAuthoredFacts(text, state.stayIntent, now, environment.extendedStayPolicy),
     projectToolResult: (_name, result, limits) => {
       const keys = new Set(["locationChangePending", "dateConfirmationPending", "stayRef", "city", "capacity", "bedrooms", "resultCount", "checkIn", "checkOut", "nights", "partySize", "isDemoDate", "nightlyKobo", "mandatoryFeesKobo", "allInStayTotalKobo", "refundableSecurityDepositKobo", "amountDueNowKobo", "totalAmountDueNowKobo", "currency", "inspectionStatus", "managementAuthorityStatus", "status", "expiresAt", "expiresAtIso", "hasOffer", "hasBooking", "draftCreated", "created", "availabilityChecked", "inventoryReserved", "operation", "available", "stays", "compared", "result", "hasRequest", "requestStatus", "facility", "facilityListed", "facilityAmenity"]);
       const closedStatuses = new Set(["passed", "failed", "expired", "verified", "unverified", "none", "request_draft", "request_submitted", "request_disclosed", "offer_issued", "issued", "accepted", "payment_pending", "paid", "cancelled", "rejected", "stale", "revoked", "confirmed", "no_active_booking", "unknown"]);
@@ -1631,6 +1907,31 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     conditionalOfferSurface: (artifact, surfaceId) => conditionalOfferArtifactToA2UI({ artifact: artifact as never, surfaceId }),
     cardPaymentSurface: (artifact, surfaceId) => cardPaymentArtifactToA2UI({ artifact: artifact as never, surfaceId }),
     bookingContractSurface: (artifact, surfaceId) => bookingContractArtifactToA2UI({ artifact: artifact as never, surfaceId }),
+    openActionNames: [NOTICE_OPEN_EVENT, EXTENSION_OPEN_EVENT],
+    handleOpenAction: ({ actionName, context: openContext, threadId, now }) => {
+      const extension = actionName === EXTENSION_OPEN_EVENT;
+      // Issue 18 AC6 (ADR 0074): the press must name a booking surface of this thread whose contract this guest can read. The id is
+      // `thread-<thread>:booking:<contract>` (shortlet-stage-handlers.ts), so it survives a cold restore; a forged, superseded or
+      // unknown id is stale and nothing is previewed.
+      const pressed = typeof openContext.surfaceId === "string" ? openContext.surfaceId : "";
+      const prefix = `thread-${threadId}:booking:`;
+      const contractId = pressed.startsWith(prefix) ? pressed.slice(prefix.length) : "";
+      if (contractId === "") return { ok: false, code: "STALE_SURFACE", message: "That action is no longer active." };
+      try {
+        environment.contractApp.getArtifact(contractId, environment.guestPrincipal());
+      } catch {
+        return { ok: false, code: "STALE_SURFACE", message: "That action is no longer active." };
+      }
+      try {
+        // Monthly-stays issue 09: the extension card is opened by its own event, through the same guards and refusals.
+        if (extension) return { ok: true, pendingAction: proposeExtension({ environment, contractId, threadId, now }), message: GUEST_EXTENSION_COPY.cardOpened };
+        const pendingAction = proposeNoticeToEnd({ environment, contractId, threadId, now });
+        return { ok: true, pendingAction, message: GUEST_NOTICE_COPY.cardOpened };
+      } catch (error) {
+        if (error instanceof AssistantGuestRefusalError) return { ok: false, code: extension ? "EXTENSION_NOT_AVAILABLE" : "NOTICE_NOT_AVAILABLE", message: error.message };
+        throw error;
+      }
+    },
     revalidateProposal: (action) => {
       if (action.type !== "request_to_book") return { ok: true };
       const refs = action.authoritativeReferences;
