@@ -430,6 +430,9 @@
 
   /* Guest UI kit (guest-ui-consistency): the same components on every screen, chat workspace and standalone page. */
   .ui-appbar { display: flex; align-items: center; gap: var(--space-3); min-block-size: 4rem; padding: var(--space-2) var(--layout-gutter-mobile); border-block-end: 1px solid var(--color-border-subtle); background: var(--color-surface); }
+  /* Skip link (issue 15): the first focusable control on every standard page; 44x44 when focused. */
+  .ui-skip-link { position: absolute; inset-block-start: var(--space-2); inset-inline-start: var(--space-4); z-index: var(--layer-skip-link); display: inline-flex; align-items: center; min-block-size: var(--control-min-target); min-inline-size: var(--control-min-target); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-text); transform: translateY(-200%); }
+  .ui-skip-link:focus { transform: none; }
   .ui-appbar__brand { display: inline-flex; align-items: center; min-block-size: var(--control-min-target); color: var(--color-text); font-family: var(--font-display); font-size: 1.25rem; font-weight: 600; letter-spacing: -0.01em; text-decoration: none; }
   .ui-appbar__grow { flex-grow: 1; }
   .ui-appbar__action { min-block-size: var(--control-min-target); }
