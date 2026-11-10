@@ -1,6 +1,6 @@
 # 28 · Extended Stay collection and Notice to End copy
 
-Status: ready-for-human
+Status: resolved (structural line only; counsel terms remain open)
 Type: task
 Blocked by: 27
 Phase: 4 (Batch D)
@@ -29,3 +29,24 @@ Guideline §11 asks the review and offer to say that later periods are not charg
 - Guest UI: finish with captures at 320, 390, 768 and 1280 (light and dark) under `.scratch/ux-guidelines/screenshots/<NN>/`, and a findings file showing no horizontal overflow and no control under 44px (ADR 0078).
 
 ## Comments
+
+### Owner decision (10 Nov 2026): structural line only
+
+The owner approved adding only the non-legal structural line, leaving the cancellation and Notice to End terms as counsel text. The line is carried by the existing `GUEST_FACT_LABELS.firstPeriodOnly`, which every Extended Stay schedule already shows: "This is the first Billing Period only. Later Billing Periods are paid separately on their due dates; they are not charged automatically." Source: owner decision in this session; the underlying rule is ADR 0092 (each Billing Period is a separate Period Payment).
+
+The Extended Stay cancellation and Notice to End wording is **not** added: ADR 0092 marks those as counsel text not yet recorded, and this issue must not ship guest-facing behaviour that depends on them.
+
+### ADRs read and applied
+
+| ADR | Constraint | Where it applies |
+| --- | --- | --- |
+| 0092 | Each Billing Period is a separate Period Payment; cancellation and Notice to End text is a counsel gate. | AC1 and AC2; the legal terms remain open. |
+
+### Tests and commands
+
+- `npm run check` — 0 errors.
+- `npx tsx --test test/extended-stay-counsel-copy.test.ts` — 3 tests, 3 passed, 0 failed.
+
+## Answer
+
+Only the owner-approved structural line is added: later Billing Periods are paid separately on their due dates and are not charged automatically. It appears wherever an Extended Stay schedule appears and never on a Short Stay. The cancellation and Notice to End terms remain counsel text and are listed as an open gate for issue 31.

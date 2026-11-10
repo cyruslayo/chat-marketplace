@@ -455,7 +455,7 @@ export const GUEST_FACT_LABELS = Object.freeze({
   paymentSchedule: "Payment schedule",
   billingPeriod: "Billing Period",
   /** Demo-launch issue 12: says the amount due now is the first Billing Period, not the whole stay (ADR 0092). */
-  firstPeriodOnly: "This is the first Billing Period only. Later Billing Periods are paid separately on their due dates.",
+  firstPeriodOnly: "This is the first Billing Period only. Later Billing Periods are paid separately on their due dates; they are not charged automatically.",
 });
 
 /**
