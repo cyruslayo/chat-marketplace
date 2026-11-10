@@ -68,3 +68,4 @@ Frontier: the first open, unblocked, unclaimed issue in number order.
 - 16 — guest Modal: no guest A2UI builder emits Modal, so no native-dialog change is needed. Evidence: `test/guest-modal-usage.test.ts`.
 - 15 — skip links: every standard guest and error page starts with a 44x44 "Skip to main content" link that focuses the main region. Evidence: `test/guest-skip-link.test.ts`, `test/guest-skip-link-chromium.test.ts`, `.scratch/ux-guidelines/screenshots/15/`.
 - 17 — targets and text: 44x44 controls, 12px text floor, `aria-busy` styling, prose wrapping and accent colours. Evidence: `test/guest-kit-targets.test.ts`, `.scratch/ux-guidelines/screenshots/17/`.
+- 18 — container queries: the workspace and standard-page main are containers; compare, facts and discovery layout follow the column. Evidence: `test/guest-container-queries-chromium.test.ts`, `.scratch/ux-guidelines/screenshots/18/`.

@@ -1,6 +1,6 @@
 # 18 · Container queries for kit components
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: none
 Phase: 2 (Batch B)
@@ -29,3 +29,28 @@ At 64rem and wider the workspace is 560px (760px for discovery) beside the conve
 - Guest UI: finish with captures at 320, 390, 768 and 1280 (light and dark) under `.scratch/ux-guidelines/screenshots/<NN>/`, and a findings file showing no horizontal overflow and no control under 44px (ADR 0078).
 
 ## Comments
+
+### ADRs read and applied
+
+| ADR | Constraint | Where it applies |
+| --- | --- | --- |
+| 0078 | 320px reflow and no clipped controls. | AC1-AC3 and the captures. |
+| 0081 | Weaver output is styled by the shared kit. | All changes stay in the kit block and the shell's layout rules. |
+| 0080 | Chat and standard routes carry the same facts. | Details live in §18 instead of the Comments |
+
+### Implementation
+
+- `.ui-page` and `#workspace-region` are `container-type: inline-size`, so their children query the column they are in.
+- `.ui-compare` and `.ui-facts` use `@container (max-width: 47.499rem)`. The reading column is 560px (760px discovery), and the workspace cell is ~740px content at 1280; the old 29.999rem viewport query never fired inside it. A 760px standard page is above 759.984px, so it keeps the wide layout.
+- The discovery `.stay-grid`/`.ui-result-rows` layout switches in the shell moved from `@media` to `@container`.
+
+### Tests and commands
+
+- `npm run check` — 0 errors.
+- Real Chrome: `npx tsx --test test/guest-container-queries-chromium.test.ts` — 3 tests, 3 passed, 0 failed (narrow in the 1280 workspace, wide on a 1280 standard page, no 320 overflow).
+- After committing the CSS: `npx tsx --test test/landing-page.test.ts test/guest-kit.test.ts test/shortlet-design-system.test.ts` — 51 tests, 51 passed, 0 failed.
+- Captures: `npx tsx .scratch/ux-guidelines/capture-18.ts` — discovery, comparison and search-page captures at 320/390/768/1280 in light and dark under `.scratch/ux-guidelines/screenshots/18/`; findings show no horizontal overflow and no visible control under 44px.
+
+## Answer
+
+Kit layout now follows its column: at 1280 the compare and facts stack inside the workspace, while a wide standard page keeps the two- and three-column layouts. There is no 320px overflow in chat or on the standard page.

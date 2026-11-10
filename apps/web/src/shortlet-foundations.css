@@ -305,7 +305,7 @@
   .ui-sr-only { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
   /* Page scaffold for server-rendered conventional pages (see apps/web/src/ui-kit.ts). */
-  .ui-page { inline-size: min(100% - 2 * var(--layout-gutter-mobile), var(--layout-workspace-max)); margin-inline: auto; padding-block: var(--space-6) var(--space-10); display: grid; gap: var(--space-6); align-content: start; }
+  .ui-page { inline-size: min(100% - 2 * var(--layout-gutter-mobile), var(--layout-workspace-max)); margin-inline: auto; padding-block: var(--space-6) var(--space-10); display: grid; gap: var(--space-6); align-content: start; container-type: inline-size; }
   .ui-page--narrow { inline-size: min(100% - 2 * var(--layout-gutter-mobile), 30rem); }
   .ui-page__header { display: grid; gap: var(--space-2); }
   .ui-page__header h1 { margin: 0; font-family: var(--font-display); font-weight: 600; }
@@ -555,7 +555,9 @@
   .ui-compare__head { font-family: var(--font-display); font-weight: 600; }
   .ui-compare__cell { display: flex; flex-direction: column; gap: var(--space-1); font-variant-numeric: tabular-nums; }
   .ui-compare__cell > small { display: none; }
-  @media (max-width: 29.999rem) {
+  /* Issue 18: layout follows the component's column, not the viewport. The reading column is 560px (760px discovery),
+     so a column narrower than 760px stacks even on a wide screen; a full-width standard page keeps the wide layout. */
+  @container (max-width: 47.499rem) {
     .ui-compare__row { grid-template-columns: minmax(0, 1fr); }
     .ui-compare__row--head { display: none; }
     .ui-compare__cell > small { display: block; }
@@ -776,7 +778,7 @@
   .ui-facts { display: grid; grid-template-columns: minmax(8rem, max-content) minmax(0, 1fr); gap: var(--space-2) var(--space-4); margin: 0; }
   .ui-facts dt { color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-body); }
   .ui-facts dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
-  @media (max-width: 29.999rem) { .ui-facts { grid-template-columns: minmax(0, 1fr); gap: 0; } .ui-facts dd { margin-block-end: var(--space-3); } }
+  @container (max-width: 47.499rem) { .ui-facts { grid-template-columns: minmax(0, 1fr); gap: 0; } .ui-facts dd { margin-block-end: var(--space-3); } }
 
   .ui-list { display: grid; margin: 0; padding: 0; list-style: none; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-card); background: var(--color-surface); overflow: hidden; }
   .ui-list > li + li { border-block-start: 1px solid var(--color-border-subtle); }

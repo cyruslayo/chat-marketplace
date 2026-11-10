@@ -390,7 +390,7 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays,
     .prompt-suggestions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
     .quick-replies { display: flex; flex-wrap: wrap; gap: var(--space-2); }
     .quick-reply { min-width: var(--control-min-target); justify-content: center; }
-    #workspace-region { min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 0 var(--layout-gutter-mobile) var(--space-4); }
+    #workspace-region { min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 0 var(--layout-gutter-mobile) var(--space-4); container-type: inline-size; }
     #active-workspace { background: var(--color-surface-elevated); border: 1px solid var(--color-border); border-radius: var(--radius-workspace); padding: var(--space-4); box-shadow: var(--elevation-active); }
     #active-workspace[hidden], #workspace-region[hidden], #workspace-reopen[hidden], #empty-state[hidden] { display: none; }
     .workspace-heading { display: flex; justify-content: flex-start; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-2); }
@@ -438,8 +438,8 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays,
     /* Issue 05: phones show the compact rows for the inline results; the cards open with "See all results". Wide screens show two cards per row. */
     .ui-result-rows { margin-block-end: var(--space-3); }
     #active-workspace[data-mode="focused-surface"] .ui-result-rows, #active-workspace[data-mode="focused-surface"] .ui-result-rows__compare { display: none; }
-    @media (max-width: 47.999rem) { #active-workspace[data-surface-kind="discovery"][data-mode="inline-surface"] .ui-result-rows ~ .stay-grid { display: none !important; } }
-    @media (min-width: 48rem) { .ui-result-rows, .ui-result-rows__compare { display: none; } #active-workspace[data-surface-kind="discovery"] .stay-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @container (max-width: 47.999rem) { #active-workspace[data-surface-kind="discovery"][data-mode="inline-surface"] .ui-result-rows ~ .stay-grid { display: none !important; } }
+    @container (min-width: 48rem) { .ui-result-rows, .ui-result-rows__compare { display: none; } #active-workspace[data-surface-kind="discovery"] .stay-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     .unit-detail-root { display: grid !important; min-width: 0; gap: var(--space-4) !important; }
     ${LISTING_GALLERY_STYLE}
     .unit-gallery--fallback { padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface-subtle); }
