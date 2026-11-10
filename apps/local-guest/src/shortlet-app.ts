@@ -6071,7 +6071,7 @@ function discoverySurface(
     surfaceId,
     kind: "discovery",
     mode: "inline-surface",
-    // ADR-0080: the re-presented fallback keeps the same criteria as the live one.
+    summary: discoverySummary(artifact.facts.filters),
     conventionalRoute: conventionalSearchRoute(artifact.facts.filters),
     textFallback: discoveryFallbackMessage(artifact),
     a2uiMessages: discoveryArtifactToA2UI({
