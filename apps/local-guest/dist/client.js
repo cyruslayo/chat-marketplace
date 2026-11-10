@@ -10467,6 +10467,7 @@ Known schemas:
   var announcer = requiredElement("announcer");
   var errorAnnouncer = requiredElement("error-announcer");
   var emptyState = requiredElement("empty-state");
+  var routeHeading = requiredElement("route-heading");
   var workingStatus = requiredElement("working-status");
   var journeyRail = requiredElement("journey-rail");
   var taskRail = requiredElement("task-rail");
@@ -11442,6 +11443,7 @@ Known schemas:
   var threadId = getThreadId();
   var shellState = createConversationShellState();
   var activePayload;
+  var transcriptAnnouncesTurn = false;
   var isLoading = false;
   var eventInFlight = false;
   var lastActivatedControl;
@@ -11695,6 +11697,7 @@ Known schemas:
     focusedScrollTop = workspaceRegion.scrollTop;
     shellState = closeFocusedSurface(shellState);
     composerForm.dataset.focused = "false";
+    routeHeading.textContent = appliedMode.emptyState.heading;
     activeWorkspace.hidden = true;
     showReopen();
     const target = focusTarget.isConnected && !focusTarget.hidden ? focusTarget : workspaceReopen;
@@ -11716,6 +11719,7 @@ Known schemas:
     focusedScrollTop = previousScroll;
     composerForm.dataset.focused = presentation.mode === "focused-surface" ? "true" : "false";
     activePayload = surface;
+    routeHeading.textContent = guestSurfaceHeading(presentation.summary);
     activeWorkspace.replaceChildren();
     activeWorkspace.hidden = presentation.mode === "focused-surface" && !shellState.focusedSurfaceOpen;
     activeWorkspace.tabIndex = -1;
@@ -11849,18 +11853,19 @@ Known schemas:
       }
     }
     trackTelemetry(presentation.mode === "focused-surface" ? "focused-surface-opened" : "inline-surface-rendered");
-    if (moveFocus) announce(`${guestSurfaceHeading(presentation.summary)} is ready.`);
+    if (moveFocus && !transcriptAnnouncesTurn) announce(`${guestSurfaceHeading(presentation.summary)} is ready.`);
     syncSheetHistory();
   }
   function acceptSurface(surface, preserveConversation = false) {
     const before = shellState.historicalSummaries.length;
+    const firstSurface = shellState.activeSurface === void 0;
     const replaced = shellState.activeSurface !== void 0 && shellState.activeSurface.surfaceId !== surface.surfaceId;
     const keepConversationOpen = preserveConversation || !replaced && shellState.activeSurface?.mode === "focused-surface" && !shellState.focusedSurfaceOpen;
     shellState = replaceActiveSurface(shellState, presentationFor(surface));
     if (keepConversationOpen) shellState = closeFocusedSurface(shellState);
     if (replaced) trackTelemetry("surface-replaced");
     for (const summary of shellState.historicalSummaries.slice(before)) addHistoricalSummary(summary);
-    renderSurface(surface, replaced && !preserveConversation);
+    renderSurface(surface, (replaced || firstSurface) && !preserveConversation);
     syncSheetHistory();
   }
   function renderSurfaces(surfaces, preserveConversation = false) {
@@ -12316,7 +12321,9 @@ Known schemas:
     renderQuickReplies(response.quickReplies);
     if ((response.messages ?? []).length > 0) trackTelemetry("text-response-rendered");
     const surfaces = response.surfaces ?? [];
+    transcriptAnnouncesTurn = (response.messages ?? []).length > 0;
     renderSurfaces(surfaces);
+    transcriptAnnouncesTurn = false;
     for (const receipt of response.receipts ?? []) addReceipt(receipt);
     landAgentReply();
     return true;

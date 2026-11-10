@@ -183,6 +183,7 @@ const composerSubmit = requiredElement<HTMLButtonElement>("composer-submit");
 const announcer = requiredElement<HTMLElement>("announcer");
 const errorAnnouncer = requiredElement<HTMLElement>("error-announcer");
 const emptyState = requiredElement<HTMLElement>("empty-state");
+const routeHeading = requiredElement<HTMLElement>("route-heading");
 const workingStatus = requiredElement<HTMLElement>("working-status");
 const journeyRail = requiredElement<HTMLElement>("journey-rail");
 const taskRail = requiredElement<HTMLElement>("task-rail");
@@ -1576,6 +1577,8 @@ function withAgentMarkTransition(update: () => void): void {
 const threadId = getThreadId();
 let shellState: ConversationShellState = createConversationShellState();
 let activePayload: GuestSurfacePayload | undefined;
+/** Issue 14: a turn's assistant message is announced by the transcript log, so the workspace stays silent for that turn. */
+let transcriptAnnouncesTurn = false;
 let isLoading = false;
 let eventInFlight = false;
 let lastActivatedControl: HTMLElement | undefined;
@@ -1937,6 +1940,7 @@ function closeWorkspace(focusTarget: HTMLElement): void {
   focusedScrollTop = workspaceRegion.scrollTop;
   shellState = closeFocusedSurface(shellState);
   composerForm.dataset.focused = "false";
+  routeHeading.textContent = appliedMode.emptyState.heading;
   activeWorkspace.hidden = true;
   showReopen();
   const target = focusTarget.isConnected && !focusTarget.hidden ? focusTarget : workspaceReopen;
@@ -1962,6 +1966,7 @@ function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
   focusedScrollTop = previousScroll;
   composerForm.dataset.focused = presentation.mode === "focused-surface" ? "true" : "false";
   activePayload = surface;
+  routeHeading.textContent = guestSurfaceHeading(presentation.summary);
   activeWorkspace.replaceChildren();
   activeWorkspace.hidden = presentation.mode === "focused-surface" && !shellState.focusedSurfaceOpen;
   activeWorkspace.tabIndex = -1;
@@ -2117,19 +2122,21 @@ if (
     }
   }
   trackTelemetry(presentation.mode === "focused-surface" ? "focused-surface-opened" : "inline-surface-rendered");
-  if (moveFocus) announce(`${guestSurfaceHeading(presentation.summary)} is ready.`);
+  if (moveFocus && !transcriptAnnouncesTurn) announce(`${guestSurfaceHeading(presentation.summary)} is ready.`);
   syncSheetHistory();
 }
 
 function acceptSurface(surface: GuestSurfacePayload, preserveConversation = false): void {
   const before = shellState.historicalSummaries.length;
+  const firstSurface = shellState.activeSurface === undefined;
   const replaced = shellState.activeSurface !== undefined && shellState.activeSurface.surfaceId !== surface.surfaceId;
   const keepConversationOpen = preserveConversation || (!replaced && shellState.activeSurface?.mode === "focused-surface" && !shellState.focusedSurfaceOpen);
   shellState = replaceActiveSurface(shellState, presentationFor(surface));
   if (keepConversationOpen) shellState = closeFocusedSurface(shellState);
   if (replaced) trackTelemetry("surface-replaced");
   for (const summary of shellState.historicalSummaries.slice(before)) addHistoricalSummary(summary);
-  renderSurface(surface, replaced && !preserveConversation);
+  // Issue 14: the first workspace is a task transition too, so it gets the same focus and one ready announcement.
+  renderSurface(surface, (replaced || firstSurface) && !preserveConversation);
   syncSheetHistory();
 }
 
@@ -2623,7 +2630,9 @@ function renderResponse(response: GuestResponse): boolean {
   renderQuickReplies(response.quickReplies);
   if ((response.messages ?? []).length > 0) trackTelemetry("text-response-rendered");
   const surfaces = response.surfaces ?? [];
+  transcriptAnnouncesTurn = (response.messages ?? []).length > 0;
   renderSurfaces(surfaces);
+  transcriptAnnouncesTurn = false;
   // Receipts follow the markers for the steps they complete.
   for (const receipt of response.receipts ?? []) addReceipt(receipt);
   landAgentReply();

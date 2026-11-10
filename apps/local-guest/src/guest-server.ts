@@ -563,7 +563,7 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays,
   <div class="app guest-editorial">
     <header class="ui-appbar">
       ${agentMarkHtml(mode, "appbar")}
-      <a class="header-identity ui-appbar__brand" href="/" aria-label="Shortlet home"><h1>Shortlet</h1></a>
+      <a class="header-identity ui-appbar__brand" href="/" aria-label="Shortlet home"><span>Shortlet</span></a>
       <span class="header-note">Abuja · Lagos</span>
       <span class="ui-appbar__grow"></span>
       <div class="header-actions">
@@ -583,7 +583,7 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays,
     <nav id="task-rail" class="ui-task-rail-nav" aria-label="${GUEST_TASK_RAIL.railLabel}" hidden><ol class="ui-task-rail"></ol></nav>
     <main id="main-content" tabindex="-1">
       ${notice === undefined ? "" : `<div class="ui-banner ui-banner--warning" role="status" data-payment-notice="not-confirmed">${escapeHtml(notice)}</div>
-      `}<section id="transcript" role="log" aria-live="polite" aria-relevant="additions" aria-labelledby="conversation-heading">
+      `}<h1 id="route-heading" class="conversation-heading">${escapeHtml(mode.emptyState.heading)}</h1><section id="transcript" role="log" aria-live="polite" aria-relevant="additions" aria-labelledby="conversation-heading">
         <h2 id="conversation-heading" class="conversation-heading">Conversation</h2>
         <header id="task-step-header" class="ui-step-header" hidden></header>
         <section id="vertical-starters" class="ui-vertical-starters" hidden></section>
@@ -602,7 +602,7 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays,
           <div class="criteria-chips"></div>
           <form id="criteria-editor" hidden novalidate></form>
         </div>
-        <p id="criteria-status" class="criteria-status" role="alert"></p>
+        <p id="criteria-status" class="criteria-status" role="status"></p>
       </section>
       <div id="agent-dock" class="agent-dock" hidden>${agentMarkHtml(mode, "dock")}<span class="agent-dock__chip"></span></div>
       ${composerHtml(mode, "chat")}

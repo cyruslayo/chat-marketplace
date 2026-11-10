@@ -72,7 +72,7 @@ test("AC1: The shell shows the stays mark in the hero and in the app bar", () =>
   const bar = html.slice(barStart, html.indexOf("</header>", barStart));
   const barMarkAt = bar.indexOf(appBar);
   assert.ok(barMarkAt >= 0, "the app-bar mark sits inside header.ui-appbar");
-  assert.ok(barMarkAt < bar.indexOf("<h1>"), "the app-bar mark sits before the title");
+  assert.ok(barMarkAt < bar.indexOf('<span>Shortlet</span>'), "the app-bar mark sits before the title");
   const beforeMark = bar.slice(0, barMarkAt);
   assert.equal(count(beforeMark, "<button"), count(beforeMark, "</button>"), "no button wraps the app-bar mark");
   assert.doesNotMatch(appBar, /<(button|a)[\s>]/, "the app-bar mark is not a button or a link");

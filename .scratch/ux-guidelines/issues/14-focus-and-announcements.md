@@ -1,6 +1,6 @@
 # 14 · Focus and announcements on workspace changes
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: none
 Phase: 2 (Batch B)
@@ -30,3 +30,29 @@ Applicable ADRs: 0078; guideline §12 (focus follows task, one announcement, one
 - Guest UI: finish with captures at 320, 390, 768 and 1280 (light and dark) under `.scratch/ux-guidelines/screenshots/<NN>/`, and a findings file showing no horizontal overflow and no control under 44px (ADR 0078).
 
 ## Comments
+
+### ADRs read and applied
+
+| ADR | Constraint | Where it applies |
+| --- | --- | --- |
+| 0078 | Focus follows task, one meaningful announcement, one H1 and logical headings, status in words. | AC1-AC4. |
+| 0080 | Chat and standard routes carry the same task facts. | The route H1 names the current task on the chat shell; standard pages keep their own H1. |
+
+### Implementation
+
+- `acceptSurface` treats the first workspace as a task transition (`firstSurface`), so it uses the same focus path as a replaced surface.
+- `renderResponse` sets `transcriptAnnouncesTurn` when the turn adds an assistant message; `renderSurface` then focuses without repeating the ready sentence, so the transcript log is the one announcement source. Surface-only changes still announce.
+- `#criteria-status` is `role="status"`; `#error-announcer` remains the assertive alert region for errors.
+- The brand is a `span` inside the brand link, not a heading. The shell has one `h1#route-heading` that starts as the empty-state task and is updated by `renderSurface`/`closeWorkspace` to the current task.
+
+### Tests and commands
+
+- `npm run check` — 0 errors.
+- `npx tsx --test test/guest-focus-announcements.test.ts test/agent-mode-shell.test.ts test/agent-mark-shell.test.ts` — 18 tests, 18 passed, 0 failed.
+- Real Chrome: `npx tsx --test test/guest-focus-announcements-chromium.test.ts` — 2 tests, 2 passed, 0 failed (first workspace focus, one H1 naming the task).
+- `client.js` rebuilt; only the regenerated `dist/client.js` is staged.
+- Captures: `npx tsx .scratch/ux-guidelines/capture-14.ts` — 8 captures at 320/390/768/1280 in light and dark under `.scratch/ux-guidelines/screenshots/14/`; findings show one H1, no horizontal overflow and no visible control under 44px.
+
+## Answer
+
+The first workspace now receives focus like any later replacement, a turn with an assistant message is announced once by the transcript, the criteria strip is polite, and the chat route has one H1 that names the current task while the brand is no longer a heading.
