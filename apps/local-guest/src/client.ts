@@ -26,6 +26,8 @@ import {
   type GuestCommittedWorkKind,
   type ModePresentation,
 } from "../../web-agent/src/guest-content.js";
+import type { GuestQuickReply } from "./concierge.js";
+import { isQuickReplyList } from "./quick-replies.js";
 import { CLIENT_REQUEST_TIMEOUT_MS, CLIENT_TURN_TIMEOUT_MS, TURN_STILL_WORKING_AFTER_MS } from "./turn-budget.js";
 import { turnEntriesSince } from "./guest-turn-recovery.js";
 import { assertValidResponseMode, readResponseMode } from "./response-mode.js";
@@ -149,7 +151,7 @@ interface GuestResponse {
   readonly surfaces?: readonly GuestSurfacePayload[];
   readonly journey?: GuestJourney;
   readonly criteria?: GuestCriteria;
-  readonly quickReplies?: readonly string[];
+  readonly quickReplies?: readonly GuestQuickReply[];
   readonly tasks?: readonly GuestTask[];
   readonly verticals?: readonly GuestVertical[];
   readonly mode?: ModePresentation;
@@ -1495,7 +1497,8 @@ function readGuestResponse(value: unknown): GuestResponse {
     throw new Error("Invalid response journey");
   if (value.criteria !== undefined && !isCriteria(value.criteria))
     throw new Error("Invalid response criteria");
-  if (value.quickReplies !== undefined && !isStringList(value.quickReplies))
+  // Issue 58: a malformed chip is dropped by isQuickReplyList at render, so only a non-array is refused whole here.
+  if (value.quickReplies !== undefined && !Array.isArray(value.quickReplies))
     throw new Error("Invalid response quick replies");
   if (
     value.tasks !== undefined &&
@@ -2515,26 +2518,34 @@ function clearQuickReplies(): void {
 }
 
 /**
- * Issue 11 AC3: one-tap answers to the question just asked. Tapping one sends
- * it as the Guest's own message; the server interprets it like typed text.
+ * Issue 11 AC3 / issue 58: one-tap answers to the question just asked. A chip with an `edit` is structured guest input: it is sent as a
+ * `shortlet.criteria.edit` event (like the criteria strip) and never reaches the scope classifier. A chip without one is the Guest's
+ * own message, interpreted like typed text. A malformed chip is dropped by `isQuickReplyList`.
  */
-function renderQuickReplies(replies: readonly string[] | undefined): void {
+function renderQuickReplies(replies: readonly GuestQuickReply[] | undefined): void {
   clearQuickReplies();
-  if (!replies || replies.length === 0) return;
+  const chips = isQuickReplyList(replies) ?? [];
+  if (chips.length === 0) return;
   const group = document.createElement("div");
   group.className = "quick-replies";
   group.setAttribute("role", "group");
   group.setAttribute("aria-label", "Suggested replies");
-  for (const text of replies) {
+  for (const reply of chips) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "ui-chip quick-reply";
-    button.textContent = text;
+    button.textContent = reply.label;
     button.addEventListener("click", () => {
       if (isLoading) return;
       clearQuickReplies();
-      addTurn("user", text);
-      void sendTurn(text);
+      addTurn("user", reply.label);
+      if (reply.edit !== undefined) {
+        const basedOn = currentCriteria?.key;
+        if (basedOn === undefined) { void sendTurn(reply.label); return; }
+        void sendCriteriaEvent(CRITERIA_EDIT_EVENT, { ...reply.edit, basedOn });
+        return;
+      }
+      void sendTurn(reply.label);
     });
     group.appendChild(button);
   }

@@ -125,16 +125,32 @@ export interface StayRequestMergeOutcome {
 export type StayCriterion = "where" | "who" | "when" | "nights";
 
 /**
- * Issue 11 AC3: one-tap answers to the criterion just asked for. Every reply
- * is a phrase this interpreter already understands, so tapping it fills that
- * criterion; relative dates still go through the confirmation step (issue 01).
+ * Issue 58 (ADR 0106, ADR 0107 "Settled"): a quick reply is structured guest input. A chip that carries an `edit` is sent as a
+ * `shortlet.criteria.edit` event (the same path the criteria strip uses) and never reaches the scope classifier. The edit is a closed
+ * union matching `readCriteriaEdit`; a chip with no edit is still sent as typed text (a date phrase, a confirmation, an ordinal).
  */
-export function quickRepliesFor(next: StayCriterion): readonly string[] {
+export interface QuickReplyGuestsEdit { readonly field: "guests"; readonly partySize: number; }
+export interface QuickReplyWhereEdit { readonly field: "where"; readonly area: string; }
+export interface QuickReplyWhenEdit { readonly field: "when"; readonly checkIn: string; readonly nights: number; }
+export type QuickReplyEdit = QuickReplyGuestsEdit | QuickReplyWhereEdit | QuickReplyWhenEdit;
+export interface GuestQuickReply { readonly label: string; readonly edit?: QuickReplyEdit; }
+
+/**
+ * Issue 11 AC3 / issue 58: one-tap answers to the criterion just asked for. Where and who chips carry a structured edit; date and
+ * night chips stay text-only here (a night edit needs a confirmed check-in, added by the pack). Relative dates still go through the
+ * confirmation step (issue 01).
+ */
+export function quickRepliesFor(next: StayCriterion): readonly GuestQuickReply[] {
   switch (next) {
-    case "where": return SEARCH_AREAS.filter((area) => area.neighbourhood !== undefined).map((area) => area.label);
-    case "who": return ["Just me", "2 guests", "3 guests", "4 guests"];
-    case "when": return ["This weekend", "Next weekend", "Next Friday"];
-    case "nights": return ["1 night", "2 nights", "3 nights", "7 nights"];
+    case "where": return SEARCH_AREAS.filter((area) => area.neighbourhood !== undefined).map((area) => ({ label: area.label, edit: { field: "where", area: area.id } }));
+    case "who": return [
+      { label: "Just me", edit: { field: "guests", partySize: 1 } },
+      { label: "2 guests", edit: { field: "guests", partySize: 2 } },
+      { label: "3 guests", edit: { field: "guests", partySize: 3 } },
+      { label: "4 guests", edit: { field: "guests", partySize: 4 } },
+    ];
+    case "when": return ["This weekend", "Next weekend", "Next Friday"].map((label) => ({ label }));
+    case "nights": return ["1 night", "2 nights", "3 nights", "7 nights"].map((label) => ({ label }));
   }
 }
 

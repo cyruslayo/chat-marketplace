@@ -36,7 +36,7 @@ import { ModelScopeClassifier, ScopeClassificationError, assessScopeSafely, scop
 import { RetryingScopeClassifier, ScopeClassifierRetryError, SCOPE_TOTAL_BUDGET_MS, type ScopeClassifierRetryEvent, type ScopeClassifierRetryResult } from "./scope-classifier-retry.js";
 import { ASSISTANT_CONTROL_COPY } from "./control-copy.js";
 import { isProviderUnavailable } from "./fallback-model-client.js";
-import { searchAreaFor } from "../concierge.js";
+import { searchAreaFor, type GuestQuickReply } from "../concierge.js";
 import {
   cloneTaskState,
   createInitialTaskState,
@@ -120,7 +120,7 @@ export interface AssistantTurnOutput {
   readonly controlOutcome?: AssistantControlOutcome;
   readonly stopReason?: AssistantStopReason;
   /** Issue 10: one-tap replies for a clarification (never on scope, support or redirect replies). */
-  readonly quickReplies?: readonly string[];
+  readonly quickReplies?: readonly GuestQuickReply[];
 }
 
 /** A task's entry in the shell rail, derived from the active pack's `taskSummary`. */
@@ -483,7 +483,7 @@ export class AssistantRuntime {
   }
 
   /** Issue 10: the one-tap replies the active pack gives a clarification on this thread, from its committed task state. */
-  clarificationQuickReplies(threadId: string, kind: AssistantClarificationKind): readonly string[] | undefined {
+  clarificationQuickReplies(threadId: string, kind: AssistantClarificationKind): readonly GuestQuickReply[] | undefined {
     const thread = this.#threads.get(threadId);
     if (!thread) return undefined;
     return this.#packForThread(threadId)?.clarificationQuickReplies?.(thread.taskState, kind);
@@ -1159,7 +1159,7 @@ export class AssistantRuntime {
     let round = 0;
     let finalAssistantReply: string | undefined;
     // Issue 10: chips for a `clarify_stay` reply, from the pack's clarification hook; never set for other reply kinds.
-    let finalQuickReplies: readonly string[] | undefined;
+    let finalQuickReplies: readonly GuestQuickReply[] | undefined;
     // Issue 57: the clarification kind that carries those chips, so the open-question code can be recorded (or cleared).
     let finalClarificationKind: AssistantClarificationKind | undefined;
     let activeStage: AssistantDiagnosticStage = "provider_request";

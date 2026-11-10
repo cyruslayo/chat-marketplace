@@ -2,7 +2,7 @@ import { draftRevisionRequest } from "./shortlet-draft-revision.js";
 import { generatePlatformId } from "../../../../packages/platform-core/src/index.js";
 import { AssistantDateProvenanceError, AssistantDateValidationError, AssistantGuestRefusalError, AssistantStayDetailsError, containsGuestDate } from "./date-tokens.js";
 import { ContinuousOccupancyError, StayDateRange, createStayQuote, toDiscoveryProjection, isEligibleUnit, allInStayTotalKobo, isExtendedStayLength, MAX_STAY_NIGHTS, BOOKING_HORIZON_DAYS, dateKeyInLagos, type ExtendedStayPolicy, type Unit } from "../../../../domains/shortlet/src/index.js";
-import { SEARCH_AREAS, formatGuestDay, locationConflictQuestion, quickRepliesFor, resolveLocationMention, stayBudgetKobo, stayCriteriaGap, unsupportedPreferenceNote, viewResultIntent, type PendingLocationChange, type StayCriterion } from "../concierge.js";
+import { SEARCH_AREAS, formatGuestDay, locationConflictQuestion, quickRepliesFor, resolveLocationMention, stayBudgetKobo, stayCriteriaGap, unsupportedPreferenceNote, viewResultIntent, type GuestQuickReply, type PendingLocationChange, type StayCriterion } from "../concierge.js";
 import { phraseIsGuestAuthored, readCheckInPhrase, type CheckInPhraseReading } from "./date-phrases.js";
 import { isExplicitConfirmation } from "./pending-actions.js";
 import { extractBudget, type StayBudget } from "../stay-budget.js";
@@ -338,7 +338,7 @@ export function resolveSearchNeighbourhood(raw: string, city: "Lagos" | "Abuja")
  * "when" chips are relative dates the assistant cannot resolve until issue 04 lands, and a date the server chose would be an invented
  * default (issue 15).
  */
-export function clarificationChipsFor(taskState: AssistantTaskState, kind: AssistantClarificationKind): readonly string[] | undefined {
+export function clarificationChipsFor(taskState: AssistantTaskState, kind: AssistantClarificationKind): readonly GuestQuickReply[] | undefined {
   if (kind === "area") return quickRepliesFor("where");
   if (kind === "location") {
     // Issue 09: the held area and the pending area, as the closed area labels (ADR 0080, 0077). Guest text is never read here.
@@ -346,18 +346,22 @@ export function clarificationChipsFor(taskState: AssistantTaskState, kind: Assis
     if (location === undefined || pendingLocation === undefined) return undefined;
     const held = SEARCH_AREAS.find((area) => area.city === location && area.neighbourhood === neighbourhood);
     const next = SEARCH_AREAS.find((area) => area.city === pendingLocation.city && area.neighbourhood === pendingLocation.neighbourhood);
-    return held && next ? [held.label, next.label] : undefined;
+    return held && next ? [{ label: held.label }, { label: next.label }] : undefined;
   }
   // Issue 04 (ADR 0106, 2 Nov 2026): a single day offers Yes and Change dates; candidates are one chip per day, and a tap chooses it.
   if (kind === "date") {
     const pending = taskState.stayIntent.pendingDate;
     if (pending === undefined) return undefined;
-    if (pending.candidates.length === 1) return [GUEST_ASSISTANT_COPY.dateConfirmChip, GUEST_ASSISTANT_COPY.dateChangeChip];
-    return pending.candidates.map(formatGuestDay);
+    if (pending.candidates.length === 1) return [{ label: GUEST_ASSISTANT_COPY.dateConfirmChip }, { label: GUEST_ASSISTANT_COPY.dateChangeChip }];
+    return pending.candidates.map((date) => ({ label: formatGuestDay(date) }));
   }
-  const { location, partySize, checkIn, nights } = taskState.stayIntent;
+  const { location, partySize, checkIn, nights, isDemoDate } = taskState.stayIntent;
   const gap = stayCriteriaGap({ city: location, partySize, checkIn, nights });
   if (!("next" in gap) || gap.next === "when") return undefined;
+  // Issue 58 (ADR 0106 date authority): a nights chip carries a structured edit only when the guest has confirmed the check-in.
+  if (gap.next === "nights" && typeof checkIn === "string" && isDemoDate === false) {
+    return [1, 2, 3, 7].map((count) => ({ label: count === 1 ? "1 night" : `${count} nights`, edit: { field: "when" as const, checkIn, nights: count } }));
+  }
   return quickRepliesFor(gap.next);
 }
 

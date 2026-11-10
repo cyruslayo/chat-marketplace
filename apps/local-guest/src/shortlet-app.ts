@@ -208,6 +208,7 @@ import {
   SEARCH_AREAS,
   stayBudgetKobo,
   type CriteriaEdit,
+  type GuestQuickReply,
   type StayBudget,
 } from "./concierge.js";
 import { AMENITY_CATALOGUE_IDS } from "./stay-vocabulary.js";
@@ -385,8 +386,8 @@ export interface GuestTurnSuccess {
   readonly surfaces: readonly GuestSurfacePayload[];
   readonly journey?: GuestJourney;
   readonly criteria?: GuestCriteria;
-  /** Issue 11 AC3: one-tap answers to the criterion the reply just asked for. */
-  readonly quickReplies?: readonly string[];
+  /** Issue 11 AC3 / issue 58: one-tap answers. A chip with an `edit` is a structured criteria event, not typed text. */
+  readonly quickReplies?: readonly GuestQuickReply[];
   /** Slice 26: the shell task rail, present only when the assistant runtime has tasks. */
   readonly tasks?: readonly GuestTask[];
   readonly verticals?: readonly GuestVertical[];
@@ -864,7 +865,7 @@ export class LocalGuestApp {
     readonly surfaces?: readonly { readonly surfaceId: string; readonly a2uiMessages: readonly unknown[] }[];
     readonly tasks?: readonly AssistantTaskRailEntry[];
     readonly controlOutcome?: AssistantControlOutcome;
-    readonly quickReplies?: readonly string[];
+    readonly quickReplies?: readonly GuestQuickReply[];
   }): GuestTurnResult {
     return {
       ok: true,
@@ -3648,7 +3649,8 @@ export class LocalGuestApp {
     position: number | "last" | null,
   ): GuestTurnResult {
     const results = artifact.facts.results;
-    const ordinalLabels = ["The first one", "The second one", "The third one"];
+    // Issue 58: an ordinal is an answer the classifier reads against the `pick_result` open question, so it stays text-only.
+    const ordinalLabels: readonly GuestQuickReply[] = [{ label: "The first one" }, { label: "The second one" }, { label: "The third one" }];
     const askWhich = (message: string): GuestTurnResult => {
       // Issue 57 (ADR 0106 amendment): "Which one?" is an open question the guest's next terse reply can answer.
       this.#recordOpenQuestion(thread, "pick_result");
@@ -4120,7 +4122,7 @@ export class LocalGuestApp {
   #clarificationChips(
     thread: GuestThreadState,
     next: StayCriterion,
-  ): { readonly quickReplies?: readonly string[] } {
+  ): { readonly quickReplies?: readonly GuestQuickReply[] } {
     const runtime = this.#assistantRuntime;
     if (runtime && runtime.hasThread(thread.threadId)) {
       const replies = runtime.clarificationQuickReplies(thread.threadId, "plan");
