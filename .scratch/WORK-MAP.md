@@ -348,6 +348,6 @@ Work on branch `fix/chat-hardening` in a dedicated worktree, one writer at a tim
 | [58](shortlet-concierge-launch/issues/58-structured-quick-replies.md) | resolved | 57 | Structured quick-reply chips (defect 2); captures done. |
 | [59](shortlet-concierge-launch/issues/59-assistant-no-dead-ends.md) | resolved | 57 (58 for chips) | Re-ask the open question instead of the generic fallback; settle pending dates after the verdict. |
 | [60](shortlet-concierge-launch/issues/60-guest-safe-refusals.md) | claimed | 62 | Offline core done (map, exit, client); real-Chrome ACs and captures remain. |
-| [61](shortlet-concierge-launch/issues/61-terse-follow-up-evals.md) | ready-for-agent | 57, 58, 59 | Terse-follow-up evals: offline, plus a live run by the owner. |
+| [61](shortlet-concierge-launch/issues/61-terse-follow-up-evals.md) | claimed | 57, 58, 59 | Offline party-size/where/unclear cases done; remaining offline rows, live eval and owner run outstanding. |
 
 Order: 62 → 57 → 58 → 59 → 60 → 61. Then the batch gate (`npm run build`, `check`, `test:workers`, full `npm test`, capture sweep), merge with approval, and a staging retest of the 9 Nov journey.

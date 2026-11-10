@@ -1,6 +1,6 @@
 # Evals for terse follow-ups (offline cases plus owner-run live cases)
 
-Status: ready-for-agent
+Status: claimed
 Type: AFK (the live run is owner-run)
 Blocked by: 57, 58, 59
 Requested: 9 Nov 2026
@@ -40,7 +40,7 @@ Every offline test scripts the classifier verdict (`scriptedPlanner` in `test/he
 ## Acceptance criteria
 
 - [ ] Each offline case asserts the open-question code on the classifier request and the committed fact.
-- [ ] A case with an `unclear` verdict falls back to the issue 59 re-ask, not to `unavailable`.
+- [x] A case with an `unclear` verdict falls back to the issue 59 re-ask, not to `unavailable`.
 - [ ] The live eval lists the cases and reports a false-refusal rate. It is checked offline only with a fake model client.
 - [ ] Owner: the live run is recorded in Comments with its rate. Target: no false refusals across the cases on `openai/gpt-6-luna`.
 
@@ -49,3 +49,10 @@ Every offline test scripts the classifier verdict (`scriptedPlanner` in `test/he
 `npm run check`; `env -u LLM_API_KEY npx tsx --test test/assistant-terse-followups.test.ts test/assistant-open-question.test.ts`. Record the counts in Comments.
 
 ## Comments
+
+- 9 Nov 2026, offline cases landed on `fix/chat-hardening` (issue NOT yet resolved: the full case table offline and the live eval remain). Commands (all with `env -u LLM_API_KEY`, `NODE_ENV=test`):
+  - `npm run check`: clean.
+  - `npx tsx --test test/assistant-terse-followups.test.ts test/assistant-open-question.test.ts`: 22 of 22 pass (warm and cold).
+- Done: `test/assistant-terse-followups.test.ts` covers the party-size family ("just me"/"2"/"two of us"/"me and my wife" → partySize 1/2/2/2), the `where` answer ("Wuse 2" → Abuja, Wuse 2), and the `unclear`-to-issue-59-re-ask fallback; each asserts the classifier request's `openQuestion` code and the committed fact. The case table is added to `docs/testing/shortlet-assistant-v1.md`.
+- Remaining before resolution: offline cases for `nights`, `pick_result` and `date_confirm` (the table rows not yet in the test); the live eval cases in `scripts/pilot-agent-smoke.ts` with a per-case closed-code report and a false-refusal rate (checked offline with a fake model client); and the owner's live run recorded here. Agents must never run the live eval (it needs `LLM_API_KEY`).
+- ADRs read and applied: 0106 (false refusals evaluated separately; diagnostics use closed codes; no fast path), 0075 (no model text in reports).

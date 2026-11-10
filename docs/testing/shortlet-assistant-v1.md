@@ -97,3 +97,17 @@ Or start the full local guest concierge in live Gemini mode:
 npm run guest:local
 `
 Navigate to http://localhost:3001 and interact with the live assistant.
+
+## Terse follow-up cases (issue 61)
+
+Every offline test scripts the classifier verdict, so the live model's own reading of a terse answer is measured separately (ADR 0106: false refusals are evaluated separately). Offline cases live in `test/assistant-terse-followups.test.ts` (party size family, the where answer, and the unclear-to-re-ask fallback). The owner runs the live cases; the eval needs `LLM_API_KEY` and agents never run it.
+
+| Open question | Guest text | Expected fact |
+|---|---|---|
+| party_size | "just me" / "2" / "two of us" / "me and my wife" | partySize 1 / 2 / 2 / 2 |
+| nights | "a week" / "3" | nights 7 / 3 |
+| pick_result | "the first one" / "the second" | opens result 1 / 2 |
+| date_confirm | "yes" | check-in confirmed |
+| where | "Wuse 2" | Abuja, Wuse 2 |
+
+A case whose verdict comes back `unclear` falls back to the issue 59 re-ask (the fixed question plus its chips), never the generic `unavailable` copy. Target on `openai/gpt-6-luna`: no false refusals across the cases.
