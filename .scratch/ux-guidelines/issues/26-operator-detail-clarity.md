@@ -1,6 +1,6 @@
 # 26 · Operator detail clarity
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 03
 Phase: 4 (Batch D)
@@ -31,3 +31,26 @@ All in `apps/local-owner/src/local-owner-server.ts`:
 - Guest UI: finish with captures at 320, 390, 768 and 1280 (light and dark) under `.scratch/ux-guidelines/screenshots/<NN>/`, and a findings file showing no horizontal overflow and no control under 44px (ADR 0078).
 
 ## Comments
+
+### ADRs read and applied
+
+| ADR | Constraint | Where it applies |
+| --- | --- | --- |
+| 0041 | Response window starts at delivery; a failed delivery is its own state. | AC2 label wording; the refusal notice is unchanged. |
+| 0042 | Operator Active Hours and the response deadline. | AC1/AC2 do not change the deadline or its projection. |
+| 0072 | Consequential decisions are versioned commands. | AC3: the `basedOnVersion` guard stays the authority; the guard script is presentation only. |
+| 0078 | Readable dates, plain labels, 44px targets. | AC1 and AC2. |
+
+### Reachability of the legacy dashboard (03's question, answered from code)
+
+`renderOwnerDashboardHtml` is still reachable: `GET /` in a non-production handler renders it (`local-owner-server.ts:1560-1566`). It is therefore relabelled, not retired, per the issue's second branch. Its status column now uses the same `requestStatus` label helper, its dates use `formatStayDates`, and "Confirm Booking (Lock Availability)" became "Confirm for the owner".
+
+### Tests and commands
+
+- `npm run check` — 0 errors.
+- `npx tsx --test test/operator-detail-clarity.test.ts` — 4 tests, 4 passed, 0 failed.
+- Affected: `npx tsx --test test/back-office-request-inbox.test.ts test/back-office-confirm-decline.test.ts test/back-office-home.test.ts test/back-office-calendar.test.ts test/response-window-starts-at-delivery.test.ts` — 18 tests, 18 passed, 0 failed. The calendar and inbox assertions were updated to the new sentence-case labels.
+
+## Answer
+
+The Operator request detail shows human stay dates, every Operator status label is plain sentence case ("Delivery failed", "Payment pending", "Operator hold"), a decision form disables its submit button while in flight while the server's version guard still refuses duplicates, and the legacy dashboard (reachable at `/` in non-production) now uses the same labels and human dates.

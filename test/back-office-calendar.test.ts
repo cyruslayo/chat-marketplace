@@ -118,8 +118,8 @@ test("AC1 — For each apartment, a date range shows every day's state from the 
       "2026-09-05": ["request_pending", "Request pending"],
       "2026-09-06": ["request_pending", "Request pending"],
       "2026-09-07": ["available", "Available"],
-      "2026-09-10": ["payment_pending", "Payment Pending"],
-      "2026-09-11": ["payment_pending", "Payment Pending"],
+      "2026-09-10": ["payment_pending", "Payment pending"],
+      "2026-09-11": ["payment_pending", "Payment pending"],
       "2026-09-12": ["available", "Available"],
       "2026-09-15": ["booked", "Booked"],
       "2026-09-16": ["booked", "Booked"],
@@ -201,7 +201,7 @@ test("AC2 — You can block free dates and the block takes effect immediately; a
     await paymentPending(f, "2026-09-10", "2026-09-12");
     refused = await block(f, unitId, { firstNight: "2026-09-11", lastNight: "2026-09-11", reason: "off_platform_booking" });
     assert.equal(refused.status, 409);
-    assert.match(visibleText(await refused.text()), /These dates are confirmed and awaiting payment \(Payment Pending\)\. A block cannot displace them: this needs human handling\. Nothing was blocked\./);
+    assert.match(visibleText(await refused.text()), /These dates are confirmed and awaiting payment \(payment pending\)\. A block cannot displace them: this needs human handling\. Nothing was blocked\./);
     // Over a booked stay: refused.
     await booked(f, "2026-09-15", "2026-09-17");
     refused = await block(f, unitId, { firstNight: "2026-09-14", lastNight: "2026-09-15", reason: "maintenance" });

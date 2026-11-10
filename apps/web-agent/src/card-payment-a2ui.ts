@@ -3,6 +3,7 @@ import { CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT, CARD_PAYMENT_VERIFY_RETURN_EVEN
 import type { CardPaymentArtifact } from "../../web/src/card-payment-artifact.js";
 
 import { bookingProgressText, formatBookingDeadline, formatBookingMoney, guestPaymentStatus, nightsBetween, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";
+import { billingPeriodLines } from "./extended-stay-presentation.js";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, guestFact } from "./guest-content.js";
 import { cardPaymentCopy, isCardPaymentProcessing } from "./payment-presentation.js";
 
@@ -32,6 +33,11 @@ export function cardPaymentArtifactToA2UI({ artifact, surfaceId }: { readonly ar
     : facts.status === "deposit_required"
       ? `Continue to ${GUEST_GLOSSARY.refundableSecurityDeposit} · ${formatBookingMoney(actionAmount)}`
       : `Continue to stay payment · ${formatBookingMoney(actionAmount)}`;
+  // Issue 27 (ADR 0092): the Extended Stay schedule and which period this payment covers, from the projection.
+  const schedulePeriods = billingPeriodLines(facts.billingPeriods);
+  const scheduleIds = schedulePeriods.map((_, index) => `card-payment-period-${index}`);
+  const currentPeriod = facts.billingPeriods?.find((period) => period.amountKobo === actionAmount);
+  const currentPeriodText = currentPeriod === undefined ? undefined : `This payment is for ${GUEST_FACT_LABELS.billingPeriod} ${currentPeriod.index}.`;
   const components: A2UIComponent[] = [
     { id: "root", component: "Column", children: [
       "card-payment-title", "card-payment-status", "card-payment-unit", ...ticketFactIds("card-payment"),
@@ -39,6 +45,7 @@ export function cardPaymentArtifactToA2UI({ artifact, surfaceId }: { readonly ar
       ...(facts.refundableSecurityDepositKobo === undefined || facts.refundableSecurityDepositKobo <= 0 ? [] : ["card-payment-deposit"]),
       ...(showTotalRequirement ? ["card-payment-amount-due"] : []),
       ...(componentText ? ["card-payment-component"] : []),
+      ...(schedulePeriods.length > 0 ? ["card-payment-schedule-heading", ...(currentPeriodText === undefined ? [] : ["card-payment-current-period"]), ...scheduleIds, "card-payment-first-period"] : []),
       "card-payment-deadline", ...(stage ? ["card-payment-progress"] : []), "card-payment-content", "card-payment-actions",
     ] },
     { id: "card-payment-title", component: "Text", text: copy.title, variant: "h2" },
@@ -49,6 +56,12 @@ export function cardPaymentArtifactToA2UI({ artifact, surfaceId }: { readonly ar
     ...(facts.refundableSecurityDepositKobo === undefined || facts.refundableSecurityDepositKobo <= 0 ? [] : [{ id: "card-payment-deposit", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.refundableSecurityDeposit, formatBookingMoney(facts.refundableSecurityDepositKobo)) }]),
     ...(showTotalRequirement ? [{ id: "card-payment-amount-due", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.amountDueNow, formatBookingMoney(facts.amountDueNowKobo)) }] : []),
     ...(componentText ? [{ id: "card-payment-component", component: "Text" as const, text: componentText }] : []),
+    ...(schedulePeriods.length > 0 ? [
+      { id: "card-payment-schedule-heading", component: "Text" as const, text: GUEST_FACT_LABELS.paymentSchedule, variant: "h3" as const },
+      ...(currentPeriodText === undefined ? [] : [{ id: "card-payment-current-period", component: "Text" as const, text: currentPeriodText }]),
+      ...schedulePeriods.map((text, index) => ({ id: `card-payment-period-${index}`, component: "Text" as const, text })),
+      { id: "card-payment-first-period", component: "Text" as const, text: GUEST_FACT_LABELS.firstPeriodOnly, variant: "caption" as const },
+    ] : []),
     { id: "card-payment-deadline", component: "Text", text: formatBookingDeadline(facts.paymentWindowExpiresAt) },
     ...(stage ? [{ id: "card-payment-progress", component: "Text" as const, text: bookingProgressText(stage) }] : []),
     { id: "card-payment-content", component: "Text", text: copy.content },

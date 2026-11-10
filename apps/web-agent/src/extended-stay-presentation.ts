@@ -108,3 +108,15 @@ export function billingPeriodStatusText(period: { readonly status: string; reado
   if (period.status === "unpaid_at_start") return "Unpaid at the start of this Billing Period.";
   return "Not payable yet. Payable once the previous Billing Period has started.";
 }
+
+/**
+ * Issue 27 (ADR 0092; guideline §11): the schedule page's lead sentence follows the periods' own state, so it never says
+ * "first period only" after every period is paid. It describes the projection; it never promises a collection rule.
+ */
+export function scheduleLeadText(periods: readonly { readonly status: string }[]): string {
+  if (periods.length === 0) return GUEST_FACT_LABELS.firstPeriodOnly;
+  const paid = periods.filter((period) => period.status === "paid").length;
+  if (paid === periods.length) return "Every Billing Period of this stay is paid.";
+  if (paid === 0) return GUEST_FACT_LABELS.firstPeriodOnly;
+  return `${paid} of ${periods.length} Billing Periods are paid. Each later Billing Period is paid separately on its due date.`;
+}

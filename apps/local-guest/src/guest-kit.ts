@@ -324,6 +324,7 @@ export function paymentScreenHtml(
     ticket,
     breakdown,
     sections: [
+      ...(content.schedule ? [`${content.schedule.currentPeriod === undefined ? "" : `<p>${escapeHtml(content.schedule.currentPeriod)}</p>`}${paymentScheduleHtml(content.schedule)}`] : []),
       `<p class="payment-explanation">${escapeHtml(content.explanation)}</p>`,
       ...(content.choice ? [paymentChoiceHtml(content.choice)] : slots.sections === undefined ? [] : [slots.sections]),
       ...(content.steps.length

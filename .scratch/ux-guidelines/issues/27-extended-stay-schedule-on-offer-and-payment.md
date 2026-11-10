@@ -1,6 +1,6 @@
 # 27 · Extended Stay schedule on the offer and payment screens
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: none
 Phase: 4 (Batch D)
@@ -31,3 +31,29 @@ Extended Stay schedule lines (`apps/web-agent/src/extended-stay-presentation.ts`
 - Guest UI: finish with captures at 320, 390, 768 and 1280 (light and dark) under `.scratch/ux-guidelines/screenshots/<NN>/`, and a findings file showing no horizontal overflow and no control under 44px (ADR 0078).
 
 ## Comments
+
+### ADRs read and applied
+
+| ADR | Constraint | Where it applies |
+| --- | --- | --- |
+| 0092 | Every Billing Period's dates, amount and due date are fixed at confirmation; the first period is collected first. | AC1, AC2, AC3. |
+| 0093 | Minimal projections only; no new persistence. | The schedule rides the existing offer and payment artifacts. |
+| 0015 | All-In Stay Total is the stay total; the amount due now is separate. | Both are already on the surfaces; the schedule adds the periods. |
+
+### Implementation
+
+- The conditional-offer artifact and card-payment artifact carry `stayType` and the projected `billingPeriods` from the offer quote; nothing is recalculated in presentation.
+- `conditionalOfferArtifactToA2UI` and `cardPaymentArtifactToA2UI` render a "Payment schedule" heading, every Billing Period line (kit `billingPeriodLine`), and the existing "first Billing Period only" caption. The payment surface also names the period being paid from the projected amount.
+- `offerScreenContent` and `paymentScreenContent` expose the same `schedule`, and `paymentScreenHtml` renders it through the existing `paymentScheduleHtml` panel, so the standard routes match chat.
+- `scheduleLeadText` makes the schedule page's lead sentence follow the periods' paid state instead of always saying "first Billing Period only".
+- A Short Stay quote has no `billingPeriods`, so none of these blocks render. No "not charged automatically" or Notice to End text is added here (issue 28).
+
+### Tests and commands
+
+- `npm run check` — 0 errors.
+- `npx tsx --test test/extended-stay-schedule.test.ts` — 4 tests, 4 passed, 0 failed.
+- Captures: `npx tsx .scratch/ux-guidelines/capture-27.ts` — Extended Stay offer and payment captures at 320/390/768/1280 in light and dark under `.scratch/ux-guidelines/screenshots/27/`; no overflow and no visible control under 44px.
+
+## Answer
+
+The Extended Stay offer shows the full contracted range, the All-In Stay Total and every Billing Period with its amount and due date. The payment screen shows which period is being paid and the later periods. The schedule page's lead sentence tracks each period's paid state. A Short Stay surface is unchanged, and chat and standard routes render from the same projection helpers.

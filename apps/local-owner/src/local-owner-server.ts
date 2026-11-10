@@ -177,7 +177,7 @@ function requestStatus(status: string, delivered = true): { readonly label: stri
   if (status === "declined") return { label: "Request declined", tone: "danger" };
   if (status === "expired") return { label: "Request expired", tone: "warning" };
   // ADR 0043: a failed delivery is its own state; it never started your clock and is not a missed response.
-  if (status === "delivery_failed") return { label: "Delivery Failed", tone: "stale" };
+  if (status === "delivery_failed") return { label: "Delivery failed", tone: "stale" };
   return { label: `Request ${status}`, tone: "neutral" };
 }
 
@@ -261,11 +261,14 @@ function decisionFormsHtml(requestId: string, ownerName: string, allInStayTotalK
   const reasons = (Object.keys(DECLINE_REASONS) as DeclineReasonCode[]).map((code) => `<label class="bo-choice"><input type="radio" name="reason" value="${code}" required> ${escapeHtml(DECLINE_REASONS[code])}</label>`).join("");
   // Declining is irreversible for the Guest, so it sits behind a disclosure that restates the consequence.
   return `<section class="ui-panel" aria-labelledby="decision-heading"><h2 id="decision-heading">Your decision</h2>`
-    + `<form method="post" action="${action("confirm")}" class="ui-stack">${versionField}<h3>Confirm on behalf of ${owner}</h3><p>By confirming you re-attest, on behalf of ${owner}:</p><ul class="bo-attest">${attested}</ul><p>Confirming creates a Conditional Booking Offer for the Guest. The stay becomes a Reservation only after the Guest pays.</p><label class="bo-choice"><input type="checkbox" name="attest" value="yes" required> I have checked each of these with ${owner} and attest to them on their behalf.</label><button class="ui-button ui-button--primary ui-button--block" type="submit">Confirm for ${owner}</button></form>`
-    + `<details class="ui-confirm"><summary>Decline this request…</summary><div class="ui-confirm__body"><form method="post" action="${action("decline")}" class="ui-stack">${versionField}<fieldset class="bo-reasons"><legend>Reason</legend>${reasons}</fieldset><p>Declining releases these dates immediately. The Guest never sees the reason.</p><button class="ui-button ui-button--destructive ui-button--block" type="submit">Decline Booking Request</button></form></div></details></section>`;
+    + `<form method="post" action="${action("confirm")}" class="ui-stack" data-decision>${versionField}<h3>Confirm on behalf of ${owner}</h3><p>By confirming you re-attest, on behalf of ${owner}:</p><ul class="bo-attest">${attested}</ul><p>Confirming creates a Conditional Booking Offer for the Guest. The stay becomes a Reservation only after the Guest pays.</p><label class="bo-choice"><input type="checkbox" name="attest" value="yes" required> I have checked each of these with ${owner} and attest to them on their behalf.</label><button class="ui-button ui-button--primary ui-button--block" type="submit">Confirm for ${owner}</button></form>`
+    + `<details class="ui-confirm"><summary>Decline this request…</summary><div class="ui-confirm__body"><form method="post" action="${action("decline")}" class="ui-stack" data-decision>${versionField}<fieldset class="bo-reasons"><legend>Reason</legend>${reasons}</fieldset><p>Declining releases these dates immediately. The Guest never sees the reason.</p><button class="ui-button ui-button--destructive ui-button--block" type="submit">Decline Booking Request</button></form></div></details></section>`;
 }
 
 const DECISION_STYLE = ".bo-attest{margin:0;padding-inline-start:var(--space-5);display:grid;gap:var(--space-1)}.bo-choice{display:flex;gap:var(--space-3);align-items:flex-start;min-block-size:var(--control-min-target);padding-block:var(--space-2);cursor:pointer}.bo-choice input{inline-size:1.5rem;block-size:1.5rem;flex:none;margin:0}.bo-reasons{border:0;margin:0;padding:0;display:grid;gap:var(--space-1)}.bo-reasons legend{font-weight:600;padding:0}.ui-panel h3{margin:0;font-size:var(--font-size-body)}";
+
+/** Issue 26: progressive enhancement only; the server's basedOnVersion guard and refusal notice remain authoritative. */
+const DECISION_SUBMIT_GUARD = `(() => { for (const form of document.querySelectorAll("form[data-decision]")) form.addEventListener("submit", () => { const button = form.querySelector("button[type=submit]"); if (button) button.disabled = true; }); })();`;
 
 /** Why a decision was refused, in plain words, from the request's current state (B3 AC4). */
 function refusalNotice(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal, requestId: string, error: unknown): string {
@@ -350,7 +353,7 @@ function operatorRequestHtml(env: LocalApartmentOwnerEnvironment, principal: Ope
     style: DECISION_STYLE,
     viewer: viewer(env, principal),
     current: "requests",
-    body: `<p><a class="ui-button ui-button--quiet" href="/operator/requests">${icon("arrow-left")}Back to requests</a></p><header class="ui-page__header" data-request-id="${escapeHtml(facts.requestId)}"><p class="ui-eyebrow">Booking Request</p><h1>${escapeHtml(labels.apartmentTitle)}</h1><div class="ui-row">${requestBadge(facts.status, facts.delivered)}</div></header>${error ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(error)}</span></p>` : ""}<section class="ui-panel" aria-label="Request facts"><dl class="ui-facts"><dt>Owner</dt><dd>${escapeHtml(labels.ownerName)}</dd><dt>Apartment</dt><dd>${escapeHtml(labels.apartmentTitle)}</dd><dt>Dates</dt><dd><time datetime="${escapeHtml(facts.checkIn)}">${escapeHtml(facts.checkIn)}</time> to <time datetime="${escapeHtml(facts.checkOut)}">${escapeHtml(facts.checkOut)}</time> (${facts.nights} nights)</dd><dt>Guest party</dt><dd>${guestParty(facts)}</dd>${phone}<dt>All-In Stay Total</dt><dd class="ui-money-total">${formatMoney(facts.quote?.allInStayTotalKobo ?? 0)}</dd>${facts.quote?.refundableSecurityDepositKobo ? `<dt>Refundable Security Deposit</dt><dd>${formatMoney(facts.quote.refundableSecurityDepositKobo)}</dd>` : ""}<dt>Response deadline</dt><dd>${watTime(facts.operatorResponseDeadlineAt)}</dd></dl></section>${decisions}`,
+    body: `<p><a class="ui-button ui-button--quiet" href="/operator/requests">${icon("arrow-left")}Back to requests</a></p><header class="ui-page__header" data-request-id="${escapeHtml(facts.requestId)}"><p class="ui-eyebrow">Booking Request</p><h1>${escapeHtml(labels.apartmentTitle)}</h1><div class="ui-row">${requestBadge(facts.status, facts.delivered)}</div></header>${error ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(error)}</span></p>` : ""}<section class="ui-panel" aria-label="Request facts"><dl class="ui-facts"><dt>Owner</dt><dd>${escapeHtml(labels.ownerName)}</dd><dt>Apartment</dt><dd>${escapeHtml(labels.apartmentTitle)}</dd><dt>Dates</dt><dd><time datetime="${escapeHtml(facts.checkIn)}">${escapeHtml(formatStayDates(facts.checkIn, facts.checkOut))}</time> (${facts.nights} nights)</dd><dt>Guest party</dt><dd>${guestParty(facts)}</dd>${phone}<dt>All-In Stay Total</dt><dd class="ui-money-total">${formatMoney(facts.quote?.allInStayTotalKobo ?? 0)}</dd>${facts.quote?.refundableSecurityDepositKobo ? `<dt>Refundable Security Deposit</dt><dd>${formatMoney(facts.quote.refundableSecurityDepositKobo)}</dd>` : ""}<dt>Response deadline</dt><dd>${watTime(facts.operatorResponseDeadlineAt)}</dd></dl></section>${decisions}<script>${DECISION_SUBMIT_GUARD}</script>`,
   });
 }
 
@@ -723,10 +726,10 @@ function payoutRefusal(error: unknown): { readonly status: number; readonly mess
 const CALENDAR_DAY_STATUS: Readonly<Record<CalendarDayState, { readonly label: string; readonly tone: StatusTone }>> = {
   available: { label: "Available", tone: "success" },
   request_pending: { label: "Request pending", tone: "warning" },
-  payment_pending: { label: "Payment Pending", tone: "info" },
+  payment_pending: { label: "Payment pending", tone: "info" },
   booked: { label: "Booked", tone: "neutral" },
   blocked: { label: "Blocked", tone: "stale" },
-  held: { label: "Operator Hold", tone: "stale" },
+  held: { label: "Operator hold", tone: "stale" },
 };
 
 /** A calendar night (YYYY-MM-DD) with its weekday, e.g. "Thu, 24 Sept 2026". */
@@ -796,7 +799,7 @@ function operatorCalendarHtml(env: LocalApartmentOwnerEnvironment, principal: Op
     viewer: viewer(env, principal),
     current: "calendar",
     style: CALENDAR_STYLE,
-    body: `<header class="ui-page__header"><h1>Calendar</h1><p>Each apartment's nights from the Availability Calendar: Available, Request pending, Payment Pending, Booked or Blocked.</p></header>${banner}${pager}${list}`,
+    body: `<header class="ui-page__header"><h1>Calendar</h1><p>Each apartment's nights from the Availability Calendar: Available, Request pending, Payment pending, Booked or Blocked.</p></header>${banner}${pager}${list}`,
   });
 }
 
@@ -1154,12 +1157,12 @@ export function renderOwnerDashboardHtml(overview: LocalOwnerStateOverview): str
                   : latestRequest.facts.status === 'declined'
                   ? 'badge-danger'
                   : 'badge-warning'
-              }">${latestRequest.facts.status}</span>
+              }">${requestStatus(latestRequest.facts.status, latestRequest.facts.delivered).label}</span>
             </span>
           </div>
           <div class="meta-row">
             <span class="meta-label">Stay Dates:</span>
-            <span class="meta-value">${latestRequest.facts.checkIn} to ${latestRequest.facts.checkOut} (${latestRequest.facts.nights} nights)</span>
+            <span class="meta-value">${formatStayDates(latestRequest.facts.checkIn, latestRequest.facts.checkOut)} (${latestRequest.facts.nights} nights)</span>
           </div>
           <div class="meta-row">
             <span class="meta-label">All-In Stay Total:</span>
@@ -1176,7 +1179,7 @@ export function renderOwnerDashboardHtml(overview: LocalOwnerStateOverview): str
             <div class="btn-group">
               <form method="POST" action="/action/confirm" style="display:inline;">
                 <input type="hidden" name="requestId" value="${latestRequest.facts.requestId}" />
-                <button type="submit" class="btn btn-primary">Confirm Booking (Lock Availability)</button>
+                <button type="submit" class="btn btn-primary">Confirm for the owner</button>
               </form>
               <form method="POST" action="/action/decline" style="display:inline;">
                 <input type="hidden" name="requestId" value="${latestRequest.facts.requestId}" />
@@ -1186,7 +1189,7 @@ export function renderOwnerDashboardHtml(overview: LocalOwnerStateOverview): str
           `
               : `
             <div class="muted" style="margin-top: 12px;">
-              Request finalized with status <strong>${latestRequest.facts.status}</strong>.
+              Request finalized with status <strong>${escapeHtml(requestStatus(latestRequest.facts.status, latestRequest.facts.delivered).label)}</strong>.
             </div>
           `
           }

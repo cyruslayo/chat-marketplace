@@ -25,7 +25,7 @@ import type { AssetLoader } from "../../../packages/platform-core/src/asset-load
 import { nodeAssetLoader } from "../../../packages/platform-core/src/node-asset-loader.js";
 import { GUEST_HTML_SECURITY_HEADERS } from "../../../packages/platform-core/src/security-headers.js";
 import { toDiscoveryProjection, StayDateRange, dateKeyInLagos, type ExtendedStayPolicy } from "../../../domains/shortlet/src/index.js";
-import { billingPeriodStatusText, extendedStayUnitFacts } from "../../web-agent/src/extended-stay-presentation.js";
+import { billingPeriodStatusText, extendedStayUnitFacts, scheduleLeadText } from "../../web-agent/src/extended-stay-presentation.js";
 import { formatBookingMoney } from "../../web-agent/src/booking-presentation.js";
 import { formatGuestDate } from "../../web-agent/src/guest-content.js";
 import { GUEST_MODES, type ModePresentation } from "../../web-agent/src/guest-content.js";
@@ -653,7 +653,7 @@ function renderPeriodScheduleHtml(offerId: string, periods: readonly BillingPeri
     title: GUEST_FACT_LABELS.paymentSchedule,
     frame: appFrameHtml({ threadId: null, publicStep: "stay" }),
     style: "",
-    body: `<div class="guest-editorial"><section aria-label="${escapeHtml(GUEST_FACT_LABELS.paymentSchedule)}"><h1>${escapeHtml(GUEST_FACT_LABELS.paymentSchedule)}</h1><p>${escapeHtml(GUEST_FACT_LABELS.firstPeriodOnly)}</p><ol>${rows}</ol></section></div>`,
+    body: `<div class="guest-editorial"><section aria-label="${escapeHtml(GUEST_FACT_LABELS.paymentSchedule)}"><h1>${escapeHtml(GUEST_FACT_LABELS.paymentSchedule)}</h1><p>${escapeHtml(scheduleLeadText(periods))}</p><ol>${rows}</ol></section></div>`,
   });
 }
 
