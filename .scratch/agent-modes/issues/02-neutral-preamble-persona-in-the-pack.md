@@ -136,3 +136,9 @@ No other prompt rule changed. The `shortlet-assistant-pack.ts` diff adds one lin
 - `test/assistant-pack-registry.test.ts` now imports `createStubPack` from `test/helpers/stub-domain-pack.ts` instead of defining `stubPack` locally. Its assertions are unchanged. The spec asked for the helper to be shared, not copied.
 - The third preamble line is kept word for word (the typed-reply-plan sentence and "Do not write guest-facing prose").
 - The preamble doc comment gained the ADR 0107 decision 8 reference, because the constraint is not obvious at the callsite.
+
+
+### Agent D, wording note (10 Nov 2026)
+
+- "Concierge · Stays" is the approved persona wording. It is not shown while only one mode is registered, because that would change the screen that must stay unchanged. It is added to `guest-content.ts` in slice 4 and shown only when more than one mode is registered. This issue's copy is unchanged; the persona name stays "Stays" until then.
+- Status stays `resolved`. No code or test changed.

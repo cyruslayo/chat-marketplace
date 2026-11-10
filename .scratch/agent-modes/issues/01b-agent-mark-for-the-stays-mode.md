@@ -167,6 +167,34 @@ Status at this entry: **ready-for-human**. Code is complete and the evidence is 
 - **(l) The dock is hidden whenever a workspace is open, at every width (new finding).** The CSS rule `main:has(#active-workspace:not([hidden])) > #agent-dock { display: none }` has no media query, so on a phone with a workspace open the in-flight dock is also hidden. The captures show this at 320, 390 and 768. The brief described the rule as desktop-only; the code does not scope it. **Owner decision:** whether the dock should show on phones with a workspace open.
 - **Capture limitation.** The split captures set the in-flight state by writing the same attributes `setLoading` writes. The next client `setAgentMark` call overwrote the mark states, so those split shots show idle marks. The dock's hidden state is CSS-driven and is what the split captures test.
 
-**Owner decisions outstanding:** (k), the duplicate working copy in the dock; (l), whether the dock should show on phones while a workspace is open. The 9 Nov decision in (e) keeps it hidden with a workspace open; the owner is asked to confirm that this also holds on phones. Also owed: the ADR 0107 wording on the labelled control (the mode sheet, slice 5). DoD item 7 is pending the batch gate.
+**Owner decisions outstanding (updated 10 Nov 2026):** (k), the duplicate working copy in the dock. Item (l) is answered: the dock stays hidden at every width, including phones with a workspace open. The owner accepted the validator bounds, the app-bar mark rule and the persona wording (see the 10 Nov entry below and ADR 0107).
 
 **Map:** row 1b is set to `ready-for-human` in `map.md` for the same reason.
+
+
+### Agent D, close-out (10 Nov 2026, on `docs/agent-modes-close` from main `9fb6519`)
+
+**Gate fixes already on the branch before the batch gate:**
+
+- `370a165`: the spring easing is declared as a root token, so the guest-kit AC1 check finds it.
+- `26fe73b`: the mark transition runs only for the first message. A captured overflow failure at 375 px (15 of 20 runs) is fixed: 20 of 20 clean afterwards, and the discovery file passes 10 of 10 solo.
+
+**Batch gate on the final commit (run once, by the coordinator, on `main` at `9fb6519`):**
+
+- `npm run check`: exit 0.
+- `npm run test:workers`: 194 of 194 pass.
+- Full `npm test`: red only on the accepted commerce real-Chrome files (`commerce-store-pages.real-browser`, `commerce-surfaces-chromium`, as AGENTS.md accepts while commerce is off), plus two flakes: `model-quota-host-recovery` AC4 (12 of 12 solo) and `landing-page-chromium` (also fails on the base in 2 of 5 runs, so it is not a regression of this work).
+
+**DoD (docs/agents/issue-tracker.md):**
+
+- Items 1 to 6: MET, as recorded above. Item 3 is MET on the full ADR read (0106 and 0081 read in full on 9 Nov).
+- Item 7: NOT MET as literally worded. The batch gate on `9fb6519` is red: the full `npm test` has failures (accepted commerce Chrome files and two flakes). "`npm test` passes with zero failures" is therefore not satisfied. The owner can close item 7 by accepting this failure list as the known set, the same way AGENTS.md accepts the commerce files. Until then the status stays `ready-for-human`.
+
+**Owner decisions recorded 10 Nov 2026:**
+
+- Validator bounds 400 characters, 600 characters and 4 starters: accepted.
+- The app-bar mark is not a control while one mode is registered; it becomes a labelled control with the mode sheet (slice 5). Recorded as an amendment under ADR 0107 decision 9.
+- "Concierge · Stays" is the approved persona wording but is not shown while only one mode is registered. It is added to `guest-content.ts` in slice 4 and shown only when more than one mode is registered (ADR 0107 settled list; issue 02 Comments).
+- The dock stays hidden while a workspace is open, at every width. The phone question in (l) is answered: keep it hidden.
+
+**Still open:** item (k), the duplicate working copy in the dock; DoD item 7 as above.
