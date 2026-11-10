@@ -1455,9 +1455,9 @@ function renderShortletReplyBody(plan: AssistantReplyPlan | undefined, results: 
 
 const MS_PER_DAY = 86_400_000;
 
-/** A calendar day as "27 October 2026", or "Tuesday 27 October 2026" with the weekday. en-GB words, no comma; formatted in UTC so no zone shift applies. */
+/** A calendar day as "27 October 2026", or "Tuesday 27 October 2026" with the weekday. en-NG words, no comma; formatted in UTC so no zone shift applies. */
 function formatDayKey(dateKey: string, withWeekday: boolean): string {
-  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", weekday: "long", day: "numeric", month: "long", year: "numeric" })
+  const parts = new Intl.DateTimeFormat("en-NG", { timeZone: "UTC", weekday: "long", day: "numeric", month: "long", year: "numeric" })
     .formatToParts(new Date(`${dateKey}T12:00:00Z`));
   const part = (type: Intl.DateTimeFormatPartTypes): string => parts.find((candidate) => candidate.type === type)?.value ?? "";
   const day = `${part("day")} ${part("month")} ${part("year")}`;
