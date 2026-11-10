@@ -1623,6 +1623,14 @@ function announce(text: string, assertive = false): void {
   (assertive ? errorAnnouncer : announcer).textContent = text;
 }
 
+/** Issue 24 (guideline §12): keep the latest turns rendered; older ones defer until scrolled near, and stay reachable. */
+const RENDERED_TURN_WINDOW = 6;
+function deferOlderTurns(): void {
+  const turns = transcript.querySelectorAll<HTMLElement>(".turn");
+  const cutoff = Math.max(0, turns.length - RENDERED_TURN_WINDOW);
+  turns.forEach((turn, index) => turn.classList.toggle("turn--deferred", index < cutoff));
+}
+
 function addTurn(role: "assistant" | "user", text: string): void {
   emptyState.hidden = true;
   const turn = document.createElement("article");
@@ -1636,6 +1644,7 @@ function addTurn(role: "assistant" | "user", text: string): void {
   bubble.textContent = text;
   turn.appendChild(bubble);
   transcript.appendChild(turn);
+  deferOlderTurns();
   transcript.scrollTop = transcript.scrollHeight;
   requestAnimationFrame(() => {
     if (turn.isConnected) transcript.scrollTop = transcript.scrollHeight;

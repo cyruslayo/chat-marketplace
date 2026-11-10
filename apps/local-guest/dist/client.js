@@ -11498,6 +11498,12 @@ Known schemas:
   function announce(text, assertive = false) {
     (assertive ? errorAnnouncer : announcer).textContent = text;
   }
+  var RENDERED_TURN_WINDOW = 6;
+  function deferOlderTurns() {
+    const turns = transcript.querySelectorAll(".turn");
+    const cutoff = Math.max(0, turns.length - RENDERED_TURN_WINDOW);
+    turns.forEach((turn, index) => turn.classList.toggle("turn--deferred", index < cutoff));
+  }
   function addTurn(role, text) {
     emptyState.hidden = true;
     const turn = document.createElement("article");
@@ -11511,6 +11517,7 @@ Known schemas:
     bubble.textContent = text;
     turn.appendChild(bubble);
     transcript.appendChild(turn);
+    deferOlderTurns();
     transcript.scrollTop = transcript.scrollHeight;
     requestAnimationFrame(() => {
       if (turn.isConnected) transcript.scrollTop = transcript.scrollHeight;

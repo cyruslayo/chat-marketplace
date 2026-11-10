@@ -1,6 +1,6 @@
 # 24 · Rendering cost of long conversations
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: none
 Phase: 3 (Batch C)
@@ -31,3 +31,30 @@ Applicable ADRs: 0078; guideline §12
 - Guest UI: finish with captures at 320, 390, 768 and 1280 (light and dark) under `.scratch/ux-guidelines/screenshots/<NN>/`, and a findings file showing no horizontal overflow and no control under 44px (ADR 0078).
 
 ## Comments
+
+### ADRs read and applied
+
+| ADR | Constraint | Where it applies |
+| --- | --- | --- |
+| 0078 | Reduced motion, 320px reflow, keyboard reachability, no hidden critical content. | AC1-AC4. |
+| 0080 | The conversation and standard routes keep the same facts. | The transcript deferral does not remove content or links. |
+
+### Implementation
+
+- `addTurn` marks every turn except the latest six with `.turn--deferred`.
+- `#transcript .turn--deferred` uses `content-visibility: auto` with `contain-intrinsic-size: auto none auto 4rem`; the browser reveals a turn when it is scrolled near or focused, so Tab and screen readers still reach it.
+- `#transcript` and `#workspace-region` use `scrollbar-gutter: stable`.
+- `.ui-skeleton` is an opacity pulse (`ui-pulse`) instead of the `background-position` shimmer.
+
+### Tests and commands
+
+- `npm run check` — 0 errors.
+- `npx tsx --test test/guest-long-conversation.test.ts` — 3 tests, 3 passed, 0 failed.
+- Real Chrome: `npx tsx --test test/guest-long-conversation-chromium.test.ts` — 1 test, 1 passed, 0 failed (a deferred oldest turn is focusable and readable).
+- After committing the CSS: `npx tsx --test test/landing-page.test.ts test/guest-kit.test.ts test/shortlet-design-system.test.ts` — 51 tests, 51 passed, 0 failed.
+- `client.js` rebuilt; only the regenerated `dist/client.js` is staged.
+- Captures: `npx tsx .scratch/ux-guidelines/capture-24.ts` — 8 long-thread captures at 320/390/768/1280 in light and dark under `.scratch/ux-guidelines/screenshots/24/`; 16 turns defer, no overflow and no visible control under 44px.
+
+## Answer
+
+Older transcript turns now defer rendering until scrolled near while keeping their space and keyboard reachability; scrollbar gutters are stable; and the skeleton animates opacity rather than background position.
