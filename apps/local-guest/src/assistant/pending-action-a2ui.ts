@@ -4,6 +4,8 @@ import {
   type A2UIServerMessage,
 } from "@cylayo/weaver-core";
 import type { PendingAssistantAction } from "./pending-actions.js";
+import { formatMoney } from "../../../web/src/ui-kit.js";
+import { GUEST_FACT_LABELS, GUEST_GLOSSARY } from "../../../web-agent/src/guest-content.js";
 
 export const ASSISTANT_CONFIRM_ACTION_EVENT = "shortlet.assistant.confirm-action";
 export const ASSISTANT_CANCEL_ACTION_EVENT = "shortlet.assistant.cancel-action";
@@ -16,18 +18,6 @@ export function pendingActionSurfaceId(threadId: string, actionId: string): stri
 export interface PendingActionToA2UIInput {
   readonly action: PendingAssistantAction;
   readonly surfaceId: string;
-}
-
-function formatNgnKobo(kobo: number): string {
-  const sign = kobo < 0 ? "-" : "";
-  const absoluteKobo = Math.abs(kobo);
-  const wholeNaira = Math.floor(absoluteKobo / 100);
-  const remainderKobo = absoluteKobo % 100;
-  const digits = String(wholeNaira);
-  const firstGroupLength = digits.length % 3 || 3;
-  const grouped = [digits.slice(0, firstGroupLength), ...digits.slice(firstGroupLength).match(/.{3}/g) ?? []].join(",");
-  const fraction = remainderKobo === 0 ? "" : `.${String(remainderKobo).padStart(2, "0")}`;
-  return `${sign}₦${grouped}${fraction}`;
 }
 
 /**
@@ -82,7 +72,7 @@ export function pendingActionToA2UI({
           {
             id: `${prefix}-total`,
             component: "Text" as const,
-            text: `Stay Total: ${formatNgnKobo(action.authoritativeReferences.stayTotalKobo)}`,
+            text: `${GUEST_FACT_LABELS.allInStayTotal}: ${formatMoney(action.authoritativeReferences.stayTotalKobo)}`,
           },
         ]
       : []),
@@ -91,7 +81,7 @@ export function pendingActionToA2UI({
           {
             id: `${prefix}-deposit`,
             component: "Text" as const,
-            text: `Refundable Deposit: ${formatNgnKobo(action.authoritativeReferences.refundableDepositKobo)}`,
+            text: `${GUEST_GLOSSARY.refundableSecurityDeposit}: ${formatMoney(action.authoritativeReferences.refundableDepositKobo)}`,
           },
         ]
       : []),

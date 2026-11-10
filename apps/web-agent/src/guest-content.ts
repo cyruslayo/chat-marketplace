@@ -655,6 +655,36 @@ export const GUEST_PAYMENT_CALLBACK_COPY = Object.freeze({
   notConfirmedNotice: "We could not confirm your payment. Your reservation is not confirmed. Check the latest booking status.",
 });
 
+/** Issue 08 (guideline §9, §10): the security-deposit claim surface speaks guest words, never raw domain states or amounts. */
+export const GUEST_DEPOSIT_CLAIM_COPY = Object.freeze({
+  title: "Security Deposit Claim",
+  status: (status: string): string => {
+    switch (status) {
+      case "allocation_pending": return "Your deposit claim is being prepared";
+      case "validated_notification_pending": return "The notice is being sent";
+      case "response_open": return "Waiting for your response";
+      case "guest_accepted": return "You accepted this claim";
+      case "human_review": return "Under human review";
+      case "adjudicated": return "Decision issued";
+      case "no_claim_refund_pending": return "Your deposit refund is pending";
+      case "no_claim_refunded": return "Your deposit has been refunded";
+      case "reconciliation_required": return "This needs support review";
+      default: return "Status unavailable";
+    }
+  },
+  refundStatus: (status: string): string => {
+    switch (status) {
+      case "pending": return "Refund pending";
+      case "settled": return "Refunded";
+      case "reconciliation_required": return "Needs support review";
+      case "not_created": return "Not started";
+      case "not_applicable": return "Not applicable";
+      default: return "Status unavailable";
+    }
+  },
+  response: (response: string): string => response === "accept" ? "you accepted this claim" : response === "dispute" ? "you disputed this claim" : "your response is recorded",
+});
+
 /**
  * Agent Mode presentation (ADR 0107): the copy a mode gives the guest. The chat shell, the no-JS conversation page and the
  * client announcements render from one presentation, so a second mode supplies its own copy without touching the shell.
