@@ -614,8 +614,8 @@ test("Checkout confirmation derives the live stay total and refundable deposit",
   assert.equal(pending.authoritativeReferences.refundableDepositKobo, payment.facts.refundableSecurityDepositKobo);
   assert.equal(pending.authoritativeReferences.totalDueNowKobo, payment.facts.amountDueNowKobo);
   const surface = JSON.stringify(response.surfaces?.[0]?.a2uiMessages);
-  assert.match(surface, /Stay Total/);
-  assert.match(surface, /Refundable Deposit/);
+  assert.match(surface, /All-In Stay Total/);
+  assert.match(surface, /Refundable Security Deposit/);
 });
 
 // 13. Conversational offer acceptance proposal & confirmation
