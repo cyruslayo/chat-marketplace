@@ -58,7 +58,7 @@ test("Phase 3 discovery renders Wuse, Lekki, zero-result and fallback states wit
     const detailLayout = await tab.evaluate<{ readonly gallery: boolean; readonly overview: boolean; readonly price: boolean; readonly action: boolean }>("({gallery:Boolean(document.querySelector('.listing-gallery, .unit-gallery')),overview:Boolean(document.querySelector('.unit-detail-sheet .ui-tiles')),price:Boolean(document.querySelector('.ui-price-breakdown .ui-money-total')),action:Boolean(document.querySelector('.unit-actions button'))})");
     assert.deepEqual(detailLayout, { gallery: true, overview: true, price: true, action: true }, "Unit detail keeps its gallery, stay summary, total and request action in a stable order");
     await capture(tab, "04-unit-detail-wuse-390.png");
-    assert.ok((await tab.getAccessibilityTree()).some((node) => node.role === "button" && node.name === "Request to Book"));
+    assert.ok((await tab.getAccessibilityTree()).some((node) => node.role === "button" && node.name.includes("Request to Book")));
 
     lagosTab = await browser.createTab(`${BASE}/`);
     await lagosTab.setCssViewport(390, 844);

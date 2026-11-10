@@ -10397,6 +10397,7 @@ Known schemas:
       ticket,
       breakdown,
       sections: [
+        ...content.schedule ? [`${content.schedule.currentPeriod === void 0 ? "" : `<p>${escapeHtml(content.schedule.currentPeriod)}</p>`}${paymentScheduleHtml(content.schedule)}`] : [],
         `<p class="payment-explanation">${escapeHtml(content.explanation)}</p>`,
         ...content.choice ? [paymentChoiceHtml(content.choice)] : slots.sections === void 0 ? [] : [slots.sections],
         ...content.steps.length ? [
@@ -11279,7 +11280,7 @@ Known schemas:
     if (kind === "discovery") decorateDiscoveryCards(mount);
     if (kind === "compare") decorateComparison(mount);
     if (kind === "unit-detail") organizeUnitDetail(mount);
-    if (kind === "booking" || kind === "payment") organizeBookingTicket(mount);
+    if (kind === "booking" || kind === "request-draft" || kind === "payment") organizeBookingTicket(mount);
     if (activePayload?.requestScreen)
       organizeRequestScreen(mount, activePayload.requestScreen);
     if (activePayload?.confirmation)

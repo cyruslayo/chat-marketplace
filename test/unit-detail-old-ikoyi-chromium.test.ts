@@ -135,7 +135,7 @@ test("Authoritative Old Ikoyi Unit detail renders through Weaver in real Chromiu
     assert.ok(oldDetail.summary?.includes(authoritative.title));
 
     const accessibilityTree = await tab.getAccessibilityTree();
-    assert.ok(accessibilityTree.some((node) => node.role === "button" && node.name === "Request to Book"), "Request to Book has a usable browser accessibility name");
+    assert.ok(accessibilityTree.some((node) => node.role === "button" && node.name.includes("Request to Book")), "Request to Book has a usable browser accessibility name");
     for (const width of [320, 390, 768, 1280]) {
       await tab.setCssViewport(width, 900);
       const metrics: { readonly innerWidth: number; readonly clientWidth: number; readonly scrollWidth: number } = await tab.evaluate("({innerWidth: window.innerWidth, clientWidth: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth})");

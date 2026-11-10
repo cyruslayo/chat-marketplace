@@ -68,8 +68,9 @@ async function sendPrompt(tab: RealBrowserTab, text: string): Promise<void> {
 }
 
 async function assertNamedButton(tab: RealBrowserTab, name: string): Promise<void> {
+  // Issue 13: the server's accessibility label is applied, so the accessible name contains the visible text.
   const nodes = await tab.getAccessibilityTree();
-  assert.ok(nodes.some((node) => node.role === "button" && node.name === name), `Expected named button ${name}`);
+  assert.ok(nodes.some((node) => node.role === "button" && node.name.includes(name)), `Expected named button ${name}; buttons: ${JSON.stringify(nodes.filter((node) => node.role === "button").map((node) => node.name))}`);
 }
 
 test("AC1: Request to Book, Review request, Submit, Accept and checkout actions have role=button with a name", async () => {
@@ -569,5 +570,5 @@ test("AC41 — Pending payment stays unconfirmed and recovers through authoritat
   });
   try { await completeJourney(context, true); assert.equal(verificationCount, 3); } finally { await context.close(); }
 });
-test("AC31 — Chromium accessibility tree exposes the shell landmarks, composer label and prompt controls", async () => { const c = await startContext(390, 844); try { const nodes = await c.tab.getAccessibilityTree(); assert.ok(nodes.some((node) => node.role === "main")); assert.ok(nodes.some((node) => node.role === "heading" && node.name === "Shortlet")); assert.ok(nodes.some((node) => node.role === "textbox" && node.name === "Your message")); assert.ok(nodes.some((node) => node.role === "button" && node.name === "Send")); assert.ok(nodes.some((node) => node.role === "button" && node.name === "Explore Abuja")); assert.ok(nodes.some((node) => node.role === "link" && node.name === "Contact details")); } finally { await c.close(); } });
+test("AC31 — Chromium accessibility tree exposes the shell landmarks, composer label and prompt controls", async () => { const c = await startContext(390, 844); try { const nodes = await c.tab.getAccessibilityTree(); assert.ok(nodes.some((node) => node.role === "main")); /* Issue 14: the brand is no longer a heading; the route's single H1 names the current task. */ assert.ok(nodes.some((node) => node.role === "heading" && node.name === "Find a place to stay")); assert.ok(nodes.some((node) => node.role === "textbox" && node.name === "Your message")); assert.ok(nodes.some((node) => node.role === "button" && node.name === "Send")); assert.ok(nodes.some((node) => node.role === "button" && node.name === "Explore Abuja")); assert.ok(nodes.some((node) => node.role === "link" && node.name === "Contact details")); } finally { await c.close(); } });
 test("AC32 — Composer remains visible and focused when the viewport height is reduced", async () => { const c = await startContext(390, 844); try { await c.tab.setViewport(390, 480); await c.tab.focus("#composer-input"); const state = await c.tab.evaluate<{ readonly focused: boolean; readonly top: number; readonly bottom: number; readonly height: number; readonly inputBottom: number }>("(() => { const form = document.getElementById('composer').getBoundingClientRect(); const input = document.getElementById('composer-input').getBoundingClientRect(); return { focused: document.activeElement?.id === 'composer-input', top: form.top, bottom: form.bottom, height: innerHeight, inputBottom: input.bottom }; })()"); assert.equal(state.focused, true); assert.ok(state.bottom <= state.height + 1, JSON.stringify(state)); assert.ok(state.inputBottom <= state.height + 1, JSON.stringify(state)); } finally { await c.close(); } });

@@ -440,8 +440,8 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays,
     /* Issue 05: phones show the compact rows for the inline results; the cards open with "See all results". Wide screens show two cards per row. */
     .ui-result-rows { margin-block-end: var(--space-3); }
     #active-workspace[data-mode="focused-surface"] .ui-result-rows, #active-workspace[data-mode="focused-surface"] .ui-result-rows__compare { display: none; }
-    @container (max-width: 47.999rem) { #active-workspace[data-surface-kind="discovery"][data-mode="inline-surface"] .ui-result-rows ~ .stay-grid { display: none !important; } }
-    @container (min-width: 48rem) { .ui-result-rows, .ui-result-rows__compare { display: none; } #active-workspace[data-surface-kind="discovery"] .stay-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 47.999rem) { #active-workspace[data-surface-kind="discovery"][data-mode="inline-surface"] .ui-result-rows ~ .stay-grid { display: none !important; } }
+    @media (min-width: 48rem) { .ui-result-rows, .ui-result-rows__compare { display: none; } #active-workspace[data-surface-kind="discovery"] .stay-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     .unit-detail-root { display: grid !important; min-width: 0; gap: var(--space-4) !important; }
     ${LISTING_GALLERY_STYLE}
     .unit-gallery--fallback { padding: var(--space-4); border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface-subtle); }

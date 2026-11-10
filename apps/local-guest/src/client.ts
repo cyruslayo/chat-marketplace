@@ -1157,7 +1157,7 @@ function enhanceSurfacePresentation(mount: HTMLElement, kind: string): void {
   if (kind === "discovery") decorateDiscoveryCards(mount);
   if (kind === "compare") decorateComparison(mount);
   if (kind === "unit-detail") organizeUnitDetail(mount);
-  if (kind === "booking" || kind === "payment") organizeBookingTicket(mount);
+  if (kind === "booking" || kind === "request-draft" || kind === "payment") organizeBookingTicket(mount);
   if (activePayload?.requestScreen)
     organizeRequestScreen(mount, activePayload.requestScreen);
   if (activePayload?.confirmation)
