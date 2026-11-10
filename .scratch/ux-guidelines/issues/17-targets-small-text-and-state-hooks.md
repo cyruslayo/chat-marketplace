@@ -1,6 +1,6 @@
 # 17 · Targets, small text and state styling hooks
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: none
 Phase: 2 (Batch B)
@@ -31,3 +31,29 @@ In `apps/web/src/shortlet-foundations.css`:
 - Guest UI: finish with captures at 320, 390, 768 and 1280 (light and dark) under `.scratch/ux-guidelines/screenshots/<NN>/`, and a findings file showing no horizontal overflow and no control under 44px (ADR 0078).
 
 ## Comments
+
+### ADRs read and applied
+
+| ADR | Constraint | Where it applies |
+| --- | --- | --- |
+| 0078 | 44x44 practical targets, readable text, 320px reflow, reduced motion. | AC1, AC2, AC3. |
+| 0077 | Status always has words, not colour alone. | The busy state keeps its label and adds the spinner. |
+| 0081 | Weaver output is styled by the kit, not by page-specific CSS. | All changes are in the existing Guest UI kit block. |
+
+### Implementation
+
+- `.ui-button--small` and `.ui-stay-card__count` now use `min-block-size`/`min-inline-size: var(--control-min-target)` (44px).
+- `.ui-rail > li` is 12px with `overflow-wrap: normal`, `word-break: normal` and `hyphens: none`; a browser probe at 390 shows six 56px columns, 12px labels, no overflow and no mid-word break.
+- Every `.ui-button[data-loading="true"]` busy rule also matches `[aria-busy="true"]`, including the spinner and `cursor: progress`.
+- `:where(p, dd) { text-wrap: pretty; }` and `:where(input[type="radio"], input[type="checkbox"]) { accent-color: var(--color-action); }` are added to the base layer.
+
+### Tests and commands
+
+- `npm run check` — 0 errors.
+- `npx tsx --test test/guest-kit-targets.test.ts` — 3 tests, 3 passed, 0 failed.
+- After committing the CSS: `npx tsx --test test/landing-page.test.ts test/guest-kit.test.ts test/shortlet-design-system.test.ts` — 51 tests, 51 passed, 0 failed.
+- Captures: `npx tsx .scratch/ux-guidelines/capture-17.ts` — 16 captures at 320/390/768/1280 in light and dark under `.scratch/ux-guidelines/screenshots/17/`; findings show no horizontal overflow, no visible control under 44px and no text under 12px (hidden 1x1 native radios excluded; their labels are the targets).
+
+## Answer
+
+Guest controls meet 44x44, guest text is at least 12px, the rail no longer breaks words at 390, `aria-busy` alone shows the busy state, prose uses `text-wrap: pretty`, and native choice controls use the action accent colour.
