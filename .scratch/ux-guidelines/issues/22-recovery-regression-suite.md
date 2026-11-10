@@ -1,6 +1,6 @@
 # 22 · Recovery and parity regression suite
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 11
 Phase: 3 (Batch C)
@@ -35,3 +35,27 @@ Extend `test/assistant-cold-journey.test.ts`, or a sibling test that uses the sa
 - Assistant path: read ADR 0106 in full first. Tests run with the assistant runtime enabled and a cold restore (a new `LocalGuestApp` over the same store) before every event, on a fresh thread, with a staging-like clock (2026-10-27) and guest. `test/assistant-cold-journey.test.ts` is the model.
 
 ## Comments
+
+### ADRs read and applied
+
+| ADR | Constraint | Where it applies |
+| --- | --- | --- |
+| 0046 | A late or duplicate payment never confirms the booking. | AC5. |
+| 0072 | Consequential actions are versioned platform commands; duplicates are refused. | AC1 and AC2. |
+| 0074 | An invalid surface keeps complete text and a conventional route. | AC4. |
+| 0080 | Conventional routes execute the same command behaviour as chat. | AC6. |
+| 0106 | A cold restore precedes every event; a model failure keeps state. | AC1 and AC3. |
+
+### Code contradiction recorded
+
+`/conversation` posts **guest messages** only. It renders the current surface as a link to the authoritative standard route; it has no `/conversation/event` command form. AC6's "no-JS `/conversation` post of the same commands" therefore cannot be exercised as written. The test proves the no-JS page offers the same standard route as the chat surface for the review command, and records that surface commands run on the standard route.
+
+### Tests and commands
+
+- `npm run check` — 0 errors.
+- `npx tsx --test test/guest-recovery-regression.test.ts` — 6 tests, 6 passed, 0 failed.
+- The suite reuses the existing cold-journey, restart and fallback helpers; no fixture is copied.
+
+## Answer
+
+The regression suite proves: a forged artifact is refused after a cold restore and the current state is shown; two tabs produce one effect; a model failure leaves the draft and facts intact; an invalid surface falls back to text and its standard route; a provider return never shows a confirmed reservation; and the no-JS page offers the same authoritative standard route as the chat. The `/conversation` command-post contradiction is recorded.
