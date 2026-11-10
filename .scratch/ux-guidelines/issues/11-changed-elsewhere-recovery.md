@@ -1,0 +1,32 @@
+# 11 · Recover from changed-elsewhere and artifact-mismatch responses
+
+Status: ready-for-agent
+Type: task
+Blocked by: none
+Phase: 1 (Batch A)
+Applicable ADRs: 0072, 0074, 0106; guideline §6 (stale action), §9 (HTTP conflict)
+
+## What to build
+
+`renderResponse` in `apps/local-guest/src/client.ts` (~2535) handles `STALE_SURFACE`, `STALE_ACTION` and `EXPIRED_SURFACE`, but not `ARTIFACT_MISMATCH` or a version conflict. Those fall through to the generic message with no refresh.
+
+- Route `ARTIFACT_MISMATCH` and conflict rejections to the stale path: mark the surface inert, call `refreshServerState`, and show "This request changed while you were viewing it. Check the latest status." Put the copy in `guest-content.ts`.
+- Guards stay fail closed. A forged or unknown id must still be rejected on the server.
+
+## Acceptance criteria
+
+1. An ARTIFACT_MISMATCH rejection marks the surface out of date and refreshes the current state
+2. The guest sees the changed-elsewhere message, never a raw code
+3. A forged artifact id is still rejected after a cold restore
+4. The draft entered before the rejection is not lost
+
+## Rules
+
+- Follow the AGENTS.md implementation protocol. List and read the ADRs that apply and record them in Comments. Write one named test per acceptance criterion, covering its failure paths.
+- Use the kit (`.ui-*`, `guest-kit.ts`, `guest-content.ts`). No new components, no invented policy text or money, and no `any` in domain types.
+- Test scope: `npm run check` plus this issue's own and affected tests. Record the exact commands and pass counts here. The full suite runs once per batch.
+- Commit by explicit path only. Never stage `apps/local-guest/dist/*.js` (except a regenerated `client.js`), `apps/cloudflare/public/_headers` or generated screenshots. No stash, reset or clean.
+- Assistant path: read ADR 0106 in full first. Tests run with the assistant runtime enabled and a cold restore (a new `LocalGuestApp` over the same store) before every event, on a fresh thread, with a staging-like clock (2026-10-27) and guest. `test/assistant-cold-journey.test.ts` is the model.
+- This issue changes `apps/local-guest/src/client.ts`. Never run it alongside another `client.ts` issue (11, 14, 19, 21, 24). Rebuild `client.js` and commit the regenerated `dist/client.js` only.
+
+## Comments
