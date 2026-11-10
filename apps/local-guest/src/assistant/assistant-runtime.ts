@@ -35,6 +35,7 @@ import { PLANNER_REQUEST_TIMEOUT_MS, SERVER_TURN_MAX_MS } from "../turn-budget.j
 import { ModelScopeClassifier, ScopeClassificationError, assessScopeSafely, scopedMixedInput, type ScopeClassifier, type ScopeAssessment, type ConciergeIntent } from "./scope-classifier.js";
 import { RetryingScopeClassifier, ScopeClassifierRetryError, SCOPE_TOTAL_BUDGET_MS, type ScopeClassifierRetryEvent, type ScopeClassifierRetryResult } from "./scope-classifier-retry.js";
 import { ASSISTANT_CONTROL_COPY } from "./control-copy.js";
+import { GUEST_ASSISTANT_COPY } from "../../../web-agent/src/guest-content.js";
 import { isProviderUnavailable } from "./fallback-model-client.js";
 import { searchAreaFor, type GuestQuickReply } from "../concierge.js";
 import {
@@ -1101,11 +1102,9 @@ export class AssistantRuntime {
 
     // 3. User message turn
     const originalUserText = text;
-    // Issue 04 (ADR 0106, 2 Nov 2026): a pending date show-back is settled by this turn before it is classified. Only the guest's
-    // explicit yes confirms it; any other turn closes it. The candidate state is committed only at a commit site.
-    // The committed state is settled too, so a refused turn (which commits nothing else) still closes an open show-back (fail closed).
-    candidatePack().settlePendingGuestFacts?.(text, thread.taskState, this.#environment.clock());
-    candidatePack().settlePendingGuestFacts?.(text, tx.taskState, this.#environment.clock());
+    // Issue 59 (ADR 0106 amendment, 9 Nov 2026): a pending date show-back is settled only after an in-scope or mixed verdict, so a
+    // refused turn leaves `pendingDate` intact and its show-back can be re-asked. Settlement writes the candidate state only; it is
+    // committed at a commit site like any other change.
     const packForScope = candidatePack();
     const safeUserText = redactSensitiveData(text) as string;
     let scopeFailureOutcome: "quota_refusal" | "guard_failure" | undefined;
@@ -1133,6 +1132,19 @@ export class AssistantRuntime {
       const controlOutcome = scopeFailureOutcome ?? scopeOutcome;
       // One count per turn: the outcome this turn returns (ADR 0106 telemetry, closed codes only).
       recordOutcome(controlOutcome);
+      // Issue 59 (ADR 0106 amendment): a scope redirect and a risk verdict keep the fixed copy with no re-ask. An unclear or failed
+      // verdict (ordinary risk) is no dead end: re-ask the closed question the assistant last asked, with its chips, or offer the pack's
+      // stage recovery chips when no question is open. No model output is used and no task state is committed.
+      const riskRefused = assessment !== undefined && assessment.risk !== "ordinary";
+      if (scopeOutcome === "scope_unavailable" && !riskRefused) {
+        const held = tx.taskState.openQuestion;
+        const chips = held === undefined
+          ? packForScope.recoveryQuickReplies?.(tx.taskState)
+          : packForScope.openQuestionQuickReplies?.(tx.taskState, held);
+        const message = held === undefined ? ASSISTANT_CONTROL_COPY.unavailable : GUEST_ASSISTANT_COPY.openQuestion[held];
+        return { ok: true, messages: [message], surfaces: [], modelHandled: false, discardUserInput: true, controlOutcome,
+          tasks: this.getTaskRail(threadId), ...(chips === undefined || chips.length === 0 ? {} : { quickReplies: chips }) };
+      }
       return { ok: true, messages: [controlOutcome === "scope_redirect" ? ASSISTANT_CONTROL_COPY.redirect : ASSISTANT_CONTROL_COPY.unavailable],
         surfaces: [], modelHandled: false, discardUserInput: true, controlOutcome, tasks: this.getTaskRail(threadId) };
     }
@@ -1143,6 +1155,8 @@ export class AssistantRuntime {
       return { ok: true, messages: [ASSISTANT_CONTROL_COPY.unavailable], surfaces: [], modelHandled: false,
         discardUserInput: true, controlOutcome: "scope_unavailable", tasks: this.getTaskRail(threadId) };
     }
+    // Issue 59: the verdict is in scope (or validly mixed), so this turn settles any pending date show-back on the candidate state.
+    candidatePack().settlePendingGuestFacts?.(text, tx.taskState, this.#environment.clock());
     if (discardUserInput) text = scopedMixedInput(assessment);
     validatedDomainId = packForScope.id;
     validatedTurnIntents = assessment.intents;

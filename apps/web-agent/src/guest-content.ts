@@ -49,6 +49,18 @@ export const GUEST_ASSISTANT_COPY = Object.freeze({
   dateConfirmChip: "Yes",
   dateChangeChip: "Change dates",
   safeClarification: "I can help you find and compare stays, explain pricing, or check a booking status. What would you like to do?",
+  // Issue 59 (ADR 0106 amendment, ADR 0075): the fixed copy that re-asks the closed question the assistant last asked, when a terse
+  // answer was not understood. One sentence per code; no guest text is echoed and no model output is used.
+  openQuestion: Object.freeze({
+    where: "Which area would you like to stay in?",
+    party_size: "How many guests are staying?",
+    check_in: "Which day would you like to check in?",
+    nights: "How many nights would you like to stay?",
+    stay_length: "How long would you like to stay?",
+    pick_result: "Which one would you like to see?",
+    date_confirm: "Shall I use that date? Reply \"yes\", or tell me different dates.",
+    location_confirm: "Shall I search that area instead? Reply \"yes\", or tell me another area.",
+  }),
   // Shown when a turn is slower than a normal one; the guest is not told the request failed.
   stillWorking: "Still working on your request. A stay search can take a little longer, so please keep this page open.",
   // ADR 0067 governs the support window and active-stay on-call coverage.

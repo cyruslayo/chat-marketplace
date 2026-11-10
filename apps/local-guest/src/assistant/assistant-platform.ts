@@ -151,6 +151,10 @@ export interface AssistantDomainPack {
    * clarification kind. The runtime stores it so a terse answer can be read against it. Undefined adds no code.
    */
   clarificationOpenQuestion?(taskState: AssistantTaskState, kind: AssistantClarificationKind): OpenQuestion | undefined;
+  /** Issue 59 (ADR 0106 amendment): the chips that answer a closed open question, from the committed task state. Undefined adds none. */
+  openQuestionQuickReplies?(taskState: AssistantTaskState, code: OpenQuestion): readonly GuestQuickReply[] | undefined;
+  /** Issue 59 (ADR 0106 amendment): stage-appropriate recovery chips when a turn is not understood and no question is held. */
+  recoveryQuickReplies?(taskState: AssistantTaskState): readonly GuestQuickReply[] | undefined;
   /**
    * Issue 09 (ADR 0099): the clarification a turn's successful results ask for, when the pack's own result says so (for example a
    * location question held as pending). The runtime then offers that clarification's chips. Undefined keeps the plan's own chips.

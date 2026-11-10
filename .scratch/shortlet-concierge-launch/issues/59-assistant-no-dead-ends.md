@@ -1,6 +1,6 @@
 # The assistant never dead-ends: re-ask the open question instead of the generic fallback
 
-Status: ready-for-agent
+Status: resolved
 Type: AFK
 Blocked by: 57 (and 58 for structured chips on the re-ask)
 Requested: 9 Nov 2026
@@ -36,15 +36,23 @@ Exploration also found an ordering side effect. `settlePendingGuestFacts` (`assi
 
 New tests in `test/assistant-open-question.test.ts`, or a new `test/assistant-no-dead-ends.test.ts`. Assistant on, cold restore before every event, 2026-10-27 clock, staging guest; warm and cold.
 
-- [ ] Open question `party_size` plus an `unclear` verdict: the reply is the party-size question with the who chips, and the outcome is `scope_unavailable`.
-- [ ] The same with a classifier failure (invalid JSON on both attempts): the same re-ask.
-- [ ] `unclear` with no open question: the generic copy plus recovery chips.
-- [ ] `out_of_scope`: the redirect copy, unchanged, with no re-ask.
-- [ ] A tapped "Yes" on a date show-back that the classifier refuses leaves `pendingDate` intact and commits no check-in.
-- [ ] A re-ask commits no task state (the runtime state is the same before and after).
+- [x] Open question `party_size` plus an `unclear` verdict: the reply is the party-size question with the who chips, and the outcome is `scope_unavailable`.
+- [x] The same with a classifier failure (invalid JSON on both attempts): the same re-ask.
+- [x] `unclear` with no open question: the generic copy plus recovery chips.
+- [x] `out_of_scope`: the redirect copy, unchanged, with no re-ask.
+- [x] A tapped "Yes" on a date show-back that the classifier refuses leaves `pendingDate` intact and commits no check-in.
+- [x] A re-ask commits no task state (the runtime state is the same before and after).
 
 ## Verification
 
 `npm run check`, the new tests, `test/assistant-scope-controls.test.ts`, `test/assistant-date-phrases.test.ts` and `test/assistant-cold-journey.test.ts`. Use `env -u LLM_API_KEY`. Record the counts in Comments.
 
 ## Comments
+
+- 9 Nov 2026, implemented on `fix/chat-hardening`. Commands (all with `env -u LLM_API_KEY`, `NODE_ENV=test` for the local-server tests):
+  - `npm run check`: clean (tsc x4 plus the worker bundle guard).
+  - `npx tsx --test test/assistant-no-dead-ends.test.ts`: 10 of 10 pass (warm and cold).
+  - `npx tsx --test test/assistant-no-dead-ends.test.ts test/assistant-scope-controls.test.ts test/assistant-date-phrases.test.ts test/assistant-cold-journey.test.ts test/assistant-open-question.test.ts test/assistant-clarification-chips.test.ts`: 88 of 88 pass.
+- Design: the fixed re-ask copy is `GUEST_ASSISTANT_COPY.openQuestion` (one sentence per closed code, in `guest-content.ts`). The runtime's scope-refusal branch now re-asks the held open question with its chips (`openQuestionQuickReplies`) when the verdict is unclear or failed and the risk is ordinary, and otherwise (no open question) offers the pack's stage recovery chips (`recoveryQuickReplies`); a scope redirect and a risk verdict keep the fixed copy with no chips. `controlOutcome` stays the turn's closed outcome (`scope_unavailable`, the failure outcome, or `scope_redirect`). `settlePendingGuestFacts` now runs only after an in-scope or mixed verdict and writes the candidate state only, so a refused turn leaves `pendingDate` intact and commits no check-in.
+- ADRs read and applied: 0106 (fixed platform copy on refusal, no model text, closed telemetry outcomes, date authority needs a confirmed show-back, no keyword fast path), 0075 (no guest text echoed), 0077 (guest copy lives in `guest-content.ts`).
+- Definition of Done: six acceptance criteria each have a dedicated named test in `assistant-no-dead-ends.test.ts`; ADRs listed; no unused injected dependency; no invented copy beyond the fixed closed-code sentences (the issue names the copy); no credential or identity material added; check and the tests above are green.

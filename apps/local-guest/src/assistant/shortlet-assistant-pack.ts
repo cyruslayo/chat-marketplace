@@ -365,6 +365,30 @@ export function clarificationChipsFor(taskState: AssistantTaskState, kind: Assis
   return quickRepliesFor(gap.next);
 }
 
+/** Issue 59 (ADR 0106 amendment): the chips that answer a closed open question, from the committed task state. */
+function chipsForOpenQuestion(taskState: AssistantTaskState, code: OpenQuestion): readonly GuestQuickReply[] | undefined {
+  switch (code) {
+    case "where": return quickRepliesFor("where");
+    case "party_size": return quickRepliesFor("who");
+    case "check_in": return quickRepliesFor("when");
+    case "nights":
+    case "stay_length": return clarificationChipsFor(taskState, "plan");
+    case "date_confirm": return clarificationChipsFor(taskState, "date");
+    case "location_confirm": return clarificationChipsFor(taskState, "location");
+    case "pick_result": return undefined;
+  }
+}
+
+/** Issue 59 (ADR 0106 amendment): stage-appropriate recovery chips when no question is open (the held area, or a few areas). */
+function recoveryChipsFor(taskState: AssistantTaskState): readonly GuestQuickReply[] {
+  const { location, neighbourhood } = taskState.stayIntent;
+  if (location === "Lagos" || location === "Abuja") {
+    const area = SEARCH_AREAS.find((candidate) => candidate.city === location && candidate.neighbourhood === neighbourhood);
+    if (area) return [{ label: area.label, edit: { field: "where", area: area.id } }];
+  }
+  return quickRepliesFor("where").slice(0, 3);
+}
+
 /** Issue 57 (ADR 0106 amendment): the closed open-question code for one missing stay criterion. */
 export function openQuestionForCriterion(next: StayCriterion): OpenQuestion {
   switch (next) {
@@ -1617,6 +1641,8 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     normalizeToolArguments,
     clarificationQuickReplies: clarificationChipsFor,
     clarificationOpenQuestion: openQuestionForClarification,
+    openQuestionQuickReplies: chipsForOpenQuestion,
+    recoveryQuickReplies: recoveryChipsFor,
     replyClarificationKind: (results) => locationChangeReplyKind(results) ?? dateChangeReplyKind(results),
     executeTool: executeAssistantTool,
     settlePendingGuestFacts: (text, state, now) => settlePendingStayDate(text, state, now, environment.extendedStayPolicy),
