@@ -90,3 +90,17 @@ Settled by the owner on 10 Nov 2026:
 - **Validator bounds.** The presentation validator's bounds are accepted: 400 characters for a presentation string, 600 characters for a body, and 4 starters (decision 3, `validateModePresentation`).
 - **App-bar mark while one mode is registered.** The mark is decorative and `aria-hidden`, not a control. It becomes a labelled control with the mode sheet (slice 5) (decision 9, Accessibility).
 - **Persona wording.** "Concierge · Stays" is the approved persona wording. It is not shown while only one mode is registered, because that would change a screen meant to stay unchanged. It is added to `guest-content.ts` in slice 4 and shown only when more than one mode is registered.
+
+## Corrections found by the 10 Nov 2026 code survey
+
+Recorded 10 Nov 2026 from a read of the code at `56d4364`. The decision text above is not rewritten. The corrections below change what the decisions are measured against, and they are the basis of issues 03a to 03g (`.scratch/agent-modes/seams.md`).
+
+1. **Restore by `activeTaskId` and per-lane history are not current behaviour.** Decisions 2 and 11 describe a cold restore that loads the active task by `activeTaskId` and per-lane model history. Today `activeTaskId` and the task list are not persisted (`GuestPersistentProjection` and `#projectionFor` in `apps/local-guest/src/shortlet-app.ts`). `restoreShortletState` (`apps/local-guest/src/assistant/assistant-runtime.ts`) rebuilds one shortlet task, sets `activeTaskId` from it, and clears the conversation history. The guest timeline is shared by every task. Issue 03b persists the ids; issue 03d gives each task its own lane.
+
+2. **Decision 11 restore rule, amended (proposed, awaiting owner confirmation).** A restore reloads the lane's timeline and canonical facts, and rebuilds the lane's model history from those facts and from guest-authored text. Stored model text is not used, consistent with ADR 0075, 0093 and 0106. This is an owner-recommended change and is not yet confirmed. Until the owner confirms it, issue 03d restores each lane's model history empty, as today.
+
+3. **Tiers A and B stay disabled.** Decisions 8 and 9.4 describe automatic switching in tiers A and B. Neither tier is enabled. Only tier C ships first (issue 03f), as decision 8 already allows. A and B are represented in code behind a disabled setting until labelled turns exist and thresholds are tuned.
+
+4. **"New conversation" resets the active lane only.** Decision 11 says "New conversation" starts a new task in the active mode only, leaving other lanes untouched. Whether it should instead reset every lane is still open (analysis section 11.3) and is not decided here.
+
+5. **Status note (not a correction of a decision).** Decision 1's `presentation` is partly in place: `ModePresentation`, its validator and the `mode` field on every guest response exist (`apps/web-agent/src/guest-content.ts`, issue 01 resolved). The field is not yet on `AssistantDomainPack`, and the client does not yet set `data-mode` on `<html>` after a switch.
