@@ -31,6 +31,7 @@ import { changedElsewhereRecovery } from "./stale-surface-response.js";
 import { applyAccessibilityLabels } from "./a2ui-accessibility.js";
 import { contactFieldAttributes } from "./contact-field.js";
 import { combinedAbortSignal } from "./turn-cancel.js";
+import { applyImageLayout } from "./image-layout.js";
 import { turnEntriesSince } from "./guest-turn-recovery.js";
 import { assertValidResponseMode, readResponseMode } from "./response-mode.js";
 import { nextAgentMarkState, type AgentMarkEvent, type AgentMarkState } from "./agent-mark-state.js";
@@ -2091,6 +2092,7 @@ if (
     mount.before(renderWaiting(surface.waiting));
   }
   enhanceGuestContactField(mount, surface.contactPurpose);
+  applyImageLayout(mount);
   enhanceListingImages(mount);
   if (presentation.conventionalRoute) {
     const link = document.createElement("a");

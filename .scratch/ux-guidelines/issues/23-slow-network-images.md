@@ -1,6 +1,6 @@
 # 23 · Images on slow networks
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: none
 Phase: 3 (Batch C)
@@ -29,3 +29,29 @@ Applicable ADRs: 0078; guideline §7 (reserve image space), §12 slow network
 - Guest UI: finish with captures at 320, 390, 768 and 1280 (light and dark) under `.scratch/ux-guidelines/screenshots/<NN>/`, and a findings file showing no horizontal overflow and no control under 44px (ADR 0078).
 
 ## Comments
+
+### ADRs read and applied
+
+| ADR | Constraint | Where it applies |
+| --- | --- | --- |
+| 0078 | Reserve image space, 320px reflow, readable facts on a slow network. | AC1-AC4. |
+| 0080 | A broken rich image keeps the facts and the standard route. | AC3. |
+
+### Implementation
+
+- `applyImageLayout` runs after Weaver mounts: every guest `<img>` without intrinsic dimensions gets `width="800" height="600"`; the first image is `loading="eager" fetchpriority="high"`, every later image `loading="lazy"` with no high priority. Existing dimensions are never overwritten.
+- The server-rendered stay card, row thumb and listing gallery already carried dimensions and the lead-only priority; the client pass now covers Weaver's Image component too.
+- A failed image keeps the unit title, facts and All-In Stay Total; the gallery's `.photo-fallback` and the card's `.ui-stay-card__photo--empty` are unchanged.
+- `srcset`/`sizes` is skipped: there are no resized listing variants. The landing hero-image pipeline is a separate effort and does not produce listing variants.
+
+### Tests and commands
+
+- `npm run check` — 0 errors.
+- `npx tsx --test test/guest-image-layout.test.ts` — 2 tests, 2 passed, 0 failed.
+- Real Chrome: `npx tsx --test test/guest-image-layout-chromium.test.ts` — 2 tests, 2 passed, 0 failed (broken photo keeps the facts; no shift on a throttled unit detail, every image sized, at most one high priority).
+- `client.js` rebuilt; only the regenerated `dist/client.js` is staged.
+- Captures: `npx tsx .scratch/ux-guidelines/capture-23.ts` — 8 unit-detail captures at 320/390/768/1280 in light and dark under `.scratch/ux-guidelines/screenshots/23/`; no horizontal overflow and no visible control under 44px.
+
+## Answer
+
+Every guest image reserves its intrinsic space and only the lead image is eager and high priority. A failed image leaves the Unit name, facts and total visible, and the throttled unit detail has no image layout shift. `srcset` is not added because no resized listing variants exist.

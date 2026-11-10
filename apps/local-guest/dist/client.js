@@ -10147,6 +10147,22 @@ Known schemas:
     return controller.signal;
   }
 
+  // apps/local-guest/src/image-layout.ts
+  function applyImageLayout(mount) {
+    const images = Array.from(mount.querySelectorAll("img"));
+    images.forEach((image, index) => {
+      if (!image.hasAttribute("width")) image.setAttribute("width", "800");
+      if (!image.hasAttribute("height")) image.setAttribute("height", "600");
+      if (index === 0) {
+        image.loading = "eager";
+        image.setAttribute("fetchpriority", "high");
+      } else {
+        image.loading = "lazy";
+        image.removeAttribute("fetchpriority");
+      }
+    });
+  }
+
   // apps/local-guest/src/guest-turn-recovery.ts
   function turnEntriesSince(timeline, text) {
     for (let index = timeline.length - 1; index >= 0; index -= 1) {
@@ -11851,6 +11867,7 @@ Known schemas:
       mount.before(renderWaiting(surface.waiting));
     }
     enhanceGuestContactField(mount, surface.contactPurpose);
+    applyImageLayout(mount);
     enhanceListingImages(mount);
     if (presentation.conventionalRoute) {
       const link = document.createElement("a");
