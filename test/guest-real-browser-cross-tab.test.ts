@@ -689,3 +689,33 @@ test("RB12 — Domain correctness requires no browser coordination mechanism", a
     await ctx.close();
   }
 });
+
+// ============================================================================
+// RB13 — A refused criteria-strip edit does not disable the workspace (issue 60)
+// ============================================================================
+test("RB13 — A strip edit refused with an invalid class leaves the workspace View working", async () => {
+  const ctx = await startRealBrowserContext();
+  try {
+    await sendPrompt(ctx.tabA, CANONICAL_PROMPT);
+    await ctx.tabA.waitForText(IKOYI_TITLE, 30000);
+
+    // Open the Budget chip and submit an amount above the server's maximum, so the server refuses the edit as INVALID_CRITERIA
+    // (refusal class `invalid`). Before issue 60 this class disabled the last workspace control the guest tapped.
+    await ctx.tabA.evaluate(`(() => {
+      const chip = document.querySelector('.criteria-chip[data-field="budget"]');
+      if (chip) chip.click();
+      const input = document.querySelector('#criteria-editor input[name="naira"]');
+      if (input) input.value = "2000000000";
+      document.getElementById('criteria-editor').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    })()`);
+    await ctx.tabA.waitForFunction(`(() => (document.getElementById('criteria-status')?.textContent ?? '').length > 0)()`, 15000);
+    const status = await ctx.tabA.evaluate<string>(`document.getElementById('criteria-status')?.textContent ?? ''`);
+    assert.doesNotMatch(status, /authoritative|artifact|context is invalid/i, `guest copy, not developer text; got ${status}`);
+
+    // The refused strip edit must not disable the workspace: View still opens the unit.
+    await click(ctx.tabA, "View apartment", IKOYI_TITLE);
+    await ctx.tabA.waitForText("Request to Book", 15000);
+  } finally {
+    await ctx.close();
+  }
+});

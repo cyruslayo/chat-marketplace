@@ -235,14 +235,19 @@ test("Issue 58 AC5: the chip's party size reaches the persisted context and surv
 
 test("Issue 58 AC6: isQuickReplyList drops a malformed chip and keeps the valid ones", () => {
   const valid = { label: "Just me", edit: { field: "guests" as const, partySize: 1 } };
+  const validWhen = { label: "3 nights", edit: { field: "when" as const, checkIn: "2026-11-12", nights: 3 } };
   const chips = isQuickReplyList([
     valid,
     { label: "ok" },
     { label: "zero guests", edit: { field: "guests", partySize: 0 } },
     { label: "no area", edit: { field: "where", area: "" } },
     { label: "unknown field", edit: { field: "budget", naira: 5 } },
+    // An edit with an extra key must fail closed (its keys are spread into the event), dropping only that chip.
+    { label: "extra key", edit: { field: "guests", partySize: 1, area: "lekki" } },
+    { label: "extra key when", edit: { field: "when", checkIn: "2026-11-12", nights: 3, partySize: 2 } },
     { edit: { field: "guests", partySize: 1 } },
+    validWhen,
   ]);
-  assert.deepEqual(chips, [valid, { label: "ok" }]);
+  assert.deepEqual(chips, [valid, { label: "ok" }, validWhen]);
   assert.equal(isQuickReplyList("not a list"), undefined);
 });

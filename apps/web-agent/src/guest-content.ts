@@ -37,8 +37,8 @@ export type RefusalCode =
   | "CONTINUOUS_OCCUPANCY_REFUSED" | "CRITERIA_LOCKED" | "CRITERIA_REJECTED" | "EXPIRED_SURFACE" | "INVALID_ARTIFACT"
   | "INVALID_CONTEXT" | "INVALID_CRITERIA" | "INVALID_EVENT" | "INVALID_INPUT" | "INVALID_THREAD" | "INVALID_ROUTE"
   | "NOTHING_TO_UNDO" | "OFFER_MISMATCH" | "PAYMENT_NOT_CONFIRMED" | "PAYSTACK_UNAVAILABLE" | "QUOTE_CHANGED"
-  | "REQUEST_MISMATCH" | "REQUEST_NOT_SUBMITTED" | "STALE_ACTION" | "STALE_SURFACE" | "THREAD_BUSY" | "UNKNOWN_DOMAIN"
-  | "UNKNOWN_TASK" | "UNKNOWN_THREAD" | "UNSUPPORTED_ACTION" | "UNSUPPORTED_EVENT";
+  | "REQUEST_MISMATCH" | "REQUEST_NOT_SUBMITTED" | "STALE_ACTION" | "STALE_SURFACE" | "TASK_UNAVAILABLE" | "THREAD_BUSY"
+  | "UNKNOWN_DOMAIN" | "UNKNOWN_TASK" | "UNKNOWN_THREAD" | "UNSUPPORTED_ACTION" | "UNSUPPORTED_EVENT";
 
 /** The copy for each class when a code gives none of its own. */
 export const GUEST_REFUSAL_DEFAULT: Readonly<Record<RefusalClass, string>> = Object.freeze({
@@ -84,6 +84,9 @@ export const GUEST_REFUSAL: Readonly<Record<RefusalCode, GuestRefusalEntry>> = O
   PAYSTACK_UNAVAILABLE: { class: "unavailable" },
   UNKNOWN_DOMAIN: { class: "unavailable" },
   UNKNOWN_THREAD: { class: "unavailable" },
+  // A task start or switch the platform could not complete (the task tool returned TASK_UNAVAILABLE, e.g. an unknown domain or task).
+  // It is a platform action that could not be performed in the current state, not a malformed request, so it is unavailable.
+  TASK_UNAVAILABLE: { class: "unavailable" },
   // Already guest copy built from closed guest content; the server's message is kept.
   CRITERIA_REJECTED: { class: "invalid", keepServerMessage: true },
   CRITERIA_LOCKED: { class: "busy", keepServerMessage: true },

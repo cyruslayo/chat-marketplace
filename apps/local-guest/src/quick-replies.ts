@@ -13,11 +13,22 @@ function isPositiveInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
 }
 
+/** The exact key set mirrors `readCriteriaEdit`: an extra key would be spread into the event, so any extra key fails closed. */
+function exactKeys(value: Record<string, unknown>, expected: readonly string[]): boolean {
+  const actual = Object.keys(value).sort();
+  const sorted = [...expected].sort();
+  return actual.length === sorted.length && actual.every((key, index) => key === sorted[index]);
+}
+
 export function isQuickReplyEdit(value: unknown): value is QuickReplyEdit {
   if (!isRecord(value)) return false;
-  if (value.field === "guests") return isPositiveInteger(value.partySize);
-  if (value.field === "where") return typeof value.area === "string" && value.area.length > 0 && value.area.length <= 120;
-  if (value.field === "when") return typeof value.checkIn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.checkIn) && isPositiveInteger(value.nights);
+  if (value.field === "guests") return exactKeys(value, ["field", "partySize"]) && isPositiveInteger(value.partySize);
+  if (value.field === "where") return exactKeys(value, ["field", "area"]) && typeof value.area === "string" && value.area.length > 0 && value.area.length <= 120;
+  if (value.field === "when") {
+    return exactKeys(value, ["field", "checkIn", "nights"])
+      && typeof value.checkIn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.checkIn) && !Number.isNaN(Date.parse(`${value.checkIn}T00:00:00Z`))
+      && isPositiveInteger(value.nights);
+  }
   return false;
 }
 

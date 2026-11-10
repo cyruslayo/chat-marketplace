@@ -1,6 +1,6 @@
 # View apartment fails with ARTIFACT_MISMATCH after a When chip and a party-size answer
 
-Status: fix applied in the working tree, not committed (awaiting owner approval)
+Status: fix landed in `240fbe6` on `fix/chat-hardening` (issue 62)
 Type: AFK
 Blocked by: none
 Requested: 9 Nov 2026 (staging, `shortlet-pilot-staging.khayutsefi.workers.dev`)
@@ -76,3 +76,5 @@ ADR check: ADR 0106 (an id the guest holds is persisted and re-keyed, never re-m
   - `npm run check`: clean.
 - Not run: the full `npm test` and `npm run test:workers` (once per batch, before merging), and a live retest on staging after a rebuild.
 - Local fixtures have no eligible Wuse 2 unit, so the test uses Old Ikoyi and Lekki Phase 1. The mechanism does not depend on the area.
+
+- 9 Nov 2026, review fix: this defect-1 fix landed in `240fbe6` on `fix/chat-hardening` (issue 62); the header is updated. Re-verified with the branch's offline suite (112 of 112 in the review run) and `npm run check` clean.

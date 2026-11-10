@@ -1136,7 +1136,8 @@ export class AssistantRuntime {
       // verdict (ordinary risk) is no dead end: re-ask the closed question the assistant last asked, with its chips, or offer the pack's
       // stage recovery chips when no question is open. No model output is used and no task state is committed.
       const riskRefused = assessment !== undefined && assessment.risk !== "ordinary";
-      if (scopeOutcome === "scope_unavailable" && !riskRefused) {
+      // Issue 59 step 4: a quota refusal is not a question the guest can answer, so it keeps the existing copy and offers no chips.
+      if (scopeOutcome === "scope_unavailable" && !riskRefused && scopeFailureOutcome !== "quota_refusal") {
         const held = tx.taskState.openQuestion;
         const chips = held === undefined
           ? packForScope.recoveryQuickReplies?.(tx.taskState)
@@ -1519,6 +1520,12 @@ export class AssistantRuntime {
         // details is a rejected tool call. The turn keeps the guest's message, commits no new task state, and asks the guest.
         controlOutcome = "tool_denial";
         recordOutcome(controlOutcome);
+        // Issue 59 (ADR 0106): the verdict was in scope, so a date show-back was already settled on the candidate state. Carry only
+        // that settled pending-date result into the committed state, so a confirmed check-in is not lost when the planner call is
+        // then refused. A refused verdict never reaches here, so it still leaves pendingDate intact and commits no check-in.
+        // The candidate settle above reads the guest's own words; `text` for a mixed verdict is the scoped task summary, so use
+        // `originalUserText` here to read the same words and recognise the guest's "Yes".
+        candidatePack().settlePendingGuestFacts?.(originalUserText, thread.taskState, this.#environment.clock());
         candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
         this.#commitHistory(thread, candidateHistory, candidatePack(), thread.taskState);
         // A pack's guest-facing refusal carries its own sentence (ADR 0106; no guest identifier, ADR 0075).

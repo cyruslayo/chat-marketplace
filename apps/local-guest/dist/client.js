@@ -9557,6 +9557,9 @@ Known schemas:
     PAYSTACK_UNAVAILABLE: { class: "unavailable" },
     UNKNOWN_DOMAIN: { class: "unavailable" },
     UNKNOWN_THREAD: { class: "unavailable" },
+    // A task start or switch the platform could not complete (the task tool returned TASK_UNAVAILABLE, e.g. an unknown domain or task).
+    // It is a platform action that could not be performed in the current state, not a malformed request, so it is unavailable.
+    TASK_UNAVAILABLE: { class: "unavailable" },
     // Already guest copy built from closed guest content; the server's message is kept.
     CRITERIA_REJECTED: { class: "invalid", keepServerMessage: true },
     CRITERIA_LOCKED: { class: "busy", keepServerMessage: true },
@@ -10066,11 +10069,18 @@ Known schemas:
   function isPositiveInteger(value) {
     return typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
   }
+  function exactKeys(value, expected) {
+    const actual = Object.keys(value).sort();
+    const sorted = [...expected].sort();
+    return actual.length === sorted.length && actual.every((key3, index) => key3 === sorted[index]);
+  }
   function isQuickReplyEdit(value) {
     if (!isRecord3(value)) return false;
-    if (value.field === "guests") return isPositiveInteger(value.partySize);
-    if (value.field === "where") return typeof value.area === "string" && value.area.length > 0 && value.area.length <= 120;
-    if (value.field === "when") return typeof value.checkIn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.checkIn) && isPositiveInteger(value.nights);
+    if (value.field === "guests") return exactKeys(value, ["field", "partySize"]) && isPositiveInteger(value.partySize);
+    if (value.field === "where") return exactKeys(value, ["field", "area"]) && typeof value.area === "string" && value.area.length > 0 && value.area.length <= 120;
+    if (value.field === "when") {
+      return exactKeys(value, ["field", "checkIn", "nights"]) && typeof value.checkIn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.checkIn) && !Number.isNaN(Date.parse(`${value.checkIn}T00:00:00Z`)) && isPositiveInteger(value.nights);
+    }
     return false;
   }
   function isQuickReplyList(value) {
@@ -11628,6 +11638,7 @@ Known schemas:
   }
   function renderSurface(surface, moveFocus = false) {
     stopCountdown();
+    lastActivatedControl = void 0;
     const presentation = presentationFor(surface);
     const previousScroll = activePayload?.surfaceId === surface.surfaceId ? shellState.focusedSurfaceOpen ? workspaceRegion.scrollTop : focusedScrollTop : 0;
     focusedScrollTop = previousScroll;
@@ -12231,8 +12242,6 @@ Known schemas:
       shellState = markActiveSurfaceStatus(shellState, response.code === "EXPIRED_SURFACE" ? "expired" : "stale");
       if (activePayload) renderSurface({ ...activePayload, status: shellState.activeSurface?.status });
       void refreshServerState();
-    } else if ((cls === "forbidden" || cls === "invalid") && lastActivatedControl?.isConnected) {
-      lastActivatedControl.setAttribute("aria-disabled", "true");
     }
     return cls;
   }
@@ -12240,6 +12249,9 @@ Known schemas:
     if (!response.ok) {
       const message = response.message ?? "That action could not be completed.";
       const cls = applyRefusal(response);
+      if ((cls === "forbidden" || cls === "invalid") && lastActivatedControl?.isConnected && activeWorkspace.contains(lastActivatedControl)) {
+        lastActivatedControl.setAttribute("aria-disabled", "true");
+      }
       const signature = `${response.code ?? ""}|${cls ?? ""}|${message}`;
       const duplicate = signature === lastRefusalSignature;
       lastRefusalSignature = signature;
@@ -12341,7 +12353,7 @@ Known schemas:
     }
   }
   async function sendEvent(action) {
-    if (lastActivatedControl?.getAttribute("aria-disabled") === "true") return;
+    if (lastActivatedControl?.isConnected && activeWorkspace.contains(lastActivatedControl) && lastActivatedControl.getAttribute("aria-disabled") === "true") return;
     const current = shellState.activeSurface;
     if (!current || current.surfaceId !== action.surfaceId || !canUseSurfaceActions(current.status)) {
       addTurn("assistant", fallbackSummary(current ?? { surfaceId: action.surfaceId, mode: "inline-surface", status: "stale", summary: "This workspace" }));

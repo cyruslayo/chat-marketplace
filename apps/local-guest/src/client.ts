@@ -1908,6 +1908,8 @@ function askShortlet(): void {
 
 function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
   stopCountdown();
+  // Issue 60: a new surface render retires the previous control, so a disabled reference from an earlier refusal cannot linger.
+  lastActivatedControl = undefined;
   const presentation = presentationFor(surface);
   const previousScroll = activePayload?.surfaceId === surface.surfaceId
     ? shellState.focusedSurfaceOpen ? workspaceRegion.scrollTop : focusedScrollTop
@@ -2567,9 +2569,9 @@ function isRefusalClass(value: unknown): value is RefusalClass {
 }
 
 /**
- * Issue 60: applies the server's closed refusal class. A `stale` view is retired, re-rendered and refreshed. A `forbidden` or `invalid`
- * refusal disables only the tapped control until the next server render of that surface. `busy` keeps the control enabled. The class
- * falls back to the three legacy stale codes when an older server omits it.
+ * Issue 60: applies the `stale` part of the server's closed refusal class: retire, re-render and refresh the view. It never touches a
+ * control, so a criteria-strip or chip refusal cannot disable a workspace button the guest tapped earlier. The class falls back to the
+ * three legacy stale codes when an older server omits it.
  */
 function applyRefusal(response: GuestResponse): RefusalClass | undefined {
   const byCode: RefusalClass | undefined = response.code === "STALE_SURFACE" || response.code === "STALE_ACTION" || response.code === "EXPIRED_SURFACE"
@@ -2579,8 +2581,6 @@ function applyRefusal(response: GuestResponse): RefusalClass | undefined {
     shellState = markActiveSurfaceStatus(shellState, response.code === "EXPIRED_SURFACE" ? "expired" : "stale");
     if (activePayload) renderSurface({ ...activePayload, status: shellState.activeSurface?.status });
     void refreshServerState();
-  } else if ((cls === "forbidden" || cls === "invalid") && lastActivatedControl?.isConnected) {
-    lastActivatedControl.setAttribute("aria-disabled", "true");
   }
   return cls;
 }
@@ -2589,6 +2589,11 @@ function renderResponse(response: GuestResponse): boolean {
   if (!response.ok) {
     const message = response.message ?? "That action could not be completed.";
     const cls = applyRefusal(response);
+    // A forbidden or invalid workspace refusal disables only the control the guest just tapped, and only while that control is still
+    // the live one in the workspace. The reference is cleared on every surface render, so a stale one can never block a later event.
+    if ((cls === "forbidden" || cls === "invalid") && lastActivatedControl?.isConnected && activeWorkspace.contains(lastActivatedControl)) {
+      lastActivatedControl.setAttribute("aria-disabled", "true");
+    }
     const signature = `${response.code ?? ""}|${cls ?? ""}|${message}`;
     const duplicate = signature === lastRefusalSignature;
     lastRefusalSignature = signature;
@@ -2699,8 +2704,9 @@ async function sendTurn(text: string): Promise<void> {
 }
 
 async function sendEvent(action: { readonly name: string; readonly surfaceId: string; readonly sourceComponentId: string; readonly timestamp: string; readonly context: unknown }): Promise<void> {
-  // Issue 60: a control disabled by a forbidden or invalid refusal stays inert until the next server render of its surface.
-  if (lastActivatedControl?.getAttribute("aria-disabled") === "true") return;
+  // Issue 60: a control disabled by a forbidden or invalid refusal stays inert only while it is the live control in the workspace.
+  // A disconnected or replaced reference (for example after a re-render) must never block an event.
+  if (lastActivatedControl?.isConnected && activeWorkspace.contains(lastActivatedControl) && lastActivatedControl.getAttribute("aria-disabled") === "true") return;
   const current = shellState.activeSurface;
   if (!current || current.surfaceId !== action.surfaceId || !canUseSurfaceActions(current.status)) {
     addTurn("assistant", fallbackSummary(current ?? { surfaceId: action.surfaceId, mode: "inline-surface", status: "stale", summary: "This workspace" }));

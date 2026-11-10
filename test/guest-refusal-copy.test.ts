@@ -31,7 +31,16 @@ function emittedCodes(): Set<string> {
   const codes = new Set<string>();
   for (const file of sources) {
     const text = readFileSync(file, "utf8");
+    // Literal `code: "…"` returns.
     for (const match of text.matchAll(/code:\s*"([A-Z][A-Z_]+)"/g)) codes.add(match[1]!);
+    // `error: "…"` literals (for example TASK_UNAVAILABLE, returned through a variable elsewhere).
+    for (const match of text.matchAll(/error:\s*"([A-Z][A-Z_]+)"/g)) codes.add(match[1]!);
+    // String `*_CODE` constants returned as a code (for example THREAD_BUSY_CODE).
+    for (const match of text.matchAll(/(?:export\s+)?const\s+[A-Z][A-Z0-9_]*_CODE\s*=\s*"([A-Z][A-Z_]+)"/g)) codes.add(match[1]!);
+    // Every member of a closed `*RejectionCode` union.
+    for (const union of text.matchAll(/type\s+\w*RejectionCode\s*=\s*([\s\S]*?);/g)) {
+      for (const member of union[1]!.matchAll(/"([A-Z][A-Z_]+)"/g)) codes.add(member[1]!);
+    }
   }
   return codes;
 }
