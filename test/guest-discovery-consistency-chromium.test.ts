@@ -195,7 +195,9 @@ test("Issue 13 AC1: a discovery card's View action has an accessible name that i
   try {
     await fixture.advance("discovery");
     const tab = await browser.createTab();
-    await openChat(tab, fixture.base, fixture.cookie, fixture.threadId, 1280);
+    await openChat(tab, fixture.base, fixture.cookie, fixture.threadId, 1600);
+    await tab.evaluate("document.querySelector('#active-workspace .ui-stay-card__view')?.scrollIntoView({ block: 'center' })");
+    await new Promise((resolve) => setTimeout(resolve, 200));
     const tree = await tab.getAccessibilityTree();
     const buttons = tree.filter((node) => node.role === "button");
     const view = buttons.find((node) => node.name.includes("View apartment") && node.name.includes("Luxury 2-Bedroom Apartment in Old Ikoyi"));

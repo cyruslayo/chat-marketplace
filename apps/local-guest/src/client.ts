@@ -29,6 +29,7 @@ import {
 import { CLIENT_REQUEST_TIMEOUT_MS, CLIENT_TURN_TIMEOUT_MS, TURN_STILL_WORKING_AFTER_MS } from "./turn-budget.js";
 import { changedElsewhereRecovery } from "./stale-surface-response.js";
 import { applyAccessibilityLabels } from "./a2ui-accessibility.js";
+import { contactFieldAttributes } from "./contact-field.js";
 import { turnEntriesSince } from "./guest-turn-recovery.js";
 import { assertValidResponseMode, readResponseMode } from "./response-mode.js";
 import { nextAgentMarkState, type AgentMarkEvent, type AgentMarkState } from "./agent-mark-state.js";
@@ -74,6 +75,10 @@ import { mountGuestSurfaceOrFallback } from "./guest-surface-fallback.js";
 interface GuestSurfacePayload {
   readonly surfaceId: string;
   readonly a2uiMessages: readonly unknown[];
+  /** Issue 19: the server-owned surface type; never inferred from the surface id. */
+  readonly kind?: "discovery" | "unit-detail" | "compare" | "request-draft" | "booking" | "payment" | "contact" | "general";
+  /** Issue 19: the declared contact field purpose; never inferred from the label text. */
+  readonly contactPurpose?: "phone" | "email";
   readonly mode?: PresentationMode;
   readonly status?: SurfaceLifecycleStatus;
   readonly summary?: string;
@@ -1683,11 +1688,7 @@ function addTimelineEntry(entry: GuestTimelineEntry): void {
 
 function modeFor(surface: GuestSurfacePayload): PresentationMode {
   if (surface.mode) return surface.mode;
-  return surface.surfaceId.includes(":unit:") ||
-    surface.surfaceId.includes(":request:") ||
-    surface.surfaceId.includes(":offer:") ||
-    surface.surfaceId.includes(":booking:") ||
-    surface.surfaceId.includes(":payment:")
+  return surface.kind === "unit-detail" || surface.kind === "request-draft" || surface.kind === "booking" || surface.kind === "payment" || surface.kind === "contact"
     ? "focused-surface"
     : "inline-surface";
 }
@@ -1736,7 +1737,8 @@ function showReopen(): void {
     workspaceReopen.textContent = `Return to ${guestSurfaceHeading(current.summary).toLocaleLowerCase()}`;
 }
 
-function enhanceGuestContactField(mount: HTMLElement): void {
+function enhanceGuestContactField(mount: HTMLElement, purpose: "phone" | "email" | undefined): void {
+  if (purpose === undefined) return;
   const synchronize = (): void => {
     const wrapper = mount.querySelector<HTMLElement>(
       '[data-a2ui-component="TextField"]',
@@ -1744,13 +1746,7 @@ function enhanceGuestContactField(mount: HTMLElement): void {
     const label = wrapper?.querySelector<HTMLLabelElement>("label");
     const input = wrapper?.querySelector<HTMLInputElement>("input");
     if (!wrapper || !label || !input) return;
-    const labelText = label.textContent?.trim() ?? "";
-    const kind = /^phone number/i.test(labelText)
-      ? "phone"
-      : /^email address/i.test(labelText)
-        ? "email"
-        : undefined;
-    if (!kind) return;
+    const kind = purpose;
 
     const hint =
       wrapper.previousElementSibling instanceof HTMLElement &&
@@ -1764,9 +1760,10 @@ function enhanceGuestContactField(mount: HTMLElement): void {
         : undefined;
     if (hint) hint.id = `guest-contact-${kind}-help`;
     input.required = true;
-    input.type = kind === "phone" ? "tel" : "email";
-    input.inputMode = kind === "phone" ? "tel" : "email";
-    input.autocomplete = kind === "phone" ? "tel" : "email";
+    const attributes = contactFieldAttributes(kind);
+    input.type = attributes.type;
+    input.inputMode = attributes.inputMode;
+    input.autocomplete = attributes.autocomplete;
     if (error) {
       error.id = `guest-contact-${kind}-error`;
       error.setAttribute("role", "alert");
@@ -1973,12 +1970,7 @@ function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
   workspaceRegion.hidden = false;
   activeWorkspace.dataset.mode = presentation.mode;
   activeWorkspace.dataset.status = presentation.status;
-  activeWorkspace.dataset.surfaceKind = surface.surfaceId.includes(":unit:") ? "unit-detail"
-    : surface.surfaceId.includes(":compare:") ? "compare"
-    : surface.surfaceId.includes(":discovery:") ? "discovery"
-      : surface.surfaceId.includes(":payment:") || surface.surfaceId.includes(":offer:") ? "payment"
-        : surface.surfaceId.includes(":request:") || surface.surfaceId.includes(":booking:") ? "booking"
-          : "general";
+  activeWorkspace.dataset.surfaceKind = surface.kind ?? "general";
   activeWorkspace.classList.remove("workspace-arrival");
   void activeWorkspace.offsetWidth;
   activeWorkspace.classList.add("workspace-arrival");
@@ -2096,7 +2088,7 @@ if (
     // ADR-0074/0080: a partial older surface retains all waiting guidance as well as its readable Weaver facts.
     mount.before(renderWaiting(surface.waiting));
   }
-  enhanceGuestContactField(mount);
+  enhanceGuestContactField(mount, surface.contactPurpose);
   enhanceListingImages(mount);
   if (presentation.conventionalRoute) {
     const link = document.createElement("a");

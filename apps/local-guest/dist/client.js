@@ -10128,6 +10128,11 @@ Known schemas:
     }
   }
 
+  // apps/local-guest/src/contact-field.ts
+  function contactFieldAttributes(purpose) {
+    return purpose === "phone" ? { type: "tel", inputMode: "tel", autocomplete: "tel" } : { type: "email", inputMode: "email", autocomplete: "email" };
+  }
+
   // apps/local-guest/src/guest-turn-recovery.ts
   function turnEntriesSince(timeline, text) {
     for (let index = timeline.length - 1; index >= 0; index -= 1) {
@@ -11521,7 +11526,7 @@ Known schemas:
   }
   function modeFor(surface) {
     if (surface.mode) return surface.mode;
-    return surface.surfaceId.includes(":unit:") || surface.surfaceId.includes(":request:") || surface.surfaceId.includes(":offer:") || surface.surfaceId.includes(":booking:") || surface.surfaceId.includes(":payment:") ? "focused-surface" : "inline-surface";
+    return surface.kind === "unit-detail" || surface.kind === "request-draft" || surface.kind === "booking" || surface.kind === "payment" || surface.kind === "contact" ? "focused-surface" : "inline-surface";
   }
   function presentationFor(surface) {
     const mode = modeFor(surface);
@@ -11552,7 +11557,8 @@ Known schemas:
     if (canReopen)
       workspaceReopen.textContent = `Return to ${guestSurfaceHeading(current.summary).toLocaleLowerCase()}`;
   }
-  function enhanceGuestContactField(mount) {
+  function enhanceGuestContactField(mount, purpose) {
+    if (purpose === void 0) return;
     const synchronize = () => {
       const wrapper = mount.querySelector(
         '[data-a2ui-component="TextField"]'
@@ -11560,16 +11566,15 @@ Known schemas:
       const label = wrapper?.querySelector("label");
       const input = wrapper?.querySelector("input");
       if (!wrapper || !label || !input) return;
-      const labelText = label.textContent?.trim() ?? "";
-      const kind = /^phone number/i.test(labelText) ? "phone" : /^email address/i.test(labelText) ? "email" : void 0;
-      if (!kind) return;
+      const kind = purpose;
       const hint = wrapper.previousElementSibling instanceof HTMLElement && wrapper.previousElementSibling.dataset.a2uiComponent === "Text" ? wrapper.previousElementSibling : void 0;
       const error2 = wrapper.nextElementSibling instanceof HTMLElement && wrapper.nextElementSibling.dataset.a2uiComponent === "Text" ? wrapper.nextElementSibling : void 0;
       if (hint) hint.id = `guest-contact-${kind}-help`;
       input.required = true;
-      input.type = kind === "phone" ? "tel" : "email";
-      input.inputMode = kind === "phone" ? "tel" : "email";
-      input.autocomplete = kind === "phone" ? "tel" : "email";
+      const attributes = contactFieldAttributes(kind);
+      input.type = attributes.type;
+      input.inputMode = attributes.inputMode;
+      input.autocomplete = attributes.autocomplete;
       if (error2) {
         error2.id = `guest-contact-${kind}-error`;
         error2.setAttribute("role", "alert");
@@ -11726,7 +11731,7 @@ Known schemas:
     workspaceRegion.hidden = false;
     activeWorkspace.dataset.mode = presentation.mode;
     activeWorkspace.dataset.status = presentation.status;
-    activeWorkspace.dataset.surfaceKind = surface.surfaceId.includes(":unit:") ? "unit-detail" : surface.surfaceId.includes(":compare:") ? "compare" : surface.surfaceId.includes(":discovery:") ? "discovery" : surface.surfaceId.includes(":payment:") || surface.surfaceId.includes(":offer:") ? "payment" : surface.surfaceId.includes(":request:") || surface.surfaceId.includes(":booking:") ? "booking" : "general";
+    activeWorkspace.dataset.surfaceKind = surface.kind ?? "general";
     activeWorkspace.classList.remove("workspace-arrival");
     void activeWorkspace.offsetWidth;
     activeWorkspace.classList.add("workspace-arrival");
@@ -11830,7 +11835,7 @@ Known schemas:
     if (surface.requestScreen && surface.waiting?.kind === "operator-response" && presentation.status === "active" && !mount.querySelector(".request-screen")) {
       mount.before(renderWaiting(surface.waiting));
     }
-    enhanceGuestContactField(mount);
+    enhanceGuestContactField(mount, surface.contactPurpose);
     enhanceListingImages(mount);
     if (presentation.conventionalRoute) {
       const link = document.createElement("a");

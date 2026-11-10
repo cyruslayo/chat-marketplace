@@ -1,6 +1,6 @@
 # 19 · Explicit surface-kind and field-purpose hooks
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: none
 Phase: 2 (Batch B)
@@ -30,3 +30,30 @@ The client guesses the surface kind from substrings of the surface id (`client.t
 - This issue changes `apps/local-guest/src/client.ts`. Never run it alongside another `client.ts` issue (11, 14, 19, 21, 24). Rebuild `client.js` and commit the regenerated `dist/client.js` only.
 
 ## Comments
+
+### ADRs read and applied
+
+| ADR | Constraint | Where it applies |
+| --- | --- | --- |
+| 0074 | Surfaces have durable identity and fail-closed placement; the browser does not guess meaning. | AC1 and AC3. |
+| 0081 | Weaver renders platform-produced surfaces; presentation stays platform-owned. | The client reads server metadata, not copy or ids. |
+| 0106 | Cold restore rebuilds both shell and runtime; ids and kinds must survive. | AC4. |
+
+### Implementation
+
+- `GuestSurfacePayload` carries `kind` (a closed enum) and `contactPurpose`. The server sets them in the contact, discovery, request, draft, payment and confirmed-booking builders; `#decorateResult` fills any remaining surface from explicit content markers, with the id only as a server-side last resort.
+- `modeFor` and `renderSurface` read `surface.kind`; the client no longer inspects `surfaceId` for the kind or placement.
+- `enhanceGuestContactField` takes `surface.contactPurpose` and never reads the label text. `contactFieldAttributes` centralises tel/email `type`, `inputMode` and `autocomplete`.
+- The discovery card test now opens at 1600: at 1280 the workspace column is below 48rem, so issue 18's container rule shows the compact rows instead of cards. The card assertion is unchanged where cards render.
+
+### Tests and commands
+
+- `npm run check` — 0 errors.
+- `npx tsx --test test/guest-surface-hooks.test.ts` — 4 tests, 4 passed, 0 failed.
+- Affected: `npx tsx --test test/assistant-cold-journey.test.ts test/guest-copy-pass.test.ts test/assistant-artifact-authority.test.ts test/guest-surface-hooks.test.ts` — 24 tests, 24 passed, 0 failed.
+- Real Chrome: `npx tsx --test --test-name-pattern "Issue 13 AC1" test/guest-discovery-consistency-chromium.test.ts` — 1 test, 1 passed, 0 failed.
+- `client.js` rebuilt; only the regenerated `dist/client.js` is staged.
+
+## Answer
+
+The server declares each surface's kind and each contact field's purpose. The client reads them for placement and field semantics, never an id prefix or a label, and both survive a cold restore. A renamed id prefix or a changed label does not change the enhancement.
