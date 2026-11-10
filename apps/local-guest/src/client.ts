@@ -30,6 +30,7 @@ import { CLIENT_REQUEST_TIMEOUT_MS, CLIENT_TURN_TIMEOUT_MS, TURN_STILL_WORKING_A
 import { changedElsewhereRecovery } from "./stale-surface-response.js";
 import { applyAccessibilityLabels } from "./a2ui-accessibility.js";
 import { contactFieldAttributes } from "./contact-field.js";
+import { combinedAbortSignal } from "./turn-cancel.js";
 import { turnEntriesSince } from "./guest-turn-recovery.js";
 import { assertValidResponseMode, readResponseMode } from "./response-mode.js";
 import { nextAgentMarkState, type AgentMarkEvent, type AgentMarkState } from "./agent-mark-state.js";
@@ -190,6 +191,7 @@ const errorAnnouncer = requiredElement<HTMLElement>("error-announcer");
 const emptyState = requiredElement<HTMLElement>("empty-state");
 const routeHeading = requiredElement<HTMLElement>("route-heading");
 const workingStatus = requiredElement<HTMLElement>("working-status");
+const turnCancel = requiredElement<HTMLButtonElement>("turn-cancel");
 const journeyRail = requiredElement<HTMLElement>("journey-rail");
 const taskRail = requiredElement<HTMLElement>("task-rail");
 const verticalStarters = requiredElement<HTMLElement>("vertical-starters");
@@ -2653,7 +2655,7 @@ async function refreshServerState(preserveConversation = shellState.activeSurfac
   return false;
 }
 
-async function postJson(path: string, body?: unknown, timeoutMs: number = CLIENT_REQUEST_TIMEOUT_MS): Promise<GuestResponse> {
+async function postJson(path: string, body?: unknown, timeoutMs: number = CLIENT_REQUEST_TIMEOUT_MS, userSignal?: AbortSignal): Promise<GuestResponse> {
   const response = await fetch(path, body === undefined ? {} : {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -2661,7 +2663,7 @@ async function postJson(path: string, body?: unknown, timeoutMs: number = CLIENT
     // ADR-0079 bounds establishment; aborting the client wait never rolls back
     // a command that the server may already have committed. A turn waits for the
     // server's worst case (turn-budget.ts), so the wait ends only after the server can finish.
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: userSignal === undefined ? AbortSignal.timeout(timeoutMs) : combinedAbortSignal(userSignal, timeoutMs),
   });
   if (!response.ok) throw new Error(`Guest request failed with HTTP ${response.status}`);
   return readGuestResponse(await response.json());
@@ -2702,21 +2704,38 @@ async function showLandedTurn(text: string): Promise<boolean> {
 async function sendTurn(text: string): Promise<void> {
   if (isLoading) return;
   setLoading(true);
+  const cancel = new AbortController();
+  let stoppedByGuest = false;
+  const showCancel = setTimeout(() => { turnCancel.hidden = false; }, TURN_STILL_WORKING_AFTER_MS);
   // A normal turn takes 5 to 8 seconds. A slower one says it is still working instead of looking stuck.
   const stillWorking = setTimeout(() => { workingStatus.textContent = GUEST_ASSISTANT_COPY.stillWorking; }, TURN_STILL_WORKING_AFTER_MS);
+  const stop = (): void => { stoppedByGuest = true; cancel.abort(); };
+  turnCancel.addEventListener("click", stop);
   try {
-    if (renderResponse(await postJson("/api/turn", { threadId, text }, CLIENT_TURN_TIMEOUT_MS))) {
+    if (renderResponse(await postJson("/api/turn", { threadId, text }, CLIENT_TURN_TIMEOUT_MS, cancel.signal))) {
       if (composerInput.value.trim() === text) composerInput.value = "";
     }
   } catch {
-    if (await showLandedTurn(text)) {
+    if (stoppedByGuest) {
+      // Issue 21: the server may still answer. Show a landed turn, otherwise keep the text and say so.
+      if (await showLandedTurn(text)) {
+        if (composerInput.value.trim() === text) composerInput.value = "";
+      } else {
+        if (composerInput.value.trim() === "") composerInput.value = text;
+        addTurn("assistant", GUEST_ASSISTANT_COPY.stoppedWaiting);
+        announce(GUEST_ASSISTANT_COPY.stoppedWaiting);
+      }
+    } else if (await showLandedTurn(text)) {
       if (composerInput.value.trim() === text) composerInput.value = "";
     } else {
       addRetryTurn("The concierge is temporarily unavailable. Your message is still in the composer; please try again.", () => { void sendTurn(text); });
       announce("The concierge is temporarily unavailable. Your message remains in the composer.", true);
     }
   } finally {
+    clearTimeout(showCancel);
     clearTimeout(stillWorking);
+    turnCancel.hidden = true;
+    turnCancel.removeEventListener("click", stop);
     setLoading(false);
   }
 }

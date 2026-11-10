@@ -51,6 +51,8 @@ export const GUEST_ASSISTANT_COPY = Object.freeze({
   safeClarification: "I can help you find and compare stays, explain pricing, or check a booking status. What would you like to do?",
   // Shown when a turn is slower than a normal one; the guest is not told the request failed.
   stillWorking: "Still working on your request. A stay search can take a little longer, so please keep this page open.",
+  // Issue 21: the browser stopped waiting; the server may still answer. Never claim a server-side cancellation.
+  stoppedWaiting: "Stopped waiting. Your message may still be answered.",
   // ADR 0067 governs the support window and active-stay on-call coverage.
   generalSupport: "General human support is available daily from 8:00 AM to 8:00 PM WAT. Use the existing support channel provided with your stay.",
   activeStayEmergencySupport: "Active stays have 24/7 Human Incident Support. Use Active-Stay Emergency Support through your existing booking support route.",

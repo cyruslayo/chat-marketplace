@@ -784,6 +784,7 @@ function chatComposerHtml(mode: ModePresentation): string {
         <span id="composer-hint" class="sr-only">${escapeHtml(mode.composer.hint)}</span>
         <button id="composer-submit" class="ui-button ui-button--primary" type="submit" aria-label="Send">${icon("arrow-up")}</button>
         <p id="working-status" hidden></p>
+        <button id="turn-cancel" class="ui-button ui-button--quiet ui-button--small" type="button" hidden>Cancel</button>
       </form>`;
 }
 

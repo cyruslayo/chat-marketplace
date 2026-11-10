@@ -9541,6 +9541,8 @@ Known schemas:
     safeClarification: "I can help you find and compare stays, explain pricing, or check a booking status. What would you like to do?",
     // Shown when a turn is slower than a normal one; the guest is not told the request failed.
     stillWorking: "Still working on your request. A stay search can take a little longer, so please keep this page open.",
+    // Issue 21: the browser stopped waiting; the server may still answer. Never claim a server-side cancellation.
+    stoppedWaiting: "Stopped waiting. Your message may still be answered.",
     // ADR 0067 governs the support window and active-stay on-call coverage.
     generalSupport: "General human support is available daily from 8:00 AM to 8:00 PM WAT. Use the existing support channel provided with your stay.",
     activeStayEmergencySupport: "Active stays have 24/7 Human Incident Support. Use Active-Stay Emergency Support through your existing booking support route.",
@@ -10133,6 +10135,18 @@ Known schemas:
     return purpose === "phone" ? { type: "tel", inputMode: "tel", autocomplete: "tel" } : { type: "email", inputMode: "email", autocomplete: "email" };
   }
 
+  // apps/local-guest/src/turn-cancel.ts
+  function combinedAbortSignal(user, timeoutMs, any = typeof AbortSignal.any === "function" ? (signals) => AbortSignal.any(signals) : void 0) {
+    const timeout = AbortSignal.timeout(timeoutMs);
+    if (any !== void 0) return any([user, timeout]);
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    if (user.aborted) abort();
+    else user.addEventListener("abort", abort, { once: true });
+    timeout.addEventListener("abort", abort, { once: true });
+    return controller.signal;
+  }
+
   // apps/local-guest/src/guest-turn-recovery.ts
   function turnEntriesSince(timeline, text) {
     for (let index = timeline.length - 1; index >= 0; index -= 1) {
@@ -10474,6 +10488,7 @@ Known schemas:
   var emptyState = requiredElement("empty-state");
   var routeHeading = requiredElement("route-heading");
   var workingStatus = requiredElement("working-status");
+  var turnCancel = requiredElement("turn-cancel");
   var journeyRail = requiredElement("journey-rail");
   var taskRail = requiredElement("task-rail");
   var verticalStarters = requiredElement("vertical-starters");
@@ -12353,7 +12368,7 @@ Known schemas:
     }
     return false;
   }
-  async function postJson(path, body, timeoutMs = CLIENT_REQUEST_TIMEOUT_MS) {
+  async function postJson(path, body, timeoutMs = CLIENT_REQUEST_TIMEOUT_MS, userSignal) {
     const response = await fetch(path, body === void 0 ? {} : {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -12361,7 +12376,7 @@ Known schemas:
       // ADR-0079 bounds establishment; aborting the client wait never rolls back
       // a command that the server may already have committed. A turn waits for the
       // server's worst case (turn-budget.ts), so the wait ends only after the server can finish.
-      signal: AbortSignal.timeout(timeoutMs)
+      signal: userSignal === void 0 ? AbortSignal.timeout(timeoutMs) : combinedAbortSignal(userSignal, timeoutMs)
     });
     if (!response.ok) throw new Error(`Guest request failed with HTTP ${response.status}`);
     return readGuestResponse(await response.json());
@@ -12394,15 +12409,33 @@ Known schemas:
   async function sendTurn(text) {
     if (isLoading) return;
     setLoading(true);
+    const cancel = new AbortController();
+    let stoppedByGuest = false;
+    const showCancel = setTimeout(() => {
+      turnCancel.hidden = false;
+    }, TURN_STILL_WORKING_AFTER_MS);
     const stillWorking = setTimeout(() => {
       workingStatus.textContent = GUEST_ASSISTANT_COPY.stillWorking;
     }, TURN_STILL_WORKING_AFTER_MS);
+    const stop = () => {
+      stoppedByGuest = true;
+      cancel.abort();
+    };
+    turnCancel.addEventListener("click", stop);
     try {
-      if (renderResponse(await postJson("/api/turn", { threadId, text }, CLIENT_TURN_TIMEOUT_MS))) {
+      if (renderResponse(await postJson("/api/turn", { threadId, text }, CLIENT_TURN_TIMEOUT_MS, cancel.signal))) {
         if (composerInput.value.trim() === text) composerInput.value = "";
       }
     } catch {
-      if (await showLandedTurn(text)) {
+      if (stoppedByGuest) {
+        if (await showLandedTurn(text)) {
+          if (composerInput.value.trim() === text) composerInput.value = "";
+        } else {
+          if (composerInput.value.trim() === "") composerInput.value = text;
+          addTurn("assistant", GUEST_ASSISTANT_COPY.stoppedWaiting);
+          announce(GUEST_ASSISTANT_COPY.stoppedWaiting);
+        }
+      } else if (await showLandedTurn(text)) {
         if (composerInput.value.trim() === text) composerInput.value = "";
       } else {
         addRetryTurn("The concierge is temporarily unavailable. Your message is still in the composer; please try again.", () => {
@@ -12411,7 +12444,10 @@ Known schemas:
         announce("The concierge is temporarily unavailable. Your message remains in the composer.", true);
       }
     } finally {
+      clearTimeout(showCancel);
       clearTimeout(stillWorking);
+      turnCancel.hidden = true;
+      turnCancel.removeEventListener("click", stop);
       setLoading(false);
     }
   }

@@ -1,6 +1,6 @@
 # 21 · Cancel a long assistant turn
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: none
 Phase: 3 (Batch C)
@@ -31,3 +31,29 @@ A turn can wait about 188s (`apps/local-guest/src/turn-budget.ts`). `postJson` (
 - This issue changes `apps/local-guest/src/client.ts`. Never run it alongside another `client.ts` issue (11, 14, 19, 21, 24). Rebuild `client.js` and commit the regenerated `dist/client.js` only.
 
 ## Comments
+
+### ADRs read and applied
+
+| ADR | Constraint | Where it applies |
+| --- | --- | --- |
+| 0106 | The turn wait is not a user-facing deadline; an interrupted wait must re-read the thread and never claim a server cancel. | AC2 and AC3. |
+| 0078 | Focus and status remain usable on a phone; the canceled state is spoken. | AC1 and AC2. |
+| 0079 | Aborting the browser wait never rolls back a committed command. | `showLandedTurn` decides from the thread. |
+
+### Implementation
+
+- The composer page has a hidden `#turn-cancel` button that appears with the existing still-working copy after `TURN_STILL_WORKING_AFTER_MS`.
+- `postJson` accepts a user signal; `combinedAbortSignal` uses `AbortSignal.any` when available and a manual `AbortController` fallback otherwise.
+- On a guest cancel, `showLandedTurn` reads `/api/state`: a landed turn is shown and its text cleared; otherwise the text stays in the composer and the guest sees "Stopped waiting. Your message may still be answered." (never a server-cancel claim).
+- The copy lives in `GUEST_ASSISTANT_COPY.stoppedWaiting`.
+
+### Tests and commands
+
+- `npm run check` — 0 errors.
+- `npx tsx --test test/guest-turn-cancel.test.ts` — 3 tests, 3 passed, 0 failed.
+- Real Chrome: `npx tsx --test test/guest-turn-cancel-chromium.test.ts` — 1 test, 1 passed, 0 failed (Cancel appears after the threshold, the message stays, the stopped-waiting sentence appears).
+- `client.js` rebuilt; only the regenerated `dist/client.js` is staged.
+
+## Answer
+
+A slow turn now offers Cancel after the still-working threshold. Cancel stops the browser wait, re-reads the thread, shows a turn that landed, and otherwise keeps the guest's message with "Stopped waiting. Your message may still be answered." The `AbortSignal.any` fallback is covered by tests.

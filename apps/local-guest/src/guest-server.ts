@@ -508,6 +508,7 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays,
     form#composer[data-focused="true"] #composer-submit { min-height: 2.75rem; }
     #composer-submit:disabled { background: var(--color-surface-subtle); cursor: progress; }
     #working-status { grid-column: 1 / -1; margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-small); }
+    #turn-cancel { grid-column: 1 / -1; justify-self: start; }
     @media (min-width: 48rem) {
       #transcript, #workspace-region, form#composer, #criteria-strip { padding-left: var(--layout-gutter-tablet); padding-right: var(--layout-gutter-tablet); }
     }
