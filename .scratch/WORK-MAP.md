@@ -347,7 +347,7 @@ Work on branch `fix/chat-hardening` in a dedicated worktree, one writer at a tim
 | [57](shortlet-concierge-launch/issues/57-assistant-open-question-state.md) | resolved | 62 | Open-question state plus the ADR 0106 amendment. |
 | [58](shortlet-concierge-launch/issues/58-structured-quick-replies.md) | resolved | 57 | Structured quick-reply chips (defect 2); captures done. |
 | [59](shortlet-concierge-launch/issues/59-assistant-no-dead-ends.md) | resolved | 57 (58 for chips) | Re-ask the open question instead of the generic fallback; settle pending dates after the verdict. |
-| [60](shortlet-concierge-launch/issues/60-guest-safe-refusals.md) | resolved | 62 | Closed refusal map, client handling, stale/forbidden Chrome cases, captures and the Weaver note done. |
+| [60](shortlet-concierge-launch/issues/60-guest-safe-refusals.md) | resolved | 62 | Real stale/forbidden refusal captures (baselines + differ assertions), disabled styling, and the Weaver note. |
 | [61](shortlet-concierge-launch/issues/61-terse-follow-up-evals.md) | claimed | 57, 58, 59 | Offline rows, live eval scaffolding and docs done; only the owner's live run remains. |
 
 Order: 62 → 57 → 58 → 59 → 60 → 61. Then the batch gate (`npm run build`, `check`, `test:workers`, full `npm test`, capture sweep), merge with approval, and a staging retest of the 9 Nov journey.
