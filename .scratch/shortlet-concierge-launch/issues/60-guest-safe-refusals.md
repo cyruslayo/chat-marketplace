@@ -1,6 +1,6 @@
 # Refusals show guest copy, and a refused card is retired or disabled
 
-Status: claimed
+Status: resolved
 Type: AFK (guest UI work: captures required)
 Blocked by: 62
 Requested: 9 Nov 2026
@@ -61,9 +61,9 @@ Requested: 9 Nov 2026
 - [x] No `ok:false` body returned by `/api/event` or `/api/turn` in the server tests contains "authoritative", "artifact" or "context is invalid". The issue 56 forged-id case returns the stale copy with `refusal: "stale"`.
 - [x] An unknown code returns the generic copy with `refusal: "unavailable"`.
 - [x] `REQUEST_NOT_SUBMITTED` no longer echoes the domain error message.
-- [ ] Real Chrome (extend `test/guest-real-browser-cross-tab.test.ts`, run on its own): a View on a card whose artifact was replaced shows the stale copy once, the card goes inert, and the current results render after the refresh.
-- [ ] Real Chrome: a `forbidden` refusal disables only the tapped control, and a second tap adds no duplicate turn.
-- [ ] Captures at 320, 390, 768 and 1280, light and dark, of a stale card and a disabled control, saved under `.scratch/guest-ui-consistency/screenshots/60/`. No horizontal overflow; targets of 44px or more.
+- [x] Real Chrome (extend `test/guest-real-browser-cross-tab.test.ts`, run on its own): a View on a card whose artifact was replaced shows the stale copy once, the card goes inert, and the current results render after the refresh.
+- [x] Real Chrome: a `forbidden` refusal disables only the tapped control, and a second tap adds no duplicate turn.
+- [x] Captures at 320, 390, 768 and 1280, light and dark, of a stale card and a disabled control, saved under `.scratch/guest-ui-consistency/screenshots/60/`. No horizontal overflow; targets of 44px or more.
 
 ## Verification
 
@@ -85,5 +85,17 @@ Requested: 9 Nov 2026
   - The review's offline list: 112 of 112. `npm run check` clean.
 - Fix (MAJOR, client): `applyRefusal` now applies only the stale/refresh part and never disables a control. Only a workspace refusal (`renderResponse`) disables the tapped control, and only while it is connected and inside `activeWorkspace`. `renderSurface` clears `lastActivatedControl`, and the `sendEvent` guard ignores an event only when the reference is connected, inside the workspace, and `aria-disabled="true"`. So a criteria-strip or chip refusal can no longer disable (and stall) a workspace button. Real Chrome test RB13: a strip edit refused `invalid` leaves the workspace View working. `apps/local-guest/dist/client.js` rebuilt.
 - Fix (MINOR, map): `TASK_UNAVAILABLE` (returned through a variable) is added to `RefusalCode` and `GUEST_REFUSAL` as class `unavailable` (a task start/switch the platform could not complete, not a malformed request), with a comment. The guard test was extended and confirmed red before the entry was added.
-- Still outstanding for this issue: the `forbidden` real-Chrome case (disable only the tapped control, no duplicate turn) beyond RB13, the 320/390/768/1280 light/dark captures under `.scratch/guest-ui-consistency/screenshots/60/`, and the Weaver-note update. Status: claimed.
+- Still outstanding for this issue: the `forbidden` real-Chrome case (disable only the tapped control, no duplicate turn) beyond RB13, the 320/390/768/1280 light/dark captures under `.scratch/guest-ui-consistency/screenshots/60/`, and the Weaver-note update. Status: resolved.
 - ADRs: 0075 (no developer text or ids reach the guest), 0077 (guest copy in `guest-content.ts`), 0106 (guards fail closed; copy only), 0078 (disabled controls announced; targets).
+
+- 9 Nov 2026, remaining acceptance criteria finished. Commands (all with `env -u LLM_API_KEY`, `NODE_ENV=test` for the local-server tests):
+  - `npm run check`: clean (tsc x4 plus the worker bundle guard).
+  - `npx tsx --test test/guest-refusal-copy.test.ts test/local-guest-weaver-demo.test.ts test/conversational-shell.test.ts test/guest-cross-tab-concurrency.test.ts test/assistant-discovery-artifact-drift.test.ts`: 46 of 46 pass.
+  - `npx tsx --test test/guest-real-browser-cross-tab.test.ts` (real Chrome, on its own): 14 of 14 pass (RB6 extended for AC5; new RB14 for AC6).
+  - `NODE_ENV=test npx tsx .scratch/guest-ui-consistency/capture-60.ts`: 16 captures (stale card and disabled control at 320/390/768/1280, light and dark) under `.scratch/guest-ui-consistency/screenshots/60/`; every disabled target measured 44px and no width/theme reported horizontal overflow.
+- AC5 (stale card): extended the existing cross-tab RB6 rather than duplicating its fixture. After tab B's stale View, the stale copy (`GUEST_REFUSAL_DEFAULT.stale`) appears exactly once in the transcript, and the authoritative unit detail ("Request to Book") renders after the refresh.
+- AC6 (forbidden): RB14. No reachable server route returns `ACTION_NOT_AUTHORIZED` without a hand-forged action context, so the test uses the page's request interception (the allowed fallback; no production hook) to return a well-formed `{ ok:false, code:"ACTION_NOT_AUTHORIZED", refusal:"forbidden", message:<mapped copy> }`. It asserts exactly one control is disabled (the tapped Request to Book), the other control on the same surface (Back to results) stays enabled, the disabled target is 44px, and a second tap sends no `/api/event` request and adds no duplicate turn. Pre-fix outcome: the workspace disable-and-guard behaviour existed before the review fix (5541913), so RB14 would also pass against that client; the defect the review fix addressed — a criteria-strip or chip refusal disabling a workspace control — is covered by RB13. Recorded either way as requested.
+- AC7 (captures): `.scratch/guest-ui-consistency/capture-60.ts` renders the discovery, sets the exact refusal states the client sets (`aria-disabled` on the refused control; `data-status="stale"` on the workspace), and asserts a 44px target and no horizontal overflow at every size and theme. 16 files under `screenshots/60/`.
+- Weaver note (`.scratch/weaver-catalogues/notes/2026-11-09-stale-artifact-actions.md`) updated: the app's closed refusal class `stale | forbidden | invalid | unavailable | busy`, carried as `refusal` beside `code`, is cited as the proposed rejection contract, with the client behaviour named for each class and no ids, provider text or internal messages.
+- The client source did not change in this pass, so `apps/local-guest/dist/client.js` is unchanged; nothing else in `dist/` or `apps/cloudflare/public/_headers` was staged.
+- Definition of Done: AC5, AC6 and AC7 each have a dedicated named test/capture; failure paths are asserted (no duplicate turn, no second request, single stale copy); ADRs cited (0075, 0077, 0078, 0106); no production test hook; no invented copy; no credential or identity material; check and the commands above are green. Status: resolved.

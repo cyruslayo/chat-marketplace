@@ -23,6 +23,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { GUEST_REFUSAL_DEFAULT } from "../apps/web-agent/src/guest-content.js";
 import {
   launchRealBrowser,
   type RealBrowserInstance,
@@ -443,6 +444,13 @@ test("RB6 — A superseded real-tab action fails closed", async () => {
     const clickB = await ctx.tabB.clickButton("View apartment", IKOYI_TITLE);
     assert.equal(clickB, true);
 
+    // Issue 60 AC5: the stale-class refusal shows the guest copy exactly once (no developer message, no duplicate), and the
+    // authoritative current projection renders after the refresh.
+    await ctx.tabB.waitForText(GUEST_REFUSAL_DEFAULT.stale, 15000);
+    const staleCopies = await ctx.tabB.evaluate<number>(
+      `[...document.querySelectorAll('.turn.assistant')].filter((t) => (t.textContent ?? '').includes(${JSON.stringify(GUEST_REFUSAL_DEFAULT.stale)})).length`,
+    );
+    assert.equal(staleCopies, 1, "the stale copy is shown exactly once");
     // Server rejects stale action (ADR-0074: fail closed), then refreshes the
     // authoritative current projection. Wait for the recovered unit detail.
     await ctx.tabB.waitForText("Request to Book", 15000);
@@ -715,6 +723,64 @@ test("RB13 — A strip edit refused with an invalid class leaves the workspace V
     // The refused strip edit must not disable the workspace: View still opens the unit.
     await click(ctx.tabA, "View apartment", IKOYI_TITLE);
     await ctx.tabA.waitForText("Request to Book", 15000);
+  } finally {
+    await ctx.close();
+  }
+});
+
+// ============================================================================
+// RB14 — A forbidden refusal disables only the tapped control (issue 60)
+// ============================================================================
+test("RB14 — A forbidden refusal disables only the tapped control and a second tap sends no request", async () => {
+  const ctx = await startRealBrowserContext();
+  try {
+    // No reachable server route returns ACTION_NOT_AUTHORIZED without a hand-forged action context, so this test uses the page's
+    // request interception (the allowed fallback) to return it; the client then applies the real refusal handling.
+    await sendPrompt(ctx.tabA, CANONICAL_PROMPT);
+    await ctx.tabA.waitForText(IKOYI_TITLE, 30000);
+    // Open the unit detail, which has two controls (Request to Book and Back to results), so "other controls still work" is testable.
+    await click(ctx.tabA, "View apartment", IKOYI_TITLE);
+    await ctx.tabA.waitForText("Request to Book", 15000);
+    let eventRequests = 0;
+    const stop = await ctx.tabA.interceptRequests(async (url) => {
+      if (!url.includes("/api/event")) return undefined;
+      eventRequests += 1;
+      return {
+        status: 200,
+        headers: [{ name: "content-type", value: "application/json" }],
+        body: new TextEncoder().encode(JSON.stringify({ ok: false, code: "ACTION_NOT_AUTHORIZED", refusal: "forbidden", message: GUEST_REFUSAL_DEFAULT.forbidden })),
+      };
+    });
+    try {
+      assert.equal(await ctx.tabA.clickButton("Request to Book"), true, "a Request to Book control was not found");
+      await ctx.tabA.waitForText(GUEST_REFUSAL_DEFAULT.forbidden, 15000);
+      assert.equal(eventRequests, 1, "the View sent one request");
+      const state = await ctx.tabA.evaluate<{ disabled: number; buttons: number; height: number; othersEnabled: number }>(`(() => {
+        const buttons = [...document.querySelectorAll('#active-workspace button')];
+        const disabled = buttons.filter((button) => button.getAttribute('aria-disabled') === 'true');
+        const target = disabled[0] ?? null;
+        return {
+          disabled: disabled.length,
+          buttons: buttons.length,
+          height: target ? target.getBoundingClientRect().height : 0,
+          othersEnabled: buttons.filter((button) => button.getAttribute('aria-disabled') !== 'true').length,
+        };
+      })()`);
+      assert.equal(state.buttons >= 2, true, "the surface shows several controls");
+      assert.equal(state.disabled, 1, "exactly one control is disabled (the tapped one)");
+      assert.ok(state.height >= 44, `the disabled control keeps a 44px target (got ${state.height})`);
+      assert.ok(state.othersEnabled >= 1, "the other controls stay enabled");
+
+      // A second tap on the disabled control sends no request and adds no duplicate turn.
+      const before = await ctx.tabA.evaluate<number>(`document.querySelectorAll('.turn.assistant').length`);
+      await ctx.tabA.evaluate(`(() => { const button = document.querySelector('#active-workspace button[aria-disabled="true"]'); if (button) button.click(); })()`);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const after = await ctx.tabA.evaluate<number>(`document.querySelectorAll('.turn.assistant').length`);
+      assert.equal(eventRequests, 1, "the second tap sent no request");
+      assert.equal(after, before, "the second tap added no duplicate turn");
+    } finally {
+      await stop();
+    }
   } finally {
     await ctx.close();
   }

@@ -27,7 +27,7 @@ The surface id and the artifact id in an action's context are two independent ke
 
 `weaver-web` hands an action to the host and has no shared shape for "the server refused this". Each host keeps its own list of codes that should mark a surface stale. Ours handles `STALE_SURFACE`, `STALE_ACTION` and `EXPIRED_SURFACE` but not `ARTIFACT_MISMATCH` or `INVALID_ARTIFACT`, so the card stayed live after a refusal that should have retired it.
 
-**Suggestion:** a closed rejection class on the action result (`stale` | `forbidden` | `invalid` | `unavailable`), with a default `weaver-web` behaviour per class: `stale` greys out the surface and asks the host to refresh, `forbidden` and `invalid` disable only the control, `unavailable` allows a retry. Hosts map their codes to a class once, instead of re-deriving the UI rule per screen.
+**Suggestion:** a closed rejection class on the action result (`stale` | `forbidden` | `invalid` | `unavailable` | `busy`), with a default `weaver-web` behaviour per class: `stale` retires the surface and asks the host to refresh (the guest sees fixed copy once), `forbidden` and `invalid` disable only the tapped control until the next server update for the surface, `unavailable` allows a retry, and `busy` keeps the control enabled and shows the copy once. Hosts map their codes to a class once, instead of re-deriving the UI rule per screen.
 
 ### 3. Nothing stops a refused control from being tapped again
 
@@ -36,8 +36,14 @@ After a refusal the same Button stays enabled, so a guest taps it again and gets
 ## What the app changed (no Weaver change needed for the fix)
 
 - The server no longer re-mints a discovery artifact id when it re-queries for a changed context. The card's id stays valid (ADR 0106).
-- Planned on the app side ([issue 60](../../shortlet-concierge-launch/issues/60-guest-safe-refusals.md)): a closed refusal class (`stale | forbidden | invalid | unavailable | busy`) on every refused action, mapped from the server code to guest copy. We offer it as the starting shape for the Weaver rejection contract in finding 2.
-- Open on the app side: treat `ARTIFACT_MISMATCH` and `INVALID_ARTIFACT` as stale in `client.ts`, and show guest copy instead of the developer message. Findings 2 and 3 would make this the default in Weaver rather than per app.
+- Implemented on the app side ([issue 60](../../shortlet-concierge-launch/issues/60-guest-safe-refusals.md)): every refused action now carries a closed class as `refusal` beside its `code` — `stale | forbidden | invalid | unavailable | busy`. The server maps each code to guest copy once (no ids, provider text or internal messages reach the guest), and the client applies one behaviour per class:
+  - `stale`: retire the view, re-render its status, and refresh from the server; the guest sees the fixed copy once.
+  - `forbidden` / `invalid`: set `aria-disabled` on the tapped control (announced, target unchanged) until the next server render of that surface; other controls keep working and a second tap sends nothing.
+  - `unavailable`: show the fixed copy; a retry is allowed.
+  - `busy`: keep the control enabled and show the copy once.
+  - An identical consecutive refusal collapses into one turn instead of repeating.
+  We offer this class and its per-class behaviour as the starting shape for the Weaver rejection contract in finding 2.
+- The class mapping now treats `ARTIFACT_MISMATCH` and `INVALID_ARTIFACT` as stale, so those cards retire and refresh instead of staying live. Findings 2 and 3 would make this the default in Weaver rather than per app.
 
 ## Questions back to Weaver
 
