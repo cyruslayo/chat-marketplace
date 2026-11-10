@@ -14,9 +14,9 @@
  * facts found in the latest message.
  */
 
-import { BOOKING_HORIZON_DAYS, DEFAULT_STAY_DATE_POLICY, MAX_STAY_NIGHTS, dateKeyInLagos, isExtendedStayLength, resolveStayDatePhrases, type ExtendedStayPolicy } from "../../../domains/shortlet/src/index.js";
+import { BOOKING_HORIZON_DAYS, DEFAULT_STAY_DATE_POLICY, MAX_STAY_NIGHTS, NUMBER_WORDS, dateKeyInLagos, isExtendedStayLength, readStayLength, resolveStayDatePhrases, type ExtendedStayPolicy, type StayLengthUnit } from "../../../domains/shortlet/src/index.js";
 import { formatNgnKobo } from "../../web-agent/src/discovery-a2ui.js";
-import { GUEST_ASSISTANT_COPY, GUEST_LOCATION_CONFLICT } from "../../web-agent/src/guest-content.js";
+import { GUEST_ASSISTANT_COPY, GUEST_LOCATION_CONFLICT, guestStayMonthsWords } from "../../web-agent/src/guest-content.js";
 import { AMENITY_ALIASES, SEARCH_AREAS, STAY_LOCATION_ALIASES } from "./stay-vocabulary.js";
 import { extractBudget, type StayBudget } from "./stay-budget.js";
 
@@ -71,10 +71,28 @@ export interface PendingLocationChange {
  * Every field is optional: partial turns contribute whatever they contain and
  * the merge keeps everything already understood.
  */
+/** Issue 19: a stay length the guest typed in weeks or months, kept for the show-back ("60 nights (2 months)"). Nights come from `nights`. */
+export interface StatedStayLength {
+  readonly unit: StayLengthUnit;
+  readonly count: number;
+  /** The nights the length sets (a month is the policy's 30). */
+  readonly nights: number;
+}
+
+/**
+ * Issue 19 (decision 2; owner decision 8 Nov 2026): "60 nights (2 months)" while the stated length is in months and holds these
+ * nights; the nights alone otherwise. The reply, the criteria strip and the criteria summary all read it.
+ */
+export function stayNightsLabel(nights: number, stayLength: StatedStayLength | undefined): string {
+  const words = `${nights} ${nights === 1 ? "night" : "nights"}`;
+  return stayLength?.unit === "month" && stayLength.nights === nights ? `${words} ${guestStayMonthsWords(stayLength.count)}` : words;
+}
+
 export interface DiscoverySearchContext {
   readonly city?: string;
   readonly neighbourhood?: string;
   readonly nights?: number;
+  readonly stayLength?: StatedStayLength;
   readonly partySize?: number;
   readonly bedrooms?: number;
   readonly pendingLocationChange?: PendingLocationChange;
@@ -101,6 +119,7 @@ export interface StayRequestDates {
 export interface StayRequestFacts {
   readonly location?: StayRequestLocation;
   readonly nights?: number;
+  readonly stayLength?: StatedStayLength;
   readonly partySize?: number;
   readonly bedrooms?: number;
   readonly dates?: StayRequestDates;
@@ -186,7 +205,7 @@ export function stayCriteriaGap(criteria: StayCriteriaFacts): StayCriteriaGap {
 }
 
 export type StayRequestResolution =
-  | { readonly kind: "search"; readonly filters: StayRequestFilters }
+  | { readonly kind: "search"; readonly filters: StayRequestFilters; readonly stayLength?: StatedStayLength }
   | { readonly kind: "clarify"; readonly missing: readonly string[]; readonly next: StayCriterion; readonly reply: string }
   /** Resolved dates are shown back as concrete dates; no search runs until confirmed. */
   | { readonly kind: "confirm"; readonly filters: StayRequestFilters; readonly reply: string }
@@ -194,8 +213,6 @@ export type StayRequestResolution =
   | { readonly kind: "refuse"; readonly reply: string };
 
 
-// Up to three digits: Extended Stays run to 180 nights (ADR 0092, amended 1 Nov 2026), so two digits cannot read them.
-const NIGHTS_PATTERN = /\b(\d{1,3})\s*(?:nights?|nitesc?|nts?)\b/i;
 const GUESTS_PATTERN = /\b(\d{1,2})\s*(?:people|persons?|guests?|adults?|pax)\b/i;
 const BEDROOMS_PATTERN = /\b(\d{1,2}|one|two|three|four)\s*[- ]?bedrooms?\b/i;
 const BEDROOM_WORDS: Readonly<Record<string, number>> = { one: 1, two: 2, three: 3, four: 4 };
@@ -205,6 +222,9 @@ const AFFIRMATION_PATTERN = /^(?:yes|yeah|yep|yup|sure|ok|okay|okey|go ahead|do 
 
 // Plain party phrases (issue 01 AC4). An explicit count ("4 guests") always wins.
 const SOLO_PATTERN = /\b(?:just|only)\s+(?:me|myself)\b|\bby myself\b|\bon my own\b|\bsolo\b/i;
+/** Issue 20 (coordinator): "4 of us" or "the four of us", in digits or number words of two or more. "us", "a few of us" and "some of us" give no party. */
+const PARTY_WORDS = Object.keys(NUMBER_WORDS).filter((word) => (NUMBER_WORDS[word] ?? 0) >= 2).join("|");
+const PARTY_OF_US_PATTERN = new RegExp(`\\b(?:the\\s+)?(\\d{1,2}|${PARTY_WORDS})\\s+of\\s+us\\b`, "i");
 const PAIR_PATTERN = /\b(?:me|myself)\s+and\s+my\s+(?:wife|husband|partner|girlfriend|boyfriend|fianc[eé]e?|friend|colleague|sister|brother|mum|mom|dad|son|daughter)\b|\bmy\s+(?:wife|husband|partner)\s+and\s+(?:i|me)\b|\b(?:a|as a)\s+couple\b|\b(?:the\s+)?two of us\b/i;
 
 // Preferences discovery cannot filter by yet. They are acknowledged, never
@@ -284,6 +304,7 @@ function buildContext(parts: {
   readonly city?: string;
   readonly neighbourhood?: string;
   readonly nights?: number;
+  readonly stayLength?: StatedStayLength;
   readonly partySize?: number;
   readonly bedrooms?: number;
   readonly pendingLocationChange?: PendingLocationChange;
@@ -298,6 +319,7 @@ function buildContext(parts: {
     ...(parts.city === undefined ? {} : { city: parts.city }),
     ...(parts.neighbourhood === undefined ? {} : { neighbourhood: parts.neighbourhood }),
     ...(parts.nights === undefined ? {} : { nights: parts.nights }),
+    ...(parts.stayLength === undefined || parts.nights === undefined ? {} : { stayLength: parts.stayLength }),
     ...(parts.partySize === undefined ? {} : { partySize: parts.partySize }),
     ...(parts.bedrooms === undefined ? {} : { bedrooms: parts.bedrooms }),
     ...(parts.pendingLocationChange === undefined ? {} : { pendingLocationChange: parts.pendingLocationChange }),
@@ -309,6 +331,7 @@ function scalarParts(context: DiscoverySearchContext): {
   readonly city?: string;
   readonly neighbourhood?: string;
   readonly nights?: number;
+  readonly stayLength?: StatedStayLength;
   readonly partySize?: number;
   readonly bedrooms?: number;
   readonly checkIn?: string;
@@ -322,6 +345,7 @@ function scalarParts(context: DiscoverySearchContext): {
     ...(context.city === undefined ? {} : { city: context.city }),
     ...(context.neighbourhood === undefined ? {} : { neighbourhood: context.neighbourhood }),
     ...(context.nights === undefined ? {} : { nights: context.nights }),
+    ...(context.stayLength === undefined ? {} : { stayLength: context.stayLength }),
     ...(context.partySize === undefined ? {} : { partySize: context.partySize }),
     ...(context.bedrooms === undefined ? {} : { bedrooms: context.bedrooms }),
     ...(context.checkIn === undefined ? {} : { checkIn: context.checkIn, datesConfirmed: context.datesConfirmed === true }),
@@ -376,15 +400,25 @@ export function stayBudgetKobo(context: DiscoverySearchContext): number | undefi
 export function extractStayRequestFacts(text: string, options: { readonly now?: Date } = {}): StayRequestFacts {
   const normalized = text.trim();
   const location = resolveLocationMention(normalized);
-  const nightsMatch = NIGHTS_PATTERN.exec(normalized);
+  // Issue 19: the length the guest typed in nights, weeks or months (ADR 0092: a month is 30 nights). A vague length gives none.
+  const typedLength = readStayLength(normalized);
+  const lengthReading = typedLength.kind === "length" ? typedLength : undefined;
   const guestsMatch = GUESTS_PATTERN.exec(normalized);
   const bedroomsMatch = BEDROOMS_PATTERN.exec(normalized);
   const dates = options.now === undefined ? undefined : stayRequestDates(normalized, options.now);
   // A check-out date fixes the number of nights; otherwise use the nights the Guest typed.
   const nights = dates?.checkOut !== undefined
     ? dayNumber(dates.checkOut) - dayNumber(dates.checkIn)
-    : nightsMatch ? Number.parseInt(nightsMatch[1] ?? "", 10) : undefined;
+    : lengthReading?.nights;
+  // A check-out date wins over a stated length, so the length is kept only when it sets the nights.
+  // Nights-only stays keep the existing shape (AC8): only a week, fortnight or month the guest named is kept for the show-back.
+  const stayLength = dates?.checkOut === undefined && lengthReading !== undefined && lengthReading.unit !== "night"
+    ? { unit: lengthReading.unit, count: lengthReading.count, nights: lengthReading.nights }
+    : undefined;
+  const partyOfUsToken = PARTY_OF_US_PATTERN.exec(normalized)?.[1]?.toLowerCase();
+  const partyOfUs = partyOfUsToken === undefined ? undefined : /^\d/.test(partyOfUsToken) ? Number.parseInt(partyOfUsToken, 10) : NUMBER_WORDS[partyOfUsToken];
   const partySize = guestsMatch ? Number.parseInt(guestsMatch[1] ?? "", 10)
+    : partyOfUs !== undefined ? partyOfUs
     : SOLO_PATTERN.test(normalized) ? 1
       : PAIR_PATTERN.test(normalized) ? 2 : undefined;
   const bedroomsToken = bedroomsMatch?.[1]?.toLowerCase();
@@ -398,6 +432,7 @@ export function extractStayRequestFacts(text: string, options: { readonly now?: 
     ...(budget === undefined ? {} : { budget }),
     ...(location === undefined ? {} : { location }),
     ...(nights === undefined || Number.isNaN(nights) || nights < 1 ? {} : { nights }),
+    ...(stayLength === undefined || nights === undefined ? {} : { stayLength }),
     ...(partySize === undefined || Number.isNaN(partySize) || partySize < 1 ? {} : { partySize }),
     ...(bedrooms === undefined || Number.isNaN(bedrooms) || bedrooms < 1 ? {} : { bedrooms }),
     ...(dates === undefined ? {} : { dates }),
@@ -514,7 +549,8 @@ export function mergeStayRequestContext(
   //    are preserved.
   context = buildContext({
     ...scalarParts(context),
-    ...(facts.nights === undefined ? {} : { nights: facts.nights }),
+    // A stated length belongs to the nights it set: a turn that sets nights without one clears the old length (issue 19).
+    ...(facts.nights === undefined ? {} : { nights: facts.nights, stayLength: facts.stayLength }),
     ...(facts.partySize === undefined ? {} : { partySize: facts.partySize }),
     ...(facts.bedrooms === undefined ? {} : { bedrooms: facts.bedrooms }),
     ...(facts.budget === undefined ? {} : { budget: facts.budget }),
@@ -543,7 +579,8 @@ function knownCriteria(context: DiscoverySearchContext): string[] {
       : `${formatGuestDay(context.checkIn)} to ${formatGuestDay(addCalendarDays(context.checkIn, context.nights))}`;
     criteria.push(context.datesConfirmed === true ? stay : `${stay} (to confirm)`);
   }
-  if (context.nights !== undefined) criteria.push(`${context.nights} ${context.nights === 1 ? "night" : "nights"}`);
+  // Issue 19: a stay the guest stated in months shows its months in brackets after the nights (decision 2).
+  if (context.nights !== undefined) criteria.push(stayNightsLabel(context.nights, context.stayLength));
   if (context.bedrooms !== undefined) criteria.push(`${context.bedrooms} ${context.bedrooms === 1 ? "bedroom" : "bedrooms"}`);
   const budget = budgetLabel(context);
   if (budget !== undefined) criteria.push(`budget ${budget.startsWith("About") ? `about ${budget.slice("About ".length)}` : budget}`);
@@ -562,18 +599,26 @@ function clarifyReply(context: DiscoverySearchContext, missing: readonly string[
  * discovery query, or which missing inputs still have to be asked for.
  */
 /** Refuses dates outside launch limits with a plain statement of the limit. */
-function dateLimitRefusal(checkIn: string, nights: number, today: string, policy?: ExtendedStayPolicy): string | undefined {
+/**
+ * Issue 19 (ADR 0023 as amended 1 Nov 2026, ADR 0092): the refusal for a stay length outside the rules, or undefined when the length
+ * is allowed. One source for the deterministic path and the assistant (a stated length is checked on both).
+ */
+export function stayLengthLimitRefusal(nights: number, policy?: ExtendedStayPolicy): string | undefined {
   // ADR-0023 as amended 1 Nov 2026: Short Stays are one through MAX_STAY_NIGHTS (29) nights. A policy (ADR 0092) adds its own range.
-  if (nights > MAX_STAY_NIGHTS && !isExtendedStayLength(nights, policy)) {
-    if (policy && policy.minimumNights === MAX_STAY_NIGHTS + 1) {
-      // Contiguous ranges (29 Short, 30 onward Extended): the existing no-policy sentence, with the policy's maximum.
-      // WORDING TO CONFIRM WITH THE OWNER (issue 02): this reuses the no-policy template; see Comments.
-      return `Stays can be at most ${policy.maximumNights} nights. Please choose ${policy.maximumNights} nights or fewer.`;
-    }
-    return policy
-      ? `This demo supports stays up to ${MAX_STAY_NIGHTS} nights, or ${policy.minimumNights} to ${policy.maximumNights} nights.`
-      : `Stays can be at most ${MAX_STAY_NIGHTS} nights. Please choose ${MAX_STAY_NIGHTS} nights or fewer.`;
+  if (nights <= MAX_STAY_NIGHTS || isExtendedStayLength(nights, policy)) return undefined;
+  if (policy && policy.minimumNights === MAX_STAY_NIGHTS + 1) {
+    // Contiguous ranges (29 Short, 30 onward Extended): the existing no-policy sentence, with the policy's maximum.
+    // WORDING TO CONFIRM WITH THE OWNER (issue 02): this reuses the no-policy template; see Comments.
+    return `Stays can be at most ${policy.maximumNights} nights. Please choose ${policy.maximumNights} nights or fewer.`;
   }
+  return policy
+    ? `This demo supports stays up to ${MAX_STAY_NIGHTS} nights, or ${policy.minimumNights} to ${policy.maximumNights} nights.`
+    : `Stays can be at most ${MAX_STAY_NIGHTS} nights. Please choose ${MAX_STAY_NIGHTS} nights or fewer.`;
+}
+
+function dateLimitRefusal(checkIn: string, nights: number, today: string, policy?: ExtendedStayPolicy): string | undefined {
+  const lengthRefusal = stayLengthLimitRefusal(nights, policy);
+  if (lengthRefusal !== undefined) return lengthRefusal;
   if (checkIn < today) return "That arrival date has already passed. Please choose today or a later date.";
   // ADR-0055: the horizon limits check-in only; a stay may end after day 90.
   const latestArrival = addCalendarDays(today, BOOKING_HORIZON_DAYS);
@@ -633,10 +678,10 @@ function confirmedOrSearch(
       kind: "confirm",
       filters,
       // Issue 04 (ADR 0077, 0080): the show-back sentence is the shared copy, also used by the assistant path.
-      reply: GUEST_ASSISTANT_COPY.dateShowBack(formatGuestDay(checkIn), formatGuestDay(checkOut), nights, partySize, place),
+      reply: GUEST_ASSISTANT_COPY.dateShowBack(formatGuestDay(checkIn), formatGuestDay(checkOut), nights, partySize, place, context.stayLength),
     };
   }
-  return { kind: "search", filters };
+  return { kind: "search", filters, ...(context.stayLength === undefined ? {} : { stayLength: context.stayLength }) };
 }
 
 
@@ -666,7 +711,7 @@ export function applyCriteriaEdit(context: DiscoverySearchContext | null, edit: 
     const { pendingLocationChange: _pending, neighbourhood: _neighbourhood, ...rest } = current;
     return buildContext({ ...rest, city: area.city, ...(area.neighbourhood === undefined ? {} : { neighbourhood: area.neighbourhood }) });
   }
-  if (edit.field === "when") return buildContext({ ...current, checkIn: edit.checkIn, nights: edit.nights, datesConfirmed: true });
+  if (edit.field === "when") return buildContext({ ...current, checkIn: edit.checkIn, nights: edit.nights, stayLength: undefined, datesConfirmed: true });
   if (edit.field === "budget") {
     // A null budget removes it.
     const { budget: _budget, ...rest } = current;

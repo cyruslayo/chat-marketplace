@@ -400,6 +400,21 @@ function moneySection(): string {
   return `<section id="money" class="landing-timeline" aria-labelledby="money-h"><div class="landing-container landing-timeline__inner"><div class="landing-timeline__intro"><p class="ui-eyebrow">${escapeHtml(LANDING_COPY.navYourMoney)}</p><h2 id="money-h">${escapeHtml(heading.before)}<em class="landing-timeline__accent">${escapeHtml(heading.accent)}</em></h2></div><ol class="landing-timeline__cards">${cards}</ol></div></section>`;
 }
 
+/**
+ * Issue 16: "Staying for months?", after the money section. The H2 accent is the second sentence; the three facts are kit
+ * check icons with text. Markup uses the existing section intro classes and one small facts list (shortlet-landing.css).
+ */
+function monthsSection(): string {
+  const heading = LANDING_COPY.monthsHeading;
+  const facts = LANDING_COPY.monthsFacts
+    .map(
+      (fact) =>
+        `<li class="landing-months__fact">${icon("check")}<p>${escapeHtml(fact)}</p></li>`,
+    )
+    .join("");
+  return `<section id="months" class="landing-section landing-months" aria-labelledby="months-h"><div class="landing-section__intro"><h2 id="months-h">${escapeHtml(heading.before)}<em class="landing-section__accent">${escapeHtml(heading.accent)}</em></h2><p>${escapeHtml(LANDING_COPY.monthsLine)}</p></div><ul class="landing-months__facts">${facts}</ul></section>`;
+}
+
 /** The How it works H2: the second sentence is the italic accent (the copy text is unchanged). */
 function howHeadingMarkup(): string {
   const parts = howHeadingParts();
@@ -571,5 +586,5 @@ export function renderLandingHtml(
     beat(5, beatCaptions[4]!, beatFiveScreen(illustrations)),
   ].join("")}</ol></div></section>`;
 
-  return `<!doctype html><html lang="en-NG" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="preload" as="font" type="font/woff2" crossorigin href="/landing/fonts/newsreader-500.woff2"><title>${escapeHtml(LANDING_COPY.pageTitle)}</title><link rel="stylesheet" href="/shortlet-foundations.css"><link rel="stylesheet" href="/shortlet-landing.css"><script src="/landing.js" defer></script></head><body><a class="landing-skip" href="#main">Skip to main content</a>${appBar(theme)}<main id="main">${heroSection(illustrations, demoNotice)}${chatWindowSection(illustrations)}${trustStrip()}${apartmentsSection(placeholders, demo)}${how}${moneySection()}${questionsSection(placeholders)}${closingSection(illustrations)}</main>${footerSection(options.helpLinks ?? {})}</body></html>`;
+  return `<!doctype html><html lang="en-NG" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="preload" as="font" type="font/woff2" crossorigin href="/landing/fonts/newsreader-500.woff2"><title>${escapeHtml(LANDING_COPY.pageTitle)}</title><link rel="stylesheet" href="/shortlet-foundations.css"><link rel="stylesheet" href="/shortlet-landing.css"><script src="/landing.js" defer></script></head><body><a class="landing-skip" href="#main">Skip to main content</a>${appBar(theme)}<main id="main">${heroSection(illustrations, demoNotice)}${chatWindowSection(illustrations)}${trustStrip()}${apartmentsSection(placeholders, demo)}${how}${moneySection()}${monthsSection()}${questionsSection(placeholders)}${closingSection(illustrations)}</main>${footerSection(options.helpLinks ?? {})}</body></html>`;
 }

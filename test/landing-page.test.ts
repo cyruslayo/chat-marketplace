@@ -843,7 +843,8 @@ test("Issue 04 AC7: Prose lines stay at or under 75 characters and headings use 
     new URL("../apps/web/src/shortlet-landing.css", import.meta.url),
     "utf8",
   );
-  for (const limit of ["46ch", "60ch", "18ch", "22ch"])
+  // Issue 16: the FAQ answer measure is 56ch (was 60ch), so the approved longer answer keeps its line under 75 characters.
+  for (const limit of ["46ch", "56ch", "18ch", "22ch"])
     assert.match(css, new RegExp(`max-inline-size:\\s*${limit}`), limit);
   assert.match(
     css,
@@ -1509,13 +1510,13 @@ test("Issue 08 AC3: The example conversation sits in one chat window that carrie
   );
 });
 
-test("Issue 08 AC8: Every example chip describes a stay of 1–29 nights", () => {
+test("Issue 08 AC8: Every example chip describes a Short Stay (1–29 nights) or an Extended Stay (30–180 nights)", () => {
   const html = renderLandingHtml();
   assert.equal(LANDING_COPY.exampleChips.length, 3, "three example chips");
   assert.deepEqual(
     validateExampleChips(LANDING_COPY.exampleChips),
     [],
-    "every chip has between 1 and 29 nights (ADR 0023)",
+    "every chip has between 1 and 180 nights (ADR 0023, ADR 0092)",
   );
   for (const chip of LANDING_COPY.exampleChips) {
     assert.ok(
@@ -1523,11 +1524,11 @@ test("Issue 08 AC8: Every example chip describes a stay of 1–29 nights", () =>
       `the chip is rendered as a button: ${chip.text}`,
     );
   }
-  // Failure path: the same validator rejects a 30-night chip, a zero-night chip and a fractional one.
+  // Failure path: the same validator rejects a 181-night chip, a zero-night chip and a fractional one.
   assert.equal(
-    validateExampleChips([{ text: "Ikoyi, 30 nights", nights: 30 }]).length,
+    validateExampleChips([{ text: "Ikoyi, 181 nights", nights: 181 }]).length,
     1,
-    "30 nights is rejected",
+    "181 nights is rejected",
   );
   assert.equal(
     validateExampleChips([{ text: "Ikoyi, no nights", nights: 0 }]).length,

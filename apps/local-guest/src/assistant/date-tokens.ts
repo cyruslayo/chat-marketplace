@@ -36,6 +36,11 @@ export class AssistantGuestRefusalError extends Error {
 }
 
 const CHECKOUT_KEYWORD = /\bcheck[\s-]*out\b/i;
+
+/** Issue 20: true when the text names a checkout anywhere, so its dates' roles are not clear from the text alone (fail closed). */
+export function mentionsCheckOut(text: string): boolean {
+  return CHECKOUT_KEYWORD.test(text);
+}
 const CLAUSE_BOUNDARY = /^[\s\S]*(?:[;,.!?\n]|\d{4}-\d{2}-\d{2})/;
 
 function isDigit(character: string | undefined): boolean {

@@ -57,6 +57,17 @@ export interface AssistantPendingDate {
   readonly checkIn?: string;
 }
 
+/**
+ * Issue 19 (owner decision, 8 Nov 2026; ADR 0106 Projection, amended 8 Nov 2026): the stay length the guest typed, kept with the
+ * stay intent so it binds after a cold restore. `unit` is the closed set the owner decided: a night count, a week or a month. A
+ * fortnight is kept as two weeks. Set only from guest text, a nights chip edit or a check-out the guest gave.
+ */
+export interface AssistantStatedStay {
+  readonly nights: number;
+  readonly unit: "night" | "week" | "month";
+  readonly count: number;
+}
+
 export interface AssistantStayIntent {
   location?: string;
   neighbourhood?: string;
@@ -74,6 +85,8 @@ export interface AssistantStayIntent {
   maxBudgetKobo?: number;
   maxBudgetPer?: AssistantBudgetPer;
   requiredAmenities?: readonly string[];
+  /** Issue 19 (owner decision, 8 Nov 2026): the stay length the guest typed. Binds every later search and draft until changed. */
+  statedStay?: AssistantStatedStay;
 }
 
 /**

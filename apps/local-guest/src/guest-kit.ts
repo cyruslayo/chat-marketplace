@@ -15,7 +15,13 @@ import {
   GUEST_TASK_RAIL,
   GUEST_VERTICALS,
   UNIT_DETAIL_ABOUT_HEADING,
+  GUEST_EXTENSION_COPY,
+  GUEST_NOTICE_COPY,
   commerceSoldBy,
+  extensionFactRows,
+  formatGuestDate,
+  noticeFactRows,
+  type NoticeFactsInput,
   stayTotalLabel,
   type ModePresentation,
 } from "../../web-agent/src/guest-content.js";
@@ -45,6 +51,7 @@ import type { ConfirmationContent } from "../../web-agent/src/confirmation-prese
 import type { OfferScreenContent } from "../../web-agent/src/offer-presentation.js";
 import type { PaymentScreenContent, PaymentMethodChoice } from "../../web-agent/src/payment-presentation.js";
 import type { CommerceOfferPresentation } from "../../web-agent/src/commerce-presentation.js";
+import type { AgentMarkPlacement, AgentMarkState } from "./agent-mark-state.js";
 
 /** The absolute deadline in Africa/Lagos time (ADR 0078), without the "Pay by" prefix. */
 export function formatWAT(iso: string): string {
@@ -394,12 +401,39 @@ export function stepsHtml(items: readonly string[]): string {
 }
 
 /** Issue 10: the confirmation uses the same kit sections on the page and in the workspace. */
+/**
+ * Issue 18 (ADR 0060, 0077, 0080): the Notice to End block on a confirmed booking in the chat. A recorded notice shows the page's
+ * facts; otherwise the button opens the notice card through the assistant (the client wires `data-notice-open`).
+ */
+/**
+ * Monthly-stays issue 09 (ADR 0092 Extensions, ADR 0077, 0080): the extension block on a confirmed booking in the chat. The button
+ * opens the card through the assistant; a request awaiting the Operator shows the same facts the card showed, and its reply time.
+ */
+export function confirmationExtensionHtml(extension: NonNullable<ConfirmationContent["extension"]>): string {
+  const outcome = extension.outcome === undefined ? "" : `<p data-extension-outcome="${escapeHtml(extension.outcome)}">${escapeHtml(GUEST_EXTENSION_COPY[extension.outcome])}</p>`;
+  if (extension.requested) {
+    const rows = extensionFactRows(extension.requested.facts, formatNgnKobo, formatWAT(extension.requested.respondBy));
+    return `<section class="ui-panel" aria-labelledby="extension-requested-heading" data-extension-requested><h2 id="extension-requested-heading">${escapeHtml(GUEST_EXTENSION_COPY.heading)}</h2><p>${escapeHtml(GUEST_EXTENSION_COPY.requested)}</p>${extensionFactsDlHtml(rows)}</section>`;
+  }
+  const button = extension.offered ? `<div class="request-actions"><button class="ui-button ui-button--secondary ui-button--block" type="button" data-extension-open>${escapeHtml(GUEST_EXTENSION_COPY.action)}</button></div>` : "";
+  return `<section class="ui-panel" aria-labelledby="extension-heading" data-extension-step><h2 id="extension-heading">${escapeHtml(GUEST_EXTENSION_COPY.heading)}</h2>${outcome}${button}</section>`;
+}
+
+function extensionFactsDlHtml(rows: readonly { readonly key: string; readonly label: string; readonly value: string }[]): string {
+  return `<dl class="ui-facts ui-facts--stacked">${rows.map((row) => `<dt>${escapeHtml(row.label)}</dt><dd data-extension-fact="${escapeHtml(row.key)}">${escapeHtml(row.value)}</dd>`).join("")}</dl>`;
+}
+
+export function confirmationNoticeHtml(notice: NonNullable<ConfirmationContent["notice"]>): string {
+  if (notice.kind === "action") return `<div class="request-actions"><button class="ui-button ui-button--secondary ui-button--block" type="button" data-notice-open>${escapeHtml(GUEST_NOTICE_COPY.action)}</button></div>`;
+  return `<section class="ui-panel" aria-labelledby="notice-recorded-heading" data-notice-recorded><h2 id="notice-recorded-heading">${escapeHtml(GUEST_NOTICE_COPY.recordedHeading)}</h2><p>${escapeHtml(GUEST_NOTICE_COPY.recordedLead)}</p>${noticeFactsDlHtml(notice.facts)}</section>`;
+}
+
 export function confirmationScreenHtml(
   content: ConfirmationContent,
   ticket: string,
   breakdown: string,
 ): string {
-  return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}<div class="confirmation-reference"><dl class="ui-facts ui-facts--stacked"><dt>Booking reference</dt><dd>${escapeHtml(content.bookingReference)}</dd></dl></div><section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}<a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Ask about arrival</a></section><div class="request-actions">${content.scheduleHref ? `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.scheduleHref)}">View payment schedule</a>` : ""}</div><details class="ui-panel booking-details" id="booking-details"><summary class="ui-button ui-button--secondary ui-button--block">Full contract terms</summary><p>${escapeHtml(content.details)}</p></details></section>`;
+  return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}${content.notice ? confirmationNoticeHtml(content.notice) : ""}${content.extension ? confirmationExtensionHtml(content.extension) : ""}<div class="confirmation-reference"><dl class="ui-facts ui-facts--stacked"><dt>Booking reference</dt><dd>${escapeHtml(content.bookingReference)}</dd></dl></div><section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}<a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Ask about arrival</a></section><div class="request-actions">${content.scheduleHref ? `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.scheduleHref)}">View payment schedule</a>` : ""}</div><details class="ui-panel booking-details" id="booking-details"><summary class="ui-button ui-button--secondary ui-button--block">Full contract terms</summary><p>${escapeHtml(content.details)}</p></details></section>`;
 }
 
 /** Issue 08: the sign-in offer. The email is the contact already given, and `returnPath` is the screen to come back to. */
@@ -742,6 +776,16 @@ export function taskStepHeaderHtml(domainLabel: string, status: string): string 
 }
 
 /**
+ * The Agent Mark (ADR 0107 decision 9): a decorative glyph of the mode persona icon, in one of three placements. It is aria-hidden and
+ * is never a button or a link; the text labels carry the meaning. The "human" state (ADR 0076) shows the person badge instead of the
+ * persona glyph, and has no animation. Motion is not in this markup: it lives in the kit CSS and follows the state (issue 01b).
+ */
+export function agentMarkHtml(mode: ModePresentation, placement: AgentMarkPlacement, state: AgentMarkState = "idle"): string {
+  const glyph = state === "human" ? `<span class="agent-mark__badge" data-agent-badge="person">${icon("person")}</span>` : icon(mode.persona.icon);
+  return `<span class="agent-mark" data-agent-mark="${placement}" data-agent-state="${state}" aria-hidden="true">${glyph}</span>`;
+}
+
+/**
  * The empty state of the chat shell, rendered from the mode (ADR 0107, ADR 0077). Indentation: the first line carries none;
  * the caller indents it to the shell's depth (8 spaces), and every inner line keeps its absolute indentation.
  */
@@ -750,6 +794,7 @@ export function emptyStateHtml(mode: ModePresentation): string {
     .map((starter) => `<button class="prompt-suggestion ui-chip" type="button" data-prompt="${escapeHtml(starter.prompt)}">${escapeHtml(starter.label)}</button>`)
     .join("\n            ");
   return `<section id="empty-state" aria-labelledby="empty-state-heading">
+          ${agentMarkHtml(mode, "hero")}
           <h2 id="empty-state-heading">${escapeHtml(mode.emptyState.heading)}</h2>
           <p>${escapeHtml(mode.emptyState.body)}</p>
           <div class="prompt-suggestions">
@@ -801,4 +846,50 @@ export function composerHtml(mode: ModePresentation, variant: "page", options?: 
 export function composerHtml(mode: ModePresentation, variant: "chat" | "page", options?: ConversationComposerOptions): string {
   if (variant === "chat") return chatComposerHtml(mode);
   return pageComposerHtml(mode, options ?? {});
+}
+
+/**
+ * Monthly-stays issue 17 (ADR 0092, ADR 0077/0080): the Notice to End confirmation step. Every figure is the domain's
+ * calculation at `noticeDate`; the form binds the notice date and contract version the guest was shown (ADR 0060).
+ * The back link changes nothing. Chat and the standalone page render this same markup.
+ */
+export interface NoticeConfirmationInput {
+  readonly offerId: string;
+  readonly noticeDate: string;
+  readonly contractVersion: number;
+  readonly newLastNight: string;
+  readonly newCheckOut: string;
+  readonly refundKobo: number;
+  readonly owedKobo: number;
+  readonly terms: string;
+  /** The screen the back action returns to. */
+  readonly backHref: string;
+}
+
+function noticeDate(value: string): string {
+  return formatGuestDate(value) ?? value;
+}
+
+function noticeFactsDlHtml(facts: NoticeFactsInput): string {
+  const rows = noticeFactRows(facts, formatNgnKobo);
+  const cells = rows.map((row) => {
+    const attribute = row.key === "newLastNight" ? ` data-new-last-night="${escapeHtml(row.raw)}"` : row.key === "refund" ? ` data-refund-kobo="${escapeHtml(row.raw)}"` : row.key === "owed" ? ` data-owed-kobo="${escapeHtml(row.raw)}"` : "";
+    return `<dt>${escapeHtml(row.label)}</dt><dd${attribute}>${escapeHtml(row.value)}</dd>`;
+  }).join("");
+  return `<dl class="ui-facts ui-facts--stacked">${cells}</dl>`;
+}
+
+export function noticeConfirmationHtml(input: NoticeConfirmationInput): string {
+  const action = `/bookings/notice/${encodeURIComponent(input.offerId)}`;
+  return `<section class="ui-panel" aria-labelledby="notice-heading" data-notice-step data-notice-date="${escapeHtml(input.noticeDate)}"><h1 id="notice-heading">${escapeHtml(GUEST_NOTICE_COPY.heading)}</h1><p>${escapeHtml(input.terms)}</p>${noticeFactsDlHtml(input)}<form method="post" action="${escapeHtml(action)}"><input type="hidden" name="noticeDate" value="${escapeHtml(input.noticeDate)}"><input type="hidden" name="contractVersion" value="${input.contractVersion}"><button class="ui-button ui-button--primary ui-button--block" type="submit">${escapeHtml(GUEST_NOTICE_COPY.confirm)}</button></form><a class="ui-button ui-button--block" href="${escapeHtml(input.backHref)}">${escapeHtml(GUEST_NOTICE_COPY.back)}</a></section>`;
+}
+
+/** The recorded Notice to End, read-only: the new last night and checkout and the amounts it fixed. */
+export function noticeRecordedHtml(input: NoticeFactsInput & { readonly backHref: string }): string {
+  return `<section class="ui-panel" aria-labelledby="notice-recorded-heading" data-notice-recorded><h1 id="notice-recorded-heading">${escapeHtml(GUEST_NOTICE_COPY.recordedHeading)}</h1><p>${escapeHtml(GUEST_NOTICE_COPY.recordedLead)}</p>${noticeFactsDlHtml(input)}<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(input.backHref)}">${escapeHtml(GUEST_NOTICE_COPY.recordedBack)}</a></section>`;
+}
+
+/** The entry point on a confirmed Extended Stay's schedule: a link to the confirmation step. */
+export function noticeActionLinkHtml(offerId: string): string {
+  return `<a class="ui-button ui-button--block" href="/bookings/notice/${encodeURIComponent(offerId)}" data-notice-action>${escapeHtml(GUEST_NOTICE_COPY.action)}</a>`;
 }

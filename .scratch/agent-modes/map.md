@@ -13,8 +13,8 @@ Goal: switching Domain Packs changes the agent and the guest UI together (ADR 01
 |---|---|---|---|
 | 0 | ADR 0107 accepted, Agent Mode glossary entry | — | accepted (glossary entry landed with 01) |
 | 1 | Render the shell from the stays mode, no visible change | [01](issues/01-render-the-shell-from-the-stays-mode.md) | resolved |
-| 1b | Agent Mark for the single stays mode: glyph, states, hero-to-app-bar transition, reduced motion, human state (analysis 9.1–9.2); human state defined but unwired until takeover reaches guests | [01b](issues/01b-agent-mark-for-the-stays-mode.md) | ready-for-agent (after 01) |
-| 2 | Neutral platform preamble, persona in the pack (one concierge, "Concierge · Stays") | [02](issues/02-neutral-preamble-persona-in-the-pack.md) | ready-for-agent |
+| 2 | Neutral platform preamble, persona in the pack (one concierge, "Concierge · Stays") | [02](issues/02-neutral-preamble-persona-in-the-pack.md) | resolved (8f1ad1a; full npm test and test:workers gate deferred to the batch) |
+| 1b | Agent Mark for the single stays mode: glyph, states, hero-to-app-bar transition, reduced motion, human state (analysis 9.1–9.2); human state defined but unwired until takeover reaches guests | [01b](issues/01b-agent-mark-for-the-stays-mode.md) | ready-for-human (code and evidence done; not resolved: DoD 7 open, owner decisions k and l; see 01b Comments) |
 | 3 | Domain-neutral pack contract (surface map, pack-owned state) | — | waiting on slice 6 decision |
 | 3b | Per-task chat lanes: timeline and model history per mode, context isolation, migration of the single timeline (analysis 11) | — | waiting on slice 6 decision |
 | 3c | `guest_thread_tasks` table split, export coverage, restore runbook (analysis 11.4) | — | waiting on slice 6 decision |

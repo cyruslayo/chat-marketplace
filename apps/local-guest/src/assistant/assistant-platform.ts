@@ -17,9 +17,8 @@ import { MAX_PLANNER_TOOL_ROUNDS } from "../turn-budget.js";
 /** Bounded tool rounds: the loop never runs longer than this. The value is shared with the browser's turn budget. */
 export const MAX_ASSISTANT_TOOL_ROUNDS = MAX_PLANNER_TOOL_ROUNDS;
 
-/** The domain-agnostic preamble the runtime prefixes to every pack's prompt section. */
-export const ASSISTANT_PLATFORM_PREAMBLE = `You are the Shortlet Guest Assistant.
-You assist guests with discovering accommodation, answering questions about stays and pricing, and preparing booking actions.
+/** The domain-agnostic preamble the runtime prefixes to every pack's prompt section. It names no domain: the pack's section carries the identity (ADR 0107 decision 8). */
+export const ASSISTANT_PLATFORM_PREAMBLE = `You are the platform's concierge.
 Use tools for current facts and actions. When you have no tool call, return only the requested typed reply plan. Do not write guest-facing prose.`;
 
 export interface AssistantToolPreconditionFailure {
@@ -166,6 +165,8 @@ export interface AssistantDomainPack {
    * turn is classified. Pure over that state; the runtime calls it once per guest turn.
    */
   settlePendingGuestFacts?(text: string, taskState: AssistantTaskState, now: Date): void;
+  /** Issue 20 (ADR 0106, amended 8 Nov 2026): saves the stay facts the guest's own words give on an in-scope turn. Never a planner proposal. */
+  recordGuestFacts?(text: string, taskState: AssistantTaskState, now: Date): void;
   /** Pack-owned minimal facts for model history. Raw execution results remain local to the platform. */
   projectToolResult?(name: string, result: Record<string, unknown>, limits: { readonly maxItems: number }): Record<string, unknown>;
   /** Canonical bounded facts used when older operation pairs leave retained history. */
@@ -212,6 +213,15 @@ export interface AssistantDomainPack {
   /** Re-reads authoritative truth before a proposed booking request is confirmed. */
   revalidateProposal(action: PendingAssistantAction): { readonly ok: true } | { readonly ok: false; readonly code: string; readonly message: string };
   /** Optional pack-owned command adapter; the pack must route through the platform ActionSpec gate. */
+  /** Issue 18: button events a pack opens its own confirmation card from, routed by name (no planner call). */
+  readonly openActionNames?: readonly string[];
+  handleOpenAction?(input: {
+    readonly actionName: string;
+    readonly context: Record<string, unknown>;
+    readonly taskState: AssistantTaskState;
+    readonly threadId: string;
+    readonly now: Date;
+  }): { readonly ok: true; readonly pendingAction: PendingAssistantAction; readonly message: string } | { readonly ok: false; readonly code: string; readonly message: string };
   handlePlatformAction?(input: { readonly actionName: string; readonly context: Record<string, unknown>; readonly principal: CommandPrincipal; readonly taskId: string; readonly activeSurfaceId?: string }): { readonly ok: true; readonly message: string; readonly surface?: AssistantTurnSurface } | { readonly ok: false; readonly code: string; readonly message: string };
 }
 

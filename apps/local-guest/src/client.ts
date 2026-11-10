@@ -32,6 +32,7 @@ import { isQuickReplyList } from "./quick-replies.js";
 import { CLIENT_REQUEST_TIMEOUT_MS, CLIENT_TURN_TIMEOUT_MS, TURN_STILL_WORKING_AFTER_MS } from "./turn-budget.js";
 import { turnEntriesSince } from "./guest-turn-recovery.js";
 import { assertValidResponseMode, readResponseMode } from "./response-mode.js";
+import { nextAgentMarkState, type AgentMarkEvent, type AgentMarkState } from "./agent-mark-state.js";
 import {
   breakdownHtml,
   confirmationScreenHtml,
@@ -49,6 +50,7 @@ import {
   type StayCardParts,
 } from "./guest-kit.js";
 import type { ConfirmationContent } from "../../web-agent/src/confirmation-presentation.js";
+import { EXTENSION_OPEN_EVENT, NOTICE_OPEN_EVENT } from "../../web-agent/src/booking-contract-a2ui.js";
 import type { OfferScreenContent } from "../../web-agent/src/offer-presentation.js";
 import type { PaymentScreenContent } from "../../web-agent/src/payment-presentation.js";
 import type { RequestScreenContent } from "../../web-agent/src/request-presentation.js";
@@ -642,6 +644,18 @@ function organizeConfirmation(
     breakdown.outerHTML,
   );
   root.replaceChildren(template.content);
+  // Issue 18: the confirmation screen replaces the Weaver tree, so its Give notice button is wired here to the same open event
+  // the booking surface's Weaver action sends (the card is then the only confirmation, ADR 0060).
+  const bookingSurfaceId = activePayload?.surfaceId;
+  root.querySelector<HTMLButtonElement>("[data-notice-open]")?.addEventListener("click", () => {
+    if (bookingSurfaceId === undefined) return;
+    void sendEvent({ name: NOTICE_OPEN_EVENT, surfaceId: bookingSurfaceId, sourceComponentId: "booking-contract-notice-action", timestamp: new Date().toISOString(), context: { surfaceId: bookingSurfaceId } });
+  });
+  // Monthly-stays issue 09: "Extend your stay" opens the extension card through the same routed event (ADR 0074).
+  root.querySelector<HTMLButtonElement>("[data-extension-open]")?.addEventListener("click", () => {
+    if (bookingSurfaceId === undefined) return;
+    void sendEvent({ name: EXTENSION_OPEN_EVENT, surfaceId: bookingSurfaceId, sourceComponentId: "booking-contract-extension-action", timestamp: new Date().toISOString(), context: { surfaceId: bookingSurfaceId } });
+  });
   root
     .querySelector<HTMLAnchorElement>(".request-next a")
     ?.addEventListener("click", (event) => {
@@ -1524,6 +1538,56 @@ let appliedMode: ModePresentation = GUEST_MODES.stays;
 
 function applyResponseMode(response: GuestResponse): void {
   appliedMode = readResponseMode(response.mode) ?? appliedMode;
+}
+
+// Issue 01b (ADR 0107 decision 9): the Agent Mark follows signals the shell already has. The state is never persisted (ADR 0106), so
+// a reload starts from idle. No client path sets `human`: no takeover signal reaches guests (ADR 0076). Any future takeover signal must
+// set `human` and block thinking, working and responding in nextAgentMarkState.
+const AGENT_MARK_POP_MS = 400;
+let agentMarkState: AgentMarkState = "idle";
+let agentMarkSettleTimer: number | undefined;
+const agentDock = requiredElement<HTMLElement>("agent-dock");
+const agentDockChip = agentDock.querySelector<HTMLElement>(".agent-dock__chip");
+
+function setAgentMark(event: AgentMarkEvent): void {
+  agentMarkState = nextAgentMarkState(agentMarkState, event);
+  for (const mark of document.querySelectorAll<HTMLElement>("[data-agent-mark]")) mark.setAttribute("data-agent-state", agentMarkState);
+}
+
+/** A reply landed: the mark pops once, then settles to idle. */
+function landAgentReply(): void {
+  setAgentMark({ type: "reply-landed" });
+  window.clearTimeout(agentMarkSettleTimer);
+  agentMarkSettleTimer = window.setTimeout(() => setAgentMark({ type: "response-settled" }), AGENT_MARK_POP_MS);
+}
+
+// Motion pauses while the page is hidden (the kit CSS reads data-page-hidden on <html>).
+function syncPageHidden(): void {
+  document.documentElement.toggleAttribute("data-page-hidden", document.visibilityState === "hidden");
+}
+syncPageHidden();
+document.addEventListener("visibilitychange", syncPageHidden);
+
+// The mark is listening only while the composer is focused with text (ADR 0107 decision 9).
+function syncComposerMark(): void {
+  setAgentMark({ type: "composer-changed", focusedWithText: document.activeElement === composerInput && composerInput.value.trim() !== "" });
+}
+composerInput.addEventListener("input", syncComposerMark);
+composerInput.addEventListener("focus", syncComposerMark);
+composerInput.addEventListener("blur", syncComposerMark);
+
+/**
+ * The first message moves the hero mark into the app bar (ADR 0107 decision 9). Same-document and feature-detected: an instant update is
+ * always correct, and reduced motion skips the transition. The app-bar mark takes the shared name only once the empty state is hidden.
+ */
+function withAgentMarkTransition(update: () => void): void {
+  // Only the first message has a hero to morph. Once the empty state is hidden the shared name sits on the app-bar mark in both
+  // snapshots, so a transition would animate nothing while it holds the document (a running view transition widens the page at 375px).
+  if (emptyState.hidden || !document.startViewTransition || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    update();
+    return;
+  }
+  document.startViewTransition(update);
 }
 
 const threadId = getThreadId();
@@ -2588,6 +2652,7 @@ function applyRefusal(response: GuestResponse): RefusalClass | undefined {
 function renderResponse(response: GuestResponse): boolean {
   if (!response.ok) {
     const message = response.message ?? "That action could not be completed.";
+    if (response.code === "quota_refusal" || response.code === "CONCIERGE_UNAVAILABLE") setAgentMark({ type: "turn-refused", code: response.code });
     const cls = applyRefusal(response);
     // A forbidden or invalid workspace refusal disables only the control the guest just tapped, and only while that control is still
     // the live one in the workspace. The reference is cleared on every surface render, so a stale one can never block a later event.
@@ -2614,7 +2679,8 @@ function renderResponse(response: GuestResponse): boolean {
   renderSurfaces(surfaces);
   // Receipts follow the markers for the steps they complete.
   for (const receipt of response.receipts ?? []) addReceipt(receipt);
-return true;
+  landAgentReply();
+  return true;
 }
 
 async function refreshServerState(preserveConversation = shellState.activeSurface?.mode === "focused-surface" && !shellState.focusedSurfaceOpen): Promise<boolean> {
@@ -2661,6 +2727,10 @@ function setLoading(next: boolean): void {
   workingStatus.hidden = !next;
   workingStatus.textContent = next ? appliedMode.workspace.workingStatus : "";
   if (next) announce("Message sent. The concierge is working on your request.");
+  // The presence dock shows the same working copy as #working-status while a turn is in flight (ADR 0107 decision 9).
+  agentDock.hidden = !next;
+  if (agentDockChip) agentDockChip.textContent = next ? appliedMode.workspace.workingStatus : "";
+  setAgentMark({ type: next ? "turn-started" : "turn-ended" });
 }
 
 /**
@@ -2717,6 +2787,7 @@ async function sendEvent(action: { readonly name: string; readonly surfaceId: st
   // submit twice. The activated button shows the shared ui-button loading state.
   if (eventInFlight) return;
   eventInFlight = true;
+  setAgentMark({ type: "turn-started" });
   const control = lastActivatedControl?.isConnected && activeWorkspace.contains(lastActivatedControl) ? lastActivatedControl : undefined;
   control?.setAttribute("data-loading", "true");
   control?.setAttribute("aria-busy", "true");
@@ -2728,6 +2799,7 @@ async function sendEvent(action: { readonly name: string; readonly surfaceId: st
   }
   finally {
     eventInFlight = false;
+    setAgentMark({ type: "turn-ended" });
     control?.removeAttribute("data-loading");
     control?.removeAttribute("aria-busy");
     activeWorkspace.removeAttribute("aria-busy");
@@ -2854,8 +2926,10 @@ for (const suggestion of document.querySelectorAll<HTMLButtonElement>(".prompt-s
   suggestion.addEventListener("click", () => {
     const text = suggestion.dataset.prompt?.trim();
     if (!text || isLoading) return;
-    addTurn("user", text);
-    void sendTurn(text);
+    withAgentMarkTransition(() => {
+      addTurn("user", text);
+      void sendTurn(text);
+    });
   });
 }
 composerForm.addEventListener("submit", (event) => {
@@ -2863,8 +2937,10 @@ composerForm.addEventListener("submit", (event) => {
   const text = composerInput.value.trim();
   if (text === "" || isLoading) return;
   clearQuickReplies();
-  addTurn("user", text);
-  void sendTurn(text);
+  withAgentMarkTransition(() => {
+    addTurn("user", text);
+    void sendTurn(text);
+  });
 });
 
 async function restoreServerState(): Promise<boolean> {

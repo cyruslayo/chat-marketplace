@@ -9204,7 +9204,9 @@ Known schemas:
     "message-plus": '<path d="M8 9h8M8 13h5M12 21l-3-3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v6M16 19h6M19 16v6"/>',
     photo: '<path d="M15 8h.01"/><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M3 16l5-5c.9-.9 2.1-.9 3 0l5 5M14 14l1-1c.9-.9 2.1-.9 3 0l3 3"/>',
     pin: '<path d="M12 21s-6-5.5-6-10a6 6 0 0 1 12 0c0 4.5-6 10-6 10z"/><circle cx="12" cy="11" r="2"/>',
+    person: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20.5c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5"/>',
     plus: '<path d="M12 5v14M5 12h14"/>',
+    "stays-mark": '<path d="M4 19.5V11c0-4 3.6-7 8-7s8 3 8 7v8.5"/><path d="M9.5 19.5v-4a2.5 2.5 0 0 1 5 0v4"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
     upload: '<path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M7 9l5-5 5 5M12 4v12"/>',
     users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.5 3.2-5.5 6.5-5.5s5.9 2 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.8c2 .7 3.2 2.5 3.5 5.2"/>',
@@ -9566,8 +9568,14 @@ Known schemas:
     CONTINUOUS_OCCUPANCY_REFUSED: { class: "invalid", keepServerMessage: true },
     NOTHING_TO_UNDO: { class: "invalid", keepServerMessage: true }
   });
+  function guestStayMonthsWords(count) {
+    return count === 1 ? "(1 month)" : `(${count} months)`;
+  }
   var GUEST_ASSISTANT_COPY = Object.freeze({
     stayClarification: "How many nights will you be staying, and for how many guests?",
+    // Issue 19 (ADR 0106): a model's nights that differ from the length the guest typed are refused, and that length is shown back.
+    // Owner decision (8 Nov 2026): the wording of the denial sentence. A months length shows its months in brackets.
+    statedStay: (nights, stated) => `Just to check: you\u2019d like ${nights} nights${stated?.unit === "month" ? ` ${guestStayMonthsWords(stated.count)}` : ""}. Shall I search for that?`,
     // Issue 08 (ADR 0106): an area the server does not know is refused with the closed list of areas it can search.
     areaClarification: (examples) => `I couldn't find that area. Which area should I search? For example: ${examples}.`,
     // Issue 07 (ADR 0106, ADR 0015): a budget the server cannot read from the guest's own words is refused, never searched as a guessed amount.
@@ -9578,7 +9586,8 @@ Known schemas:
     unitDatesClarification: "Add your check-in and checkout dates to see this apartment's price for your stay. Please write them with the day, month and year, for example 20 November 2026 to 23 November 2026.",
     // Issue 04 (ADR 0106 2 Nov 2026, ADR 0080, ADR 0077): the show-back of a relative date the guest must confirm. The deterministic
     // path says the same sentence (concierge.ts), so both paths show the same dates before a search.
-    dateShowBack: (arriving, leaving, nights, guests, place) => `Just to check: arriving ${arriving} and leaving ${leaving} (${nights} ${nights === 1 ? "night" : "nights"}), ${guests} ${guests === 1 ? "guest" : "guests"} in ${place}. Shall I search these dates? Reply "yes", or tell me different dates.`,
+    // Issue 19: a stay the guest stated in months shows its nights first and the months in brackets ("60 nights (2 months)").
+    dateShowBack: (arriving, leaving, nights, guests, place, stated) => `Just to check: arriving ${arriving} and leaving ${leaving}${stated?.unit === "month" ? `, ${nights} nights ${guestStayMonthsWords(stated.count)}` : ` (${nights} ${nights === 1 ? "night" : "nights"})`}, ${guests} ${guests === 1 ? "guest" : "guests"} in ${place}. Shall I search these dates? Reply "yes", or tell me different dates.`,
     // Issue 04: an ambiguous phrase names its candidate days; one chip per day, and a tap chooses it.
     // Issue 13b (ADR 0106, 2 Nov 2026; ADR 0080): the same date check while a Request Draft is open. "yes" updates the draft; nothing is searched.
     draftDateShowBack: (arriving, leaving, nights, guests) => `Just to check: arriving ${arriving} and leaving ${leaving} (${nights} ${nights === 1 ? "night" : "nights"}), ${guests} ${guests === 1 ? "guest" : "guests"}. Shall I show your Request Draft with these dates? Reply "yes", or tell me different dates.`,
@@ -9731,6 +9740,16 @@ Known schemas:
     workspace: "Dedicated workspace"
   };
   var GUEST_AMENITY_IDS = Object.freeze(Object.keys(AMENITY_LABELS));
+  function formatGuestDate(value) {
+    const date2 = /* @__PURE__ */ new Date(`${value.slice(0, 10)}T00:00:00.000Z`);
+    if (!/^\d{4}-\d{2}-\d{2}/.test(value) || Number.isNaN(date2.getTime())) return void 0;
+    return new Intl.DateTimeFormat("en-NG", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      timeZone: "UTC"
+    }).format(date2);
+  }
   var GUEST_FACT_LABELS = Object.freeze({
     checkIn: "Check-in",
     checkOut: "Check-out",
@@ -9935,7 +9954,7 @@ Known schemas:
     id: "stays",
     label: "Stays",
     // Naming is settled in slice 2 of the agent-modes effort; "Stays" is the placeholder persona name.
-    persona: { name: "Stays", icon: "home" },
+    persona: { name: "Stays", icon: "stays-mark" },
     tagline: GUEST_VERTICALS.staysDescription,
     emptyState: {
       heading: "Find a place to stay",
@@ -10061,6 +10080,68 @@ Known schemas:
     deepFreeze(presentation);
     return presentation;
   }
+  var GUEST_NOTICE_COPY = Object.freeze({
+    action: "Give notice to end your stay",
+    heading: "End your stay early",
+    confirm: "Give notice",
+    back: "Keep my stay",
+    recordedBack: "Back to my stay",
+    /** Issue 18 (proposed for owner confirmation, 8 Nov 2026): refusals and the typed-confirmation reply. */
+    notExtended: "Giving notice applies to an Extended Stay. This is a Short Stay, so it cannot be ended early from here.",
+    notVerified: "You can give notice once you have checked in at the property.",
+    unavailable: "Notice to End is not available for this stay right now.",
+    cardOpened: "Here are the terms for giving notice. Press Give notice on the card to confirm.",
+    given: "Notice given. Your stay now ends on the new last night.",
+    stale: "The notice terms have changed. Ask again to see the current terms.",
+    newLastNight: "New last night",
+    newCheckOut: "New checkout",
+    refund: "Refund for paid nights after it",
+    owed: "Still to pay before then",
+    recordedHeading: "Notice given",
+    recordedLead: "Your stay now ends on the new last night below. Refunds are paid by hand, as the terms say."
+  });
+  var GUEST_EXTENSION_COPY = Object.freeze({
+    action: "Extend your stay",
+    heading: "Extend your stay",
+    confirm: "Request extension",
+    back: "Not now",
+    /** Refusals (a guest refusal, never an error): the reason names the one thing that stops the extension. */
+    notExtended: "Extending applies to an Extended Stay. A Short Stay cannot be extended to 30 nights or more from here.",
+    noticeInForce: "A Notice to End is in force, so this stay cannot be extended.",
+    pending: "An extension request is already waiting for the Operator.",
+    unavailable: "The unit is not available for every added night, so the stay cannot be extended.",
+    inspection: "The inspection or Management Authority does not cover the new checkout, so the stay cannot be extended.",
+    tooLong: "An Extended Stay is at most 180 nights in total, so the stay cannot be extended further.",
+    notAvailable: "This stay cannot be extended right now.",
+    cardOpened: "Here is the extension and what it adds. Press Request extension on the card to send it to the Operator. Nothing is agreed until the Operator approves.",
+    requested: "Extension requested. The Operator will reply by the time shown below. Nothing is added until they approve.",
+    approved: "Extension agreed. Your stay now ends on the new checkout.",
+    declined: "The Operator could not extend your stay. Nothing has changed.",
+    expired: "The Operator did not reply in time, so the extension was not made. Nothing has changed.",
+    stale: "The extension terms have changed. Ask again to see the current terms.",
+    addedNights: "Added nights",
+    newCheckOut: "New checkout",
+    addedAmount: "Added amount (paid as each period falls due)",
+    dueDate: "Due date for the added period",
+    respondBy: "Operator replies by"
+  });
+  function extensionFactRows(facts, money, respondBy) {
+    return [
+      { key: "addedNights", label: GUEST_EXTENSION_COPY.addedNights, value: `${facts.addedNights} ${facts.addedNights === 1 ? "night" : "nights"}`, raw: String(facts.addedNights) },
+      { key: "newCheckOut", label: GUEST_EXTENSION_COPY.newCheckOut, value: formatGuestDate(facts.newCheckOut) ?? facts.newCheckOut, raw: facts.newCheckOut },
+      { key: "addedAmount", label: GUEST_EXTENSION_COPY.addedAmount, value: money(facts.addedAmountKobo), raw: String(facts.addedAmountKobo) },
+      { key: "dueDate", label: GUEST_EXTENSION_COPY.dueDate, value: formatGuestDate(facts.periodDueDate) ?? facts.periodDueDate, raw: facts.periodDueDate },
+      ...respondBy === void 0 ? [] : [{ key: "respondBy", label: GUEST_EXTENSION_COPY.respondBy, value: respondBy, raw: respondBy }]
+    ];
+  }
+  function noticeFactRows(facts, money) {
+    return [
+      { key: "newLastNight", label: GUEST_NOTICE_COPY.newLastNight, value: formatGuestDate(facts.newLastNight) ?? facts.newLastNight, raw: facts.newLastNight },
+      { key: "newCheckOut", label: GUEST_NOTICE_COPY.newCheckOut, value: formatGuestDate(facts.newCheckOut) ?? facts.newCheckOut, raw: facts.newCheckOut },
+      { key: "refund", label: GUEST_NOTICE_COPY.refund, value: money(facts.refundKobo), raw: String(facts.refundKobo) },
+      { key: "owed", label: GUEST_NOTICE_COPY.owed, value: money(facts.owedKobo), raw: String(facts.owedKobo) }
+    ];
+  }
 
   // apps/local-guest/src/quick-replies.ts
   function isRecord3(value) {
@@ -10124,6 +10205,27 @@ Known schemas:
   }
   function readResponseMode(value) {
     return validateModePresentation(value);
+  }
+
+  // apps/local-guest/src/agent-mark-state.ts
+  var BUSY_STATES = ["thinking", "working", "responding"];
+  function nextAgentMarkState(current, event) {
+    if (current === "human") return "human";
+    switch (event.type) {
+      case "turn-started":
+        return "thinking";
+      case "reply-landed":
+        return "responding";
+      case "response-settled":
+        return current === "responding" ? "idle" : current;
+      case "turn-ended":
+        return current === "thinking" || current === "working" ? "idle" : current;
+      case "turn-refused":
+        return "resting";
+      case "composer-changed":
+        if (event.focusedWithText) return BUSY_STATES.includes(current) ? current : "listening";
+        return current === "listening" ? "idle" : current;
+    }
   }
 
   // apps/web-agent/src/booking-presentation.ts
@@ -10339,8 +10441,24 @@ Known schemas:
   function stepsHtml(items) {
     return `<ol class="ui-steps">${items.map((item, index) => `<li><span class="ui-steps__number">${index + 1}</span><span>${escapeHtml(item)}</span></li>`).join("")}</ol>`;
   }
+  function confirmationExtensionHtml(extension) {
+    const outcome = extension.outcome === void 0 ? "" : `<p data-extension-outcome="${escapeHtml(extension.outcome)}">${escapeHtml(GUEST_EXTENSION_COPY[extension.outcome])}</p>`;
+    if (extension.requested) {
+      const rows = extensionFactRows(extension.requested.facts, formatNgnKobo, formatWAT(extension.requested.respondBy));
+      return `<section class="ui-panel" aria-labelledby="extension-requested-heading" data-extension-requested><h2 id="extension-requested-heading">${escapeHtml(GUEST_EXTENSION_COPY.heading)}</h2><p>${escapeHtml(GUEST_EXTENSION_COPY.requested)}</p>${extensionFactsDlHtml(rows)}</section>`;
+    }
+    const button = extension.offered ? `<div class="request-actions"><button class="ui-button ui-button--secondary ui-button--block" type="button" data-extension-open>${escapeHtml(GUEST_EXTENSION_COPY.action)}</button></div>` : "";
+    return `<section class="ui-panel" aria-labelledby="extension-heading" data-extension-step><h2 id="extension-heading">${escapeHtml(GUEST_EXTENSION_COPY.heading)}</h2>${outcome}${button}</section>`;
+  }
+  function extensionFactsDlHtml(rows) {
+    return `<dl class="ui-facts ui-facts--stacked">${rows.map((row) => `<dt>${escapeHtml(row.label)}</dt><dd data-extension-fact="${escapeHtml(row.key)}">${escapeHtml(row.value)}</dd>`).join("")}</dl>`;
+  }
+  function confirmationNoticeHtml(notice) {
+    if (notice.kind === "action") return `<div class="request-actions"><button class="ui-button ui-button--secondary ui-button--block" type="button" data-notice-open>${escapeHtml(GUEST_NOTICE_COPY.action)}</button></div>`;
+    return `<section class="ui-panel" aria-labelledby="notice-recorded-heading" data-notice-recorded><h2 id="notice-recorded-heading">${escapeHtml(GUEST_NOTICE_COPY.recordedHeading)}</h2><p>${escapeHtml(GUEST_NOTICE_COPY.recordedLead)}</p>${noticeFactsDlHtml(notice.facts)}</section>`;
+  }
   function confirmationScreenHtml(content, ticket, breakdown) {
-    return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}<div class="confirmation-reference"><dl class="ui-facts ui-facts--stacked"><dt>Booking reference</dt><dd>${escapeHtml(content.bookingReference)}</dd></dl></div><section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}<a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Ask about arrival</a></section><div class="request-actions">${content.scheduleHref ? `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.scheduleHref)}">View payment schedule</a>` : ""}</div><details class="ui-panel booking-details" id="booking-details"><summary class="ui-button ui-button--secondary ui-button--block">Full contract terms</summary><p>${escapeHtml(content.details)}</p></details></section>`;
+    return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}${content.notice ? confirmationNoticeHtml(content.notice) : ""}${content.extension ? confirmationExtensionHtml(content.extension) : ""}<div class="confirmation-reference"><dl class="ui-facts ui-facts--stacked"><dt>Booking reference</dt><dd>${escapeHtml(content.bookingReference)}</dd></dl></div><section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}<a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Ask about arrival</a></section><div class="request-actions">${content.scheduleHref ? `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.scheduleHref)}">View payment schedule</a>` : ""}</div><details class="ui-panel booking-details" id="booking-details"><summary class="ui-button ui-button--secondary ui-button--block">Full contract terms</summary><p>${escapeHtml(content.details)}</p></details></section>`;
   }
   function signInOfferHtml(content) {
     return `<section class="ui-panel" data-sign-in-offer aria-labelledby="sign-in-offer-title"><h2 id="sign-in-offer-title">${escapeHtml(GUEST_ACCOUNT_COPY.offerTitle)}</h2><p>${escapeHtml(GUEST_ACCOUNT_COPY.offerIntro)}</p><form method="post" action="/account/sign-in"><div class="ui-field"><label class="ui-field__label" for="sign-in-offer-email">${escapeHtml(GUEST_ACCOUNT_COPY.emailLabel)}</label><input id="sign-in-offer-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" maxlength="254" required value="${escapeHtml(content.email)}"></div><input type="hidden" name="return" value="${escapeHtml(content.returnPath)}"><button class="ui-button ui-button--secondary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.offerButton)}</button></form></section>`;
@@ -10385,6 +10503,18 @@ Known schemas:
     const thumb = parts.photoSrc === void 0 ? icon("photo") : `<img src="${escapeHtml(parts.photoSrc)}" alt="" width="64" height="64" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
     return `<a class="ui-result-row" href="${escapeHtml(parts.href)}"><span class="ui-result-row__thumb">${thumb}</span><span class="ui-result-row__body"><span class="ui-result-row__title">${escapeHtml(parts.title)}</span><span class="ui-result-row__price">${escapeHtml(parts.total)} <span>${escapeHtml(parts.totalLabel)}</span></span></span>${icon("chevron-right")}</a>`;
   }
+  function noticeFactsDlHtml(facts) {
+    const rows = noticeFactRows(facts, formatNgnKobo);
+    const cells = rows.map((row) => {
+      const attribute = row.key === "newLastNight" ? ` data-new-last-night="${escapeHtml(row.raw)}"` : row.key === "refund" ? ` data-refund-kobo="${escapeHtml(row.raw)}"` : row.key === "owed" ? ` data-owed-kobo="${escapeHtml(row.raw)}"` : "";
+      return `<dt>${escapeHtml(row.label)}</dt><dd${attribute}>${escapeHtml(row.value)}</dd>`;
+    }).join("");
+    return `<dl class="ui-facts ui-facts--stacked">${cells}</dl>`;
+  }
+
+  // apps/web-agent/src/booking-contract-a2ui.ts
+  var NOTICE_OPEN_EVENT = "shortlet.assistant.open-notice";
+  var EXTENSION_OPEN_EVENT = "shortlet.assistant.open-extension";
 
   // apps/local-guest/src/guest-surface-fallback.ts
   function mountGuestSurfaceOrFallback(options) {
@@ -10783,6 +10913,15 @@ Known schemas:
       breakdown.outerHTML
     );
     root.replaceChildren(template.content);
+    const bookingSurfaceId = activePayload?.surfaceId;
+    root.querySelector("[data-notice-open]")?.addEventListener("click", () => {
+      if (bookingSurfaceId === void 0) return;
+      void sendEvent({ name: NOTICE_OPEN_EVENT, surfaceId: bookingSurfaceId, sourceComponentId: "booking-contract-notice-action", timestamp: (/* @__PURE__ */ new Date()).toISOString(), context: { surfaceId: bookingSurfaceId } });
+    });
+    root.querySelector("[data-extension-open]")?.addEventListener("click", () => {
+      if (bookingSurfaceId === void 0) return;
+      void sendEvent({ name: EXTENSION_OPEN_EVENT, surfaceId: bookingSurfaceId, sourceComponentId: "booking-contract-extension-action", timestamp: (/* @__PURE__ */ new Date()).toISOString(), context: { surfaceId: bookingSurfaceId } });
+    });
     root.querySelector(".request-next a")?.addEventListener("click", (event) => {
       event.preventDefault();
       askShortlet();
@@ -11365,6 +11504,38 @@ Known schemas:
   var appliedMode = GUEST_MODES.stays;
   function applyResponseMode(response) {
     appliedMode = readResponseMode(response.mode) ?? appliedMode;
+  }
+  var AGENT_MARK_POP_MS = 400;
+  var agentMarkState = "idle";
+  var agentMarkSettleTimer;
+  var agentDock = requiredElement("agent-dock");
+  var agentDockChip = agentDock.querySelector(".agent-dock__chip");
+  function setAgentMark(event) {
+    agentMarkState = nextAgentMarkState(agentMarkState, event);
+    for (const mark of document.querySelectorAll("[data-agent-mark]")) mark.setAttribute("data-agent-state", agentMarkState);
+  }
+  function landAgentReply() {
+    setAgentMark({ type: "reply-landed" });
+    window.clearTimeout(agentMarkSettleTimer);
+    agentMarkSettleTimer = window.setTimeout(() => setAgentMark({ type: "response-settled" }), AGENT_MARK_POP_MS);
+  }
+  function syncPageHidden() {
+    document.documentElement.toggleAttribute("data-page-hidden", document.visibilityState === "hidden");
+  }
+  syncPageHidden();
+  document.addEventListener("visibilitychange", syncPageHidden);
+  function syncComposerMark() {
+    setAgentMark({ type: "composer-changed", focusedWithText: document.activeElement === composerInput && composerInput.value.trim() !== "" });
+  }
+  composerInput.addEventListener("input", syncComposerMark);
+  composerInput.addEventListener("focus", syncComposerMark);
+  composerInput.addEventListener("blur", syncComposerMark);
+  function withAgentMarkTransition(update) {
+    if (emptyState.hidden || !document.startViewTransition || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      update();
+      return;
+    }
+    document.startViewTransition(update);
   }
   var threadId = getThreadId();
   var shellState = createConversationShellState();
@@ -12248,6 +12419,7 @@ Known schemas:
   function renderResponse(response) {
     if (!response.ok) {
       const message = response.message ?? "That action could not be completed.";
+      if (response.code === "quota_refusal" || response.code === "CONCIERGE_UNAVAILABLE") setAgentMark({ type: "turn-refused", code: response.code });
       const cls = applyRefusal(response);
       if ((cls === "forbidden" || cls === "invalid") && lastActivatedControl?.isConnected && activeWorkspace.contains(lastActivatedControl)) {
         lastActivatedControl.setAttribute("aria-disabled", "true");
@@ -12271,6 +12443,7 @@ Known schemas:
     const surfaces = response.surfaces ?? [];
     renderSurfaces(surfaces);
     for (const receipt of response.receipts ?? []) addReceipt(receipt);
+    landAgentReply();
     return true;
   }
   async function refreshServerState(preserveConversation = shellState.activeSurface?.mode === "focused-surface" && !shellState.focusedSurfaceOpen) {
@@ -12314,6 +12487,9 @@ Known schemas:
     workingStatus.hidden = !next;
     workingStatus.textContent = next ? appliedMode.workspace.workingStatus : "";
     if (next) announce("Message sent. The concierge is working on your request.");
+    agentDock.hidden = !next;
+    if (agentDockChip) agentDockChip.textContent = next ? appliedMode.workspace.workingStatus : "";
+    setAgentMark({ type: next ? "turn-started" : "turn-ended" });
   }
   async function showLandedTurn(text) {
     try {
@@ -12362,6 +12538,7 @@ Known schemas:
     }
     if (eventInFlight) return;
     eventInFlight = true;
+    setAgentMark({ type: "turn-started" });
     const control = lastActivatedControl?.isConnected && activeWorkspace.contains(lastActivatedControl) ? lastActivatedControl : void 0;
     control?.setAttribute("data-loading", "true");
     control?.setAttribute("aria-busy", "true");
@@ -12375,6 +12552,7 @@ Known schemas:
       announce("The action could not be sent. Please try again.", true);
     } finally {
       eventInFlight = false;
+      setAgentMark({ type: "turn-ended" });
       control?.removeAttribute("data-loading");
       control?.removeAttribute("aria-busy");
       activeWorkspace.removeAttribute("aria-busy");
@@ -12490,8 +12668,10 @@ Known schemas:
     suggestion.addEventListener("click", () => {
       const text = suggestion.dataset.prompt?.trim();
       if (!text || isLoading) return;
-      addTurn("user", text);
-      void sendTurn(text);
+      withAgentMarkTransition(() => {
+        addTurn("user", text);
+        void sendTurn(text);
+      });
     });
   }
   composerForm.addEventListener("submit", (event) => {
@@ -12499,8 +12679,10 @@ Known schemas:
     const text = composerInput.value.trim();
     if (text === "" || isLoading) return;
     clearQuickReplies();
-    addTurn("user", text);
-    void sendTurn(text);
+    withAgentMarkTransition(() => {
+      addTurn("user", text);
+      void sendTurn(text);
+    });
   });
   async function restoreServerState() {
     try {

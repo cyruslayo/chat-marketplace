@@ -113,3 +113,7 @@ See `docs/agents/issue-tracker.md`. Record the exact test commands and pass coun
 
 Commands and counts (`env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test` on these 7 files): `test/assistant-pack-registry.test.ts`, `test/assistant-continuous-occupancy.test.ts`, `test/continuous-occupancy.test.ts`, `test/domain-boundary.test.ts`, `test/assistant-short-stays-29-nights.test.ts`, `test/assistant-cold-journey.test.ts`, `test/assistant-tool-argument-validation.test.ts`: 48 tests, 48 pass, 0 fail. Both AC8 tests pass as written. `env -u LLM_API_KEY npx tsc --noEmit -p .`: clean.
 
+- 8 Nov 2026, **owner decisions** (approved recommendations):
+  - Refusal wording replaced by issue 07.
+  - Accepted-but-unpaid offers and pending Booking Requests **keep counting** toward Continuous Occupancy until they expire. Their windows are short (up to 30 minutes while the Operator replies, 20-minute Payment Window), and counting only paid stays would let two back-to-back requests at the same property both pass and both be paid.
+
