@@ -1,6 +1,6 @@
 # 16 · Native dialog for guest-path modals
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: none
 Phase: 2 (Batch B)
@@ -27,3 +27,23 @@ Weaver's Modal renders a `div role=dialog` labelled "Modal dialog" (`renderers.j
 - Commit by explicit path only. Never stage `apps/local-guest/dist/*.js` (except a regenerated `client.js`), `apps/cloudflare/public/_headers` or generated screenshots. No stash, reset or clean.
 
 ## Comments
+
+### ADRs read and applied
+
+| ADR | Constraint | Where it applies |
+| --- | --- | --- |
+| 0078 | Focus moves into a dialog and returns to the opener; accessible name. | AC2/AC3, if a guest Modal existed. |
+| 0081 | Weaver's catalogue is the approved runtime. | The search covers every A2UI builder and the shortlet domain. |
+
+### Finding (AC1)
+
+No guest-path A2UI surface emits `component: "Modal"`. The only Modal mentions are Weaver's own registered renderer and catalogue schema in `@cylayo/weaver-web`; no `*-a2ui.ts` builder and no `domains/shortlet` module emits one. AC2 and AC3 are therefore not applicable, and the issue closes with no code change.
+
+### Tests and commands
+
+- `npm run check` — 0 errors.
+- `npx tsx --test test/a2ui-accessibility.test.ts test/guest-modal-usage.test.ts` — 3 tests, 3 passed, 0 failed.
+
+## Answer
+
+Recorded: the guest path uses no Modal, so no native-dialog change is needed. The scan covers every guest A2UI builder and the shortlet domain; the detector is proven against a synthetic Modal emission.
