@@ -25,3 +25,15 @@ Prepare and run the first task study.
 - The owner recruits and runs the sessions; agents prepare documents only. Never record personal data beyond consented notes.
 
 ## Comments
+
+### Prepared (document only)
+
+`.scratch/ux-guidelines/study/protocol.md` contains the nine tasks from guideline §13, the consent script, the observation sheet (completion, wrong turns, hesitation, misunderstanding, recovery, quotes, with Observed and Interpretation kept apart) and the synthetic-data rules. The owner recruits and runs the sessions; no session has been run and no personal data was collected.
+
+### Status
+
+Ready for the owner to run. Results will go to `study/results.md`, and new P0/P1 findings into `evidence-matrix.md` with an issue number.
+
+## Answer
+
+The study protocol is prepared: nine tasks, a consent script, a per-task observation sheet, and synthetic-data and card-entry rules. Running the sessions and recording results is the owner's step.
