@@ -33,6 +33,7 @@ import {
   writeSmokeArtifacts,
   type SmokeScenarioReport,
 } from "./pilot-agent-smoke-report.js";
+import { evaluateTerseFollowUps, TERSE_REQUEST_BUDGET, type TerseFollowUpReport, type TerseSkipReason } from "./pilot-agent-smoke-terse.js";
 
 class ProviderRequestBudgetExceededError extends ModelRequestGuardError {
   constructor() {
@@ -80,6 +81,13 @@ let budgetExceeded = false;
 let rateLimitOccurred = false;
 let journeysAttempted = 0;
 let providerStopClassification: "PROVIDER_RATE_LIMITED" | "PROVIDER_REQUEST_BUDGET_EXCEEDED" | null = null;
+/** Issue 61: the live terse-follow-up verdicts and false-refusal rate, computed after the journeys. */
+let terseFollowUpReport: TerseFollowUpReport | undefined;
+/** Issue 61: the guarded model client, captured where it is created so the terse suite runs through the same guard. */
+let terseModel: AssistantModelClient | undefined;
+/** Issue 61: the terse suite's own request accounting (a bounded budget, recorded in the report). */
+let terseRequestsUsed = 0;
+let terseBudgetExceeded = false;
 
 type ScenarioReport = SmokeScenarioReport;
 
@@ -98,6 +106,8 @@ interface ActiveProviderTurn {
   readonly turn: string;
   providerReservations: number;
   transportStarts: number;
+  /** Issue 61: a terse follow-up case draws on the suite's own budget, not a journey's. */
+  readonly terse?: boolean;
 }
 
 const scenarios = [
@@ -147,6 +157,7 @@ async function writeReports(
     scenarios: entries,
     note,
     ...(performanceReport ? { performance: performanceReport } : {}),
+    ...(terseFollowUpReport ? { terseFollowUps: terseFollowUpReport } : {}),
   }));
 }
 
@@ -214,7 +225,14 @@ if (!credential && !scripted) {
       clock: localPilotClock(paths),
     });
     const reserveProviderRequest = (currentTurn: ActiveProviderTurn): void => {
-      if (!requestBudget.reserve(currentTurn.journey)) {
+      if (currentTurn.terse) {
+        // The terse follow-up suite has its own small budget, so it can never exhaust the journeys'.
+        if (terseRequestsUsed >= TERSE_REQUEST_BUDGET) {
+          terseBudgetExceeded = true;
+          throw new ProviderRequestBudgetExceededError();
+        }
+        terseRequestsUsed++;
+      } else if (!requestBudget.reserve(currentTurn.journey)) {
         budgetExceeded = true;
         throw new ProviderRequestBudgetExceededError();
       }
@@ -276,6 +294,8 @@ if (!credential && !scripted) {
       },
       projectProviderContinuation: (response, calls) => observedClient.projectProviderContinuation?.(response, calls),
     };
+    // Issue 61: the terse follow-up suite uses this same guarded client, wrapped in its own active provider turn per case.
+    terseModel = modelClient;
     // The OpenRouter catalogue is public and needs no credential. Gemini has no OpenRouter slug, so cost stays unavailable.
     const priceFetcher = createOpenRouterPriceFetcher({
       fetch: (url, init) => fetch(url, init),
@@ -532,6 +552,31 @@ if (!credential && !scripted) {
         rm(`${smokeDatabasePath}-shm`, { force: true }),
       ]);
     }
+  }
+  // Issue 61: run the terse follow-up cases through the guarded path. Each case runs inside its own active provider turn, so the
+  // provider reservation and transport accounting see it; the suite has its own bounded budget. Skip it after a rate-limit or
+  // journey-budget stop, and record the closed reason.
+  if (terseModel) {
+    const runTerseCase = async (caseId: string, run: () => Promise<void>): Promise<void> => {
+      const turn: ActiveProviderTurn = { journey: 0, turn: `terse ${caseId}`, providerReservations: 0, transportStarts: 0, terse: true };
+      activeProviderTurn = turn;
+      try {
+        await providerTurnContext.run(turn, run);
+      } finally {
+        activeProviderTurn = null;
+      }
+    };
+    const terseSkipReason = (): TerseSkipReason | undefined =>
+      rateLimitOccurred ? "rate_limited"
+        : budgetExceeded ? "request_budget_exceeded"
+          : terseBudgetExceeded ? "terse_budget_exceeded"
+            : undefined;
+    terseFollowUpReport = await evaluateTerseFollowUps(terseModel, {
+      requestBudget: TERSE_REQUEST_BUDGET,
+      requestsUsed: () => terseRequestsUsed,
+      skipReason: terseSkipReason,
+      runCase: runTerseCase,
+    });
   }
   const failed = errors.length > 0;
   const performanceReport = buildPerformanceReport({

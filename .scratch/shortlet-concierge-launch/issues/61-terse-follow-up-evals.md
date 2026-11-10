@@ -39,9 +39,9 @@ Every offline test scripts the classifier verdict (`scriptedPlanner` in `test/he
 
 ## Acceptance criteria
 
-- [ ] Each offline case asserts the open-question code on the classifier request and the committed fact.
+- [x] Each offline case asserts the open-question code on the classifier request and the committed fact.
 - [x] A case with an `unclear` verdict falls back to the issue 59 re-ask, not to `unavailable`.
-- [ ] The live eval lists the cases and reports a false-refusal rate. It is checked offline only with a fake model client.
+- [x] The live eval lists the cases and reports a false-refusal rate. It is checked offline only with a fake model client.
 - [ ] Owner: the live run is recorded in Comments with its rate. Target: no false refusals across the cases on `openai/gpt-6-luna`.
 
 ## Verification
@@ -56,3 +56,29 @@ Every offline test scripts the classifier verdict (`scriptedPlanner` in `test/he
 - Done: `test/assistant-terse-followups.test.ts` covers the party-size family ("just me"/"2"/"two of us"/"me and my wife" → partySize 1/2/2/2), the `where` answer ("Wuse 2" → Abuja, Wuse 2), and the `unclear`-to-issue-59-re-ask fallback; each asserts the classifier request's `openQuestion` code and the committed fact. The case table is added to `docs/testing/shortlet-assistant-v1.md`.
 - Remaining before resolution: offline cases for `nights`, `pick_result` and `date_confirm` (the table rows not yet in the test); the live eval cases in `scripts/pilot-agent-smoke.ts` with a per-case closed-code report and a false-refusal rate (checked offline with a fake model client); and the owner's live run recorded here. Agents must never run the live eval (it needs `LLM_API_KEY`).
 - ADRs read and applied: 0106 (false refusals evaluated separately; diagnostics use closed codes; no fast path), 0075 (no model text in reports).
+
+- 9 Nov 2026, remaining work finished (issue stays `claimed`: only the owner's live run remains). Commands (all with `env -u LLM_API_KEY`, `NODE_ENV=test`):
+  - `npm run check`: clean (tsc x4 plus the worker bundle guard).
+  - `npx tsx --test test/assistant-terse-followups.test.ts test/assistant-open-question.test.ts test/assistant-no-dead-ends.test.ts test/pilot-agent-smoke-report.test.ts test/pilot-agent-smoke-grading.test.ts test/pilot-agent-smoke-metrics.test.ts test/pilot-agent-smoke-budget.test.ts test/pilot-agent-smoke-reference.test.ts`: 87 of 87 pass.
+- Offline rows added to `test/assistant-terse-followups.test.ts`, warm and cold, each asserting the classifier request's `openQuestion` and the committed fact/next step: `nights` ("a week" → 7, "3" → 3; a confirmed check-in with no nights is set up via the runtime's own stay setters for warm and the durable projection for cold, because the chip path always records nights with the check-in), `pick_result` ("the first one"/"the second" open result 1/2 via the deterministic which-one path), and `date_confirm` ("yes" confirms a single-candidate "tomorrow" show-back). Confirmed these fail if `openQuestion` is removed from the classifier context (temporarily removed the context field: 9 of 11 failed, then restored).
+- Live eval: `scripts/pilot-agent-smoke-terse.ts` holds the case table (party_size ×4, nights ×2, pick_result ×2, date_confirm ×1, where ×1) and `evaluateTerseFollowUps`; `scripts/pilot-agent-smoke.ts` runs it after the journeys and `scripts/pilot-agent-smoke-report.ts` renders per-case closed codes (scope, reasonCode, the code sent, pass/fail) and the false-refusal rate. Case ids are neutral labels, so the report carries no guest or model text (ADR 0075). Offline checks added to `test/pilot-agent-smoke-report.test.ts` with a fake model client: all-answer → rate 0; one refusal → 1/10; the rendered report has no guest text.
+- Docs: `docs/testing/shortlet-assistant-v1.md` lists every row and the owner live-run command.
+- Owner acceptance criterion left unticked. Live command (owner only; `LLM_API_KEY` set for this command only, every other command uses `env -u LLM_API_KEY`; the key is owner-supplied and never printed):
+  `CONCIERGE_MODE=openai-compatible LLM_BASE_URL=https://openrouter.ai/api/v1 LLM_MODEL=openai/gpt-6-luna LLM_PROVIDER_LABEL=openrouter LLM_API_KEY=… npm run pilot:local:agent-smoke`
+  Then record the false-refusal rate here. Target: no false refusals across the cases on `openai/gpt-6-luna`.
+- ADRs: 0106 (false refusals measured separately; closed codes; no keyword fast path; date authority unchanged), 0075 (no model or guest text in reports).
+
+- 9 Nov 2026, blocker fix and review follow-ups (issue stays `claimed`: only the owner's live run remains).
+- Blocker fixed: the terse suite now runs through the guarded provider path, not the raw provider client. `scripts/pilot-agent-smoke.ts` wraps each case in its own active provider turn (both the module turn and the request context), so `reserveProviderRequest` and `noteTransportStart` account for it; a second, named budget (`TERSE_REQUESTS_PER_CASE = 4`, `TERSE_REQUEST_BUDGET = 40`) is recorded in the report (`requestBudget`/`requestsUsed`), and the suite is skipped with a closed reason (`rate_limited` | `request_budget_exceeded` | `terse_budget_exceeded`) after a rate-limit or budget stop. The report gained `status`, `skipReason` and the budget fields.
+- Offline test that would have caught the blocker: `test/pilot-agent-smoke-report.test.ts` drives the suite through an `AsyncLocalStorage` guard with a fake that throws outside an active turn. Through the wrapper every case reaches the classifier; without the wrapper every case is `failed`. A second test asserts the suite is `skipped` with `rate_limited`.
+- `date_confirm` now asserts the exact committed check-in, `2026-10-28` (the clock is 2026-10-27 Africa/Lagos and the show-back is "tomorrow"), not `typeof string`.
+- pick_result note: "the first one" / "the second" commit through the shell's provider-down fallback (`#viewResultFromChat`), so those rows prove the classifier `openQuestion` code and that the deterministic fallback opens result N — not that the planner opens a result.
+- Scripted status: the full `scripts/pilot-agent-smoke.ts --scripted` fails earlier at local-pilot environment setup in this worktree (pre-existing; `journeysAttempted: 0`), so it did not emit the terse section. The scripted terse eval was exercised directly and reported `status run`, request budget 40 used 0, false-refusal rate 0.000, 10 of 10 PASS.
+- Commands (all with `env -u LLM_API_KEY`, `NODE_ENV=test`): `npm run check`: clean. `npx tsx --test test/assistant-terse-followups.test.ts test/assistant-open-question.test.ts test/assistant-no-dead-ends.test.ts test/pilot-agent-smoke-report.test.ts test/pilot-agent-smoke-grading.test.ts test/pilot-agent-smoke-metrics.test.ts test/pilot-agent-smoke-budget.test.ts test/pilot-agent-smoke-reference.test.ts`: 89 of 89 pass.
+- Owner acceptance criterion remains unticked, with the live command above.
+
+- 9 Nov 2026, false-refusal denominator and provider-stop follow-up (before the issue 61 commit):
+  - The false-refusal rate now divides by the cases that returned a verdict (scope not `failed`); the report shows `Failed cases: N` and `Valid for acceptance: yes/no` (a failed case, or a skipped suite, makes the run not valid for acceptance).
+  - A provider rate limit or failure inside the suite stops it with a closed skip reason (`rate_limited` / `provider_failure`, via `providerStopReason`), instead of spending the remaining budget; the suite's own budget stop maps to `terse_budget_exceeded`.
+  - Offline tests added: one fake returns invalid JSON for a case (failedCases 1, rate 1 of the 9 with a verdict, rendered "Failed cases: 1" / "Valid for acceptance: no"); one fake throws a provider 429 (status skipped, reason `rate_limited`); the unguarded guard test now asserts `skipped` / `provider_failure`.
+  - Commands (all with `env -u LLM_API_KEY`, `NODE_ENV=test`): `npm run check`: clean. The 8-file list (`test/assistant-terse-followups.test.ts test/assistant-open-question.test.ts test/assistant-no-dead-ends.test.ts test/pilot-agent-smoke-report.test.ts test/pilot-agent-smoke-grading.test.ts test/pilot-agent-smoke-metrics.test.ts test/pilot-agent-smoke-budget.test.ts test/pilot-agent-smoke-reference.test.ts`): 91 of 91 pass.

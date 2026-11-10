@@ -12,7 +12,7 @@ import {
   scopeVerdict,
   searchToolCall,
 } from "./helpers/guest-date-fixtures.js";
-import { clientWith, completion, type CapturedRequest } from "./helpers/openai-compatible-client.js";
+import { clientWith, completion, jsonResponse, type CapturedRequest } from "./helpers/openai-compatible-client.js";
 
 // Issue 61 (ADR 0106 amendment): terse follow-ups. Every offline test scripts the classifier verdict, so none catches a live model
 // reading "Just me" as unclear. These cases pin the wiring: the classifier request carries the open-question code, the scripted
@@ -28,6 +28,8 @@ interface Turn {
   readonly search?: Record<string, unknown>;
   readonly reply?: "clarify_stay";
   readonly scope?: "unclear";
+  /** The planner provider fails, so the runtime reports providerUnavailable and the shell's deterministic path takes the turn. */
+  readonly providerDown?: true;
 }
 
 function recorder(turns: Readonly<Record<string, Turn>>) {
@@ -42,6 +44,7 @@ function recorder(turns: Readonly<Record<string, Turn>>) {
     }
     const text = latestUserText(request);
     const turn = text === undefined ? undefined : turns[text];
+    if (turn?.providerDown) return jsonResponse(503, { error: { message: "down" } });
     if (lastRoleIsTool(request)) return completion({ content: "Done." });
     if (turn?.reply) return completion({ content: JSON.stringify({ kind: turn.reply, references: [] }) });
     if (turn?.search) return searchToolCall(`search-${text?.length ?? 0}`, turn.search);
@@ -75,6 +78,26 @@ function card(result: import("../apps/local-guest/src/shortlet-app.js").GuestTur
   return surface;
 }
 
+/**
+ * Sets up a confirmed check-in with no nights, so the next missing criterion is `nights`. A confirmed check-in with no nights is not
+ * reachable through the chip path (the When chip always records both), so the test uses the runtime's own stay setters for warm and
+ * seeds the durable projection for cold. Either way the code is server-set and the next turn reads it from the task state.
+ */
+function setupNightsQuestion(driver: ReturnType<typeof openChipDriver>, cold: boolean): void {
+  if (cold) {
+    const stored = driver.step().environment.interactionStore.findThread(THREAD);
+    if (!stored) throw new Error("the area search did not persist the thread");
+    const projection = JSON.parse(stored.threadJson) as { assistantContext?: Record<string, unknown> };
+    projection.assistantContext = { ...(projection.assistantContext ?? {}), checkIn: "2026-11-12", isDemoDate: false, partySize: 1, openQuestion: "nights" };
+    driver.step().environment.interactionStore.saveThread({ ...stored, threadJson: JSON.stringify(projection) });
+    return;
+  }
+  const runtime = driver.step().runtime;
+  runtime.recordGuestStay(THREAD, { partySize: 1 });
+  runtime.recordGuestStay(THREAD, { checkIn: "2026-11-12" });
+  runtime.recordOpenQuestion(THREAD, "nights");
+}
+
 for (const cold of [false, true]) {
   const mode = cold ? "cold" : "warm";
 
@@ -105,6 +128,58 @@ for (const cold of [false, true]) {
       assert.equal(result.ok, true);
       if (!result.ok) throw new Error("unreachable");
       assert.deepEqual(result.messages, [GUEST_ASSISTANT_COPY.openQuestion.party_size]);
+    } finally { environment.close(); }
+  });
+
+  test(`(${mode}) nights answers are read against the nights open question and commit the nights`, async () => {
+    const cases: readonly [text: string, nights: number][] = [["a week", 7], ["3", 3]];
+    for (const [text, nights] of cases) {
+      const environment = stagingGuest();
+      try {
+        const harness = recorder({ [AREA]: AREA_TURN, [text]: { slots: { nights }, intents: ["search"], search: { city: "Lagos", neighbourhood: "Old Ikoyi", nights, guests: 1 } } });
+        const driver = openChipDriver(environment, harness.client, { cold, threadId: THREAD });
+        card(await driver.typed(AREA));
+        setupNightsQuestion(driver, cold);
+        assertOk(await driver.typed(text), text);
+        assert.equal(openQuestionSentFor(harness.scopeMessages, harness.requests, text), "nights", `${text}: the classifier sees nights`);
+        assert.equal(driver.step().runtime.getThread(THREAD).taskState.stayIntent.nights, nights, `${text}: the nights are committed`);
+      } finally { environment.close(); }
+    }
+  });
+
+  test(`(${mode}) pick_result answers open the named result`, async () => {
+    const cases: readonly [text: string, stayRef: string][] = [["the first one", "stay-1"], ["the second", "stay-2"]];
+    for (const [text, stayRef] of cases) {
+      const environment = stagingGuest();
+      try {
+        const harness = recorder({
+          "Lagos from 12 November 2026 for 6 nights for 2 people": { slots: { city: "Lagos", checkIn: "2026-11-12", nights: 6, guests: 2 }, intents: ["search"], search: { city: "Lagos", checkIn: "2026-11-12", nights: 6, guests: 2 } },
+          // The planner provider fails, so the shell's deterministic "which one" / "open the named result" path takes the turn.
+          "Show me the apartment.": { slots: {}, intents: ["details"], providerDown: true },
+          [text]: { slots: {}, intents: ["details"], providerDown: true },
+        });
+        const driver = openChipDriver(environment, harness.client, { cold, threadId: THREAD });
+        card(await driver.typed("Lagos from 12 November 2026 for 6 nights for 2 people"));
+        assertOk(await driver.typed("Show me the apartment."), "ask which");
+        assertOk(await driver.typed(text), text);
+        assert.equal(openQuestionSentFor(harness.scopeMessages, harness.requests, text), "pick_result", `${text}: the classifier sees pick_result`);
+        assert.equal(driver.step().runtime.getThread(THREAD).taskState.selectedStayRef, stayRef, `${text}: opens ${stayRef}`);
+      } finally { environment.close(); }
+    }
+  });
+
+  test(`(${mode}) the date_confirm answer confirms the check-in on a single-candidate show-back`, async () => {
+    const environment = stagingGuest();
+    try {
+      const showBack: Turn = { slots: { city: "Lagos", neighbourhood: "Old Ikoyi", nights: 6, guests: 2 }, intents: ["search"], search: { city: "Lagos", neighbourhood: "Old Ikoyi", checkInPhrase: "tomorrow", nights: 6, guests: 2 } };
+      const harness = recorder({ [AREA]: AREA_TURN, "Tomorrow please": showBack, yes: { slots: { city: "Lagos", neighbourhood: "Old Ikoyi", nights: 6, guests: 2 }, intents: ["search"], search: { city: "Lagos", neighbourhood: "Old Ikoyi", nights: 6, guests: 2 } } });
+      const driver = openChipDriver(environment, harness.client, { cold, threadId: THREAD });
+      card(await driver.typed(AREA));
+      assertOk(await driver.typed("Tomorrow please"), "date show-back");
+      assertOk(await driver.typed("yes"), "yes");
+      assert.equal(openQuestionSentFor(harness.scopeMessages, harness.requests, "yes"), "date_confirm", "the classifier sees date_confirm");
+      // The clock is 2026-10-27 (Africa/Lagos), so "tomorrow" resolves to 2026-10-28 and the confirmed show-back commits that date.
+      assert.equal(driver.step().runtime.getThread(THREAD).taskState.stayIntent.checkIn, "2026-10-28", "the confirmed check-in date is committed");
     } finally { environment.close(); }
   });
 
