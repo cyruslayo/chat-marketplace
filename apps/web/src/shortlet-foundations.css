@@ -555,9 +555,9 @@
   .ui-compare__head { font-family: var(--font-display); font-weight: 600; }
   .ui-compare__cell { display: flex; flex-direction: column; gap: var(--space-1); font-variant-numeric: tabular-nums; }
   .ui-compare__cell > small { display: none; }
-  /* Issue 18: layout follows the component's column, not the viewport. The reading column is 560px (760px discovery),
-     so a column narrower than 760px stacks even on a wide screen; a full-width standard page keeps the wide layout. */
-  @container (max-width: 47.499rem) {
+  /* Issue 18: layout follows the component’s column, not the viewport. Two stays fit side by side down to about 30rem,
+     so the desktop workspace keeps the side-by-side table (issue 13b) and only a phone-width column stacks. */
+  @container (max-width: 29.999rem) {
     .ui-compare__row { grid-template-columns: minmax(0, 1fr); }
     .ui-compare__row--head { display: none; }
     .ui-compare__cell > small { display: block; }
