@@ -12,7 +12,7 @@ async function openChat(fixture: Awaited<ReturnType<typeof restartFixture>>, tab
   await tab.waitForSelector("#active-workspace .ui-stay-card", 15_000);
 }
 
-test("AC1: In the 1280 split view, compare uses its narrow layout inside the workspace and facts stay two-column", async () => {
+test("AC1: In the 1280 split view, compare and facts keep their wide layout inside the workspace", async () => {
   const fixture = await restartFixture();
   const browser = await launchRealBrowser();
   try {
@@ -27,11 +27,12 @@ test("AC1: In the 1280 split view, compare uses its narrow layout inside the wor
     // sits beside its label in the desktop workspace (it stacks only in a phone-width column; see AC3).
     const factsSideBySide = await tab.evaluate<boolean>(`(() => { const dl = document.createElement("dl"); dl.className = "ui-facts"; dl.innerHTML = "<dt>Check-in</dt><dd>10 Sept 2026</dd>"; document.querySelector("#active-workspace").append(dl); const dt = dl.querySelector("dt").getBoundingClientRect(); const dd = dl.querySelector("dd").getBoundingClientRect(); const sideBySide = dd.top < dt.bottom - 1; dl.remove(); return sideBySide; })()`);
     assert.equal(factsSideBySide, true, "the workspace facts stay two-column");
-    // Compare in the same workspace: the compact rows offer "See both side by side" with two results.
+    // Compare in the same workspace: the compact rows offer "See both side by side" with two results. Two stays fit side
+    // by side in the desktop workspace (issue 13b); only a phone-width column stacks (guest-compare-chromium AC3).
     assert.equal(await tab.clickButton("See both side by side"), true);
     await tab.waitForSelector("#active-workspace .ui-compare", 15_000);
-    const compareStacked = await tab.evaluate<boolean>("(() => { const cells = [...document.querySelector('#active-workspace .ui-compare__row').children].map((el) => el.getBoundingClientRect()); return cells[1].top >= cells[0].bottom - 1; })()");
-    assert.equal(compareStacked, true, "the workspace comparison stacks");
+    const compareSideBySide = await tab.evaluate<boolean>("(() => { const cells = [...document.querySelector('#active-workspace .ui-compare__row').children].map((el) => el.getBoundingClientRect()); return Math.abs(cells[1].top - cells[0].top) < 1; })()");
+    assert.equal(compareSideBySide, true, "the workspace comparison is side by side");
   } finally { await browser.close(); await fixture.close(); }
 });
 
