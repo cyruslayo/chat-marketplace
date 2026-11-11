@@ -54,3 +54,17 @@ At 64rem and wider the workspace is 560px (760px for discovery) beside the conve
 ## Answer
 
 Kit layout now follows its column: at 1280 the compare and facts stack inside the workspace, while a wide standard page keeps the two- and three-column layouts. There is no 320px overflow in chat or on the standard page.
+
+## Review follow-up (11 Nov 2026)
+
+The 47.499rem switch stacked both components inside the 560/760px desktop workspace. That broke issue 13b's side-by-side comparison (`test/guest-compare-chromium.test.ts`, AC3 control) and stacked short label/value lists that fit two columns. The 47.5rem threshold came from this issue's own acceptance criterion, written before the workspace width was measured.
+
+- Commits `7f8993f` (`.ui-facts`) and `dee9153` (`.ui-compare`): both now use `@container (max-width: 29.999rem)`, so they stay wide in the desktop workspace and stack only in a phone-width column. The layout still follows the column, not the viewport.
+- `test/guest-container-queries-chromium.test.ts` AC1 now asserts side by side in the 1280 workspace, and AC3 asserts that facts stack at 320.
+- Commands: `npx tsx --test test/guest-container-queries-chromium.test.ts` (3/3), `npx tsx --test test/guest-compare-chromium.test.ts` (2/2), `npx tsx --test test/guest-kit.test.ts test/shortlet-design-system.test.ts test/landing-page.test.ts` (51/51).
+
+## Pre-merge gate (11 Nov 2026, `gate/ux-guidelines` at 4eea25a)
+
+- `npm run check`: clean.
+- `npm run test:workers`: 191/194; the 3 failures were 5-second timeouts that pass solo (`commerce-switch`, `daily-export`, `data-migration`: 45/45).
+- `npm test`: phase 1 3,130/3,137, phase 2 43/47 files. The failures were the accepted commerce files, `extension-owner-inbox` (it also failed on main; fixed in the gate by closing the owner environment), and load flakes that pass solo (`browser-attach` 11/11, `pilot-agent-smoke-reference` 2/2, `guest-focused-phone-shell-chromium` 7/7, `guest-real-browser-cross-tab` 12/12, `model-quota-host-recovery` 12/12).

@@ -52,6 +52,8 @@ test("The Operator's inbox lists the extension request awaiting a decision", asy
     assert.equal(listed[0]!.request.newCheckOut, EXTEND_TO);
     assert.equal(listed[0]!.status, "awaiting_operator");
   } finally {
+    // The owner environment holds its own handle on the SQLite file; close it first or Windows cannot remove the file.
+    owner.close();
     f.close();
   }
 });
@@ -68,6 +70,8 @@ test("Operator approves in the back office: the Billing Periods are appended", a
     assert.equal((after.quote as { billingPeriods: unknown[] }).billingPeriods.length, (before.quote as { billingPeriods: unknown[] }).billingPeriods.length + 1);
     assert.equal(owner.listExtensionRequests(operatorOf(owner)).length, 0, "an approved request leaves the inbox");
   } finally {
+    // The owner environment holds its own handle on the SQLite file; close it first or Windows cannot remove the file.
+    owner.close();
     f.close();
   }
 });
@@ -84,6 +88,8 @@ test("Operator declines in the back office: nothing changes except the recorded 
     assert.equal(after.extensionRequest?.status, "declined");
     assert.equal(owner.listExtensionRequests(operatorOf(owner)).length, 0, "a declined request leaves the inbox");
   } finally {
+    // The owner environment holds its own handle on the SQLite file; close it first or Windows cannot remove the file.
+    owner.close();
     f.close();
   }
 });
@@ -103,6 +109,8 @@ test("No Operator reply within the response window: the request expires and the 
     assert.equal(after.dates.checkOut, before.dates.checkOut, "the checkout is unchanged");
     assert.equal((after.quote as { billingPeriods: unknown[] }).billingPeriods.length, (before.quote as { billingPeriods: unknown[] }).billingPeriods.length, "no period is appended");
   } finally {
+    // The owner environment holds its own handle on the SQLite file; close it first or Windows cannot remove the file.
+    owner.close();
     f.close();
   }
 });
@@ -119,6 +127,8 @@ test("A non-operator principal cannot approve an extension in the back office", 
     assert.equal(contract().dates.checkOut, before.dates.checkOut, "the stay is unchanged");
     assert.equal(owner.listExtensionRequests(operatorOf(owner)).length, 1, "the request still awaits the Operator");
   } finally {
+    // The owner environment holds its own handle on the SQLite file; close it first or Windows cannot remove the file.
+    owner.close();
     f.close();
   }
 });

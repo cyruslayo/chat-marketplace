@@ -50,3 +50,7 @@ The Extended Stay cancellation and Notice to End wording is **not** added: ADR 0
 ## Answer
 
 Only the owner-approved structural line is added: later Billing Periods are paid separately on their due dates and are not charged automatically. It appears wherever an Extended Stay schedule appears and never on a Short Stay. The cancellation and Notice to End terms remain counsel text and are listed as an open gate for issue 31.
+
+## Owner confirmation (11 Nov 2026)
+
+The owner confirmed the wording in chat: "This is the first Billing Period only. Later Billing Periods are paid separately on their due dates; they are not charged automatically." The cancellation and Notice to End terms are still counsel text, and they remain an open gate for issue 31.
