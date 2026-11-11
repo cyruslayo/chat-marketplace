@@ -223,24 +223,33 @@ test("AC4: after a cold restore each lane's conversationHistory is empty, and th
   assert.doesNotMatch(raw, /conversationHistory|tool_calls|tool_results|rawStep/, "the stored projection holds no model history or provider metadata");
 });
 
-test.skip("AC5: New conversation in the shop lane resets the shop lane only; the stays timeline is unchanged (BLOCKED: New conversation is a client thread switch with no server reset, ADR 0079 and issue 13a; owner to decide O5)", () => {
-  // Intentionally skipped. See the issue Comments: the reset path does not exist on the server, so this criterion cannot be
-  // verified as written. The behaviour that exists is tested below.
-});
-
-test("AC5 (current behaviour): a new conversation starts a new thread; the previous thread's stays and shop lanes are unchanged", async () => {
+// Owner decision (12 Nov 2026, ADR 0079, issue 13a): "New conversation" is the client thread switch. It is not a lane reset.
+test("AC5: New conversation starts a fresh thread that carries no lanes, tasks or timeline over from the previous thread; the previous thread's lanes are unchanged", async () => {
   const model = laneModel();
   const path = temporaryDatabasePath("task-lanes-ac5.sqlite");
-  const threadId = "g-b03d0005";
+  const previous = "g-b03d0005";
   const fresh = "g-b03d0006";
 
-  successOf(await coldStaysSearch(path, model, threadId), "stays search");
-  successOf(await coldStartShop(path, model, threadId), "start the shop task");
-  successOf(await coldShopTurn(path, model, threadId), "a shop turn");
-  const lanesBefore = storedLanes(path, threadId);
+  successOf(await coldStaysSearch(path, model, previous), "stays search");
+  successOf(await coldStartShop(path, model, previous), "start the shop task");
+  successOf(await coldShopTurn(path, model, previous), "a shop turn");
+  const lanesBefore = storedLanes(path, previous);
+  const tasksBefore = storedTaskIds(path, previous);
+  const previousTimeline = await coldTimeline(path, model, previous);
 
-  assert.deepEqual(await coldTimeline(path, model, fresh), [], "the new conversation's first lane is empty");
-  assert.deepEqual(storedLanes(path, threadId), lanesBefore, "the previous thread's lanes are unchanged");
+  // The fresh thread id is what the client's New conversation writes (client.ts startNewConversation), and it is the first request on it.
+  assert.deepEqual(await coldTimeline(path, model, fresh), [], "the fresh thread has no timeline");
+
+  successOf(await coldStaysSearch(path, model, fresh), "a stays search on the fresh thread");
+  const freshRail = await cold(path, model, fresh, (app) => app.runtime.getTaskRail(fresh));
+  assert.deepEqual(freshRail.map((entry) => [entry.domain, entry.active]), [["shortlet", true]], "the fresh thread has one active stays task and no shop task");
+  const freshStored = storedProjection(path, fresh).value;
+  assert.equal("lanes" in freshStored, false, "the fresh thread stores a single lane, with no lanes field");
+  assert.equal((freshStored.tasks as readonly unknown[]).length, 1, "the fresh thread stores one task");
+
+  assert.deepEqual(storedLanes(path, previous), lanesBefore, "the previous thread's lanes are unchanged");
+  assert.deepEqual(storedTaskIds(path, previous), tasksBefore, "the previous thread's task ids are unchanged");
+  assert.deepEqual(await coldTimeline(path, model, previous), previousTimeline, "the previous thread's active timeline is unchanged");
 });
 
 test("AC6: a lane longer than the named cap keeps the cap; older entries are replaced by one receipt summary, and the stored projection stays under the cap", async () => {

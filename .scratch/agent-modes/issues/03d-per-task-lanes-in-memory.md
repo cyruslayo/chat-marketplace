@@ -1,6 +1,6 @@
 # Give each task its own chat lane (timeline and model history)
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 03b (persisted task ids and list), 03a (pack hooks). Two owner decisions are open and listed in seams.md (O1 restore of model history; O2 where lane timelines persist across a cold restore). Owner release as in 03a (ADR 0107 "Settled", 8 Nov 2026).
 Requested: 10 Nov 2026
@@ -23,7 +23,7 @@ The seam is already there. `#applyTaskTool` saves and restores each task's works
 4. **Isolation.** Planner and classifier context (`#turnContext`, the history passed to the model) read only the active lane. Across lanes only guest-authored text crosses, and only as the turn that triggers a switch (ADR 0107 decision 11; the cross-lane hand-over is 03f's).
 5. **Model history not restored.** A cold restore starts every lane's `conversationHistory` empty, as `restoreShortletState` does today (`assistant-runtime.ts:736` and the `conversationHistory.length = 0` line). The projection never stores model text. Whether restore rebuilds history from canonical facts is open decision O1.
 6. **Lane timelines across a cold restore (open decision O2).** This issue persists each lane's guest-visible timeline as an optional `lanes` field of the thread projection (`taskId`, `domain`, `timeline`), capped per lane by a named constant (value: open decision O3). Model history is excluded. If O2 chooses a table, this step is replaced by a new issue.
-7. **New conversation.** "New conversation" starts a new task in the active mode and resets only the active lane. Other lanes are untouched. Verify the current reset path before editing (the button is at `guest-server.ts:359`; the reset logic was not located in the survey).
+7. **New conversation.** Amended 12 Nov 2026 (owner decision, ADR 0079, issue 13a): "New conversation" is the client thread switch (`client.ts` `startNewConversation`). It starts a fresh thread and carries no lanes, tasks or timeline over. There is no per-lane reset on the server; decision O5 is closed. Verified by AC5.
 8. **Client.** `restoreServerState` (`apps/local-guest/src/client.ts:2882`) renders the transcript the server sends for the active lane. The client keeps no lane cache in this issue.
 
 ## ADRs to read first
@@ -37,7 +37,7 @@ The seam is already there. `#applyTaskTool` saves and restores each task's works
 | 0075 | Minimal, redacted interaction data. Timeline text is guest-visible copy only. | Step 6 persists the timeline only, never model text. AC4. |
 | 0093 | Minimal projection of guest state. | Step 6. |
 | 0074 | Switching supersedes proposals with `task_switched`. | Unchanged; AC1 checks the switch still drops the proposal. |
-| 0079 | "New conversation" keeps committed work visible. | Step 7; AC5. |
+| 0079 | "New conversation" starts a fresh thread (client thread switch); it keeps committed work visible in the previous thread. No per-lane reset (owner decision, 12 Nov 2026). | Step 7; AC5. |
 | 0101 | The platform owns threads and tasks. | Lanes are platform thread state. |
 
 ## Acceptance criteria
@@ -48,7 +48,7 @@ Each is its own `test()` in `test/assistant-task-lanes.test.ts`.
 2. An entry written in the stays lane is absent from the shop lane's response (context isolation; the fake shop planner context contains no stays text).
 3. After a cold restore, the active lane's timeline and every persisted lane's timeline are restored, with `taskId` values unchanged.
 4. After a cold restore the lane's `conversationHistory` is empty, and the stored projection has no `conversationHistory` or model text key.
-5. "New conversation" in the shop lane resets the shop lane only; the stays timeline is unchanged.
+5. "New conversation" starts a fresh thread that carries no lanes, tasks or timeline over, and the previous thread's lanes are unchanged (owner decision, 12 Nov 2026; replaces the earlier active-lane-reset wording).
 6. A lane longer than the named cap keeps the cap; entries beyond it are replaced by one receipt summary, and the stored projection stays under the cap. Test the cap with an injected value.
 7. A persisted `lanes` entry whose `taskId` is not in `tasks` rejects the projection (fail closed).
 8. A legacy blob with only the top-level `timeline` restores as the stays lane timeline, unchanged.
@@ -135,3 +135,22 @@ Status at this entry: `ready-for-agent`. It is not set to `resolved`: AC5 is blo
 - On a turn that switches task, the history commit writes the switching turn into the origin lane (the lane active at the start of the turn). The "canonical task facts" summary in that write is built from the new task's state. It is one summary line per switch turn, with no guest text from the new lane.
 
 **Scope notes.** No formatter was run. `client.ts` is unchanged, so `apps/local-guest/dist/client.js` is not regenerated. `commerce-assistant-pack.ts`, `_headers` and screenshots are untouched. Nothing was pushed, merged or deployed.
+
+### Owner decision, 12 Nov 2026: New conversation keeps the thread switch (supersedes Gap 1 and Gap 2 above)
+
+- **Decision.** "New conversation" stays the client thread switch (ADR 0079; issue 13a). It starts a fresh thread and carries no lanes, tasks or timeline over. No server lane reset is added. Decision O5 is closed. Seams.md O5 is updated, and ADR 0107 has a dated line in its 10 Nov corrections section (item 6).
+- **Amended in this issue.** Step 7, AC5 and the ADR 0079 row of the ADR table now say this. The earlier "active lane only" wording is replaced.
+- **AC5 (replaced).** The skipped placeholder is gone. The new `test("AC5: ...")` runs with the assistant enabled and a cold restore before every event, on the 27 Oct 2026 clock, with a guest that has no seeded phone or email. It uses the existing helpers. The previous thread gets a stays search, a shop start and a shop turn. A fresh thread id then gets an empty timeline. Its first stays search leaves one active stays task and one lane, with no `lanes` field stored. The previous thread's stored lanes, task ids and active timeline are unchanged. The client-side `sessionStorage` switch is not run in the unit test. The test asserts the server boundary, which is what a new thread id reaches.
+- **Copy accepted by the owner.** `LANE_SUMMARY_TEXT` ("Earlier messages in this task are not shown.") and `ASSISTANT_CONTROL_COPY.taskClarification` ("I can help with this task. What would you like to do next?").
+- **Behaviour accepted by the owner.** A stays transcript longer than the cap (default 100) is trimmed on its next write, and the oldest entries become one receipt summary. Only transcripts above 100 entries change.
+- **Reading scope (DoD item 3).** ADRs 0074, 0075 and 0093 were read as summaries and cited clauses, not in full. The owner has accepted the Status change on that basis.
+- **Batch gate.** The full `npm test` and the full `npm run test:workers` have not run. They are the once-per-batch pre-merge gate under Test scope, and this issue does not run them.
+
+**Commands and counts** (`C:\AI2026\chat-marketplace-03d`, each prefixed `env -u LLM_API_KEY`), after the change:
+1. `npm run check`: exit 0.
+2. `npx tsx --test test/assistant-task-lanes.test.ts`: tests 8, pass 8, fail 0, skipped 0.
+3. `npx tsx --test test/assistant-cold-journey.test.ts test/agent-mode-shell.test.ts`: tests 13, pass 13, fail 0, skipped 0.
+4. `npx tsx --test test/agent-mode-follows-task.test.ts`: tests 10, pass 10, fail 0, skipped 0.
+5. `npx tsx --test test/assistant-task-persistence.test.ts`: tests 10, pass 10, fail 0, skipped 0.
+
+**Definition of Done (final).** Items 1 to 6 are met, with the reading-scope note for item 3. Item 5 is met: `DEFAULT_LANE_TIMELINE_CAP` is owner decision O3, the bounds 2 to 1000 are engineering bounds, and the two copy strings are accepted. Item 7: `npm run check` is clean, and the batch-gate `npm test` has not run (per Test scope, once per batch). Status is set to `resolved` on that basis.
