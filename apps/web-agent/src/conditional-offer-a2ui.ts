@@ -1,7 +1,8 @@
 import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
 import { CONDITIONAL_OFFER_ACCEPT_EVENT } from "../../web/src/conditional-offer-actions.js";
 import type { ConditionalOfferArtifact } from "../../web/src/conditional-offer-artifact.js";
-import { bookingProgressText, formatBookingDeadline, formatBookingMoney, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";
+import { bookingProgressText, formatBookingDeadline, formatBookingMoney, formatStayDates, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";
+import { billingPeriodLines } from "./extended-stay-presentation.js";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_PAYMENT_COPY, accommodationProviderLine, guestDisclosure, guestFact, guestReservationStatus } from "./guest-content.js";
 
 export function conditionalOfferArtifactToA2UI({ artifact, surfaceId }: { readonly artifact: ConditionalOfferArtifact; readonly surfaceId: string }): readonly A2UIServerMessage[] {
@@ -12,8 +13,12 @@ export function conditionalOfferArtifactToA2UI({ artifact, surfaceId }: { readon
       : facts.status === "expired" ? "Offer expired"
         : facts.status === "stale" ? "Offer no longer current"
           : "Offer withdrawn";
+  // Issue 27 (ADR 0092): an Extended Stay shows its full contracted range and every Billing Period, from the projection.
+  const schedulePeriods = billingPeriodLines(facts.billingPeriods);
+  const extendedRange = facts.stayType === "extended" ? formatStayDates(facts.checkIn, facts.checkOut) : undefined;
+  const scheduleIds = schedulePeriods.map((_, index) => `conditional-offer-period-${index}`);
   const components: A2UIComponent[] = [
-    { id: "root", component: "Column", children: ["conditional-offer-title", "conditional-offer-status", "conditional-offer-unit", "conditional-offer-provider", ...ticketFactIds("conditional-offer"), "conditional-offer-total", ...(facts.refundableSecurityDepositKobo > 0 ? ["conditional-offer-deposit"] : []), "conditional-offer-due", "conditional-offer-expiry", "conditional-offer-progress", "conditional-offer-consequence", "conditional-offer-cancellation", "conditional-offer-conduct", "conditional-offer-disclosures", "conditional-offer-actions"] },
+    { id: "root", component: "Column", children: ["conditional-offer-title", "conditional-offer-status", "conditional-offer-unit", "conditional-offer-provider", ...ticketFactIds("conditional-offer"), "conditional-offer-total", ...(facts.refundableSecurityDepositKobo > 0 ? ["conditional-offer-deposit"] : []), "conditional-offer-due", "conditional-offer-expiry", "conditional-offer-progress", "conditional-offer-consequence", ...(schedulePeriods.length > 0 ? ["conditional-offer-schedule-heading", ...scheduleIds, "conditional-offer-first-period"] : []), "conditional-offer-cancellation", "conditional-offer-conduct", "conditional-offer-disclosures", "conditional-offer-actions"] },
     { id: "conditional-offer-title", component: "Text", text: facts.status === "issued" ? GUEST_GLOSSARY.offerReadyHeading : GUEST_GLOSSARY.conditionalBookingOffer, variant: "h2" },
     { id: "conditional-offer-status", component: "Text", text: statusLabel },
     { id: "conditional-offer-unit", component: "Text", text: facts.unitTitle, variant: "h3" },
@@ -26,6 +31,12 @@ export function conditionalOfferArtifactToA2UI({ artifact, surfaceId }: { readon
     { id: "conditional-offer-due", component: "Text", text: guestFact(GUEST_FACT_LABELS.amountDueNow, formatBookingMoney(facts.totalAmountDueNowKobo)) },
     { id: "conditional-offer-progress", component: "Text", text: bookingProgressText("offer") },
     { id: "conditional-offer-consequence", component: "Text", text: guestReservationStatus(facts.status === "issued" ? "offer-issued" : facts.status === "accepted" ? "offer-accepted" : "offer-closed") },
+    ...(extendedRange === undefined ? [] : [{ id: "conditional-offer-extended-range", component: "Text" as const, text: `${GUEST_FACT_LABELS.stayDates}: ${extendedRange}` }]),
+    ...(schedulePeriods.length > 0 ? [
+      { id: "conditional-offer-schedule-heading", component: "Text" as const, text: GUEST_FACT_LABELS.paymentSchedule, variant: "h3" as const },
+      ...schedulePeriods.map((text, index) => ({ id: `conditional-offer-period-${index}`, component: "Text" as const, text })),
+      { id: "conditional-offer-first-period", component: "Text" as const, text: GUEST_FACT_LABELS.firstPeriodOnly, variant: "caption" as const },
+    ] : []),
     { id: "conditional-offer-cancellation", component: "Text", text: `Cancellation: ${facts.cancellationPolicy.summary}` },
     { id: "conditional-offer-conduct", component: "Text", text: `Guest conduct: ${facts.guestConductRules.join("; ")}` },
     { id: "conditional-offer-disclosures", component: "Text", text: `Disclosures: ${artifact.disclosures.map(guestDisclosure).join("; ")}` },

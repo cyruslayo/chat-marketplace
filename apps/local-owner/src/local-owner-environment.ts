@@ -434,7 +434,7 @@ const CALENDAR_REFUSAL_MESSAGES: Readonly<
   request_pending:
     "A Booking Request is waiting for your answer on these dates. Decline it first, then block the dates",
   payment_pending:
-    "These dates are confirmed and awaiting payment (Payment Pending). A block cannot displace them: this needs human handling",
+    "These dates are confirmed and awaiting payment (payment pending). A block cannot displace them: this needs human handling",
   booked: "These dates are booked. A booked stay cannot be overridden",
   blocked: "These dates are already blocked",
   held: "These dates are under an Operator Hold",

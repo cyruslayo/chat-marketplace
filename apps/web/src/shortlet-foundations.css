@@ -275,6 +275,9 @@
   }
 
   :where(h1, h2, h3) { color: var(--color-text); text-wrap: balance; }
+  /* Issue 17: prose wraps without leaving a single word on the last line; native choice controls use the action colour. */
+  :where(p, dd) { text-wrap: pretty; }
+  :where(input[type="radio"], input[type="checkbox"]) { accent-color: var(--color-action); }
   :where(h1) { font-size: var(--font-size-h1); line-height: var(--font-line-h1); font-weight: 700; }
   :where(h2) { font-size: var(--font-size-h2); line-height: var(--font-line-h2); font-weight: 650; }
   :where(h3) { font-size: var(--font-size-h3); line-height: var(--font-line-h3); font-weight: 650; }
@@ -302,7 +305,7 @@
   .ui-sr-only { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
   /* Page scaffold for server-rendered conventional pages (see apps/web/src/ui-kit.ts). */
-  .ui-page { inline-size: min(100% - 2 * var(--layout-gutter-mobile), var(--layout-workspace-max)); margin-inline: auto; padding-block: var(--space-6) var(--space-10); display: grid; gap: var(--space-6); align-content: start; }
+  .ui-page { inline-size: min(100% - 2 * var(--layout-gutter-mobile), var(--layout-workspace-max)); margin-inline: auto; padding-block: var(--space-6) var(--space-10); display: grid; gap: var(--space-6); align-content: start; container-type: inline-size; }
   .ui-page--narrow { inline-size: min(100% - 2 * var(--layout-gutter-mobile), 30rem); }
   .ui-page__header { display: grid; gap: var(--space-2); }
   .ui-page__header h1 { margin: 0; font-family: var(--font-display); font-weight: 600; }
@@ -343,7 +346,7 @@
   .ui-button--quiet { border-color: transparent; background: transparent; color: var(--color-action); }
   .ui-button--destructive { border-color: var(--color-danger); background: var(--color-danger-surface); color: var(--color-danger); }
   .ui-button--block { inline-size: 100%; }
-  .ui-button--small { min-block-size: 2.25rem; padding-inline: var(--space-3); font-size: var(--font-size-small); }
+  .ui-button--small { min-block-size: var(--control-min-target); padding-inline: var(--space-3); font-size: var(--font-size-small); }
   .ui-button--secondary:hover:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { background: var(--color-surface); }
   .ui-button--quiet:hover:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { background: var(--color-surface-subtle); }
   .ui-button:hover:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { border-color: var(--color-action-hover); }
@@ -352,8 +355,8 @@
   .ui-button:active:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { background: var(--color-action-pressed); color: var(--color-on-action); }
   .ui-button--destructive:active:not(:disabled, [aria-disabled="true"], [data-loading="true"]) { background: var(--color-danger); color: var(--color-surface); }
   .ui-button:disabled, .ui-button[aria-disabled="true"] { border-style: dashed; color: var(--color-text-secondary); cursor: not-allowed; }
-  .ui-button[data-loading="true"] { cursor: progress; }
-  .ui-button[data-loading="true"]::before {
+  .ui-button[data-loading="true"], .ui-button[aria-busy="true"] { cursor: progress; }
+  .ui-button[data-loading="true"]::before, .ui-button[aria-busy="true"]::before {
     content: "";
     inline-size: 1em;
     block-size: 1em;
@@ -430,6 +433,9 @@
 
   /* Guest UI kit (guest-ui-consistency): the same components on every screen, chat workspace and standalone page. */
   .ui-appbar { display: flex; align-items: center; gap: var(--space-3); min-block-size: 4rem; padding: var(--space-2) var(--layout-gutter-mobile); border-block-end: 1px solid var(--color-border-subtle); background: var(--color-surface); }
+  /* Skip link (issue 15): the first focusable control on every standard page; 44x44 when focused. */
+  .ui-skip-link { position: absolute; inset-block-start: var(--space-2); inset-inline-start: var(--space-4); z-index: var(--layer-skip-link); display: inline-flex; align-items: center; min-block-size: var(--control-min-target); min-inline-size: var(--control-min-target); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-text); transform: translateY(-200%); }
+  .ui-skip-link:focus { transform: none; }
   .ui-appbar__brand { display: inline-flex; align-items: center; min-block-size: var(--control-min-target); color: var(--color-text); font-family: var(--font-display); font-size: 1.25rem; font-weight: 600; letter-spacing: -0.01em; text-decoration: none; }
   .ui-appbar__grow { flex-grow: 1; }
   .ui-appbar__action { min-block-size: var(--control-min-target); }
@@ -478,12 +484,12 @@
 
   .ui-rail-nav { border-block-end: 1px solid var(--color-border-subtle); background: var(--color-surface); }
   .ui-rail { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-1); margin: 0; padding: var(--space-2) var(--layout-gutter-mobile) var(--space-3); list-style: none; }
-  .ui-rail > li { padding-block-start: var(--space-2); border-block-start: 3px solid var(--color-border-subtle); color: var(--color-text-muted); font-size: 0.6875rem; line-height: 1.2; text-align: center; }
+  .ui-rail > li { padding-block-start: var(--space-2); border-block-start: 3px solid var(--color-border-subtle); color: var(--color-text-muted); font-size: 0.75rem; line-height: 1.2; text-align: center; }
   .ui-rail > li[data-state="done"] { border-color: var(--color-action); color: var(--color-text-secondary); }
   .ui-rail > li[data-state="current"] { border-color: var(--color-action); color: var(--color-action); font-weight: 650; }
   .ui-rail > li[data-state="failed"] { border-color: var(--color-warning); color: var(--color-warning); font-weight: 650; }
   .ui-rail > li[data-state="failed"][data-tone="danger"] { border-color: var(--color-danger); color: var(--color-danger); }
-  .ui-rail > li { overflow-wrap: anywhere; }
+  .ui-rail > li { overflow-wrap: normal; word-break: normal; hyphens: none; }
   /* 320px reflow (ADR 0078): two rows of three rather than six cramped columns. */
   @media (max-width: 22.999rem) { .ui-rail { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: var(--space-2); } }
 
@@ -517,7 +523,7 @@
   .ui-stay-card p { margin: 0; }
   .ui-stay-card__photo { display: block; inline-size: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: var(--radius-card); background: var(--color-surface-subtle); }
   .ui-stay-card__media { position: relative; }
-  .ui-stay-card__count { position: absolute; inset-inline-end: var(--space-2); inset-block-end: var(--space-2); display: inline-flex; align-items: center; gap: var(--space-2); min-block-size: 2.25rem; padding: 0 var(--space-3); border-radius: var(--radius-pill); background: var(--color-surface); color: var(--color-text); font-size: 0.8125rem; font-weight: 500; box-shadow: var(--elevation-raised); }
+  .ui-stay-card__count { position: absolute; inset-inline-end: var(--space-2); inset-block-end: var(--space-2); display: inline-flex; align-items: center; gap: var(--space-2); min-block-size: var(--control-min-target); min-inline-size: var(--control-min-target); justify-content: center; padding: 0 var(--space-3); border-radius: var(--radius-pill); background: var(--color-surface); color: var(--color-text); font-size: 0.8125rem; font-weight: 500; box-shadow: var(--elevation-raised); }
   .ui-stay-card__photo--empty { display: grid; place-items: center; align-content: center; gap: var(--space-1); color: var(--color-text-secondary); font-size: var(--font-size-small); }
   .ui-stay-card__where { display: flex; align-items: center; gap: var(--space-2); color: var(--color-text-muted); font-size: var(--font-size-small); }
   .ui-stay-card__title { margin: 0; font-family: var(--font-display); font-size: 1.3125rem; line-height: 1.2; font-weight: 600; }
@@ -549,7 +555,9 @@
   .ui-compare__head { font-family: var(--font-display); font-weight: 600; }
   .ui-compare__cell { display: flex; flex-direction: column; gap: var(--space-1); font-variant-numeric: tabular-nums; }
   .ui-compare__cell > small { display: none; }
-  @media (max-width: 29.999rem) {
+  /* Issue 18: layout follows the component's column, not the viewport. The reading column is 560px (760px discovery),
+     so a column narrower than 760px stacks even on a wide screen; a full-width standard page keeps the wide layout. */
+  @container (max-width: 47.499rem) {
     .ui-compare__row { grid-template-columns: minmax(0, 1fr); }
     .ui-compare__row--head { display: none; }
     .ui-compare__cell > small { display: block; }
@@ -770,7 +778,8 @@
   .ui-facts { display: grid; grid-template-columns: minmax(8rem, max-content) minmax(0, 1fr); gap: var(--space-2) var(--space-4); margin: 0; }
   .ui-facts dt { color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-body); }
   .ui-facts dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
-  @media (max-width: 29.999rem) { .ui-facts { grid-template-columns: minmax(0, 1fr); gap: 0; } .ui-facts dd { margin-block-end: var(--space-3); } }
+  /* Issue 18 review: a label/value list fits two columns down to about 30rem, so it stays two-column in the 560px reading column. */
+  @container (max-width: 29.999rem) { .ui-facts { grid-template-columns: minmax(0, 1fr); gap: 0; } .ui-facts dd { margin-block-end: var(--space-3); } }
 
   .ui-list { display: grid; margin: 0; padding: 0; list-style: none; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-card); background: var(--color-surface); overflow: hidden; }
   .ui-list > li + li { border-block-start: 1px solid var(--color-border-subtle); }
@@ -794,8 +803,9 @@
   .ui-confirm__body { display: grid; gap: var(--space-3); padding: var(--space-4); }
   .ui-confirm__body p { margin: 0; color: var(--color-text-secondary); }
 
-  .ui-skeleton { border-radius: var(--radius-small); background: linear-gradient(90deg, var(--color-surface-subtle) 0, var(--color-surface) 40%, var(--color-surface-subtle) 80%) 0 0 / 200% 100%; animation: ui-shimmer 1.4s linear infinite; }
-  @keyframes ui-shimmer { to { background-position: -200% 0; } }
+  /* Issue 24: an opacity pulse instead of a background-position shimmer (cheaper on a low-end phone). */
+  .ui-skeleton { border-radius: var(--radius-small); background: var(--color-surface-subtle); animation: ui-pulse 1.4s ease-in-out infinite alternate; }
+  @keyframes ui-pulse { from { opacity: 1; } to { opacity: 0.55; } }
 
   .ui-image-frame {
     display: grid;

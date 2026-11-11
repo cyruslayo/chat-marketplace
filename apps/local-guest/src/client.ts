@@ -27,6 +27,11 @@ import {
   type ModePresentation,
 } from "../../web-agent/src/guest-content.js";
 import { CLIENT_REQUEST_TIMEOUT_MS, CLIENT_TURN_TIMEOUT_MS, TURN_STILL_WORKING_AFTER_MS } from "./turn-budget.js";
+import { changedElsewhereRecovery } from "./stale-surface-response.js";
+import { applyAccessibilityLabels } from "./a2ui-accessibility.js";
+import { contactFieldAttributes } from "./contact-field.js";
+import { combinedAbortSignal } from "./turn-cancel.js";
+import { applyImageLayout } from "./image-layout.js";
 import { turnEntriesSince } from "./guest-turn-recovery.js";
 import { assertValidResponseMode, readResponseMode } from "./response-mode.js";
 import { nextAgentMarkState, type AgentMarkEvent, type AgentMarkState } from "./agent-mark-state.js";
@@ -73,6 +78,10 @@ import { mountGuestSurfaceOrFallback } from "./guest-surface-fallback.js";
 interface GuestSurfacePayload {
   readonly surfaceId: string;
   readonly a2uiMessages: readonly unknown[];
+  /** Issue 19: the server-owned surface type; never inferred from the surface id. */
+  readonly kind?: "discovery" | "unit-detail" | "compare" | "request-draft" | "booking" | "payment" | "contact" | "general";
+  /** Issue 19: the declared contact field purpose; never inferred from the label text. */
+  readonly contactPurpose?: "phone" | "email";
   readonly mode?: PresentationMode;
   readonly status?: SurfaceLifecycleStatus;
   readonly summary?: string;
@@ -182,7 +191,9 @@ const composerSubmit = requiredElement<HTMLButtonElement>("composer-submit");
 const announcer = requiredElement<HTMLElement>("announcer");
 const errorAnnouncer = requiredElement<HTMLElement>("error-announcer");
 const emptyState = requiredElement<HTMLElement>("empty-state");
+const routeHeading = requiredElement<HTMLElement>("route-heading");
 const workingStatus = requiredElement<HTMLElement>("working-status");
+const turnCancel = requiredElement<HTMLButtonElement>("turn-cancel");
 const journeyRail = requiredElement<HTMLElement>("journey-rail");
 const taskRail = requiredElement<HTMLElement>("task-rail");
 const verticalStarters = requiredElement<HTMLElement>("vertical-starters");
@@ -1159,7 +1170,7 @@ function enhanceSurfacePresentation(mount: HTMLElement, kind: string): void {
   if (kind === "discovery") decorateDiscoveryCards(mount);
   if (kind === "compare") decorateComparison(mount);
   if (kind === "unit-detail") organizeUnitDetail(mount);
-  if (kind === "booking" || kind === "payment") organizeBookingTicket(mount);
+  if (kind === "booking" || kind === "request-draft" || kind === "payment") organizeBookingTicket(mount);
   if (activePayload?.requestScreen)
     organizeRequestScreen(mount, activePayload.requestScreen);
   if (activePayload?.confirmation)
@@ -1584,9 +1595,27 @@ function withAgentMarkTransition(update: () => void): void {
   document.startViewTransition(update);
 }
 
+/**
+ * Issue 07 review: the "not confirmed" banner comes from the callback redirect's `payment` flag. Drop the flag from the
+ * address bar once the page has it, so a refresh or a shared link after a later confirmation never shows it again.
+ */
+function dropPaymentNoticeFlag(): void {
+  try {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("payment")) return;
+    url.searchParams.delete("payment");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  } catch {
+    /* The address bar is a convenience; the server's journey still hides a stale banner. */
+  }
+}
+dropPaymentNoticeFlag();
+
 const threadId = getThreadId();
 let shellState: ConversationShellState = createConversationShellState();
 let activePayload: GuestSurfacePayload | undefined;
+/** Issue 14: a turn's assistant message is announced by the transcript log, so the workspace stays silent for that turn. */
+let transcriptAnnouncesTurn = false;
 let isLoading = false;
 let eventInFlight = false;
 let lastActivatedControl: HTMLElement | undefined;
@@ -1623,6 +1652,14 @@ function announce(text: string, assertive = false): void {
   (assertive ? errorAnnouncer : announcer).textContent = text;
 }
 
+/** Issue 24 (guideline §12): keep the latest turns rendered; older ones defer until scrolled near, and stay reachable. */
+const RENDERED_TURN_WINDOW = 6;
+function deferOlderTurns(): void {
+  const turns = transcript.querySelectorAll<HTMLElement>(".turn");
+  const cutoff = Math.max(0, turns.length - RENDERED_TURN_WINDOW);
+  turns.forEach((turn, index) => turn.classList.toggle("turn--deferred", index < cutoff));
+}
+
 function addTurn(role: "assistant" | "user", text: string): void {
   emptyState.hidden = true;
   const turn = document.createElement("article");
@@ -1636,6 +1673,7 @@ function addTurn(role: "assistant" | "user", text: string): void {
   bubble.textContent = text;
   turn.appendChild(bubble);
   transcript.appendChild(turn);
+  deferOlderTurns();
   transcript.scrollTop = transcript.scrollHeight;
   requestAnimationFrame(() => {
     if (turn.isConnected) transcript.scrollTop = transcript.scrollHeight;
@@ -1691,11 +1729,7 @@ function addTimelineEntry(entry: GuestTimelineEntry): void {
 
 function modeFor(surface: GuestSurfacePayload): PresentationMode {
   if (surface.mode) return surface.mode;
-  return surface.surfaceId.includes(":unit:") ||
-    surface.surfaceId.includes(":request:") ||
-    surface.surfaceId.includes(":offer:") ||
-    surface.surfaceId.includes(":booking:") ||
-    surface.surfaceId.includes(":payment:")
+  return surface.kind === "unit-detail" || surface.kind === "request-draft" || surface.kind === "booking" || surface.kind === "payment" || surface.kind === "contact"
     ? "focused-surface"
     : "inline-surface";
 }
@@ -1744,7 +1778,8 @@ function showReopen(): void {
     workspaceReopen.textContent = `Return to ${guestSurfaceHeading(current.summary).toLocaleLowerCase()}`;
 }
 
-function enhanceGuestContactField(mount: HTMLElement): void {
+function enhanceGuestContactField(mount: HTMLElement, purpose: "phone" | "email" | undefined): void {
+  if (purpose === undefined) return;
   const synchronize = (): void => {
     const wrapper = mount.querySelector<HTMLElement>(
       '[data-a2ui-component="TextField"]',
@@ -1752,13 +1787,7 @@ function enhanceGuestContactField(mount: HTMLElement): void {
     const label = wrapper?.querySelector<HTMLLabelElement>("label");
     const input = wrapper?.querySelector<HTMLInputElement>("input");
     if (!wrapper || !label || !input) return;
-    const labelText = label.textContent?.trim() ?? "";
-    const kind = /^phone number/i.test(labelText)
-      ? "phone"
-      : /^email address/i.test(labelText)
-        ? "email"
-        : undefined;
-    if (!kind) return;
+    const kind = purpose;
 
     const hint =
       wrapper.previousElementSibling instanceof HTMLElement &&
@@ -1772,9 +1801,10 @@ function enhanceGuestContactField(mount: HTMLElement): void {
         : undefined;
     if (hint) hint.id = `guest-contact-${kind}-help`;
     input.required = true;
-    input.type = kind === "phone" ? "tel" : "email";
-    input.inputMode = kind === "phone" ? "tel" : "email";
-    input.autocomplete = kind === "phone" ? "tel" : "email";
+    const attributes = contactFieldAttributes(kind);
+    input.type = attributes.type;
+    input.inputMode = attributes.inputMode;
+    input.autocomplete = attributes.autocomplete;
     if (error) {
       error.id = `guest-contact-${kind}-error`;
       error.setAttribute("role", "alert");
@@ -1948,6 +1978,7 @@ function closeWorkspace(focusTarget: HTMLElement): void {
   focusedScrollTop = workspaceRegion.scrollTop;
   shellState = closeFocusedSurface(shellState);
   composerForm.dataset.focused = "false";
+  routeHeading.textContent = appliedMode.emptyState.heading;
   activeWorkspace.hidden = true;
   showReopen();
   const target = focusTarget.isConnected && !focusTarget.hidden ? focusTarget : workspaceReopen;
@@ -1973,18 +2004,14 @@ function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
   focusedScrollTop = previousScroll;
   composerForm.dataset.focused = presentation.mode === "focused-surface" ? "true" : "false";
   activePayload = surface;
+  routeHeading.textContent = guestSurfaceHeading(presentation.summary);
   activeWorkspace.replaceChildren();
   activeWorkspace.hidden = presentation.mode === "focused-surface" && !shellState.focusedSurfaceOpen;
   activeWorkspace.tabIndex = -1;
   workspaceRegion.hidden = false;
   activeWorkspace.dataset.mode = presentation.mode;
   activeWorkspace.dataset.status = presentation.status;
-  activeWorkspace.dataset.surfaceKind = surface.surfaceId.includes(":unit:") ? "unit-detail"
-    : surface.surfaceId.includes(":compare:") ? "compare"
-    : surface.surfaceId.includes(":discovery:") ? "discovery"
-      : surface.surfaceId.includes(":payment:") || surface.surfaceId.includes(":offer:") ? "payment"
-        : surface.surfaceId.includes(":request:") || surface.surfaceId.includes(":booking:") ? "booking"
-          : "general";
+  activeWorkspace.dataset.surfaceKind = surface.kind ?? "general";
   activeWorkspace.classList.remove("workspace-arrival");
   void activeWorkspace.offsetWidth;
   activeWorkspace.classList.add("workspace-arrival");
@@ -2096,11 +2123,14 @@ if (
   mount.dataset.renderer = "weaver";
   mount.dataset.surfaceId = surface.surfaceId;
   enhanceSurfacePresentation(mount, activeWorkspace.dataset.surfaceKind ?? "general");
+  // Issue 13 (ADR 0074/0078): Weaver ignores the A2UI accessibility label, so the browser applies it after mount.
+  applyAccessibilityLabels(mount, surface.a2uiMessages);
   if (surface.requestScreen && surface.waiting?.kind === "operator-response" && presentation.status === "active" && !mount.querySelector(".request-screen")) {
     // ADR-0074/0080: a partial older surface retains all waiting guidance as well as its readable Weaver facts.
     mount.before(renderWaiting(surface.waiting));
   }
-  enhanceGuestContactField(mount);
+  enhanceGuestContactField(mount, surface.contactPurpose);
+  applyImageLayout(mount);
   enhanceListingImages(mount);
   if (presentation.conventionalRoute) {
     const link = document.createElement("a");
@@ -2126,19 +2156,21 @@ if (
     }
   }
   trackTelemetry(presentation.mode === "focused-surface" ? "focused-surface-opened" : "inline-surface-rendered");
-  if (moveFocus) announce(`${guestSurfaceHeading(presentation.summary)} is ready.`);
+  if (moveFocus && !transcriptAnnouncesTurn) announce(`${guestSurfaceHeading(presentation.summary)} is ready.`);
   syncSheetHistory();
 }
 
 function acceptSurface(surface: GuestSurfacePayload, preserveConversation = false): void {
   const before = shellState.historicalSummaries.length;
+  const firstSurface = shellState.activeSurface === undefined;
   const replaced = shellState.activeSurface !== undefined && shellState.activeSurface.surfaceId !== surface.surfaceId;
   const keepConversationOpen = preserveConversation || (!replaced && shellState.activeSurface?.mode === "focused-surface" && !shellState.focusedSurfaceOpen);
   shellState = replaceActiveSurface(shellState, presentationFor(surface));
   if (keepConversationOpen) shellState = closeFocusedSurface(shellState);
   if (replaced) trackTelemetry("surface-replaced");
   for (const summary of shellState.historicalSummaries.slice(before)) addHistoricalSummary(summary);
-  renderSurface(surface, replaced && !preserveConversation);
+  // Issue 14: the first workspace is a task transition too, so it gets the same focus and one ready announcement.
+  renderSurface(surface, (replaced || firstSurface) && !preserveConversation);
   syncSheetHistory();
 }
 
@@ -2162,6 +2194,9 @@ function renderSurfaces(surfaces: readonly GuestSurfacePayload[], preserveConver
  */
 function renderJourney(journey: GuestJourney | undefined): void {
   if (!journey) return;
+  // Issue 07 review: a late webhook can confirm the booking after the callback said "not confirmed"; the server's journey
+  // wins, so the stale banner goes once the booking is confirmed.
+  if (journey.current === "confirmed") document.querySelector("[data-payment-notice]")?.remove();
   const list = document.createElement("ol");
   list.className = "ui-rail";
   let current: HTMLElement | undefined;
@@ -2521,8 +2556,9 @@ async function sendCriteriaEvent(name: string, context: Readonly<Record<string, 
     const response = await postJson("/api/event", { threadId, name, surfaceId: `thread-${threadId}:criteria`, sourceComponentId: "criteria-strip", timestamp: new Date().toISOString(), context });
     if (!response.ok) {
       // AC3: a refused edit is explained next to the strip; the criteria stay as they were.
-      criteriaStatus.textContent = response.message ?? "That change could not be applied.";
-      if (response.code === "STALE_SURFACE" || response.code === "CRITERIA_LOCKED") void refreshServerState();
+      const recovery = changedElsewhereRecovery(response.code);
+      criteriaStatus.textContent = recovery?.message ?? response.message ?? "That change could not be applied.";
+      if (recovery || response.code === "CRITERIA_LOCKED") void refreshServerState();
       return;
     }
     criteriaStatus.textContent = "";
@@ -2608,10 +2644,13 @@ function renderQuickReplies(replies: readonly string[] | undefined): void {
 
 function renderResponse(response: GuestResponse): boolean {
   if (!response.ok) {
-    const message = response.message ?? "That action could not be completed.";
+    // Issue 11 (ADR 0072, 0074): a stale, expired or changed-elsewhere rejection makes the current surface read-only and
+    // refreshes the authoritative state. An artifact mismatch gets guest wording, never the server's internal message.
+    const recovery = changedElsewhereRecovery(response.code);
+    const message = recovery?.message ?? response.message ?? "That action could not be completed.";
     if (response.code === "quota_refusal" || response.code === "CONCIERGE_UNAVAILABLE") setAgentMark({ type: "turn-refused", code: response.code });
-    if (response.code === "STALE_SURFACE" || response.code === "STALE_ACTION" || response.code === "EXPIRED_SURFACE") {
-      shellState = markActiveSurfaceStatus(shellState, response.code === "EXPIRED_SURFACE" ? "expired" : "stale");
+    if (recovery) {
+      shellState = markActiveSurfaceStatus(shellState, recovery.kind);
       if (activePayload) renderSurface({ ...activePayload, status: shellState.activeSurface?.status });
       void refreshServerState();
     }
@@ -2628,7 +2667,9 @@ function renderResponse(response: GuestResponse): boolean {
   renderQuickReplies(response.quickReplies);
   if ((response.messages ?? []).length > 0) trackTelemetry("text-response-rendered");
   const surfaces = response.surfaces ?? [];
+  transcriptAnnouncesTurn = (response.messages ?? []).length > 0;
   renderSurfaces(surfaces);
+  transcriptAnnouncesTurn = false;
   // Receipts follow the markers for the steps they complete.
   for (const receipt of response.receipts ?? []) addReceipt(receipt);
   landAgentReply();
@@ -2657,7 +2698,7 @@ async function refreshServerState(preserveConversation = shellState.activeSurfac
   return false;
 }
 
-async function postJson(path: string, body?: unknown, timeoutMs: number = CLIENT_REQUEST_TIMEOUT_MS): Promise<GuestResponse> {
+async function postJson(path: string, body?: unknown, timeoutMs: number = CLIENT_REQUEST_TIMEOUT_MS, userSignal?: AbortSignal): Promise<GuestResponse> {
   const response = await fetch(path, body === undefined ? {} : {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -2665,7 +2706,7 @@ async function postJson(path: string, body?: unknown, timeoutMs: number = CLIENT
     // ADR-0079 bounds establishment; aborting the client wait never rolls back
     // a command that the server may already have committed. A turn waits for the
     // server's worst case (turn-budget.ts), so the wait ends only after the server can finish.
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: userSignal === undefined ? AbortSignal.timeout(timeoutMs) : combinedAbortSignal(userSignal, timeoutMs),
   });
   if (!response.ok) throw new Error(`Guest request failed with HTTP ${response.status}`);
   return readGuestResponse(await response.json());
@@ -2706,21 +2747,38 @@ async function showLandedTurn(text: string): Promise<boolean> {
 async function sendTurn(text: string): Promise<void> {
   if (isLoading) return;
   setLoading(true);
+  const cancel = new AbortController();
+  let stoppedByGuest = false;
+  const showCancel = setTimeout(() => { turnCancel.hidden = false; }, TURN_STILL_WORKING_AFTER_MS);
   // A normal turn takes 5 to 8 seconds. A slower one says it is still working instead of looking stuck.
   const stillWorking = setTimeout(() => { workingStatus.textContent = GUEST_ASSISTANT_COPY.stillWorking; }, TURN_STILL_WORKING_AFTER_MS);
+  const stop = (): void => { stoppedByGuest = true; cancel.abort(); };
+  turnCancel.addEventListener("click", stop);
   try {
-    if (renderResponse(await postJson("/api/turn", { threadId, text }, CLIENT_TURN_TIMEOUT_MS))) {
+    if (renderResponse(await postJson("/api/turn", { threadId, text }, CLIENT_TURN_TIMEOUT_MS, cancel.signal))) {
       if (composerInput.value.trim() === text) composerInput.value = "";
     }
   } catch {
-    if (await showLandedTurn(text)) {
+    if (stoppedByGuest) {
+      // Issue 21: the server may still answer. Show a landed turn, otherwise keep the text and say so.
+      if (await showLandedTurn(text)) {
+        if (composerInput.value.trim() === text) composerInput.value = "";
+      } else {
+        if (composerInput.value.trim() === "") composerInput.value = text;
+        addTurn("assistant", GUEST_ASSISTANT_COPY.stoppedWaiting);
+        announce(GUEST_ASSISTANT_COPY.stoppedWaiting);
+      }
+    } else if (await showLandedTurn(text)) {
       if (composerInput.value.trim() === text) composerInput.value = "";
     } else {
       addRetryTurn("The concierge is temporarily unavailable. Your message is still in the composer; please try again.", () => { void sendTurn(text); });
       announce("The concierge is temporarily unavailable. Your message remains in the composer.", true);
     }
   } finally {
+    clearTimeout(showCancel);
     clearTimeout(stillWorking);
+    turnCancel.hidden = true;
+    turnCancel.removeEventListener("click", stop);
     setLoading(false);
   }
 }

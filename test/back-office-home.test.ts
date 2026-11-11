@@ -166,7 +166,7 @@ test("AC4 — Pages reflow at 320px with 44px targets, and the pilot startup ban
     const requestId = request(f, "2026-09-10", "2026-09-13");
     for (const path of ["/operator", "/operator/requests", `/operator/requests/${requestId}`]) {
       const html = await (await operatorGet(f.session, path)).text();
-      assert.match(html, /<meta name="viewport" content="width=device-width,initial-scale=1">/);
+      assert.match(html, /<meta name="viewport" content="width=device-width,initial-scale=1(?:,interactive-widget=resizes-content)?">/);
       // Every header control is a 44px target, and the header wraps rather than overflowing.
       assert.match(html, /\.bo-header__nav a,\s*\.bo-header \.ui-button\{[^}]*min-block-size:var\(--control-min-target\)/);
       assert.match(html, /\.bo-header\{[^}]*flex-wrap:wrap/);

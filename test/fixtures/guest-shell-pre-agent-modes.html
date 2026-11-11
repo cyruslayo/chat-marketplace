@@ -2,7 +2,7 @@
 <html lang="en-NG" data-theme="system">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Shortlet Concierge</title>
   <link rel="stylesheet" href="/shortlet-foundations.css">
   <style>
@@ -40,7 +40,9 @@
     #vertical-starters { margin-block-end: var(--space-4); }
     main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
     /* ADR-0078: keep the conversation independently scrollable at the 320px launch viewport. */
-    #transcript { flex: 1 1 0; min-height: 22dvh; padding: var(--space-6) var(--layout-gutter-mobile) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
+    #transcript { flex: 1 1 0; min-height: 22dvh; padding: var(--space-6) var(--layout-gutter-mobile) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-gutter: stable; }
+    /* Issue 24: older turns defer their rendering until scrolled near; the intrinsic size keeps the scroll stable. */
+    #transcript .turn--deferred { content-visibility: auto; contain-intrinsic-size: auto none auto 4rem; }
     .conversation-heading { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .turn { display: flex; flex-direction: column; gap: var(--space-1); }
     .turn.user { align-items: flex-end; }
@@ -55,7 +57,7 @@
     .prompt-suggestions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
     .quick-replies { display: flex; flex-wrap: wrap; gap: var(--space-2); }
     .quick-reply { min-width: var(--control-min-target); justify-content: center; }
-    #workspace-region { min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 0 var(--layout-gutter-mobile) var(--space-4); }
+    #workspace-region { min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 0 var(--layout-gutter-mobile) var(--space-4); container-type: inline-size; scrollbar-gutter: stable; }
     #active-workspace { background: var(--color-surface-elevated); border: 1px solid var(--color-border); border-radius: var(--radius-workspace); padding: var(--space-4); box-shadow: var(--elevation-active); }
     #active-workspace[hidden], #workspace-region[hidden], #workspace-reopen[hidden], #empty-state[hidden] { display: none; }
     .workspace-heading { display: flex; justify-content: flex-start; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-2); }
@@ -165,7 +167,7 @@
     .criteria-status:empty { display: none; }
     form#composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--space-2); padding: var(--space-2) var(--layout-gutter-mobile) max(var(--space-4), env(safe-area-inset-bottom)); border-top: 1px solid var(--color-border); background: var(--color-surface); position: sticky; bottom: 0; z-index: 10; }
     #composer-label { grid-column: 1 / -1; color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); font-weight: 600; }
-    #composer-input { min-width: 0; width: 100%; min-height: var(--control-min-field); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-pill); font-size: 1rem; background: var(--color-canvas); color: var(--color-text); }
+    #composer-input { min-width: 0; width: 100%; min-height: var(--control-min-field); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-pill); font-size: 1rem; background: var(--color-canvas); color: var(--color-text); field-sizing: content; max-block-size: 8rem; }
     #composer-submit { inline-size: 3rem; min-inline-size: 3rem; min-height: 3rem; padding: 0; border-radius: var(--radius-pill); }
     form#composer[data-focused="true"] { gap: var(--space-1) var(--space-2); padding-block: var(--space-1) max(var(--space-2), env(safe-area-inset-bottom)); background: var(--color-canvas); }
     form#composer[data-focused="true"] #composer-label { font-weight: 400; }
@@ -173,6 +175,7 @@
     form#composer[data-focused="true"] #composer-submit { min-height: 2.75rem; }
     #composer-submit:disabled { background: var(--color-surface-subtle); cursor: progress; }
     #working-status { grid-column: 1 / -1; margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-small); }
+    #turn-cancel { grid-column: 1 / -1; justify-self: start; }
     @media (min-width: 48rem) {
       #transcript, #workspace-region, form#composer, #criteria-strip { padding-left: var(--layout-gutter-tablet); padding-right: var(--layout-gutter-tablet); }
     }
@@ -228,7 +231,7 @@
   <div class="app guest-editorial">
     <header class="ui-appbar">
       <span class="agent-mark" data-agent-mark="appbar" data-agent-state="idle" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 19.5V11c0-4 3.6-7 8-7s8 3 8 7v8.5"/><path d="M9.5 19.5v-4a2.5 2.5 0 0 1 5 0v4"/></svg></span>
-      <a class="header-identity ui-appbar__brand" href="/" aria-label="Shortlet home"><h1>Shortlet</h1></a>
+      <a class="header-identity ui-appbar__brand" href="/" aria-label="Shortlet home"><span>Shortlet</span></a>
       <span class="header-note">Abuja · Lagos</span>
       <span class="ui-appbar__grow"></span>
       <div class="header-actions">
@@ -247,7 +250,7 @@
     <nav id="journey-rail" class="ui-rail-nav" aria-label="Booking progress" hidden><ol class="ui-rail"></ol></nav>
     <nav id="task-rail" class="ui-task-rail-nav" aria-label="Conversation tasks" hidden><ol class="ui-task-rail"></ol></nav>
     <main id="main-content" tabindex="-1">
-      <section id="transcript" role="log" aria-live="polite" aria-relevant="additions" aria-labelledby="conversation-heading">
+      <h1 id="route-heading" class="conversation-heading">Find a place to stay</h1><section id="transcript" role="log" aria-live="polite" aria-relevant="additions" aria-labelledby="conversation-heading">
         <h2 id="conversation-heading" class="conversation-heading">Conversation</h2>
         <header id="task-step-header" class="ui-step-header" hidden></header>
         <section id="vertical-starters" class="ui-vertical-starters" hidden></section>
@@ -274,7 +277,7 @@
           <div class="criteria-chips"></div>
           <form id="criteria-editor" hidden novalidate></form>
         </div>
-        <p id="criteria-status" class="criteria-status" role="alert"></p>
+        <p id="criteria-status" class="criteria-status" role="status"></p>
       </section>
       <div id="agent-dock" class="agent-dock" hidden><span class="agent-mark" data-agent-mark="dock" data-agent-state="idle" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 19.5V11c0-4 3.6-7 8-7s8 3 8 7v8.5"/><path d="M9.5 19.5v-4a2.5 2.5 0 0 1 5 0v4"/></svg></span><span class="agent-dock__chip"></span></div>
       <form id="composer" method="post" action="/conversation" aria-label="Message the concierge">
@@ -285,6 +288,7 @@
         <span id="composer-hint" class="sr-only">Share a city or neighbourhood, dates or nights, and number of guests.</span>
         <button id="composer-submit" class="ui-button ui-button--primary" type="submit" aria-label="Send"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
         <p id="working-status" hidden></p>
+        <button id="turn-cancel" class="ui-button ui-button--quiet ui-button--small" type="button" hidden>Cancel</button>
       </form>
     </main>
     <div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>

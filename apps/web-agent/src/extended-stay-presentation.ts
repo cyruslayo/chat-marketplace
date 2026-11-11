@@ -79,6 +79,21 @@ export function billingPeriodLine(period: BillingPeriodFacts): string {
   return `${GUEST_FACT_LABELS.billingPeriod} ${period.index}: ${dates} (${period.nights} nights) · ${formatBookingMoney(period.amountKobo)} · due ${formatGuestDate(period.dueDate) ?? period.dueDate}`;
 }
 
+/**
+ * The Billing Period a card payment covers, read from the payment's own component, never matched by amount (equal-amount
+ * periods, or a deposit equal to a period, would be mislabelled). The payment after Accept Offer is the First Period
+ * Payment (ADR 0092); a Refundable Security Deposit payment covers no Billing Period. Later periods are paid elsewhere.
+ */
+export function cardPaymentBillingPeriod(facts: {
+  readonly status: string;
+  readonly currentComponent?: "stay" | "security_deposit";
+  readonly billingPeriods?: readonly BillingPeriodFacts[];
+}): BillingPeriodFacts | undefined {
+  if (facts.currentComponent === "security_deposit" || facts.status === "deposit_required") return undefined;
+  if (facts.status !== "ready" && facts.status !== "checkout_initiated") return undefined;
+  return [...(facts.billingPeriods ?? [])].sort((a, b) => a.index - b.index)[0];
+}
+
 /** The whole payment schedule: one line per Billing Period, in order. */
 export function billingPeriodLines(periods: readonly BillingPeriodFacts[] | undefined): readonly string[] {
   return (periods ?? []).map(billingPeriodLine);
@@ -107,4 +122,16 @@ export function billingPeriodStatusText(period: { readonly status: string; reado
   if (period.status === "overdue" || period.overdue) return "Overdue. The payment was not received by its due date.";
   if (period.status === "unpaid_at_start") return "Unpaid at the start of this Billing Period.";
   return "Not payable yet. Payable once the previous Billing Period has started.";
+}
+
+/**
+ * Issue 27 (ADR 0092; guideline §11): the schedule page's lead sentence follows the periods' own state, so it never says
+ * "first period only" after every period is paid. It describes the projection; it never promises a collection rule.
+ */
+export function scheduleLeadText(periods: readonly { readonly status: string }[]): string {
+  if (periods.length === 0) return GUEST_FACT_LABELS.firstPeriodOnly;
+  const paid = periods.filter((period) => period.status === "paid").length;
+  if (paid === periods.length) return "Every Billing Period of this stay is paid.";
+  if (paid === 0) return GUEST_FACT_LABELS.firstPeriodOnly;
+  return `${paid} of ${periods.length} Billing Periods are paid. Each later Billing Period is paid separately on its due date.`;
 }

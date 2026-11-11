@@ -9548,6 +9548,8 @@ Known schemas:
     safeClarification: "I can help you find and compare stays, explain pricing, or check a booking status. What would you like to do?",
     // Shown when a turn is slower than a normal one; the guest is not told the request failed.
     stillWorking: "Still working on your request. A stay search can take a little longer, so please keep this page open.",
+    // Issue 21: the browser stopped waiting; the server may still answer. Never claim a server-side cancellation.
+    stoppedWaiting: "Stopped waiting. Your message may still be answered.",
     // ADR 0067 governs the support window and active-stay on-call coverage.
     generalSupport: "General human support is available daily from 8:00 AM to 8:00 PM WAT. Use the existing support channel provided with your stay.",
     activeStayEmergencySupport: "Active stays have 24/7 Human Incident Support. Use Active-Stay Emergency Support through your existing booking support route.",
@@ -9565,14 +9567,14 @@ Known schemas:
     draftReady: "Your Request Draft is ready to review. It has not been submitted.",
     offerInactive: "This Conditional Booking Offer is no longer active. Review the current booking details before continuing.",
     offerAmount: (total, due, deposit) => `The offer's All-In Stay Total is ${total}. The amount due now is ${due}. The refundable security deposit is shown separately as ${deposit}. Review the offer before accepting it.`,
-    confirmedBooking: (contractId) => `Your booking is confirmed under contract reference ${contractId}.`,
-    issuedOffer: (offerId) => `The Accommodation Provider has issued a Conditional Booking Offer under offer reference ${offerId}.`,
-    disclosedRequest: (requestId) => `Your Booking Request ${requestId} has been disclosed and is awaiting the Accommodation Provider's response.`,
+    confirmedBooking: "Your booking is confirmed. Your reservation is in your stay details.",
+    issuedOffer: "The Accommodation Provider has issued a Conditional Booking Offer. Review it in your stay details.",
+    disclosedRequest: "Request sent. Waiting for the Operator to respond.",
     noCurrentBooking: "You currently have no active booking or pending request."
   });
   var GUEST_COMMERCE_ASSISTANT_COPY = Object.freeze({
     searchResults: (count) => `I found ${count} current product ${count === 1 ? "offer" : "offers"}. Review the Commerce results below.`,
-    offer: "I found the current Merchant Offer. Review its details on the Commerce surface.",
+    offer: "I found the current Merchant Offer. Review its details below.",
     delivery: (count) => `I found ${count} current delivery ${count === 1 ? "option" : "options"}. Review the quotes below.`,
     cart: "I updated the Store Cart. Review its current quantities and prices below.",
     orderStatus: (status) => `The current Merchant Order status is ${status}.`,
@@ -9583,7 +9585,15 @@ Known schemas:
     /\bcontrolled catalogue\b/i,
     /\bguest liability\b/i,
     /\bescrow\b/i,
-    /\bhosts?\b/i
+    /\bhosts?\b/i,
+    // Issue 06 (guideline §9): internal state names and UI jargon never reach the guest. Two phrases stay legal or
+    // descriptive guest copy: "Dedicated workspace" is a real amenity, and "disclosed"/"undisclosed" appear in counsel's
+    // contract terms ("Undisclosed commercial use", "disclosed Pet Friendly terms"), so the forbidden form is the internal
+    // request state sentence.
+    /\bhas been disclosed\b/i,
+    /\bsurface\b/i,
+    /\bthe workspace\b/i,
+    /\bartifact\b/i
   ]);
   var GUEST_RECEIPTS = Object.freeze({
     draftCreated: "Draft created",
@@ -9725,7 +9735,7 @@ Known schemas:
     paymentSchedule: "Payment schedule",
     billingPeriod: "Billing Period",
     /** Demo-launch issue 12: says the amount due now is the first Billing Period, not the whole stay (ADR 0092). */
-    firstPeriodOnly: "This is the first Billing Period only. Later Billing Periods are paid separately on their due dates."
+    firstPeriodOnly: "This is the first Billing Period only. Later Billing Periods are paid separately on their due dates; they are not charged automatically."
   });
   var GUEST_DEMO_NOTICE = "Demo: illustrative listings, not live bookings.";
   var GUEST_DEMO_TEST_PAYMENTS = "Payments use Paystack test mode with the published test card. Do not enter real personal data.";
@@ -9873,6 +9883,60 @@ Known schemas:
     manualHelp: "Pay our business account and upload your receipt. Your booking confirms only after we check the money has arrived. You can't switch until this attempt expires or is declined.",
     lateReview: "A late payment needs review and does not confirm your booking. Contact Shortlet if you sent money after the deadline."
   };
+  var GUEST_PAYMENT_CALLBACK_COPY = Object.freeze({
+    title: "We could not confirm this payment yet",
+    message: "Your reservation is not confirmed. Check your booking status before trying again.",
+    action: "Check your booking status",
+    // Issue 07 AC3: shown on the thread when verification failed but the guest can still read the authoritative status.
+    notConfirmedNotice: "We could not confirm your payment. Your reservation is not confirmed. Check the latest booking status."
+  });
+  var GUEST_CHANGED_ELSEWHERE = Object.freeze({
+    message: "This request changed while you were viewing it. Check the latest status."
+  });
+  var GUEST_DEPOSIT_CLAIM_COPY = Object.freeze({
+    title: "Security Deposit Claim",
+    status: (status) => {
+      switch (status) {
+        case "allocation_pending":
+          return "Your deposit claim is being prepared";
+        case "validated_notification_pending":
+          return "The notice is being sent";
+        case "response_open":
+          return "Waiting for your response";
+        case "guest_accepted":
+          return "You accepted this claim";
+        case "human_review":
+          return "Under human review";
+        case "adjudicated":
+          return "Decision issued";
+        case "no_claim_refund_pending":
+          return "Your deposit refund is pending";
+        case "no_claim_refunded":
+          return "Your deposit has been refunded";
+        case "reconciliation_required":
+          return "This needs support review";
+        default:
+          return "Status unavailable";
+      }
+    },
+    refundStatus: (status) => {
+      switch (status) {
+        case "pending":
+          return "Refund pending";
+        case "settled":
+          return "Refunded";
+        case "reconciliation_required":
+          return "Needs support review";
+        case "not_created":
+          return "Not started";
+        case "not_applicable":
+          return "Not applicable";
+        default:
+          return "Status unavailable";
+      }
+    },
+    response: (response) => response === "accept" ? "you accepted this claim" : response === "dispute" ? "you disputed this claim" : "your response is recorded"
+  });
   var MODE_TEXT_MAX_LENGTH = 400;
   var MODE_BODY_MAX_LENGTH = 600;
   var MODE_STARTERS_MAX = 4;
@@ -10092,6 +10156,112 @@ Known schemas:
   var CLIENT_TURN_TIMEOUT_MS = SERVER_TURN_MAX_MS + CLIENT_TURN_TRANSPORT_MARGIN_MS;
   var CLIENT_REQUEST_TIMEOUT_MS = 1e4;
   var TURN_STILL_WORKING_AFTER_MS = 1e4;
+
+  // apps/local-guest/src/stale-surface-response.ts
+  function changedElsewhereRecovery(code) {
+    if (code === "EXPIRED_SURFACE") return { kind: "expired" };
+    if (code === "STALE_SURFACE" || code === "STALE_ACTION") return { kind: "stale" };
+    if (code === "ARTIFACT_MISMATCH") return { kind: "stale", message: GUEST_CHANGED_ELSEWHERE.message };
+    return void 0;
+  }
+
+  // apps/local-guest/src/a2ui-accessibility.ts
+  function isRecord3(value) {
+    return typeof value === "object" && value !== null;
+  }
+  function accessibleNameFor(visibleText, label) {
+    return label.toLocaleLowerCase().includes(visibleText.toLocaleLowerCase()) ? label : `${visibleText}: ${label}`;
+  }
+  function labelledControls(messages) {
+    const components = /* @__PURE__ */ new Map();
+    for (const message of messages) {
+      if (!isRecord3(message) || !isRecord3(message.updateComponents)) continue;
+      const list = message.updateComponents.components;
+      if (!Array.isArray(list)) continue;
+      for (const component of list) {
+        if (!isRecord3(component) || typeof component.id !== "string" || typeof component.component !== "string") continue;
+        components.set(component.id, component);
+      }
+    }
+    const controls = [];
+    for (const component of components.values()) {
+      if (component.component !== "Button") continue;
+      const label = component.accessibility?.label;
+      if (typeof label !== "string" || label.trim() === "") continue;
+      const visibleText = component.child === void 0 ? void 0 : components.get(component.child)?.text;
+      if (typeof visibleText !== "string" || visibleText.trim() === "") continue;
+      const visible = visibleText.trim();
+      const accessible = label.trim();
+      controls.push({ visibleText: visible, accessibleLabel: accessible, name: accessibleNameFor(visible, accessible) });
+    }
+    return controls;
+  }
+  function applyAccessibilityLabels(mount, messages) {
+    const controls = labelledControls(messages);
+    if (controls.length === 0) return;
+    const buttons = Array.from(mount.querySelectorAll('button[data-a2ui-component="Button"]'));
+    const used = /* @__PURE__ */ new Set();
+    for (const control of controls) {
+      const button = buttons.find((candidate) => !used.has(candidate) && candidate.textContent?.trim() === control.visibleText);
+      if (!button) continue;
+      used.add(button);
+      button.setAttribute("aria-label", control.name);
+    }
+  }
+
+  // apps/local-guest/src/contact-field.ts
+  function contactFieldAttributes(purpose) {
+    return purpose === "phone" ? { type: "tel", inputMode: "tel", autocomplete: "tel" } : { type: "email", inputMode: "email", autocomplete: "email" };
+  }
+
+  // apps/local-guest/src/turn-cancel.ts
+  function combinedAbortSignal(user, timeoutMs, any = typeof AbortSignal.any === "function" ? (signals) => AbortSignal.any(signals) : void 0) {
+    const timeout = AbortSignal.timeout(timeoutMs);
+    if (any !== void 0) return any([user, timeout]);
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    if (user.aborted) abort();
+    else user.addEventListener("abort", abort, { once: true });
+    timeout.addEventListener("abort", abort, { once: true });
+    return controller.signal;
+  }
+
+  // apps/local-guest/src/image-layout.ts
+  var IMAGE_SHAPE_HINT = { width: 800, height: 600 };
+  function positive(value) {
+    const parsed = Number(value);
+    return value !== null && Number.isFinite(parsed) && parsed > 0 ? parsed : void 0;
+  }
+  function reserveSpace(image) {
+    const width = positive(image.getAttribute("width"));
+    const height = positive(image.getAttribute("height"));
+    if (width !== void 0 && height !== void 0) return;
+    if (width === void 0 && height === void 0 && image.complete && image.naturalWidth > 0 && image.naturalHeight > 0) {
+      image.setAttribute("width", String(image.naturalWidth));
+      image.setAttribute("height", String(image.naturalHeight));
+      return;
+    }
+    const ratio = IMAGE_SHAPE_HINT.height / IMAGE_SHAPE_HINT.width;
+    if (width !== void 0) image.setAttribute("height", String(Math.round(width * ratio)));
+    else if (height !== void 0) image.setAttribute("width", String(Math.round(height / ratio)));
+    else {
+      image.setAttribute("width", String(IMAGE_SHAPE_HINT.width));
+      image.setAttribute("height", String(IMAGE_SHAPE_HINT.height));
+    }
+  }
+  function applyImageLayout(mount) {
+    const images = Array.from(mount.querySelectorAll("img"));
+    images.forEach((image, index) => {
+      reserveSpace(image);
+      if (index === 0) {
+        image.loading = "eager";
+        image.setAttribute("fetchpriority", "high");
+      } else {
+        image.loading = "lazy";
+        image.removeAttribute("fetchpriority");
+      }
+    });
+  }
 
   // apps/local-guest/src/guest-turn-recovery.ts
   function turnEntriesSince(timeline, text) {
@@ -10327,6 +10497,7 @@ Known schemas:
       ticket,
       breakdown,
       sections: [
+        ...content.schedule ? [`${content.schedule.currentPeriod === void 0 ? "" : `<p>${escapeHtml(content.schedule.currentPeriod)}</p>`}${paymentScheduleHtml(content.schedule)}`] : [],
         `<p class="payment-explanation">${escapeHtml(content.explanation)}</p>`,
         ...content.choice ? [paymentChoiceHtml(content.choice)] : slots.sections === void 0 ? [] : [slots.sections],
         ...content.steps.length ? [
@@ -10460,7 +10631,9 @@ Known schemas:
   var announcer = requiredElement("announcer");
   var errorAnnouncer = requiredElement("error-announcer");
   var emptyState = requiredElement("empty-state");
+  var routeHeading = requiredElement("route-heading");
   var workingStatus = requiredElement("working-status");
+  var turnCancel = requiredElement("turn-cancel");
   var journeyRail = requiredElement("journey-rail");
   var taskRail = requiredElement("task-rail");
   var verticalStarters = requiredElement("vertical-starters");
@@ -10500,7 +10673,7 @@ Known schemas:
     }
     return created;
   }
-  function isRecord3(value) {
+  function isRecord4(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
   }
   function isSafeImageUrl(value) {
@@ -10969,13 +11142,13 @@ Known schemas:
   function viewUnitIds(payload) {
     const ids = [];
     for (const message of payload?.a2uiMessages ?? []) {
-      if (!isRecord3(message) || !isRecord3(message.updateComponents) || !Array.isArray(message.updateComponents.components))
+      if (!isRecord4(message) || !isRecord4(message.updateComponents) || !Array.isArray(message.updateComponents.components))
         continue;
       for (const component of message.updateComponents.components) {
-        if (!isRecord3(component) || !isRecord3(component.action) || !isRecord3(component.action.event))
+        if (!isRecord4(component) || !isRecord4(component.action) || !isRecord4(component.action.event))
           continue;
         const context = component.action.event.context;
-        if (component.action.event.name === "shortlet.discovery.view-unit" && isRecord3(context) && typeof context.unitId === "string")
+        if (component.action.event.name === "shortlet.discovery.view-unit" && isRecord4(context) && typeof context.unitId === "string")
           ids.push(context.unitId);
       }
     }
@@ -11244,7 +11417,7 @@ Known schemas:
     if (kind === "discovery") decorateDiscoveryCards(mount);
     if (kind === "compare") decorateComparison(mount);
     if (kind === "unit-detail") organizeUnitDetail(mount);
-    if (kind === "booking" || kind === "payment") organizeBookingTicket(mount);
+    if (kind === "booking" || kind === "request-draft" || kind === "payment") organizeBookingTicket(mount);
     if (activePayload?.requestScreen)
       organizeRequestScreen(mount, activePayload.requestScreen);
     if (activePayload?.confirmation)
@@ -11276,20 +11449,20 @@ Known schemas:
     return Array.isArray(value) && value.every((item) => typeof item === "string");
   }
   function isWaitingState(value) {
-    return isRecord3(value) && ["operator-response", "offer-payment-window", "payment-window"].includes(
+    return isRecord4(value) && ["operator-response", "offer-payment-window", "payment-window"].includes(
       String(value.kind)
     ) && typeof value.heading === "string" && typeof value.deadlineText === "string" && typeof value.deadlineAt === "string" && Number.isFinite(Date.parse(value.deadlineAt)) && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow)) && isStringList(value.outcomes) && isStringList(value.meanwhile);
   }
   function isConfirmation(value) {
-    return isRecord3(value) && typeof value.bookingReference === "string" && value.bookingReference !== "" && typeof value.depositCollected === "boolean" && isStringList(value.steps) && isSafeInternalRoute(value.conversationHref) && isSafeInternalRoute(value.detailsHref) && typeof value.details === "string";
+    return isRecord4(value) && typeof value.bookingReference === "string" && value.bookingReference !== "" && typeof value.depositCollected === "boolean" && isStringList(value.steps) && isSafeInternalRoute(value.conversationHref) && isSafeInternalRoute(value.detailsHref) && typeof value.details === "string";
   }
   function isSignInOffer(value) {
-    return isRecord3(value) && typeof value.email === "string" && typeof value.returnPath === "string";
+    return isRecord4(value) && typeof value.email === "string" && typeof value.returnPath === "string";
   }
   function isRequestScreen(value) {
-    if (!isRecord3(value) || typeof value.state !== "string" || !["draft", "review", "sent", "not-accepted"].includes(value.state) || typeof value.tone !== "string" || !["neutral", "warning", "danger"].includes(value.tone) || typeof value.title !== "string" || typeof value.status !== "string" || !isStringList(value.steps) || !isStringList(value.notes))
+    if (!isRecord4(value) || typeof value.state !== "string" || !["draft", "review", "sent", "not-accepted"].includes(value.state) || typeof value.tone !== "string" || !["neutral", "warning", "danger"].includes(value.tone) || typeof value.title !== "string" || typeof value.status !== "string" || !isStringList(value.steps) || !isStringList(value.notes))
       return false;
-    const action = (candidate) => isRecord3(candidate) && isSafeInternalRoute(candidate.path) && typeof candidate.label === "string" && (candidate.surfaceId === void 0 || typeof candidate.surfaceId === "string");
+    const action = (candidate) => isRecord4(candidate) && isSafeInternalRoute(candidate.path) && typeof candidate.label === "string" && (candidate.surfaceId === void 0 || typeof candidate.surfaceId === "string");
     if (!action(value.primary) || value.secondary !== void 0 && !action(value.secondary))
       return false;
     if (["banner", "provider", "guests", "sentAt"].some(
@@ -11300,22 +11473,22 @@ Known schemas:
       return false;
     if (value.changeHref !== void 0 && !isSafeInternalRoute(value.changeHref))
       return false;
-    return value.deadline === void 0 || isRecord3(value.deadline) && typeof value.deadline.iso === "string" && Number.isFinite(Date.parse(value.deadline.iso)) && typeof value.deadline.text === "string";
+    return value.deadline === void 0 || isRecord4(value.deadline) && typeof value.deadline.iso === "string" && Number.isFinite(Date.parse(value.deadline.iso)) && typeof value.deadline.text === "string";
   }
   function isOfferScreen(value) {
-    if (!isRecord3(value) || !["live", "expired", "accepted", "closed"].includes(String(value.state)) || ["title", "status", "provider", "consequence", "amount"].some(
+    if (!isRecord4(value) || !["live", "expired", "accepted", "closed"].includes(String(value.state)) || ["title", "status", "provider", "consequence", "amount"].some(
       (key3) => typeof value[key3] !== "string"
-    ) || typeof value.deadlineIso !== "string" || !Number.isFinite(Date.parse(value.deadlineIso)) || typeof value.serverNow !== "string" || !Number.isFinite(Date.parse(value.serverNow)) || !isStringList(value.steps) || !isStringList(value.notes) || !Array.isArray(value.policies) || !value.policies.every((section) => isRecord3(section) && typeof section.heading === "string" && isStringList(section.items)) || !isSafeInternalRoute(value.conversationPath) || value.searchPath !== void 0 && !isSafeInternalRoute(value.searchPath))
+    ) || typeof value.deadlineIso !== "string" || !Number.isFinite(Date.parse(value.deadlineIso)) || typeof value.serverNow !== "string" || !Number.isFinite(Date.parse(value.serverNow)) || !isStringList(value.steps) || !isStringList(value.notes) || !Array.isArray(value.policies) || !value.policies.every((section) => isRecord4(section) && typeof section.heading === "string" && isStringList(section.items)) || !isSafeInternalRoute(value.conversationPath) || value.searchPath !== void 0 && !isSafeInternalRoute(value.searchPath))
       return false;
-    return value.accept === void 0 || value.state === "live" && isRecord3(value.accept) && isSafeInternalRoute(value.accept.path) && typeof value.accept.surfaceId === "string" && value.accept.surfaceId !== "";
+    return value.accept === void 0 || value.state === "live" && isRecord4(value.accept) && isSafeInternalRoute(value.accept.path) && typeof value.accept.surfaceId === "string" && value.accept.surfaceId !== "";
   }
   function isPaymentScreen(value) {
-    return isRecord3(value) && ["ready", "handoff"].includes(String(value.state)) && ["success", "warning", "danger", "neutral"].includes(String(value.tone)) && ["title", "status", "explanation"].every(
+    return isRecord4(value) && ["ready", "handoff"].includes(String(value.state)) && ["success", "warning", "danger", "neutral"].includes(String(value.tone)) && ["title", "status", "explanation"].every(
       (key3) => typeof value[key3] === "string"
-    ) && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow)) && (value.deadlineIso === void 0 || typeof value.deadlineIso === "string" && Number.isFinite(Date.parse(value.deadlineIso))) && isStringList(value.steps) && (value.choice === void 0 || value.state === "ready" && isRecord3(value.choice) && isSafeInternalRoute(value.choice.action) && typeof value.choice.providerTransfer === "boolean" && typeof value.choice.amount === "string" && (value.choice.manualAction === void 0 || isSafeInternalRoute(value.choice.manualAction)));
+    ) && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow)) && (value.deadlineIso === void 0 || typeof value.deadlineIso === "string" && Number.isFinite(Date.parse(value.deadlineIso))) && isStringList(value.steps) && (value.choice === void 0 || value.state === "ready" && isRecord4(value.choice) && isSafeInternalRoute(value.choice.action) && typeof value.choice.providerTransfer === "boolean" && typeof value.choice.amount === "string" && (value.choice.manualAction === void 0 || isSafeInternalRoute(value.choice.manualAction)));
   }
   function isSurfacePayload(value) {
-    if (!isRecord3(value) || typeof value.surfaceId !== "string" || value.surfaceId.trim() === "" || !Array.isArray(value.a2uiMessages))
+    if (!isRecord4(value) || typeof value.surfaceId !== "string" || value.surfaceId.trim() === "" || !Array.isArray(value.a2uiMessages))
       return false;
     if (value.mode !== void 0 && value.mode !== "text" && value.mode !== "inline-surface" && value.mode !== "focused-surface")
       return false;
@@ -11355,36 +11528,36 @@ Known schemas:
     upcoming: "not started"
   };
   function isJourney(value) {
-    if (!isRecord3(value) || typeof value.current !== "string" || !Array.isArray(value.steps) || value.steps.length === 0)
+    if (!isRecord4(value) || typeof value.current !== "string" || !Array.isArray(value.steps) || value.steps.length === 0)
       return false;
     return value.steps.every(
-      (step) => isRecord3(step) && typeof step.id === "string" && typeof step.label === "string" && typeof step.state === "string" && step.state in JOURNEY_STATE_TEXT
+      (step) => isRecord4(step) && typeof step.id === "string" && typeof step.label === "string" && typeof step.state === "string" && step.state in JOURNEY_STATE_TEXT
     );
   }
   function isCriteria(value) {
-    if (!isRecord3(value) || typeof value.key !== "string" || typeof value.editable !== "boolean" || typeof value.canUndo !== "boolean")
+    if (!isRecord4(value) || typeof value.key !== "string" || typeof value.editable !== "boolean" || typeof value.canUndo !== "boolean")
       return false;
     if (!Array.isArray(value.areas) || !value.areas.every(
-      (area) => isRecord3(area) && typeof area.id === "string" && typeof area.label === "string"
+      (area) => isRecord4(area) && typeof area.id === "string" && typeof area.label === "string"
     ))
       return false;
-    const labelled = (field2) => field2 === void 0 || isRecord3(field2) && typeof field2.label === "string";
+    const labelled = (field2) => field2 === void 0 || isRecord4(field2) && typeof field2.label === "string";
     return labelled(value.where) && labelled(value.when) && labelled(value.guests) && labelled(value.budget);
   }
   function isGuestTask(value) {
-    if (!isRecord3(value) || typeof value.taskId !== "string" || typeof value.domain !== "string" || typeof value.domainLabel !== "string" || typeof value.status !== "string" || typeof value.active !== "boolean")
+    if (!isRecord4(value) || typeof value.taskId !== "string" || typeof value.domain !== "string" || typeof value.domainLabel !== "string" || typeof value.status !== "string" || typeof value.active !== "boolean")
       return false;
     if (value.tone !== void 0 && !["info", "success", "warning", "danger"].includes(String(value.tone)))
       return false;
     return value.badge === void 0 || typeof value.badge === "number" && Number.isInteger(value.badge) && value.badge >= 0;
   }
   function isGuestVertical(value) {
-    if (!isRecord3(value) || typeof value.domain !== "string" || typeof value.label !== "string")
+    if (!isRecord4(value) || typeof value.domain !== "string" || typeof value.label !== "string")
       return false;
     return value.description === void 0 || typeof value.description === "string";
   }
   function readGuestResponse(value) {
-    if (!isRecord3(value) || typeof value.ok !== "boolean")
+    if (!isRecord4(value) || typeof value.ok !== "boolean")
       throw new Error("Invalid server response");
     if (value.messages !== void 0 && (!Array.isArray(value.messages) || value.messages.some((message) => typeof message !== "string")))
       throw new Error("Invalid response messages");
@@ -11441,9 +11614,20 @@ Known schemas:
     }
     document.startViewTransition(update);
   }
+  function dropPaymentNoticeFlag() {
+    try {
+      const url = new URL(window.location.href);
+      if (!url.searchParams.has("payment")) return;
+      url.searchParams.delete("payment");
+      window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    } catch {
+    }
+  }
+  dropPaymentNoticeFlag();
   var threadId = getThreadId();
   var shellState = createConversationShellState();
   var activePayload;
+  var transcriptAnnouncesTurn = false;
   var isLoading = false;
   var eventInFlight = false;
   var lastActivatedControl;
@@ -11462,6 +11646,12 @@ Known schemas:
   function announce(text, assertive = false) {
     (assertive ? errorAnnouncer : announcer).textContent = text;
   }
+  var RENDERED_TURN_WINDOW = 6;
+  function deferOlderTurns() {
+    const turns = transcript.querySelectorAll(".turn");
+    const cutoff = Math.max(0, turns.length - RENDERED_TURN_WINDOW);
+    turns.forEach((turn, index) => turn.classList.toggle("turn--deferred", index < cutoff));
+  }
   function addTurn(role, text) {
     emptyState.hidden = true;
     const turn = document.createElement("article");
@@ -11475,6 +11665,7 @@ Known schemas:
     bubble.textContent = text;
     turn.appendChild(bubble);
     transcript.appendChild(turn);
+    deferOlderTurns();
     transcript.scrollTop = transcript.scrollHeight;
     requestAnimationFrame(() => {
       if (turn.isConnected) transcript.scrollTop = transcript.scrollHeight;
@@ -11521,7 +11712,7 @@ Known schemas:
   }
   function modeFor(surface) {
     if (surface.mode) return surface.mode;
-    return surface.surfaceId.includes(":unit:") || surface.surfaceId.includes(":request:") || surface.surfaceId.includes(":offer:") || surface.surfaceId.includes(":booking:") || surface.surfaceId.includes(":payment:") ? "focused-surface" : "inline-surface";
+    return surface.kind === "unit-detail" || surface.kind === "request-draft" || surface.kind === "booking" || surface.kind === "payment" || surface.kind === "contact" ? "focused-surface" : "inline-surface";
   }
   function presentationFor(surface) {
     const mode = modeFor(surface);
@@ -11552,7 +11743,8 @@ Known schemas:
     if (canReopen)
       workspaceReopen.textContent = `Return to ${guestSurfaceHeading(current.summary).toLocaleLowerCase()}`;
   }
-  function enhanceGuestContactField(mount) {
+  function enhanceGuestContactField(mount, purpose) {
+    if (purpose === void 0) return;
     const synchronize = () => {
       const wrapper = mount.querySelector(
         '[data-a2ui-component="TextField"]'
@@ -11560,16 +11752,15 @@ Known schemas:
       const label = wrapper?.querySelector("label");
       const input = wrapper?.querySelector("input");
       if (!wrapper || !label || !input) return;
-      const labelText = label.textContent?.trim() ?? "";
-      const kind = /^phone number/i.test(labelText) ? "phone" : /^email address/i.test(labelText) ? "email" : void 0;
-      if (!kind) return;
+      const kind = purpose;
       const hint = wrapper.previousElementSibling instanceof HTMLElement && wrapper.previousElementSibling.dataset.a2uiComponent === "Text" ? wrapper.previousElementSibling : void 0;
       const error2 = wrapper.nextElementSibling instanceof HTMLElement && wrapper.nextElementSibling.dataset.a2uiComponent === "Text" ? wrapper.nextElementSibling : void 0;
       if (hint) hint.id = `guest-contact-${kind}-help`;
       input.required = true;
-      input.type = kind === "phone" ? "tel" : "email";
-      input.inputMode = kind === "phone" ? "tel" : "email";
-      input.autocomplete = kind === "phone" ? "tel" : "email";
+      const attributes = contactFieldAttributes(kind);
+      input.type = attributes.type;
+      input.inputMode = attributes.inputMode;
+      input.autocomplete = attributes.autocomplete;
       if (error2) {
         error2.id = `guest-contact-${kind}-error`;
         error2.setAttribute("role", "alert");
@@ -11678,7 +11869,7 @@ Known schemas:
   var sheetQuery = window.matchMedia("(max-width: 63.999rem)");
   var sheetInHistory = isSheetState(history.state);
   function isSheetState(state) {
-    return isRecord3(state) && state.shortletSheet === true;
+    return isRecord4(state) && state.shortletSheet === true;
   }
   function sheetOpen() {
     return sheetQuery.matches && shellState.activeSurface?.mode === "focused-surface" && shellState.focusedSurfaceOpen && !activeWorkspace.hidden;
@@ -11686,7 +11877,7 @@ Known schemas:
   function syncSheetHistory() {
     const open = sheetOpen();
     if (open && !sheetInHistory) {
-      history.pushState({ ...isRecord3(history.state) ? history.state : {}, shortletSheet: true }, "");
+      history.pushState({ ...isRecord4(history.state) ? history.state : {}, shortletSheet: true }, "");
       sheetInHistory = true;
     } else if (!open && sheetInHistory) {
       sheetInHistory = false;
@@ -11697,6 +11888,7 @@ Known schemas:
     focusedScrollTop = workspaceRegion.scrollTop;
     shellState = closeFocusedSurface(shellState);
     composerForm.dataset.focused = "false";
+    routeHeading.textContent = appliedMode.emptyState.heading;
     activeWorkspace.hidden = true;
     showReopen();
     const target = focusTarget.isConnected && !focusTarget.hidden ? focusTarget : workspaceReopen;
@@ -11718,13 +11910,14 @@ Known schemas:
     focusedScrollTop = previousScroll;
     composerForm.dataset.focused = presentation.mode === "focused-surface" ? "true" : "false";
     activePayload = surface;
+    routeHeading.textContent = guestSurfaceHeading(presentation.summary);
     activeWorkspace.replaceChildren();
     activeWorkspace.hidden = presentation.mode === "focused-surface" && !shellState.focusedSurfaceOpen;
     activeWorkspace.tabIndex = -1;
     workspaceRegion.hidden = false;
     activeWorkspace.dataset.mode = presentation.mode;
     activeWorkspace.dataset.status = presentation.status;
-    activeWorkspace.dataset.surfaceKind = surface.surfaceId.includes(":unit:") ? "unit-detail" : surface.surfaceId.includes(":compare:") ? "compare" : surface.surfaceId.includes(":discovery:") ? "discovery" : surface.surfaceId.includes(":payment:") || surface.surfaceId.includes(":offer:") ? "payment" : surface.surfaceId.includes(":request:") || surface.surfaceId.includes(":booking:") ? "booking" : "general";
+    activeWorkspace.dataset.surfaceKind = surface.kind ?? "general";
     activeWorkspace.classList.remove("workspace-arrival");
     void activeWorkspace.offsetWidth;
     activeWorkspace.classList.add("workspace-arrival");
@@ -11796,7 +11989,7 @@ Known schemas:
     }
     for (const message of surface.a2uiMessages) {
       const processed = weaver.runtime.process(message);
-      if (processed.ok && isRecord3(message) && "createSurface" in message) createdSurfaceIds.add(surface.surfaceId);
+      if (processed.ok && isRecord4(message) && "createSurface" in message) createdSurfaceIds.add(surface.surfaceId);
       if (!processed.ok) {
         trackTelemetry("weaver-rendering-failure");
         trackTelemetry("fallback-rendered");
@@ -11824,10 +12017,12 @@ Known schemas:
     mount.dataset.renderer = "weaver";
     mount.dataset.surfaceId = surface.surfaceId;
     enhanceSurfacePresentation(mount, activeWorkspace.dataset.surfaceKind ?? "general");
+    applyAccessibilityLabels(mount, surface.a2uiMessages);
     if (surface.requestScreen && surface.waiting?.kind === "operator-response" && presentation.status === "active" && !mount.querySelector(".request-screen")) {
       mount.before(renderWaiting(surface.waiting));
     }
-    enhanceGuestContactField(mount);
+    enhanceGuestContactField(mount, surface.contactPurpose);
+    applyImageLayout(mount);
     enhanceListingImages(mount);
     if (presentation.conventionalRoute) {
       const link = document.createElement("a");
@@ -11850,18 +12045,19 @@ Known schemas:
       }
     }
     trackTelemetry(presentation.mode === "focused-surface" ? "focused-surface-opened" : "inline-surface-rendered");
-    if (moveFocus) announce(`${guestSurfaceHeading(presentation.summary)} is ready.`);
+    if (moveFocus && !transcriptAnnouncesTurn) announce(`${guestSurfaceHeading(presentation.summary)} is ready.`);
     syncSheetHistory();
   }
   function acceptSurface(surface, preserveConversation = false) {
     const before = shellState.historicalSummaries.length;
+    const firstSurface = shellState.activeSurface === void 0;
     const replaced = shellState.activeSurface !== void 0 && shellState.activeSurface.surfaceId !== surface.surfaceId;
     const keepConversationOpen = preserveConversation || !replaced && shellState.activeSurface?.mode === "focused-surface" && !shellState.focusedSurfaceOpen;
     shellState = replaceActiveSurface(shellState, presentationFor(surface));
     if (keepConversationOpen) shellState = closeFocusedSurface(shellState);
     if (replaced) trackTelemetry("surface-replaced");
     for (const summary of shellState.historicalSummaries.slice(before)) addHistoricalSummary(summary);
-    renderSurface(surface, replaced && !preserveConversation);
+    renderSurface(surface, (replaced || firstSurface) && !preserveConversation);
     syncSheetHistory();
   }
   function renderSurfaces(surfaces, preserveConversation = false) {
@@ -11878,6 +12074,7 @@ Known schemas:
   }
   function renderJourney(journey) {
     if (!journey) return;
+    if (journey.current === "confirmed") document.querySelector("[data-payment-notice]")?.remove();
     const list = document.createElement("ol");
     list.className = "ui-rail";
     let current;
@@ -12209,8 +12406,9 @@ Known schemas:
     try {
       const response = await postJson("/api/event", { threadId, name, surfaceId: `thread-${threadId}:criteria`, sourceComponentId: "criteria-strip", timestamp: (/* @__PURE__ */ new Date()).toISOString(), context });
       if (!response.ok) {
-        criteriaStatus.textContent = response.message ?? "That change could not be applied.";
-        if (response.code === "STALE_SURFACE" || response.code === "CRITERIA_LOCKED") void refreshServerState();
+        const recovery = changedElsewhereRecovery(response.code);
+        criteriaStatus.textContent = recovery?.message ?? response.message ?? "That change could not be applied.";
+        if (recovery || response.code === "CRITERIA_LOCKED") void refreshServerState();
         return;
       }
       criteriaStatus.textContent = "";
@@ -12295,10 +12493,11 @@ Known schemas:
   }
   function renderResponse(response) {
     if (!response.ok) {
-      const message = response.message ?? "That action could not be completed.";
+      const recovery = changedElsewhereRecovery(response.code);
+      const message = recovery?.message ?? response.message ?? "That action could not be completed.";
       if (response.code === "quota_refusal" || response.code === "CONCIERGE_UNAVAILABLE") setAgentMark({ type: "turn-refused", code: response.code });
-      if (response.code === "STALE_SURFACE" || response.code === "STALE_ACTION" || response.code === "EXPIRED_SURFACE") {
-        shellState = markActiveSurfaceStatus(shellState, response.code === "EXPIRED_SURFACE" ? "expired" : "stale");
+      if (recovery) {
+        shellState = markActiveSurfaceStatus(shellState, recovery.kind);
         if (activePayload) renderSurface({ ...activePayload, status: shellState.activeSurface?.status });
         void refreshServerState();
       }
@@ -12315,7 +12514,9 @@ Known schemas:
     renderQuickReplies(response.quickReplies);
     if ((response.messages ?? []).length > 0) trackTelemetry("text-response-rendered");
     const surfaces = response.surfaces ?? [];
+    transcriptAnnouncesTurn = (response.messages ?? []).length > 0;
     renderSurfaces(surfaces);
+    transcriptAnnouncesTurn = false;
     for (const receipt of response.receipts ?? []) addReceipt(receipt);
     landAgentReply();
     return true;
@@ -12340,7 +12541,7 @@ Known schemas:
     }
     return false;
   }
-  async function postJson(path, body, timeoutMs = CLIENT_REQUEST_TIMEOUT_MS) {
+  async function postJson(path, body, timeoutMs = CLIENT_REQUEST_TIMEOUT_MS, userSignal) {
     const response = await fetch(path, body === void 0 ? {} : {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -12348,7 +12549,7 @@ Known schemas:
       // ADR-0079 bounds establishment; aborting the client wait never rolls back
       // a command that the server may already have committed. A turn waits for the
       // server's worst case (turn-budget.ts), so the wait ends only after the server can finish.
-      signal: AbortSignal.timeout(timeoutMs)
+      signal: userSignal === void 0 ? AbortSignal.timeout(timeoutMs) : combinedAbortSignal(userSignal, timeoutMs)
     });
     if (!response.ok) throw new Error(`Guest request failed with HTTP ${response.status}`);
     return readGuestResponse(await response.json());
@@ -12381,15 +12582,33 @@ Known schemas:
   async function sendTurn(text) {
     if (isLoading) return;
     setLoading(true);
+    const cancel = new AbortController();
+    let stoppedByGuest = false;
+    const showCancel = setTimeout(() => {
+      turnCancel.hidden = false;
+    }, TURN_STILL_WORKING_AFTER_MS);
     const stillWorking = setTimeout(() => {
       workingStatus.textContent = GUEST_ASSISTANT_COPY.stillWorking;
     }, TURN_STILL_WORKING_AFTER_MS);
+    const stop = () => {
+      stoppedByGuest = true;
+      cancel.abort();
+    };
+    turnCancel.addEventListener("click", stop);
     try {
-      if (renderResponse(await postJson("/api/turn", { threadId, text }, CLIENT_TURN_TIMEOUT_MS))) {
+      if (renderResponse(await postJson("/api/turn", { threadId, text }, CLIENT_TURN_TIMEOUT_MS, cancel.signal))) {
         if (composerInput.value.trim() === text) composerInput.value = "";
       }
     } catch {
-      if (await showLandedTurn(text)) {
+      if (stoppedByGuest) {
+        if (await showLandedTurn(text)) {
+          if (composerInput.value.trim() === text) composerInput.value = "";
+        } else {
+          if (composerInput.value.trim() === "") composerInput.value = text;
+          addTurn("assistant", GUEST_ASSISTANT_COPY.stoppedWaiting);
+          announce(GUEST_ASSISTANT_COPY.stoppedWaiting);
+        }
+      } else if (await showLandedTurn(text)) {
         if (composerInput.value.trim() === text) composerInput.value = "";
       } else {
         addRetryTurn("The concierge is temporarily unavailable. Your message is still in the composer; please try again.", () => {
@@ -12398,7 +12617,10 @@ Known schemas:
         announce("The concierge is temporarily unavailable. Your message remains in the composer.", true);
       }
     } finally {
+      clearTimeout(showCancel);
       clearTimeout(stillWorking);
+      turnCancel.hidden = true;
+      turnCancel.removeEventListener("click", stop);
       setLoading(false);
     }
   }
@@ -12581,14 +12803,14 @@ Known schemas:
     }
   }
   function isCommittedWork(value) {
-    return isRecord3(value) && (value.kind === "request" || value.kind === "offer" || value.kind === "reservation") && typeof value.threadId === "string" && typeof value.route === "string" && value.route.startsWith("/") && (value.unitTitle === void 0 || typeof value.unitTitle === "string");
+    return isRecord4(value) && (value.kind === "request" || value.kind === "offer" || value.kind === "reservation") && typeof value.threadId === "string" && typeof value.route === "string" && value.route.startsWith("/") && (value.unitTitle === void 0 || typeof value.unitTitle === "string");
   }
   async function fetchCommittedWork() {
     try {
       const response = await fetch("/api/committed-work", { signal: AbortSignal.timeout(CLIENT_REQUEST_TIMEOUT_MS) });
       if (!response.ok) return null;
       const body = await response.json();
-      if (!isRecord3(body) || body.ok !== true || !Array.isArray(body.committedWork) || !body.committedWork.every(isCommittedWork)) return null;
+      if (!isRecord4(body) || body.ok !== true || !Array.isArray(body.committedWork) || !body.committedWork.every(isCommittedWork)) return null;
       return body.committedWork;
     } catch {
       return null;

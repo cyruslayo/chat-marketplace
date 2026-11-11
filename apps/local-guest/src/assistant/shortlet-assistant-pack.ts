@@ -1241,7 +1241,7 @@ export function executeAssistantTool(
         status = "offer_issued";
         details = {
           offerId: taskState.currentOfferId,
-          status: offer.facts.status,
+          offerStatus: offer.facts.status,
           allInStayTotalKobo: offer.facts.allInStayTotalKobo,
           refundableSecurityDepositKobo: offer.facts.refundableSecurityDepositKobo,
           totalAmountDueNowKobo: offer.facts.totalAmountDueNowKobo,
@@ -1254,12 +1254,12 @@ export function executeAssistantTool(
         status = "request_disclosed";
         details = {
           requestId: taskState.currentBookingRequestId,
-          status: request.facts.status,
+          requestStatus: request.facts.status,
         };
       }
 
       return {
-        result: { status, ...details },
+        result: { ...details, status },
         updatedTaskState: taskState,
       };
     }
@@ -1674,9 +1674,9 @@ function renderShortletReplyBody(plan: AssistantReplyPlan | undefined, results: 
     return GUEST_ASSISTANT_COPY.priceBreakdown(String(data.title ?? "This stay"), total, fees, deposit);
   }
   if (operation.name === "get_booking_status") {
-    if (data.status === "confirmed" && typeof data.contractId === "string") return GUEST_ASSISTANT_COPY.confirmedBooking(data.contractId);
-    if (data.status === "offer_issued" && typeof data.offerId === "string") return GUEST_ASSISTANT_COPY.issuedOffer(data.offerId);
-    if (data.status === "request_disclosed" && typeof data.requestId === "string") return GUEST_ASSISTANT_COPY.disclosedRequest(data.requestId);
+    if (data.status === "confirmed" && typeof data.contractId === "string") return GUEST_ASSISTANT_COPY.confirmedBooking;
+    if (data.status === "offer_issued" && typeof data.offerId === "string") return GUEST_ASSISTANT_COPY.issuedOffer;
+    if (data.status === "request_disclosed" && typeof data.requestId === "string") return GUEST_ASSISTANT_COPY.disclosedRequest;
     return GUEST_ASSISTANT_COPY.noCurrentBooking;
   }
   return GUEST_ASSISTANT_COPY.safeClarification;
@@ -1684,9 +1684,9 @@ function renderShortletReplyBody(plan: AssistantReplyPlan | undefined, results: 
 
 const MS_PER_DAY = 86_400_000;
 
-/** A calendar day as "27 October 2026", or "Tuesday 27 October 2026" with the weekday. en-GB words, no comma; formatted in UTC so no zone shift applies. */
+/** A calendar day as "27 October 2026", or "Tuesday 27 October 2026" with the weekday. en-NG words, no comma; formatted in UTC so no zone shift applies. */
 function formatDayKey(dateKey: string, withWeekday: boolean): string {
-  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "UTC", weekday: "long", day: "numeric", month: "long", year: "numeric" })
+  const parts = new Intl.DateTimeFormat("en-NG", { timeZone: "UTC", weekday: "long", day: "numeric", month: "long", year: "numeric" })
     .formatToParts(new Date(`${dateKey}T12:00:00Z`));
   const part = (type: Intl.DateTimeFormatPartTypes): string => parts.find((candidate) => candidate.type === type)?.value ?? "";
   const day = `${part("day")} ${part("month")} ${part("year")}`;
