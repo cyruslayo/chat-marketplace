@@ -1,0 +1,24 @@
+/* Test-only token block for the fake shop pack (issue 03c, owner decision O7). This file is read by test/helpers only.
+   It is never part of the shipped stylesheet: apps/web/src/shortlet-foundations.css holds the mechanism and the stays block. */
+:root[data-mode="shop"] {
+  --mode-accent: #1F4E79;
+  --mode-accent-subtle: #DCE9F5;
+  --mode-on-accent: #FFFFFF;
+  --mode-tint: #EEF4FA;
+}
+
+:root[data-theme="dark"][data-mode="shop"] {
+  --mode-accent: #8DB8E6;
+  --mode-accent-subtle: #1B2E42;
+  --mode-on-accent: #0B1A2A;
+  --mode-tint: #15283B;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"])[data-mode="shop"] {
+    --mode-accent: #8DB8E6;
+    --mode-accent-subtle: #1B2E42;
+    --mode-on-accent: #0B1A2A;
+    --mode-tint: #15283B;
+  }
+}

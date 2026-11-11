@@ -9,6 +9,7 @@ import type {
   AssistantModelResponse,
 } from "./assistant-model.js";
 import { ModelRequestGuardError } from "./assistant-model.js";
+import type { ModePresentation } from "../../../web-agent/src/guest-content.js";
 import { AssistantTurnRun, type AssistantTurnRecord } from "./assistant-turn-record.js";
 import { findToolArgumentViolation, toolArgumentFailureMessage } from "./assistant-tool-arguments.js";
 import {
@@ -514,6 +515,15 @@ export class AssistantRuntime {
     const thread = this.#threads.get(threadId);
     const domain = thread ? thread.tasks.find((task) => task.taskId === thread.activeTaskId)?.domain : undefined;
     return domain ? this.#packs.packFor(domain) : undefined;
+  }
+
+  /**
+   * ADR 0107 decision 2 (issue 03c): the presentation of the thread's active task's pack. Undefined when there is no active task,
+   * when its domain is not registered (fail closed: no other pack answers), or when the pack declares none. The caller then uses
+   * the composition root's default mode. The mode is derived here and never read from a request.
+   */
+  activePresentation(threadId: string): ModePresentation | undefined {
+    return this.#packForThread(threadId)?.presentation;
   }
 
   /** The active task's domain when no pack is registered for it, otherwise undefined. */

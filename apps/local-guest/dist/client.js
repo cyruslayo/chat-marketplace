@@ -10031,6 +10031,11 @@ Known schemas:
   function readResponseMode(value) {
     return validateModePresentation(value);
   }
+  function applyResponseModeTo(root, value) {
+    const mode = readResponseMode(value);
+    if (mode === void 0 || root.dataset.mode === mode.id) return;
+    root.dataset.mode = mode.id;
+  }
 
   // apps/local-guest/src/agent-mark-state.ts
   var BUSY_STATES = ["thinking", "working", "responding"];
@@ -11292,6 +11297,7 @@ Known schemas:
   var appliedMode = GUEST_MODES.stays;
   function applyResponseMode(response) {
     appliedMode = readResponseMode(response.mode) ?? appliedMode;
+    applyResponseModeTo(document.documentElement, response.mode);
   }
   var AGENT_MARK_POP_MS = 400;
   var agentMarkState = "idle";

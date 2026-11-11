@@ -77,3 +77,47 @@ Each is its own `test()` in `test/agent-mode-follows-task.test.ts`.
 - Using `--mode-*` in components.
 
 ## Comments
+
+### Agent, implementation (Agent modes issue 03c)
+
+Status at this entry: ready-for-agent. Not resolved: AC9 is skipped (blocked by 03b), and the pre-merge batch gate has not run.
+
+**ADR table (step 1 and 2).** Read in full: 0107. Read in relevant parts: 0099 (decision 4), 0077, 0078 (WCAG, reflow, 44px, 320px), 0106 (authority and cold restore). Read in full before code: 0107.
+
+| ADR | Constraint | Where it lands |
+| --- | --- | --- |
+| 0107 decision 2 | Mode derived on the server from the active task pack; never client-set. | AssistantRuntime.activePresentation (assistant-runtime.ts), ShortletApp.#modeFor (shortlet-app.ts). |
+| 0107 decision 4 | Tokens in the Guest UI kit block, semantic only, no hex in components. | :root[data-mode="stays"] block in shortlet-foundations.css. Fake shop block only in test/fixtures. |
+| 0107 decision 6 | Client applies mode only from a validated response. | applyResponseModeTo (response-mode.ts), called from client applyResponseMode. |
+| 0099 decision 4 | Packs declare presentation; platform renders. | Pack declares presentation (unchanged from 03a). |
+| 0078 | Contrast 4.5:1 text pairs, no layout change by mode. | AC5 checks accent-on-surface and on-accent pairs in light, dark and system. Stays tokens only change colour. |
+| 0077 | One copy source. | No copy added. |
+| 0106 | Model never grants authority; cold restore before each event. | Mode is never read from a request (AC2). Cold harness used for AC1. See the AC9 gap below. |
+
+**Commands and counts** (all in C:AI2026chat-marketplace-03c, prefixed env -u LLM_API_KEY):
+
+1. `npx tsx --test test/agent-mode-follows-task.test.ts`: tests 9, pass 8, fail 0, skipped 1 (AC9, blocked by 03b).
+2. `npm run check`: exit 0 (after one fix: AC3 reassigns thread.tasks rather than mutating a readonly domain).
+3. `npm run build`: regenerated apps/local-guest/dist/client.js (diff is only the new applyResponseModeTo call and function). It also rewrote line endings of other dist files and apps/cloudflare/public/_headers. Those are NOT staged.
+4. `npx tsx --test test/agent-mode-shell.test.ts test/agent-mark-shell.test.ts test/assistant-task-rail.test.ts test/assistant-cold-journey.test.ts test/guest-kit.test.ts test/assistant-pack-contract.test.ts test/guest-retired-classes.test.ts test/guest-shell.test.ts test/shortlet-design-system.test.ts test/shortlet-ui-foundations.test.ts`: tests 55, pass 54, fail 0, skipped 1 (the AC9 skip). agent-mode-shell AC4 passes unedited; the stays shell is byte-identical.
+5. `npx tsx --test test/asset-loader.test.ts test/back-office-home.test.ts test/cloudflare-static-assets.test.ts test/guest-conventional-search.test.ts test/guest-payment-choice.test.ts test/landing-page.test.ts test/listing-gallery.test.ts test/manual-transfer-with-receipt.test.ts test/pilot-request-handler.test.ts`: tests 71, pass 70, fail 1. The one failure is landing-page AC8 (foundations stylesheet changes only by the demo chip line). That guard compares the working tree with HEAD, so it passes once this change is committed. Re-run after the commit (see the next entry).
+6. `sh .scratch/guest-ui-consistency/capture-11-all.sh` (all 20 groups): exit 0. Findings: the only text change is the payment-choice INPUT 1x1 count (hidden native radios, expected per AGENTS). No overflow and no small-control findings. The 237 PNG and findings files in screenshots/final show as modified in the worktree. They were not byte-compared, and they are NOT staged.
+7. Not run: full `npm test` and `npm run test:workers` (batch gate). The real-Chrome file guest-task-rail-chromium.test.ts is not run; the spec does not list it.
+
+**Deviations from the spec, recorded.**
+- Step 4: the stays tokens are one block that references the colour roles (var(--color-action) and so on), not three literal blocks. Each theme resolves them from its own roles, and AC5 checks all three themes. Three copies would have held identical text.
+- AC5 reads colour roles from the shipped stylesheet, because the fixture block holds literals only.
+- AC8 (client attribute): the testable unit is applyResponseModeTo(root, value). The client calls it only from applyResponseMode.
+
+**Gap: AC9 skipped (blocked by 03b).** The active task id is not persisted. After a cold restore with a shop task active, the state read and the next response carry stays until 03b persists activeTaskId. This is not user-visible today, because commerce is off and no shop task is created in production. AC1 switches back in the same session for this reason.
+
+**Definition of Done.**
+1. Every criterion has a named test: met for 8 criteria; AC9 skipped (gap above). Not met.
+2. Failure paths asserted: met (malformed mode, body mode ignored, unregistered domain, contrast).
+3. ADRs listed and cited: met (table above).
+4. No unused injected dependency: met; no constructor parameter added.
+5. No invented policy string: met; no new policy text.
+6. No credentials in logs: not applicable.
+7. npm run check and npm test pass: npm run check passes. npm test is the batch gate, not run here. Not met until the batch gate runs.
+
+Status stays ready-for-agent.

@@ -28,7 +28,7 @@ import {
 } from "../../web-agent/src/guest-content.js";
 import { CLIENT_REQUEST_TIMEOUT_MS, CLIENT_TURN_TIMEOUT_MS, TURN_STILL_WORKING_AFTER_MS } from "./turn-budget.js";
 import { turnEntriesSince } from "./guest-turn-recovery.js";
-import { assertValidResponseMode, readResponseMode } from "./response-mode.js";
+import { applyResponseModeTo, assertValidResponseMode, readResponseMode } from "./response-mode.js";
 import { nextAgentMarkState, type AgentMarkEvent, type AgentMarkState } from "./agent-mark-state.js";
 import {
   breakdownHtml,
@@ -1519,6 +1519,8 @@ let appliedMode: ModePresentation = GUEST_MODES.stays;
 
 function applyResponseMode(response: GuestResponse): void {
   appliedMode = readResponseMode(response.mode) ?? appliedMode;
+  // Issue 03c (ADR 0107 decision 6): the document's data-mode follows the validated response, never a user action or the DOM.
+  applyResponseModeTo(document.documentElement, response.mode);
 }
 
 // Issue 01b (ADR 0107 decision 9): the Agent Mark follows signals the shell already has. The state is never persisted (ADR 0106), so
