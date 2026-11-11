@@ -50,6 +50,17 @@ Every offline test scripts the classifier verdict (`scriptedPlanner` in `test/he
 
 ## Comments
 
+- 2026-11-11 20:17, owner live run (`npm run pilot:local:agent-smoke -- --request-limit 16`, OpenRouter `openai/gpt-6-luna`, f836c5d): journey PASS (4/4 tasks, 0 guard failures, 13 model calls). Terse suite: run, 18 of 40 requests used, false-refusal rate 0.250 (2 of 8 cases with a verdict), 2 failed cases, so not valid for acceptance.
+  - `pick_result:first`, `pick_result:second`: scope `unclear`, reason `unclear`, code sent `pick_result`, FAIL (false refusals).
+  - `party_size:couple`: scope failed, reason failed, code sent `party_size`, FAIL (no verdict read).
+  - `nights:week`: scope failed, reason failed, code sent none, FAIL (no verdict read).
+  - Passed: `party_size:solo`, `party_size:numeral`, `party_size:pair`, `nights:numeral`, `date_confirm:affirm`, `where:area`.
+- Offline fix batch on `fix/terse-followups` (the issue stays claimed until a new live run passes; the owner reruns with `-- --request-limit 16`):
+  - `nights:week` was a measurement defect, not a missing open question: a cold-restore trace shows the classifier is the first model call and its request carries `openQuestion: nights`. A classifier attempt that gives up before its response lands was reported as "code sent none"; the report now records the closed `no_response` failure and the turn's closed control outcome, and scores the case from that outcome (never as a false refusal).
+  - `party_size:couple` now reports the closed parse-failure code (`not_json`, `scope_missing`, `scope_invalid`, `reason_missing`, `reason_invalid`, `tool_calls`, `text_missing`), with no model text. The classifier instruction now states the scope-to-reason mapping the parser enforces.
+  - `pick_result:*`: the classifier context now carries a closed result count, and the instruction states that a positional reply to `pick_result` answers it. The eval seeds a shown result list (count only) for these cases.
+  - The default 10-request limit is unchanged; the live command in `docs/testing/shortlet-assistant-v1.md` passes `--request-limit 16` because the 4-step journey needs about 12 calls.
+
 - 9 Nov 2026, offline cases landed on `fix/chat-hardening` (issue NOT yet resolved: the full case table offline and the live eval remain). Commands (all with `env -u LLM_API_KEY`, `NODE_ENV=test`):
   - `npm run check`: clean.
   - `npx tsx --test test/assistant-terse-followups.test.ts test/assistant-open-question.test.ts`: 22 of 22 pass (warm and cold).

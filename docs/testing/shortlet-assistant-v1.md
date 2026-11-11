@@ -114,9 +114,11 @@ A case whose verdict comes back `unclear` falls back to the issue 59 re-ask (the
 
 ### Owner live run
 
-Agents never run the live eval: it calls a real provider and needs the key. The same rows live in `scripts/pilot-agent-smoke.ts` (via `scripts/pilot-agent-smoke-terse.ts`) and are reported in `.scratch/pilot-agent-smoke/agent-smoke-report.md` as closed codes only (scope, reason, the code sent, pass/fail) plus a false-refusal rate. The report carries no guest or model text.
+Agents never run the live eval: it calls a real provider and needs the key. The same rows live in `scripts/pilot-agent-smoke.ts` (via `scripts/pilot-agent-smoke-terse.ts`) and are reported in `.scratch/pilot-agent-smoke/agent-smoke-report.md` as closed codes only (scope, reason, the code sent, the shown result count, the closed failure code, the turn's control outcome, the path, pass/fail) plus a false-refusal rate. The report carries no guest or model text.
 
-The owner runs it with `LLM_API_KEY` set for that command only (do not paste keys into shell history you share, and never print the environment). Every other command in this doc uses `env -u LLM_API_KEY`. The OpenRouter configuration:
+A case with no verdict now shows why: `no_request` (the turn never reached the classifier), `no_response` (the classifier request was sent but its response did not arrive before the stage gave up), or a closed response defect (`not_json`, `tool_calls`, `text_missing`, `scope_missing`, `scope_invalid`, `reason_missing`, `reason_invalid`). Such a case is scored from the turn's closed control outcome and is never a false refusal. A case that answers without the classifier is recorded as `answered_without_classifier`.
+
+The owner runs it with `LLM_API_KEY` set for that command only (do not paste keys into shell history you share, and never print the environment). Every other command in this doc uses `env -u LLM_API_KEY`. The OpenRouter configuration, with `--request-limit 16` because the 4-step journey needs about 3 model calls per step (about 12), so the 10-request default stops at the booking step and skips the terse suite:
 
 ```
 CONCIERGE_MODE=openai-compatible \
@@ -124,7 +126,7 @@ LLM_BASE_URL=https://openrouter.ai/api/v1 \
 LLM_MODEL=openai/gpt-6-luna \
 LLM_PROVIDER_LABEL=openrouter \
 LLM_API_KEY=…(owner-supplied)… \
-npm run pilot:local:agent-smoke
+npm run pilot:local:agent-smoke -- --request-limit 16
 ```
 
 Then record the false-refusal rate in issue 61's Comments. Target on `openai/gpt-6-luna`: no false refusals across the cases.

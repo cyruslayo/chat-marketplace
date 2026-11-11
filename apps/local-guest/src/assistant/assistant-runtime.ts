@@ -1146,6 +1146,7 @@ export class AssistantRuntime {
     const assessment = text.length > this.#maxInputCharacters ? undefined : await assessScopeSafely(this.#scopeClassifier, safeUserText, {
       domain: packForScope.id, description: packForScope.scopeDescription ?? packForScope.label,
       hasShortlist: tx.taskState.shortlist.length > 0, hasSelectedStay: Boolean(tx.taskState.selectedStayRef), hasOffer: Boolean(tx.taskState.currentOfferId),
+      resultCount: tx.taskState.shortlist.length,
       ...(tx.taskState.openQuestion === undefined ? {} : { openQuestion: tx.taskState.openQuestion }),
       turnContext: this.#turnContext(packForScope),
     }, this.#scopeOuterTimeoutMs, (error) => {

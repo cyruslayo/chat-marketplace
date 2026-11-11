@@ -6,8 +6,8 @@ import { renderBenchmarkDocument, validateLiveBenchmarkResult, type SmokeResult 
 import { buildPerformanceReport } from "../scripts/pilot-agent-smoke-metrics.js";
 import { SMOKE_GRADING_PROFILE } from "../scripts/pilot-agent-smoke-grading.js";
 import { ASSISTANT_CONTROL_OUTCOMES } from "../apps/local-guest/src/assistant/assistant-runtime.js";
-import { evaluateTerseFollowUps, renderTerseFollowUpReport } from "../scripts/pilot-agent-smoke-terse.js";
-import type { AssistantModelClient } from "../apps/local-guest/src/assistant/assistant-model.js";
+import { evaluateTerseFollowUps, renderTerseFollowUpReport, scoreTerseCase } from "../scripts/pilot-agent-smoke-terse.js";
+import type { AssistantModelClient, AssistantModelRequest, AssistantModelResponse } from "../apps/local-guest/src/assistant/assistant-model.js";
 
 // The preserved live result is the golden complete report fixture.
 const recorded = JSON.parse(readFileSync(new URL("../docs/testing/openrouter-gpt6-luna-benchmark-result.json", import.meta.url), "utf8")) as SmokeResult;
@@ -268,4 +268,111 @@ test("Issue 61: the terse suite is skipped, with a closed reason, after a rate-l
   assert.equal(skipped.status, "skipped");
   assert.equal(skipped.skipReason, "rate_limited");
   assert.equal(skipped.cases.length, 0);
+});
+
+function scopeMessage(request: AssistantModelRequest): string {
+  const user = [...request.history].reverse().find((step) => step.role === "user");
+  return user && "text" in user ? (JSON.parse(user.text) as { readonly message: string }).message : "";
+}
+
+const validVerdict = JSON.stringify({ scope: "in_scope", risk: "ordinary", intents: ["search"], reasonCode: "supported", slots: EMPTY_SLOTS });
+
+test("Issue 61: every unreadable classifier response is reported with a closed parse-failure code, never model text", async () => {
+  const byMessage: Readonly<Record<string, AssistantModelResponse>> = {
+    "just me": { text: "not json" },
+    "2": { text: JSON.stringify({ risk: "ordinary", intents: ["search"], reasonCode: "supported", slots: EMPTY_SLOTS }) },
+    "two of us": { text: JSON.stringify({ scope: "in_scope", risk: "ordinary", intents: ["search"], slots: EMPTY_SLOTS }) },
+    "me and my wife": { text: JSON.stringify({ scope: "maybe", risk: "ordinary", intents: ["search"], reasonCode: "supported", slots: EMPTY_SLOTS }) },
+    "3": { text: JSON.stringify({ scope: "in_scope", risk: "ordinary", intents: ["search"], reasonCode: "perhaps", slots: EMPTY_SLOTS }) },
+    "the first one": { toolCalls: [{ id: "terse-tool", name: "search_stays", args: { city: "Lagos" } }] },
+    "the second": {},
+  };
+  const model: AssistantModelClient = {
+    generate: async (request) => {
+      if (request.structuredOutput?.name === "concierge_scope") return byMessage[scopeMessage(request)] ?? { text: validVerdict };
+      return { toolCalls: [{ id: "terse-search", name: "search_stays", args: { city: "Lagos" } }] };
+    },
+  };
+  const report = await evaluateTerseFollowUps(model);
+  const failureOf = (id: string) => report.cases.find((entry) => entry.id === id)?.scopeFailure;
+  assert.equal(failureOf("party_size:solo"), "not_json");
+  assert.equal(failureOf("party_size:numeral"), "scope_missing");
+  assert.equal(failureOf("party_size:pair"), "reason_missing");
+  assert.equal(failureOf("party_size:couple"), "scope_invalid");
+  assert.equal(failureOf("nights:numeral"), "reason_invalid");
+  assert.equal(failureOf("pick_result:first"), "tool_calls");
+  assert.equal(failureOf("pick_result:second"), "text_missing");
+  // None of the unreadable cases is a false refusal: the model never returned a refusal verdict, so the denominator is unaffected.
+  assert.equal(report.falseRefusalRate, 0);
+  assert.equal(report.failedCases, 7);
+  const rendered = renderTerseFollowUpReport(report).join("\n");
+  assert.match(rendered, /not_json/);
+  assert.match(rendered, /scope_invalid/);
+  assert.doesNotMatch(rendered, /not json|maybe|perhaps/i, "no model text");
+});
+
+test("Issue 61: a classifier response that never arrives is a closed no_response, scored from the turn outcome", async () => {
+  const model: AssistantModelClient = {
+    generate: async (request) => {
+      if (request.structuredOutput?.name === "concierge_scope") {
+        // One case's classifier never answers; the stage caps its own attempt, exactly as a live slow response does.
+        if (scopeMessage(request) === "a week") return await new Promise<never>(() => {});
+        return { text: validVerdict };
+      }
+      return { toolCalls: [{ id: "terse-search", name: "search_stays", args: { city: "Lagos" } }] };
+    },
+  };
+  const report = await evaluateTerseFollowUps(model);
+  const week = report.cases.find((entry) => entry.id === "nights:week");
+  assert.ok(week, "the case is reported");
+  assert.equal(week.openQuestionSent, "nights", "the classifier request carried the open question");
+  assert.equal(week.resultCountSent, 0);
+  assert.equal(week.scopeFailure, "no_response", "the response never arrived; the request did");
+  assert.equal(week.controlOutcome, "guard_failure", "the turn's closed outcome records the failed stage");
+  assert.equal(week.path, "classifier_failed");
+  assert.equal(week.falseRefusal, false, "a stage timeout is not a model refusal");
+  assert.equal(report.failedCases, 1);
+  const rendered = renderTerseFollowUpReport(report).join("\n");
+  assert.match(rendered, /nights:week/);
+  assert.match(rendered, /no_response/);
+  assert.match(rendered, /guard_failure/);
+  assert.doesNotMatch(rendered, /Valid for acceptance: yes/);
+});
+
+test("Issue 61: a case with no verdict is scored from the turn's closed outcome, and an answering path passes", () => {
+  assert.deepEqual(
+    scoreTerseCase({ expected: "nights", scope: "failed", openQuestionSent: "nights", controlOutcome: "successful_model_handling" }),
+    { path: "answered_without_classifier", pass: true, falseRefusal: false },
+  );
+  assert.deepEqual(
+    scoreTerseCase({ expected: "nights", scope: "failed", openQuestionSent: null, controlOutcome: "guard_failure" }),
+    { path: "classifier_failed", pass: false, falseRefusal: false },
+  );
+  assert.deepEqual(
+    scoreTerseCase({ expected: "pick_result", scope: "unclear", openQuestionSent: "pick_result", controlOutcome: "guard_failure" }),
+    { path: "classifier", pass: false, falseRefusal: true },
+  );
+});
+
+test("Issue 61: the pick_result cases are evaluated against a shown result list, as a closed count only", async () => {
+  const sent: { readonly message: string; readonly openQuestion: unknown; readonly resultCount: unknown }[] = [];
+  const model: AssistantModelClient = {
+    generate: async (request) => {
+      if (request.structuredOutput?.name === "concierge_scope") {
+        const user = [...request.history].reverse().find((step) => step.role === "user");
+        const envelope = user && "text" in user ? JSON.parse(user.text) as { readonly message: string; readonly context: Record<string, unknown> } : undefined;
+        if (envelope) sent.push({ message: envelope.message, openQuestion: envelope.context.openQuestion, resultCount: envelope.context.resultCount });
+        return { text: validVerdict };
+      }
+      return { toolCalls: [{ id: "terse-search", name: "search_stays", args: { city: "Lagos" } }] };
+    },
+  };
+  const report = await evaluateTerseFollowUps(model);
+  const picks = sent.filter((entry) => entry.message === "the first one" || entry.message === "the second");
+  assert.equal(picks.length, 2, "both pick cases reach the classifier");
+  for (const pick of picks) {
+    assert.equal(pick.openQuestion, "pick_result");
+    assert.equal(pick.resultCount, 2, "the classifier is told two results are shown");
+  }
+  assert.ok(report.cases.filter((entry) => entry.id.startsWith("pick_result:")).every((entry) => entry.pass));
 });

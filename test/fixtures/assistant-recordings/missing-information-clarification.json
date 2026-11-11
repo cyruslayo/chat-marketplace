@@ -12,7 +12,7 @@
         "history": [
           {
             "role": "user",
-            "text": "{\"message\":\"I want somewhere in Ikoyi\",\"context\":{\"domain\":\"shortlet\",\"description\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\",\"hasShortlist\":false,\"hasSelectedStay\":false,\"hasOffer\":false}}"
+            "text": "{\"message\":\"I want somewhere in Ikoyi\",\"context\":{\"domain\":\"shortlet\",\"description\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\",\"hasShortlist\":false,\"hasSelectedStay\":false,\"hasOffer\":false,\"resultCount\":0}}"
           }
         ]
       },
@@ -50,7 +50,7 @@
         "history": [
           {
             "role": "user",
-            "text": "{\"message\":\"Four nights for two people, from 14 December 2026\",\"context\":{\"domain\":\"shortlet\",\"description\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\",\"hasShortlist\":false,\"hasSelectedStay\":false,\"hasOffer\":false,\"openQuestion\":\"where\"}}"
+            "text": "{\"message\":\"Four nights for two people, from 14 December 2026\",\"context\":{\"domain\":\"shortlet\",\"description\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\",\"hasShortlist\":false,\"hasSelectedStay\":false,\"hasOffer\":false,\"resultCount\":0,\"openQuestion\":\"where\"}}"
           }
         ]
       },
