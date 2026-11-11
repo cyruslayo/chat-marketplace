@@ -55,8 +55,8 @@ const PATTERNS: readonly { readonly id: string; readonly source: string }[] = [
  * (commerce handler objects deferred), or the follow-up issue 07 by its file name (the Shortlet public API, decision b).
  */
 const ALLOWLIST: readonly { readonly file: string; readonly pattern: string; readonly count: number; readonly followUp: string; readonly label: string }[] = [
-  { file: "assistant-runtime.ts", pattern: "domain literal shortlet", count: 2, followUp: `issue 07 (${FOLLOW_UP_FILE})`,
-    label: "restoreShortletState's Shortlet domain check (Shortlet public API)." },
+  { file: "assistant-runtime.ts", pattern: "domain literal shortlet", count: 1, followUp: `issue 07 (${FOLLOW_UP_FILE})`,
+    label: "The stays domain id constant STAYS_DOMAIN, used by restoreShortletState's task list check (Shortlet public API; issue 03b reduced two checks to one constant)." },
   { file: "assistant-runtime.ts", pattern: "domain import", count: 1, followUp: `issue 07 (${FOLLOW_UP_FILE})`,
     label: "The import of ./shortlet-assistant-pack.js for validatedCheckOutForNights (Shortlet public API)." },
   { file: "assistant-runtime.ts", pattern: "shortlet import: validatedCheckOutForNights", count: 2, followUp: `issue 07 (${FOLLOW_UP_FILE})`,

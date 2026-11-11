@@ -20,6 +20,7 @@ import { createCommerceAssistantPack } from "../apps/local-guest/src/assistant/c
 import { ASSISTANT_SYSTEM_INSTRUCTION, createShortletAssistantPack } from "../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
 import type { PendingAssistantAction } from "../apps/local-guest/src/assistant/pending-actions.js";
 import { GUEST_MODES } from "../apps/web-agent/src/guest-content.js";
+import { bookingContractRenderArtifact, bookingRequestRenderArtifact, cardPaymentRenderArtifact, conditionalOfferRenderArtifact } from "./helpers/booking-render-fixtures.js";
 
 // ADR 0107 decisions 1 and 3, ADR 0099 decision 4, ADR 0074, ADR 0104. Issue 03a (neutral pack contract).
 
@@ -170,6 +171,26 @@ test("AC7: The stays pack's composeSystemInstruction equals ASSISTANT_SYSTEM_INS
       assert.ok(Object.hasOwn(stays.surfaces, kind), `${kind} is declared`);
     }
     assert.deepEqual(stays.surfaces.pending_action?.(action, "pending-surface"), legacy, "the declared renderer matches the legacy method");
+  } finally {
+    env.close();
+  }
+});
+
+test("AC7 (booking kinds, issue 03a carried into 03b): for booking_request, conditional_offer, card_payment and booking_contract, renderPackSurface equals the legacy method's output for the same artifact.", () => {
+  const env = LocalGuestEnvironment.openNode({ databasePath: temporaryDatabasePath(`pack_contract_booking_kinds_${Date.now()}.sqlite`) });
+  try {
+    const stays = createShortletAssistantPack(env);
+    const cases = [
+      { kind: "booking_request", artifact: bookingRequestRenderArtifact(), legacy: stays.bookingRequestSurface },
+      { kind: "conditional_offer", artifact: conditionalOfferRenderArtifact(), legacy: stays.conditionalOfferSurface },
+      { kind: "card_payment", artifact: cardPaymentRenderArtifact(), legacy: stays.cardPaymentSurface },
+      { kind: "booking_contract", artifact: bookingContractRenderArtifact(), legacy: stays.bookingContractSurface },
+    ] as const;
+    for (const { kind, artifact, legacy } of cases) {
+      const rendered = renderPackSurface(stays, kind, artifact, `surface-${kind}`);
+      assert.ok(rendered.length > 0, `${kind} renders A2UI on the stays pack`);
+      assert.deepEqual(rendered, legacy?.call(stays, artifact, `surface-${kind}`), `${kind}: the declared renderer matches the legacy method`);
+    }
   } finally {
     env.close();
   }

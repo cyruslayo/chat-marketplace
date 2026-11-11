@@ -97,7 +97,7 @@ export const LIVE_LIKE_CLOCK = (): Date => new Date("2026-10-27T10:00:00Z");
  */
 export const STAGING_GUEST_CONFIG = { initialGuestPhoneNumber: null, initialGuestContactEmail: null } as const;
 
-export function datedFixture(model: AssistantModelClient, diagnostics?: AssistantDiagnosticEvent[], options: { readonly clock?: () => Date; readonly stagingGuest?: boolean; readonly paystackClient?: NonNullable<Parameters<typeof LocalGuestEnvironment.openNode>[0]>["paystackClient"]; /** The deployment composition (ADR 0105): demo off and production by default. */ readonly composition?: { readonly demo?: boolean; readonly deployment?: "production" | "staging" } } = {}): DatedFixture {
+export function datedFixture(model: AssistantModelClient, diagnostics?: AssistantDiagnosticEvent[], options: { readonly clock?: () => Date; readonly stagingGuest?: boolean; readonly paystackClient?: NonNullable<Parameters<typeof LocalGuestEnvironment.openNode>[0]>["paystackClient"]; /** The deployment composition (ADR 0105): demo off and production by default. */ readonly composition?: { readonly demo?: boolean; readonly deployment?: "production" | "staging" }; /** Issue 03b: extra domain packs registered with the runtime (for example the fake shop pack). */ readonly additionalPacks?: readonly AssistantDomainPack[] } = {}): DatedFixture {
   const directory = mkdtempSync(join(tmpdir(), "date-literal-"));
   const openConfig = {
     ...(options.clock ? { clock: options.clock } : {}),
@@ -107,7 +107,7 @@ export function datedFixture(model: AssistantModelClient, diagnostics?: Assistan
   };
   const databasePath = join(directory, "guest.sqlite");
   const environment = LocalGuestEnvironment.openNode({ databasePath, ...openConfig });
-  return { ...wireDatedApp(environment, model, diagnostics), databasePath, openConfig, close() { environment.close(); rmSync(directory, { recursive: true, force: true }); } };
+  return { ...wireDatedApp(environment, model, diagnostics, options.additionalPacks), databasePath, openConfig, close() { environment.close(); rmSync(directory, { recursive: true, force: true }); } };
 }
 
 /**
@@ -127,8 +127,8 @@ export function trueRestartedDatedApp(previous: DatedFixture, model: AssistantMo
  * A fresh app and runtime over the same guest store, as after an application restart. Threads are reloaded only
  * from the persisted projection, never from the previous process's memory.
  */
-export function restartedDatedApp(previous: DatedFixture, model: AssistantModelClient, diagnostics?: AssistantDiagnosticEvent[]): Omit<DatedFixture, "close"> {
-  return wireDatedApp(previous.environment, model, diagnostics);
+export function restartedDatedApp(previous: DatedFixture, model: AssistantModelClient, diagnostics?: AssistantDiagnosticEvent[], additionalPacks?: readonly AssistantDomainPack[]): Omit<DatedFixture, "close"> {
+  return wireDatedApp(previous.environment, model, diagnostics, additionalPacks);
 }
 
 export function wireDatedApp(environment: LocalGuestEnvironment, model: AssistantModelClient, diagnostics?: AssistantDiagnosticEvent[], additionalPacks?: readonly AssistantDomainPack[], appOptions: { readonly paystackCheckoutTimeoutMs?: number; readonly onCardCheckoutFailed?: (event: CardCheckoutFailedEvent) => void } = {}):Omit<DatedFixture, "close"> {

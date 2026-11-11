@@ -5,6 +5,7 @@ import { isAssistantBudgetPer, type AssistantBudgetPer } from "./assistant/assis
 import { SEARCH_AREAS } from "./stay-vocabulary.js";
 import type { PendingAssistantAction } from "./assistant/pending-actions.js";
 import type { ReplacedPendingAction } from "./assistant/assistant-state.js";
+import type { PersistedAssistantTask } from "./assistant/assistant-runtime.js";
 
 /**
  * Server-owned durable interaction projection for one Guest thread (ADR-0070,
@@ -61,6 +62,12 @@ export interface GuestPersistentProjection {
   readonly replacedPendingAction: PersistedReplacedProposal | null;
   /** Issue 13a: the open Request Draft replacement and the surface id the guest holds for it. A cold restore re-keys that id. Missing reads as null. */
   readonly pendingDraftReplacement?: PendingDraftReplacement | null;
+  /**
+   * Issue 03b (ADR 0107 decision 11, ADR 0106): the id and domain of each task the guest's conversation holds, and the active one.
+   * Ids and domains only, never task state. Both are present together or neither (a legacy blob restores one stays task).
+   */
+  readonly activeTaskId?: string;
+  readonly tasks?: readonly PersistedAssistantTask[];
 }
 
 /** The pending action as the runtime holds it, validated field by field on restore. Executed actions are never stored. */
@@ -291,6 +298,28 @@ function asDraftQuote(value: unknown): { readonly allInStayTotalKobo: number; re
  * fail closed (null) so a corrupt store can never start a workflow or replay a
  * command.
  */
+/**
+ * Issue 03b (ADR 0107 decision 11, ADR 0075): the persisted task list, closed. Ids and domains only. Both fields are present together
+ * or neither; anything else returns null, which rejects the whole projection (fail closed). Undefined means a legacy blob.
+ */
+function parsePersistedTaskList(value: Record<string, unknown>): { readonly activeTaskId: string; readonly tasks: readonly PersistedAssistantTask[] } | null | undefined {
+  if (value.tasks === undefined && value.activeTaskId === undefined) return undefined;
+  if (value.tasks === undefined || value.activeTaskId === undefined) return null;
+  const { activeTaskId, tasks } = value;
+  if (typeof activeTaskId !== "string" || activeTaskId === "" || activeTaskId.length > 120) return null;
+  if (!Array.isArray(tasks) || tasks.length < 1 || tasks.length > 32) return null;
+  const parsed: PersistedAssistantTask[] = [];
+  for (const entry of tasks) {
+    if (!isRecord(entry)) return null;
+    const keys = Object.keys(entry);
+    if (keys.length !== 2 || !keys.includes("taskId") || !keys.includes("domain")) return null;
+    if (typeof entry.taskId !== "string" || entry.taskId === "" || entry.taskId.length > 120) return null;
+    if (typeof entry.domain !== "string" || entry.domain === "" || entry.domain.length > 120) return null;
+    parsed.push({ taskId: entry.taskId, domain: entry.domain });
+  }
+  return { activeTaskId, tasks: Object.freeze(parsed) };
+}
+
 export function parseGuestProjection(value: unknown): GuestPersistentProjection | null {
   if (!isRecord(value) || value.version !== 1) return null;
   if (!Array.isArray(value.timeline) || !value.timeline.every(isPersistentTimelineEntry)) return null;
@@ -323,7 +352,10 @@ export function parseGuestProjection(value: unknown): GuestPersistentProjection 
   const pendingAction = parsePersistedPendingAction(value.pendingAction ?? null);
   const pendingActionSurfaceId = typeof value.pendingActionSurfaceId === "string" && value.pendingActionSurfaceId.length <= 300 ? value.pendingActionSurfaceId : null;
   const replacedPendingAction = parsePersistedReplacedProposal(value.replacedPendingAction ?? null);
+  const persistedTasks = parsePersistedTaskList(value);
+  if (persistedTasks === null) return null;
   return Object.freeze({
+    ...(persistedTasks === undefined ? {} : persistedTasks),
     activeContact,
     pendingAction,
     pendingActionSurfaceId,

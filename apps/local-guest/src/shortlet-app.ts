@@ -230,9 +230,10 @@ import {
   type AssistantShortletRestoreInput,
   type AssistantTaskRailEntry,
   type AssistantVertical,
+  type PersistedAssistantTask,
 } from "./assistant/assistant-runtime.js";
 import { ASSISTANT_CONTROL_COPY } from "./assistant/control-copy.js";
-import { isAssistantBudgetPer, type AssistantStayReference, type AssistantTaskState } from "./assistant/assistant-state.js";
+import { createInitialTaskState, isAssistantBudgetPer, type AssistantStayReference, type AssistantTaskState } from "./assistant/assistant-state.js";
 import { redactSensitiveData } from "../../../packages/platform-core/src/redaction.js";
 import {
   TASK_START_EVENT,
@@ -688,6 +689,8 @@ interface GuestThreadState {
   /** Issue 03a: the criteria of each executed search, oldest first (for "Undo last change"). */
   searchHistory: DiscoverySearchContext[];
   assistantContext: PersistedAssistantContext | null;
+  /** Issue 03b (ADR 0106, ADR 0107 decision 11): the persisted task list and its active id. Absent in legacy projections. */
+  assistantTasks?: { readonly activeTaskId: string; readonly tasks: readonly PersistedAssistantTask[] } | null;
   /** Issue 03 follow-up (ADR 0106): the open assistant confirmation and the surface id the guest holds for it. Persisted. */
   pendingAction: PersistedPendingAction | null;
   pendingActionSurfaceId: string | null;
@@ -2545,6 +2548,8 @@ export class LocalGuestApp {
       activeSurfaceId: current?.surfaceId ?? null,
       searchHistory: thread.searchHistory.map((context) => ({ ...context })),
       assistantContext: thread.assistantContext,
+      // Issue 03b (ADR 0107 decision 11, ADR 0106): the task ids and domains only; a cold restore re-keys them, never re-mints them.
+      ...(this.#assistantRuntime?.persistedTasksFor(thread.threadId) ?? {}),
       pendingAction: thread.pendingAction,
       pendingActionSurfaceId: thread.pendingActionSurfaceId,
       replacedPendingAction: thread.replacedPendingAction,
@@ -2709,6 +2714,9 @@ export class LocalGuestApp {
         ...context,
       })),
       assistantContext: projection.assistantContext,
+      ...(projection.activeTaskId === undefined || projection.tasks === undefined
+        ? {}
+        : { assistantTasks: { activeTaskId: projection.activeTaskId, tasks: projection.tasks } }),
       pendingAction: projection.pendingAction,
       pendingActionSurfaceId: projection.pendingActionSurfaceId,
       replacedPendingAction: projection.replacedPendingAction,
@@ -3284,7 +3292,22 @@ export class LocalGuestApp {
     const runtime = this.#assistantRuntime;
     const context = thread.assistantContext;
     // Issue 06 (ADR 0070): a restore never rewrites a thread a mutating run is changing; that run commits its own delta.
-    if (!runtime || !context || runtime.hasThread(threadId) || runtime.threadBusy(threadId)) return;
+    if (!runtime || runtime.hasThread(threadId) || runtime.threadBusy(threadId)) return;
+    // Issue 03b (ADR 0106, ADR 0107 decision 11): a thread with no stays context restores its persisted task list (for example a shop
+    // task started before any stays search). A legacy thread with neither stays context nor a task list is not restored, as before.
+    if (!context) {
+      if (thread.assistantTasks) {
+        runtime.restoreShortletState(threadId, {
+          principalId: this.#environment.guestPrincipal().id,
+          tenantId: this.#environment.config.tenantId,
+          taskState: createInitialTaskState(),
+          canonicalUserFacts: [],
+          tasks: thread.assistantTasks.tasks,
+          activeTaskId: thread.assistantTasks.activeTaskId,
+        });
+      }
+      return;
+    }
     // ADR 0070/0075/0093: load only the owner-checked, minimal projection; never restore model or provider history.
     if (!thread.discoveryArtifact) this.#rebuildAssistantDiscovery(thread);
     const shortlist = this.#assistantShortlist(thread);
@@ -3337,6 +3360,7 @@ export class LocalGuestApp {
       tenantId: this.#environment.config.tenantId,
       taskState: state,
       canonicalUserFacts,
+      ...(thread.assistantTasks ? { tasks: thread.assistantTasks.tasks, activeTaskId: thread.assistantTasks.activeTaskId } : {}),
       ...(thread.pendingActionSurfaceId ? { pendingActionSurfaceId: thread.pendingActionSurfaceId } : {}),
       ...(thread.discoveryArtifact ? { discoveryArtifact: thread.discoveryArtifact } : {}),
     });

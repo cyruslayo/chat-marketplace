@@ -237,6 +237,9 @@ export interface AssistantShortletRestoreInput {
   readonly pendingActionSurfaceId?: string;
   /** ADR 0106: the shell's rebuilt discovery artifact, keyed to the id the guest's card holds. */
   readonly discoveryArtifact?: { readonly id: string };
+  /** Issue 03b (ADR 0106, ADR 0107 decision 11): the persisted task list and its active id. Absent in legacy projections (one stays task). */
+  readonly tasks?: readonly PersistedAssistantTask[];
+  readonly activeTaskId?: string;
 }
 
 interface AssistantEventContext {
@@ -250,6 +253,20 @@ interface AssistantEventContext {
   readonly cartVersion?: unknown;
   readonly confirmedTotalKobo?: unknown;
 }
+
+/** Issue 03b (ADR 0107 decision 11): a task's identity as a projection stores it. An id and a domain only (ADR 0075). */
+export interface PersistedAssistantTask {
+  readonly taskId: string;
+  readonly domain: string;
+}
+
+/** Issue 03b: the closed reasons a persisted task list is refused on restore. No id or state is echoed. */
+export type TaskRestoreRefusal = "INVALID_TASK_LIST" | "UNKNOWN_DOMAIN" | "UNPARSEABLE_STATE";
+
+/** The stays pack's domain id, the only domain whose state the restore takes from the thread (ADR 0107). */
+const STAYS_DOMAIN = "shortlet";
+/** The id the first task of a thread gets (a legacy projection restores this task). */
+const INITIAL_TASK_ID = "task-1";
 
 export const DEFAULT_ASSISTANT_REPLY_MAX_OUTPUT_TOKENS = 128;
 export const DEFAULT_ASSISTANT_PLANNING_MAX_OUTPUT_TOKENS = 1024;
@@ -704,7 +721,7 @@ export class AssistantRuntime {
     let thread = this.#threads.get(threadId);
     if (!thread) {
       const initialTask: AssistantTask = {
-        taskId: "task-1",
+        taskId: INITIAL_TASK_ID,
         domain: this.#activePack.id,
         state: createInitialTaskState(),
         activeSurfaces: new Map(),
@@ -734,18 +751,58 @@ export class AssistantRuntime {
     return this.#threads.has(threadId);
   }
 
+  /**
+   * Issue 03b (ADR 0107 decision 11, ADR 0075, ADR 0074): why a persisted task list cannot be restored, or undefined when it can.
+   * The list must name the active task, repeat no id or domain, include the stays task, and name only registered domains. A non-stays
+   * task starts from its pack's initial state, which must parse under that pack's own parseState (a restore that cannot parse creates no task).
+   */
+  taskListRefusal(tasks: readonly PersistedAssistantTask[], activeTaskId: string): TaskRestoreRefusal | undefined {
+    if (tasks.length === 0) return "INVALID_TASK_LIST";
+    const ids = new Set(tasks.map((task) => task.taskId));
+    const domains = new Set(tasks.map((task) => task.domain));
+    if (ids.size !== tasks.length || domains.size !== tasks.length) return "INVALID_TASK_LIST";
+    if (!ids.has(activeTaskId) || !domains.has(STAYS_DOMAIN)) return "INVALID_TASK_LIST";
+    for (const task of tasks) {
+      const pack = this.#packs.packFor(task.domain);
+      if (!pack) return "UNKNOWN_DOMAIN";
+      if (task.domain !== STAYS_DOMAIN && pack.parseState !== undefined && pack.parseState(pack.initialState?.()) === undefined) return "UNPARSEABLE_STATE";
+    }
+    return undefined;
+  }
+
+  /** Issue 03b (ADR 0106): the thread's task ids and domains as the durable projection stores them, or undefined without a runtime thread. */
+  persistedTasksFor(threadId: string): { readonly activeTaskId: string; readonly tasks: readonly PersistedAssistantTask[] } | undefined {
+    const thread = this.#threads.get(threadId);
+    if (!thread) return undefined;
+    return { activeTaskId: thread.activeTaskId, tasks: thread.tasks.map((task) => ({ taskId: task.taskId, domain: task.domain })) };
+  }
+
   /** Restores only app-validated canonical Shortlet state; no model history or provider metadata is accepted. */
   restoreShortletState(threadId: string, input: AssistantShortletRestoreInput): boolean {
     // Issue 06: a restore never rewrites a thread that a mutating run is changing; that run commits its own delta.
     if (this.threadBusy(threadId)) return false;
     const principal = this.#environment.guestPrincipal();
     if (!threadId || input.principalId !== principal.id || input.tenantId !== this.#environment.config.tenantId || principal.tenantId !== input.tenantId) return false;
+    // Issue 03b (ADR 0075, fail closed): the persisted task list is checked whole before any state changes, so a refused list creates no task.
+    const persisted = input.tasks ?? [{ taskId: INITIAL_TASK_ID, domain: STAYS_DOMAIN }];
+    const activeTaskId = input.activeTaskId ?? INITIAL_TASK_ID;
+    if (this.taskListRefusal(persisted, activeTaskId) !== undefined) return false;
     const thread = this.getThread(threadId);
-    const task = thread.tasks.find((entry) => entry.domain === "shortlet") ?? thread.tasks[0];
-    if (!task || task.domain !== "shortlet") return false;
-    const state = cloneTaskState(input.taskState);
-    task.state = state;
-    thread.activeTaskId = task.taskId;
+    // Re-keyed, never re-minted: each persisted id is kept. The stays task takes the restored state; any other task starts from its
+    // pack's initial state, which taskListRefusal has parsed. Per-task state persistence arrives with lanes (issue 03d).
+    thread.tasks = persisted.map((entry): AssistantTask => ({
+      taskId: entry.taskId,
+      domain: entry.domain,
+      state: entry.domain === STAYS_DOMAIN ? cloneTaskState(input.taskState) : createInitialTaskState(),
+      activeSurfaces: new Map(),
+      supersededSurfaces: new Set(),
+      lastSurfaces: [],
+      badge: 0,
+    }));
+    const active = thread.tasks.find((entry) => entry.taskId === activeTaskId);
+    if (!active) return false;
+    const state = active.state;
+    thread.activeTaskId = active.taskId;
     thread.taskState = state;
     thread.canonicalUserFactHistory = input.canonicalUserFacts.filter((fact) => /^\d{4}-\d{2}-\d{2}$/.test(fact));
     thread.conversationHistory.length = 0;
