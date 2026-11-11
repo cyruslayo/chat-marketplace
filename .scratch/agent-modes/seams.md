@@ -4,7 +4,7 @@ Index for issues 03a to 03g, written 10 Nov 2026 from the code survey at `56d436
 
 ## Release gate
 
-All seven issues are `ready-for-human`. ADR 0107 "Settled" (8 Nov 2026) says slices 3 to 5 wait for the owner's choice of the first real second domain (map slice 6). When the owner releases them, change each Status to `ready-for-agent`. Nothing here is started.
+All seven issues are `ready-for-agent` (released by the owner on 11 Nov 2026). ADR 0107 "Settled" (8 Nov 2026) says slices 3 to 5 wait for the owner's choice of the first real second domain (map slice 6). When the owner releases them, change each Status to `ready-for-agent`. Nothing here is started.
 
 ## Dependency graph
 

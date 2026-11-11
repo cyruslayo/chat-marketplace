@@ -1,6 +1,6 @@
 # Persist the active task and the task list across a cold restore
 
-Status: ready-for-human
+Status: ready-for-agent
 Type: task
 Blocked by: 03a (pack-owned `initialState` is used for a restored non-stays task). Owner release as in 03a (ADR 0107 "Settled", 8 Nov 2026).
 Requested: 10 Nov 2026

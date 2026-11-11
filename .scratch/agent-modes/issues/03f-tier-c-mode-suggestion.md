@@ -1,6 +1,6 @@
 # Suggest a mode switch when a turn leaves the active agent's scope (tier C only)
 
-Status: ready-for-human
+Status: ready-for-agent
 Type: task (behaviour change; an intended change to one existing test assertion, see AC10)
 Blocked by: 03a (`atRisk`, closed scope facts), 03c (mode from the active task), 03d (lanes, so a suggestion can point at an existing lane). Open decision O6 (suggestion copy and whether tiers A and B are enabled). Owner release as in 03a (ADR 0107 "Settled", 8 Nov 2026).
 Requested: 10 Nov 2026

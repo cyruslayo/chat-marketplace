@@ -1,6 +1,6 @@
 # Preview other agent modes in a strip and a sheet (preview only, commit on first message)
 
-Status: ready-for-human
+Status: ready-for-agent
 Type: task (UI; a real-browser test is in scope)
 Blocked by: 03c (mode follows the active task and the client applies it), owner release as in 03a (ADR 0107 "Settled", 8 Nov 2026). The 10 Nov owner decisions apply: the app-bar mark is decorative and `aria-hidden` while one mode is registered, and "Concierge · Stays" shows only with more than one mode.
 Requested: 10 Nov 2026

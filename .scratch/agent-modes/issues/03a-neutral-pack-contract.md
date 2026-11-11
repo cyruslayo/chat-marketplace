@@ -1,6 +1,6 @@
 # Make the domain-pack contract domain-neutral (additive, no guest-visible change)
 
-Status: ready-for-human
+Status: ready-for-agent
 Type: task (refactor, behaviour-preserving)
 Blocked by: owner release. ADR 0107 "Settled" (8 Nov 2026): slices 3 to 5 wait for the owner's choice of the first real second domain (map slice 6). Issues 02 and 01b are resolved and do not block this issue.
 Requested: 10 Nov 2026

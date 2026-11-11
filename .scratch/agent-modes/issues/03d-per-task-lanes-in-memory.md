@@ -1,6 +1,6 @@
 # Give each task its own chat lane (timeline and model history)
 
-Status: ready-for-human
+Status: ready-for-agent
 Type: task
 Blocked by: 03b (persisted task ids and list), 03a (pack hooks). Two owner decisions are open and listed in seams.md (O1 restore of model history; O2 where lane timelines persist across a cold restore). Owner release as in 03a (ADR 0107 "Settled", 8 Nov 2026).
 Requested: 10 Nov 2026

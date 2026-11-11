@@ -1,6 +1,6 @@
 # Write one redacted row per lane event, exported with the platform tables
 
-Status: ready-for-human
+Status: ready-for-agent
 Type: task
 Blocked by: 03d (lanes exist and carry a `taskId`). Open decisions O4 (thread store ownership, ADR 0101) must be answered before the placement in step 4 is final. Owner release as in 03a (ADR 0107 "Settled", 8 Nov 2026).
 Requested: 10 Nov 2026

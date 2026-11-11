@@ -1,6 +1,6 @@
 # Derive the mode from the active task and apply it on the client
 
-Status: ready-for-human
+Status: ready-for-agent
 Type: task
 Blocked by: 03a (presentation on the pack). 03b is not required for the stays-only path, but the fake-pack switch test in AC1 and AC9 needs 03b's persisted `activeTaskId`. Owner release as in 03a (ADR 0107 "Settled", 8 Nov 2026).
 Requested: 10 Nov 2026
