@@ -17,7 +17,7 @@
         ]
       },
       "response": {
-        "text": "{\"scope\":\"in_scope\",\"risk\":\"ordinary\",\"intents\":[\"search\",\"details\",\"compare\",\"price\",\"status\",\"offer\",\"draft\",\"request\",\"accept\",\"payment\",\"support\",\"clarify\",\"greet\",\"task_switch\"],\"slots\":{\"city\":null,\"neighbourhood\":null,\"bedrooms\":null,\"nights\":null,\"guests\":null,\"checkIn\":null,\"checkOut\":null},\"reasonCode\":\"supported\"}"
+        "text": "{\"scope\":\"in_scope\",\"risk\":\"ordinary\",\"intents\":[\"search\",\"details\",\"compare\",\"price\",\"status\",\"offer\",\"draft\",\"request\",\"accept\",\"payment\",\"support\",\"clarify\",\"greet\",\"task_switch\",\"end_booking\",\"extend_booking\"],\"slots\":{\"city\":null,\"neighbourhood\":null,\"bedrooms\":null,\"nights\":null,\"guests\":null,\"checkIn\":null,\"checkOut\":null},\"reasonCode\":\"supported\"}"
       }
     },
     {
@@ -31,7 +31,7 @@
         "history": [
           {
             "role": "assistant",
-            "text": "Canonical task facts: {\"city\":null,\"hasShortlist\":false,\"shortlistRefs\":[],\"selectedStayRef\":null,\"checkIn\":null,\"checkOut\":null,\"nights\":null,\"partySize\":null,\"hasSelectedStay\":false,\"hasPendingAction\":false}"
+            "text": "Canonical task facts: {\"city\":null,\"hasShortlist\":false,\"shortlistRefs\":[],\"selectedStayRef\":null,\"checkIn\":null,\"checkOut\":null,\"nights\":null,\"partySize\":null,\"hasSelectedStay\":false,\"hasPendingAction\":false,\"openQuestion\":null}"
           },
           {
             "role": "user",
@@ -50,12 +50,12 @@
         "history": [
           {
             "role": "user",
-            "text": "{\"message\":\"Four nights for two people, from 14 December 2026\",\"context\":{\"domain\":\"shortlet\",\"description\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\",\"hasShortlist\":false,\"hasSelectedStay\":false,\"hasOffer\":false}}"
+            "text": "{\"message\":\"Four nights for two people, from 14 December 2026\",\"context\":{\"domain\":\"shortlet\",\"description\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\",\"hasShortlist\":false,\"hasSelectedStay\":false,\"hasOffer\":false,\"openQuestion\":\"where\"}}"
           }
         ]
       },
       "response": {
-        "text": "{\"scope\":\"in_scope\",\"risk\":\"ordinary\",\"intents\":[\"search\",\"details\",\"compare\",\"price\",\"status\",\"offer\",\"draft\",\"request\",\"accept\",\"payment\",\"support\",\"clarify\",\"greet\",\"task_switch\"],\"slots\":{\"city\":\"Lagos\",\"neighbourhood\":\"Old Ikoyi\",\"bedrooms\":null,\"nights\":4,\"guests\":2,\"checkIn\":\"2026-12-14\",\"checkOut\":null},\"reasonCode\":\"supported\"}"
+        "text": "{\"scope\":\"in_scope\",\"risk\":\"ordinary\",\"intents\":[\"search\",\"details\",\"compare\",\"price\",\"status\",\"offer\",\"draft\",\"request\",\"accept\",\"payment\",\"support\",\"clarify\",\"greet\",\"task_switch\",\"end_booking\",\"extend_booking\"],\"slots\":{\"city\":\"Lagos\",\"neighbourhood\":\"Old Ikoyi\",\"bedrooms\":null,\"nights\":4,\"guests\":2,\"checkIn\":\"2026-12-14\",\"checkOut\":null},\"reasonCode\":\"supported\"}"
       }
     },
     {
@@ -69,7 +69,7 @@
         "history": [
           {
             "role": "assistant",
-            "text": "Canonical task facts: {\"city\":null,\"hasShortlist\":false,\"shortlistRefs\":[],\"selectedStayRef\":null,\"checkIn\":null,\"checkOut\":null,\"nights\":null,\"partySize\":null,\"hasSelectedStay\":false,\"hasPendingAction\":false}"
+            "text": "Canonical task facts: {\"city\":\"Lagos\",\"hasShortlist\":false,\"shortlistRefs\":[],\"selectedStayRef\":null,\"checkIn\":null,\"checkOut\":null,\"nights\":null,\"partySize\":null,\"hasSelectedStay\":false,\"hasPendingAction\":false,\"openQuestion\":\"where\"}"
           },
           {
             "role": "user",
@@ -108,7 +108,7 @@
         "history": [
           {
             "role": "assistant",
-            "text": "Canonical task facts: {\"city\":\"Lagos\",\"hasShortlist\":true,\"shortlistRefs\":[\"stay-1\"],\"selectedStayRef\":null,\"checkIn\":\"2026-12-14\",\"checkOut\":\"2026-12-18\",\"nights\":4,\"partySize\":2,\"hasSelectedStay\":false,\"hasPendingAction\":false}"
+            "text": "Canonical task facts: {\"city\":\"Lagos\",\"hasShortlist\":true,\"shortlistRefs\":[\"stay-1\"],\"selectedStayRef\":null,\"checkIn\":\"2026-12-14\",\"checkOut\":\"2026-12-18\",\"nights\":4,\"partySize\":2,\"hasSelectedStay\":false,\"hasPendingAction\":false,\"openQuestion\":\"where\"}"
           },
           {
             "role": "user",

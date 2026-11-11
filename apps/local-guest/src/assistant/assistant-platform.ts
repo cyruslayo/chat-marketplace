@@ -150,6 +150,8 @@ export interface AssistantDomainPack {
    * clarification kind. The runtime stores it so a terse answer can be read against it. Undefined adds no code.
    */
   clarificationOpenQuestion?(taskState: AssistantTaskState, kind: AssistantClarificationKind): OpenQuestion | undefined;
+  /** Issue 57/59: the fixed copy that re-asks a closed open question. Provided by the pack so the runtime imports no web-agent copy. */
+  openQuestionCopy?(code: OpenQuestion): string;
   /** Issue 59 (ADR 0106 amendment): the chips that answer a closed open question, from the committed task state. Undefined adds none. */
   openQuestionQuickReplies?(taskState: AssistantTaskState, code: OpenQuestion): readonly GuestQuickReply[] | undefined;
   /** Issue 59 (ADR 0106 amendment): stage-appropriate recovery chips when a turn is not understood and no question is held. */

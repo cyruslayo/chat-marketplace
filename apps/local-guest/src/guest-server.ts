@@ -2838,7 +2838,7 @@ export function createGuestRequestHandler(
     if (!result.ok) {
       // Issue 60 (ADR 0075, 0077): every turn/event refusal leaves through here. The mapped class and guest copy replace the raw
       // server message, except for the few codes that already carry guest copy (keepServerMessage). The code itself is kept.
-      const refusal = guestRefusalFor(result.code);
+      const refusal = guestRefusalFor(result.code, result.message);
       sendJson(res, 200, { ...result, message: refusal.message ?? result.message, refusal: refusal.class });
       return;
     }

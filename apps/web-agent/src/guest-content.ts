@@ -61,7 +61,8 @@ export const GUEST_REFUSAL: Readonly<Record<RefusalCode, GuestRefusalEntry>> = O
   OFFER_MISMATCH: { class: "stale" },
   QUOTE_CHANGED: { class: "stale" },
   REQUEST_MISMATCH: { class: "stale" },
-  // forbidden: the action is not permitted here.
+  // forbidden: the action is not permitted here. ACTION_NOT_AUTHORIZED carries mixed server messages (some internal), so it keeps a
+  // message only when it is one of the closed guest-copy constants in `KEPT_ACTION_NOT_AUTHORIZED_COPY` (see guestRefusalFor).
   ACTION_NOT_AUTHORIZED: { class: "forbidden" },
   UNSUPPORTED_ACTION: { class: "forbidden" },
   UNSUPPORTED_EVENT: { class: "forbidden" },
@@ -76,13 +77,13 @@ export const GUEST_REFUSAL: Readonly<Record<RefusalCode, GuestRefusalEntry>> = O
   UNKNOWN_TASK: { class: "invalid" },
   // busy: a run is already in flight on this thread.
   THREAD_BUSY: { class: "busy" },
-  // unavailable: the platform could not complete the action.
-  CONCIERGE_UNAVAILABLE: { class: "unavailable" },
-  REQUEST_NOT_SUBMITTED: { class: "unavailable" },
-  PAYMENT_NOT_CONFIRMED: { class: "unavailable" },
-  CARD_CHECKOUT_FAILED: { class: "unavailable" },
-  PAYSTACK_UNAVAILABLE: { class: "unavailable" },
-  UNKNOWN_DOMAIN: { class: "unavailable" },
+  // unavailable: the platform could not complete the action. These server messages are already closed guest copy, so keep them.
+  CONCIERGE_UNAVAILABLE: { class: "unavailable", keepServerMessage: true },
+  REQUEST_NOT_SUBMITTED: { class: "unavailable", keepServerMessage: true },
+  PAYMENT_NOT_CONFIRMED: { class: "unavailable", keepServerMessage: true },
+  CARD_CHECKOUT_FAILED: { class: "unavailable", keepServerMessage: true },
+  PAYSTACK_UNAVAILABLE: { class: "unavailable", keepServerMessage: true },
+  UNKNOWN_DOMAIN: { class: "unavailable", keepServerMessage: true },
   UNKNOWN_THREAD: { class: "unavailable" },
   // A task start or switch the platform could not complete (the task tool returned TASK_UNAVAILABLE, e.g. an unknown domain or task).
   // It is a platform action that could not be performed in the current state, not a malformed request, so it is unavailable.
@@ -94,11 +95,18 @@ export const GUEST_REFUSAL: Readonly<Record<RefusalCode, GuestRefusalEntry>> = O
   NOTHING_TO_UNDO: { class: "invalid", keepServerMessage: true },
 });
 
-/** The mapped message and class for an `ok:false` result; an unknown code fails closed to the generic `unavailable` copy. */
-export function guestRefusalFor(code: string): { readonly class: RefusalClass; readonly message: string | null } {
+/**
+ * The mapped message and class for an `ok:false` result; an unknown code fails closed to the generic `unavailable` copy. `serverMessage`
+ * is the result's own message, needed only for ACTION_NOT_AUTHORIZED, which keeps it just when it is a closed guest-copy constant.
+ */
+export function guestRefusalFor(code: string, serverMessage?: string): { readonly class: RefusalClass; readonly message: string | null } {
   const entry = (GUEST_REFUSAL as Readonly<Record<string, GuestRefusalEntry>>)[code];
   if (entry === undefined) return { class: "unavailable", message: GUEST_REFUSAL_DEFAULT.unavailable };
-  return { class: entry.class, message: entry.keepServerMessage ? null : entry.copy ?? GUEST_REFUSAL_DEFAULT[entry.class] };
+  if (entry.keepServerMessage) return { class: entry.class, message: null };
+  if (code === "ACTION_NOT_AUTHORIZED" && serverMessage !== undefined && KEPT_ACTION_NOT_AUTHORIZED_COPY.has(serverMessage)) {
+    return { class: entry.class, message: null };
+  }
+  return { class: entry.class, message: entry.copy ?? GUEST_REFUSAL_DEFAULT[entry.class] };
 }
 
 /** Server-authored concierge copy for replies whose facts come from current pack projections. */
@@ -733,7 +741,16 @@ export const GUEST_PAYMENT_COPY = {
   manual: "Manual bank transfer",
   manualHelp: "Pay our business account and upload your receipt. Your booking confirms only after we check the money has arrived. You can't switch until this attempt expires or is declined.",
   lateReview: "A late payment needs review and does not confirm your booking. Contact Shortlet if you sent money after the deadline.",
+  // The card-checkout failure message (ADR 0077). ACTION_NOT_AUTHORIZED keeps it because it is closed guest copy.
+  checkoutStartFailed: "The secure card checkout could not be started.",
 } as const;
+
+/**
+ * ADR 0077: the only ACTION_NOT_AUTHORIZED server messages that are closed guest copy and may be kept. Every other message with that
+ * code (internal text such as "Offer cannot be accepted in current state." or "The requested action is not authorized.") is replaced
+ * by the fixed forbidden copy.
+ */
+const KEPT_ACTION_NOT_AUTHORIZED_COPY: ReadonlySet<string> = new Set([GUEST_PAYMENT_COPY.checkoutStartFailed]);
 
 /**
  * Agent Mode presentation (ADR 0107): the copy a mode gives the guest. The chat shell, the no-JS conversation page and the

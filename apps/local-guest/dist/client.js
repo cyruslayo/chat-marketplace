@@ -9536,7 +9536,8 @@ Known schemas:
     OFFER_MISMATCH: { class: "stale" },
     QUOTE_CHANGED: { class: "stale" },
     REQUEST_MISMATCH: { class: "stale" },
-    // forbidden: the action is not permitted here.
+    // forbidden: the action is not permitted here. ACTION_NOT_AUTHORIZED carries mixed server messages (some internal), so it keeps a
+    // message only when it is one of the closed guest-copy constants in `KEPT_ACTION_NOT_AUTHORIZED_COPY` (see guestRefusalFor).
     ACTION_NOT_AUTHORIZED: { class: "forbidden" },
     UNSUPPORTED_ACTION: { class: "forbidden" },
     UNSUPPORTED_EVENT: { class: "forbidden" },
@@ -9551,13 +9552,13 @@ Known schemas:
     UNKNOWN_TASK: { class: "invalid" },
     // busy: a run is already in flight on this thread.
     THREAD_BUSY: { class: "busy" },
-    // unavailable: the platform could not complete the action.
-    CONCIERGE_UNAVAILABLE: { class: "unavailable" },
-    REQUEST_NOT_SUBMITTED: { class: "unavailable" },
-    PAYMENT_NOT_CONFIRMED: { class: "unavailable" },
-    CARD_CHECKOUT_FAILED: { class: "unavailable" },
-    PAYSTACK_UNAVAILABLE: { class: "unavailable" },
-    UNKNOWN_DOMAIN: { class: "unavailable" },
+    // unavailable: the platform could not complete the action. These server messages are already closed guest copy, so keep them.
+    CONCIERGE_UNAVAILABLE: { class: "unavailable", keepServerMessage: true },
+    REQUEST_NOT_SUBMITTED: { class: "unavailable", keepServerMessage: true },
+    PAYMENT_NOT_CONFIRMED: { class: "unavailable", keepServerMessage: true },
+    CARD_CHECKOUT_FAILED: { class: "unavailable", keepServerMessage: true },
+    PAYSTACK_UNAVAILABLE: { class: "unavailable", keepServerMessage: true },
+    UNKNOWN_DOMAIN: { class: "unavailable", keepServerMessage: true },
     UNKNOWN_THREAD: { class: "unavailable" },
     // A task start or switch the platform could not complete (the task tool returned TASK_UNAVAILABLE, e.g. an unknown domain or task).
     // It is a platform action that could not be performed in the current state, not a malformed request, so it is unavailable.
@@ -9932,8 +9933,11 @@ Known schemas:
     transferHelp: "If you choose bank transfer, you can't switch to card until the transfer account expires.",
     manual: "Manual bank transfer",
     manualHelp: "Pay our business account and upload your receipt. Your booking confirms only after we check the money has arrived. You can't switch until this attempt expires or is declined.",
-    lateReview: "A late payment needs review and does not confirm your booking. Contact Shortlet if you sent money after the deadline."
+    lateReview: "A late payment needs review and does not confirm your booking. Contact Shortlet if you sent money after the deadline.",
+    // The card-checkout failure message (ADR 0077). ACTION_NOT_AUTHORIZED keeps it because it is closed guest copy.
+    checkoutStartFailed: "The secure card checkout could not be started."
   };
+  var KEPT_ACTION_NOT_AUTHORIZED_COPY = /* @__PURE__ */ new Set([GUEST_PAYMENT_COPY.checkoutStartFailed]);
   var MODE_TEXT_MAX_LENGTH = 400;
   var MODE_BODY_MAX_LENGTH = 600;
   var MODE_STARTERS_MAX = 4;

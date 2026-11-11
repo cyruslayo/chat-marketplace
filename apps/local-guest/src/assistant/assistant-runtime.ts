@@ -35,7 +35,6 @@ import { PLANNER_REQUEST_TIMEOUT_MS, SERVER_TURN_MAX_MS } from "../turn-budget.j
 import { ModelScopeClassifier, ScopeClassificationError, assessScopeSafely, scopedMixedInput, type ScopeClassifier, type ScopeAssessment, type ConciergeIntent } from "./scope-classifier.js";
 import { RetryingScopeClassifier, ScopeClassifierRetryError, SCOPE_TOTAL_BUDGET_MS, type ScopeClassifierRetryEvent, type ScopeClassifierRetryResult } from "./scope-classifier-retry.js";
 import { ASSISTANT_CONTROL_COPY } from "./control-copy.js";
-import { GUEST_ASSISTANT_COPY } from "../../../web-agent/src/guest-content.js";
 import { isProviderUnavailable } from "./fallback-model-client.js";
 import { searchAreaFor, type GuestQuickReply } from "../concierge.js";
 import {
@@ -1178,7 +1177,7 @@ export class AssistantRuntime {
         const chips = held === undefined
           ? packForScope.recoveryQuickReplies?.(tx.taskState)
           : packForScope.openQuestionQuickReplies?.(tx.taskState, held);
-        const message = held === undefined ? ASSISTANT_CONTROL_COPY.unavailable : GUEST_ASSISTANT_COPY.openQuestion[held];
+        const message = held === undefined ? ASSISTANT_CONTROL_COPY.unavailable : packForScope.openQuestionCopy?.(held) ?? ASSISTANT_CONTROL_COPY.unavailable;
         return { ok: true, messages: [message], surfaces: [], modelHandled: false, discardUserInput: true, controlOutcome,
           tasks: this.getTaskRail(threadId), ...(chips === undefined || chips.length === 0 ? {} : { quickReplies: chips }) };
       }

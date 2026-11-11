@@ -225,7 +225,12 @@ test("A planner date the guest did not give reports stop reason `tool_denial` wi
     assert.equal(response.stopReason, "tool_denial");
     assert.equal(response.messages?.length, 1);
     assert.equal(model.plannerRequests.length, 1, "the turn ends at the rejected call");
-    assert.equal(JSON.stringify(runtime.getThread("stop-tool-denial").taskState), taskStateBefore, "no task state is committed");
+    // ADR 0106 (9 Nov 2026): the dated clarification asks for the check-in, so it records that open question. Nothing else is committed.
+    const committed = runtime.getThread("stop-tool-denial").taskState;
+    assert.equal(committed.openQuestion, "check_in", "the dated clarification records the check-in question");
+    const committedWithoutQuestion = { ...committed };
+    delete committedWithoutQuestion.openQuestion;
+    assert.equal(JSON.stringify(committedWithoutQuestion), taskStateBefore, "no other task state is committed");
     assert.deepEqual(stopEvents(diagnostics), [stop(1, "tool_denial", true)]);
   } finally { environment.close(); }
 });

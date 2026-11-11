@@ -1914,6 +1914,7 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     normalizeToolArguments,
     clarificationQuickReplies: clarificationChipsFor,
     clarificationOpenQuestion: openQuestionForClarification,
+    openQuestionCopy: (code) => GUEST_ASSISTANT_COPY.openQuestion[code],
     openQuestionQuickReplies: chipsForOpenQuestion,
     recoveryQuickReplies: recoveryChipsFor,
     replyClarificationKind: (results) => locationChangeReplyKind(results) ?? dateChangeReplyKind(results),

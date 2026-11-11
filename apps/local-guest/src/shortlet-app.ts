@@ -1352,7 +1352,7 @@ export class LocalGuestApp {
         {
           ok: false,
           code: "ACTION_NOT_AUTHORIZED",
-          message: "The secure card checkout could not be started.",
+          message: GUEST_PAYMENT_COPY.checkoutStartFailed,
         },
         reason === "provider_rejected" ? cardCheckoutProviderStatusClass(error) : undefined,
       );
