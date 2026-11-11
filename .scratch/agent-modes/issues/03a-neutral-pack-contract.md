@@ -1,6 +1,6 @@
 # Make the domain-pack contract domain-neutral (additive, no guest-visible change)
 
-Status: ready-for-agent
+Status: resolved
 Type: task (refactor, behaviour-preserving)
 Blocked by: owner release. ADR 0107 "Settled" (8 Nov 2026): slices 3 to 5 wait for the owner's choice of the first real second domain (map slice 6). Issues 02 and 01b are resolved and do not block this issue.
 Requested: 10 Nov 2026
@@ -139,3 +139,6 @@ Deviations from the spec:
 Status stays `ready-for-agent` until items 1 (AC3 restore clause, AC7 booking-kind outputs) are closed. The owner decides whether to accept these as deferred to 03b or to add an artifact fixture.
 
 **Scope notes.** No persistence change, no CSS or client change, no stays prompt change (`ASSISTANT_SYSTEM_INSTRUCTION` is equal to `composeSystemInstruction(stays)`). No formatter was run. The fake pack now satisfies the registry's presentation check.
+
+### Orchestrator, owner decision (11 Nov 2026)
+The owner deferred both open test gaps to 03b: (1) AC3 "a restore that cannot parse its state creates no task" is tested in 03b, where the first restore path consumes `parseState`; (2) AC7 surfaces-vs-legacy output for the four other booking kinds is tested in 03b with a shared render fixture helper (no copied fixtures, AGENTS.md anti-pattern 4). 03a is resolved on that basis. Orchestrator re-verified on the committed tree: `npm run check` exit 0; `assistant-pack-contract` + `assistant-pack-registry` 10/10 pass; `commerce-assistant-pack.ts` unedited.

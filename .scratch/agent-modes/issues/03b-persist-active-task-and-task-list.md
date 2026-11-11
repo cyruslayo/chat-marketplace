@@ -71,3 +71,7 @@ Each is its own `test()` in `test/assistant-task-persistence.test.ts`.
 - Changing the existing `restoreShortletState` input for stays fields.
 
 ## Comments
+
+### Carried from 03a (owner deferral, 11 Nov 2026)
+- Add the test "a restore that cannot parse its state creates no task" (03a AC3 clause).
+- Add a surfaces-equals-legacy test for the four non-`pending_action` booking kinds using a shared render fixture helper.
