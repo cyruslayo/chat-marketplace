@@ -729,7 +729,7 @@ const CALENDAR_DAY_STATUS: Readonly<Record<CalendarDayState, { readonly label: s
   payment_pending: { label: "Payment pending", tone: "info" },
   booked: { label: "Booked", tone: "neutral" },
   blocked: { label: "Blocked", tone: "stale" },
-  held: { label: "Operator hold", tone: "stale" },
+  held: { label: "Operator Hold", tone: "stale" },
 };
 
 /** A calendar night (YYYY-MM-DD) with its weekday, e.g. "Thu, 24 Sept 2026". */

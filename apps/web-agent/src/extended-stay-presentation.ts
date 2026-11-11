@@ -79,6 +79,21 @@ export function billingPeriodLine(period: BillingPeriodFacts): string {
   return `${GUEST_FACT_LABELS.billingPeriod} ${period.index}: ${dates} (${period.nights} nights) · ${formatBookingMoney(period.amountKobo)} · due ${formatGuestDate(period.dueDate) ?? period.dueDate}`;
 }
 
+/**
+ * The Billing Period a card payment covers, read from the payment's own component, never matched by amount (equal-amount
+ * periods, or a deposit equal to a period, would be mislabelled). The payment after Accept Offer is the First Period
+ * Payment (ADR 0092); a Refundable Security Deposit payment covers no Billing Period. Later periods are paid elsewhere.
+ */
+export function cardPaymentBillingPeriod(facts: {
+  readonly status: string;
+  readonly currentComponent?: "stay" | "security_deposit";
+  readonly billingPeriods?: readonly BillingPeriodFacts[];
+}): BillingPeriodFacts | undefined {
+  if (facts.currentComponent === "security_deposit" || facts.status === "deposit_required") return undefined;
+  if (facts.status !== "ready" && facts.status !== "checkout_initiated") return undefined;
+  return [...(facts.billingPeriods ?? [])].sort((a, b) => a.index - b.index)[0];
+}
+
 /** The whole payment schedule: one line per Billing Period, in order. */
 export function billingPeriodLines(periods: readonly BillingPeriodFacts[] | undefined): readonly string[] {
   return (periods ?? []).map(billingPeriodLine);

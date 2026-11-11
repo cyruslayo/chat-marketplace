@@ -61,11 +61,25 @@ test("AC1: The Extended Stay offer shows the full range, the All-In Stay Total a
 
 test("AC2: The Extended Stay payment screen shows which period is being paid and the later periods", () => {
   const rendered = texts(cardPaymentArtifactToA2UI({ artifact: payment, surfaceId: "s1" })).join("\n");
-  assert.match(rendered, /This payment is for Billing Period 2\./);
+  // ADR 0092: the payment after Accept Offer is the First Period Payment. The fixture's amount equals period 2's, which an
+  // amount match would have mislabelled.
+  assert.match(rendered, /This payment is for Billing Period 1\./);
   assert.match(rendered, /Billing Period 1:/);
   assert.match(rendered, /Billing Period 2:/);
   const screen = paymentScreenContent(payment, new Date("2026-10-27T10:00:00.000Z"), "/payments/offers/o1");
-  assert.equal(screen.schedule?.currentPeriod, "This payment is for Billing Period 2.");
+  assert.equal(screen.schedule?.currentPeriod, "This payment is for Billing Period 1.");
+});
+
+test("AC2: The period label comes from the payment component, not a matching amount", () => {
+  const now = new Date("2026-10-27T10:00:00.000Z");
+  // Failure path: two periods with the same amount still label the stay payment as Billing Period 1.
+  const equalPeriods = periods.map((period) => ({ ...period, amountKobo: 30_000_000 }));
+  const equal = { ...payment, facts: { ...payment.facts, billingPeriods: equalPeriods, currentComponentAmountKobo: 30_000_000 } } as unknown as CardPaymentArtifact;
+  assert.equal(paymentScreenContent(equal, now, "/payments/offers/o1").schedule?.currentPeriod, "This payment is for Billing Period 1.");
+  // Failure path: a Refundable Security Deposit equal to a period's amount names no Billing Period.
+  const deposit = { ...payment, facts: { ...payment.facts, status: "deposit_required", currentComponent: "security_deposit", currentComponentAmountKobo: 31_000_000 } } as unknown as CardPaymentArtifact;
+  assert.equal(paymentScreenContent(deposit, now, "/payments/offers/o1").schedule?.currentPeriod, undefined);
+  assert.doesNotMatch(texts(cardPaymentArtifactToA2UI({ artifact: deposit, surfaceId: "s1" })).join("\n"), /This payment is for/);
 });
 
 test("AC3: The schedule page wording matches each period's paid or due state", () => {

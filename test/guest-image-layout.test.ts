@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Window } from "happy-dom";
-import { applyImageLayout } from "../apps/local-guest/src/image-layout.js";
+import { applyImageLayout, IMAGE_SHAPE_HINT } from "../apps/local-guest/src/image-layout.js";
 
 // Issue 23 (ADR 0078; guideline §7, §12): every guest image reserves its space; only the lead image is eager/high.
 

@@ -419,7 +419,7 @@ const CALENDAR_REFUSAL_MESSAGES: Readonly<
     "These dates are confirmed and awaiting payment (payment pending). A block cannot displace them: this needs human handling",
   booked: "These dates are booked. A booked stay cannot be overridden",
   blocked: "These dates are already blocked",
-  held: "These dates are under an Operator hold",
+  held: "These dates are under an Operator Hold",
   stale: "The calendar changed since you opened it. Review it and try again",
   block_not_found: "This block is not on this apartment's calendar",
   already_removed: "This block was already removed",

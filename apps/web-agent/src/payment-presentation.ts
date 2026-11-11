@@ -1,7 +1,7 @@
 import type { CardPaymentArtifact } from "../../web/src/card-payment-artifact.js";
 import { guestPaymentStatus } from "./booking-presentation.js";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, guestWaitingCopy } from "./guest-content.js";
-import { billingPeriodLines } from "./extended-stay-presentation.js";
+import { billingPeriodLines, cardPaymentBillingPeriod } from "./extended-stay-presentation.js";
 
 type CardPaymentFacts = CardPaymentArtifact["facts"];
 
@@ -57,8 +57,7 @@ export function paymentScreenContent(artifact: CardPaymentArtifact, now: Date, p
   const facts = artifact.facts;
   const copy = cardPaymentCopy(facts);
   const waiting = ["ready", "checkout_initiated", "deposit_required"].includes(facts.status) && !isCardPaymentProcessing(facts) && Date.parse(facts.paymentWindowExpiresAt) > now.getTime();
-  const currentAmount = facts.currentComponentAmountKobo ?? facts.allInStayTotalKobo;
-  const currentPeriod = facts.billingPeriods?.find((period) => period.amountKobo === currentAmount);
+  const currentPeriod = cardPaymentBillingPeriod(facts);
   return {
     state: facts.status === "ready" || facts.status === "deposit_required" ? "ready" : facts.status === "checkout_initiated" && waiting ? "handoff" : "closed",
     title: copy.title,

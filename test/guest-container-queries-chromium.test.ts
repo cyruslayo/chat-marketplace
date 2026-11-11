@@ -12,7 +12,7 @@ async function openChat(fixture: Awaited<ReturnType<typeof restartFixture>>, tab
   await tab.waitForSelector("#active-workspace .ui-stay-card", 15_000);
 }
 
-test("AC1: In the 1280 split view, compare and facts use their narrow layout inside the 560px workspace", async () => {
+test("AC1: In the 1280 split view, compare uses its narrow layout inside the workspace and facts stay two-column", async () => {
   const fixture = await restartFixture();
   const browser = await launchRealBrowser();
   try {
@@ -23,9 +23,10 @@ test("AC1: In the 1280 split view, compare and facts use their narrow layout ins
     await fixture.advance("discovery");
     const tab = await browser.createTab();
     await openChat(fixture, tab, 1280);
-    // Facts inside the real workspace container: the value sits below its label (stacked).
-    const factsStacked = await tab.evaluate<boolean>(`(() => { const dl = document.createElement("dl"); dl.className = "ui-facts"; dl.innerHTML = "<dt>Check-in</dt><dd>10 Sept 2026</dd>"; document.querySelector("#active-workspace").append(dl); const dt = dl.querySelector("dt").getBoundingClientRect(); const dd = dl.querySelector("dd").getBoundingClientRect(); const stacked = dd.top >= dt.bottom - 1; dl.remove(); return stacked; })()`);
-    assert.equal(factsStacked, true, "the workspace facts stack");
+    // Facts inside the real workspace container: a label/value list fits two columns down to about 30rem, so the value
+    // sits beside its label in the desktop workspace (it stacks only in a phone-width column; see AC3).
+    const factsSideBySide = await tab.evaluate<boolean>(`(() => { const dl = document.createElement("dl"); dl.className = "ui-facts"; dl.innerHTML = "<dt>Check-in</dt><dd>10 Sept 2026</dd>"; document.querySelector("#active-workspace").append(dl); const dt = dl.querySelector("dt").getBoundingClientRect(); const dd = dl.querySelector("dd").getBoundingClientRect(); const sideBySide = dd.top < dt.bottom - 1; dl.remove(); return sideBySide; })()`);
+    assert.equal(factsSideBySide, true, "the workspace facts stay two-column");
     // Compare in the same workspace: the compact rows offer "See both side by side" with two results.
     assert.equal(await tab.clickButton("See both side by side"), true);
     await tab.waitForSelector("#active-workspace .ui-compare", 15_000);
@@ -58,6 +59,9 @@ test("AC3: There is no overflow at 320 in chat or on a standard page", async () 
     await openChat(fixture, tab, 320);
     const chatOverflow = await tab.evaluate<number>("document.documentElement.scrollWidth - innerWidth");
     assert.equal(chatOverflow, 0, "chat at 320 does not overflow");
+    // Failure path: in a phone-width column the facts stack.
+    const factsStacked = await tab.evaluate<boolean>(`(() => { const dl = document.createElement("dl"); dl.className = "ui-facts"; dl.innerHTML = "<dt>Check-in</dt><dd>10 Sept 2026</dd>"; document.querySelector("#active-workspace").append(dl); const dt = dl.querySelector("dt").getBoundingClientRect(); const dd = dl.querySelector("dd").getBoundingClientRect(); const stacked = dd.top >= dt.bottom - 1; dl.remove(); return stacked; })()`);
+    assert.equal(factsStacked, true, "facts stack at 320");
     await tab.navigate(`${fixture.base}/stays/search?area=old-ikoyi&checkIn=2026-09-10&checkOut=2026-09-13&partySize=2`);
     await tab.waitForSelector("main.ui-page", 10_000);
     const pageOverflow = await tab.evaluate<number>("document.documentElement.scrollWidth - innerWidth");

@@ -3,7 +3,7 @@ import { CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT, CARD_PAYMENT_VERIFY_RETURN_EVEN
 import type { CardPaymentArtifact } from "../../web/src/card-payment-artifact.js";
 
 import { bookingProgressText, formatBookingDeadline, formatBookingMoney, guestPaymentStatus, nightsBetween, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";
-import { billingPeriodLines } from "./extended-stay-presentation.js";
+import { billingPeriodLines, cardPaymentBillingPeriod } from "./extended-stay-presentation.js";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, guestFact } from "./guest-content.js";
 import { cardPaymentCopy, isCardPaymentProcessing } from "./payment-presentation.js";
 
@@ -36,7 +36,7 @@ export function cardPaymentArtifactToA2UI({ artifact, surfaceId }: { readonly ar
   // Issue 27 (ADR 0092): the Extended Stay schedule and which period this payment covers, from the projection.
   const schedulePeriods = billingPeriodLines(facts.billingPeriods);
   const scheduleIds = schedulePeriods.map((_, index) => `card-payment-period-${index}`);
-  const currentPeriod = facts.billingPeriods?.find((period) => period.amountKobo === actionAmount);
+  const currentPeriod = cardPaymentBillingPeriod(facts);
   const currentPeriodText = currentPeriod === undefined ? undefined : `This payment is for ${GUEST_FACT_LABELS.billingPeriod} ${currentPeriod.index}.`;
   const components: A2UIComponent[] = [
     { id: "root", component: "Column", children: [

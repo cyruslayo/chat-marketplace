@@ -70,8 +70,8 @@ export const GUEST_ASSISTANT_COPY = Object.freeze({
   draftReady: "Your Request Draft is ready to review. It has not been submitted.",
   offerInactive: "This Conditional Booking Offer is no longer active. Review the current booking details before continuing.",
   offerAmount: (total: string, due: string, deposit: string) => `The offer's All-In Stay Total is ${total}. The amount due now is ${due}. The refundable security deposit is shown separately as ${deposit}. Review the offer before accepting it.`,
-  confirmedBooking: "Your booking is confirmed. Your reservation details are in the stay details beside the chat.",
-  issuedOffer: "The Accommodation Provider has issued a Conditional Booking Offer. Review it in the stay details beside the chat.",
+  confirmedBooking: "Your booking is confirmed. Your reservation is in your stay details.",
+  issuedOffer: "The Accommodation Provider has issued a Conditional Booking Offer. Review it in your stay details.",
   disclosedRequest: "Request sent. Waiting for the Operator to respond.",
   noCurrentBooking: "You currently have no active booking or pending request.",
 });
@@ -283,14 +283,14 @@ export type GuestCapabilityStage = "request" | "offer" | "payment" | "booking" |
 export function guestCapabilityReply(stage: GuestCapabilityStage, unit?: { readonly title: string; readonly operatorName?: string | undefined }): string {
   const about = unit === undefined ? "" : ` I can also answer questions about ${unit.title}, such as parking or Wi-Fi.`;
   if (stage === "request")
-    return `Your ${GUEST_GLOSSARY.bookingRequest} is with ${guestOperatorName(unit?.operatorName)} for review; the details are in the stay details beside the chat.${about}`;
+    return `Your ${GUEST_GLOSSARY.bookingRequest} is with ${guestOperatorName(unit?.operatorName)} for review; you can see it in your stay details.${about}`;
   if (stage === "offer")
-    return `Your ${GUEST_GLOSSARY.conditionalBookingOffer} is in the stay details beside the chat. Review it and accept it there if it suits you.${about}`;
+    return `Your ${GUEST_GLOSSARY.conditionalBookingOffer} is in your stay details. Review it and accept it there if it suits you.${about}`;
   if (stage === "payment")
-    return `Your payment step is in the stay details beside the chat.${about}`;
+    return `Your payment step is in your stay details.${about}`;
   if (stage === "booking")
-    return `Your booking details are in the stay details beside the chat.${about}`;
-  return `Your current details are in the stay details beside the chat.${about}`;
+    return `Your booking is in your stay details.${about}`;
+  return `Everything so far is in your stay details.${about}`;
 }
 
 /** ADR-0006: names the contracting party only where the contract can form. */

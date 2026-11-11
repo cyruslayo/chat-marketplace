@@ -18,11 +18,12 @@ test("AC1: Operator request detail shows human dates, not ISO strings", () => {
 test("AC2: Every Operator status label is plain sentence case", () => {
   assert.match(SERVER, /if \(status === "delivery_failed"\) return \{ label: "Delivery failed"/);
   assert.match(SERVER, /payment_pending: \{ label: "Payment pending"/);
-  assert.match(SERVER, /held: \{ label: "Operator hold"/);
+  // "Operator Hold" is a glossary term (domains/shortlet/CONTEXT.md), so it keeps its capitals.
+  assert.match(SERVER, /held: \{ label: "Operator Hold"/);
   // Failure path: the old title-case forms are gone from the operator status maps.
   assert.doesNotMatch(SERVER, /label: "Delivery Failed"/);
   assert.doesNotMatch(SERVER, /label: "Payment Pending"/);
-  assert.doesNotMatch(SERVER, /label: "Operator Hold"/);
+  assert.doesNotMatch(SERVER, /label: "Operator hold"/);
 });
 
 test("AC3: A second Confirm while the first is in flight is not sent, and the server still refuses a duplicate decision", () => {

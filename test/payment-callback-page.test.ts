@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFile } from "node:fs/promises";
 import { DirectPaystackClient } from "../packages/platform-core/src/payments/index.js";
 import { GUEST_PAYMENT_CALLBACK_COPY } from "../apps/web-agent/src/guest-content.js";
 import { renderPaymentCallbackFailureHtml } from "../apps/local-guest/src/guest-server.js";
@@ -91,6 +92,18 @@ test("AC3: A failed verification that redirects to the thread shows a not-confir
   } finally {
     await fixture.close();
   }
+});
+
+test("AC3: The not-confirmed notice does not outlive a later confirmation", async () => {
+  // A late charge.success can confirm the booking after the callback failed. The browser drops the URL flag on load (a
+  // refresh never re-shows the banner) and removes the banner once the server's journey reaches "confirmed".
+  const source = await readFile(new URL("../apps/local-guest/src/client.ts", import.meta.url), "utf8");
+  assert.match(source, /url\.searchParams\.delete\("payment"\);\s*window\.history\.replaceState\(/);
+  assert.match(source, /if \(journey\.current === "confirmed"\) document\.querySelector\("\[data-payment-notice\]"\)\?\.remove\(\);/);
+  // Failure path: the built bundle the guest loads carries the same behaviour (a stale dist/client.js would not).
+  const bundle = await readFile(new URL("../apps/local-guest/dist/client.js", import.meta.url), "utf8");
+  assert.match(bundle, /searchParams\.delete\("payment"\)/);
+  assert.match(bundle, /\[data-payment-notice\]/);
 });
 
 test("AC4: No reference, token or provider text appears in the page or the logs", async () => {

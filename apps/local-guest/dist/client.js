@@ -9560,8 +9560,8 @@ Known schemas:
     draftReady: "Your Request Draft is ready to review. It has not been submitted.",
     offerInactive: "This Conditional Booking Offer is no longer active. Review the current booking details before continuing.",
     offerAmount: (total, due, deposit) => `The offer's All-In Stay Total is ${total}. The amount due now is ${due}. The refundable security deposit is shown separately as ${deposit}. Review the offer before accepting it.`,
-    confirmedBooking: "Your booking is confirmed. Your reservation details are in the stay details beside the chat.",
-    issuedOffer: "The Accommodation Provider has issued a Conditional Booking Offer. Review it in the stay details beside the chat.",
+    confirmedBooking: "Your booking is confirmed. Your reservation is in your stay details.",
+    issuedOffer: "The Accommodation Provider has issued a Conditional Booking Offer. Review it in your stay details.",
     disclosedRequest: "Request sent. Waiting for the Operator to respond.",
     noCurrentBooking: "You currently have no active booking or pending request."
   });
@@ -9718,7 +9718,7 @@ Known schemas:
     paymentSchedule: "Payment schedule",
     billingPeriod: "Billing Period",
     /** Demo-launch issue 12: says the amount due now is the first Billing Period, not the whole stay (ADR 0092). */
-    firstPeriodOnly: "This is the first Billing Period only. Later Billing Periods are paid separately on their due dates."
+    firstPeriodOnly: "This is the first Billing Period only. Later Billing Periods are paid separately on their due dates; they are not charged automatically."
   });
   var GUEST_DEMO_NOTICE = "Demo: illustrative listings, not live bookings.";
   var GUEST_DEMO_TEST_PAYMENTS = "Payments use Paystack test mode with the published test card. Do not enter real personal data.";
@@ -10148,11 +10148,32 @@ Known schemas:
   }
 
   // apps/local-guest/src/image-layout.ts
+  var IMAGE_SHAPE_HINT = { width: 800, height: 600 };
+  function positive(value) {
+    const parsed = Number(value);
+    return value !== null && Number.isFinite(parsed) && parsed > 0 ? parsed : void 0;
+  }
+  function reserveSpace(image) {
+    const width = positive(image.getAttribute("width"));
+    const height = positive(image.getAttribute("height"));
+    if (width !== void 0 && height !== void 0) return;
+    if (width === void 0 && height === void 0 && image.complete && image.naturalWidth > 0 && image.naturalHeight > 0) {
+      image.setAttribute("width", String(image.naturalWidth));
+      image.setAttribute("height", String(image.naturalHeight));
+      return;
+    }
+    const ratio = IMAGE_SHAPE_HINT.height / IMAGE_SHAPE_HINT.width;
+    if (width !== void 0) image.setAttribute("height", String(Math.round(width * ratio)));
+    else if (height !== void 0) image.setAttribute("width", String(Math.round(height / ratio)));
+    else {
+      image.setAttribute("width", String(IMAGE_SHAPE_HINT.width));
+      image.setAttribute("height", String(IMAGE_SHAPE_HINT.height));
+    }
+  }
   function applyImageLayout(mount) {
     const images = Array.from(mount.querySelectorAll("img"));
     images.forEach((image, index) => {
-      if (!image.hasAttribute("width")) image.setAttribute("width", "800");
-      if (!image.hasAttribute("height")) image.setAttribute("height", "600");
+      reserveSpace(image);
       if (index === 0) {
         image.loading = "eager";
         image.setAttribute("fetchpriority", "high");
@@ -11477,6 +11498,16 @@ Known schemas:
     }
     document.startViewTransition(update);
   }
+  function dropPaymentNoticeFlag() {
+    try {
+      const url = new URL(window.location.href);
+      if (!url.searchParams.has("payment")) return;
+      url.searchParams.delete("payment");
+      window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    } catch {
+    }
+  }
+  dropPaymentNoticeFlag();
   var threadId = getThreadId();
   var shellState = createConversationShellState();
   var activePayload;
@@ -11927,6 +11958,7 @@ Known schemas:
   }
   function renderJourney(journey) {
     if (!journey) return;
+    if (journey.current === "confirmed") document.querySelector("[data-payment-notice]")?.remove();
     const list = document.createElement("ol");
     list.className = "ui-rail";
     let current;

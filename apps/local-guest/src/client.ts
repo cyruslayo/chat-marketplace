@@ -1582,6 +1582,22 @@ function withAgentMarkTransition(update: () => void): void {
   document.startViewTransition(update);
 }
 
+/**
+ * Issue 07 review: the "not confirmed" banner comes from the callback redirect's `payment` flag. Drop the flag from the
+ * address bar once the page has it, so a refresh or a shared link after a later confirmation never shows it again.
+ */
+function dropPaymentNoticeFlag(): void {
+  try {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("payment")) return;
+    url.searchParams.delete("payment");
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  } catch {
+    /* The address bar is a convenience; the server's journey still hides a stale banner. */
+  }
+}
+dropPaymentNoticeFlag();
+
 const threadId = getThreadId();
 let shellState: ConversationShellState = createConversationShellState();
 let activePayload: GuestSurfacePayload | undefined;
@@ -2165,6 +2181,9 @@ function renderSurfaces(surfaces: readonly GuestSurfacePayload[], preserveConver
  */
 function renderJourney(journey: GuestJourney | undefined): void {
   if (!journey) return;
+  // Issue 07 review: a late webhook can confirm the booking after the callback said "not confirmed"; the server's journey
+  // wins, so the stale banner goes once the booking is confirmed.
+  if (journey.current === "confirmed") document.querySelector("[data-payment-notice]")?.remove();
   const list = document.createElement("ol");
   list.className = "ui-rail";
   let current: HTMLElement | undefined;
