@@ -1,6 +1,6 @@
 import type { CommandPrincipal } from "../../../../packages/platform-core/src/index.js";
 import { replacePendingProposal, type AssistantTaskState } from "./assistant-state.js";
-import { pendingProposalAuthorised } from "./assistant-platform.js";
+import { pendingProposalAuthorised, renderPackSurface } from "./assistant-platform.js";
 import type { PendingAssistantAction } from "./pending-actions.js";
 import { AssistantStaleProposalError, PENDING_ACTION_STAGE, retireOwnStages, type AssistantStageHandler, type StageTurnContext } from "./assistant-stage-handler.js";
 import { ContinuousOccupancyError, UnitUnavailableError } from "../../../../domains/shortlet/src/index.js";
@@ -193,7 +193,7 @@ const requestToBookHandler: AssistantStageHandler = {
         surfaces: [
           {
             surfaceId: requestSurfaceId,
-            a2uiMessages: turn.pack.bookingRequestSurface(requestArtifact, requestSurfaceId),
+            a2uiMessages: renderPackSurface(turn.pack, "booking_request", requestArtifact, requestSurfaceId),
           },
         ],
       };
@@ -216,11 +216,11 @@ const requestToBookHandler: AssistantStageHandler = {
         surfaces: [
           {
             surfaceId: requestSurfaceId,
-            a2uiMessages: turn.pack.bookingRequestSurface(requestArtifact, requestSurfaceId),
+            a2uiMessages: renderPackSurface(turn.pack, "booking_request", requestArtifact, requestSurfaceId),
           },
           {
             surfaceId: offerSurfaceId,
-            a2uiMessages: turn.pack.conditionalOfferSurface(offerArtifact, offerSurfaceId),
+            a2uiMessages: renderPackSurface(turn.pack, "conditional_offer", offerArtifact, offerSurfaceId),
           },
         ],
       };
@@ -242,7 +242,7 @@ const requestToBookHandler: AssistantStageHandler = {
         surfaces: [
           {
             surfaceId: requestSurfaceId,
-            a2uiMessages: turn.pack.bookingRequestSurface(requestArtifact, requestSurfaceId),
+            a2uiMessages: renderPackSurface(turn.pack, "booking_request", requestArtifact, requestSurfaceId),
           },
         ],
       };
@@ -303,7 +303,7 @@ const acceptOfferHandler: AssistantStageHandler = {
         surfaces: [
           {
             surfaceId: paymentSurfaceId,
-            a2uiMessages: turn.pack.cardPaymentSurface(paymentArtifact, paymentSurfaceId),
+            a2uiMessages: renderPackSurface(turn.pack, "card_payment", paymentArtifact, paymentSurfaceId),
           },
         ],
       };
@@ -389,11 +389,11 @@ const startCheckoutHandler: AssistantStageHandler = {
         surfaces: [
           {
             surfaceId: paymentSurfaceId,
-            a2uiMessages: turn.pack.cardPaymentSurface(updatedPaymentArtifact, paymentSurfaceId),
+            a2uiMessages: renderPackSurface(turn.pack, "card_payment", updatedPaymentArtifact, paymentSurfaceId),
           },
           {
             surfaceId: bookingSurfaceId,
-            a2uiMessages: turn.pack.bookingContractSurface(contractArtifact, bookingSurfaceId),
+            a2uiMessages: renderPackSurface(turn.pack, "booking_contract", contractArtifact, bookingSurfaceId),
           },
         ],
       };

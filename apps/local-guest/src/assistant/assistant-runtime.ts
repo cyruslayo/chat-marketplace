@@ -22,6 +22,8 @@ import {
   toolsForValidatedIntents,
   toolNamesForValidatedIntents,
   pendingProposalAuthorised,
+  renderPackSurface,
+  scopeContextFor,
   type AssistantClarificationKind,
   type AssistantDomainPack,
   type AssistantTaskSummary,
@@ -695,7 +697,7 @@ export class AssistantRuntime {
     if (surfaceId !== pendingActionSurfaceId(threadId, action.id)) return undefined;
     const pack = this.#packForThread(threadId);
     if (!pack) return undefined;
-    return { surfaceId, a2uiMessages: pack.pendingActionSurface(action, surfaceId) };
+    return { surfaceId, a2uiMessages: renderPackSurface(pack, "pending_action", action, surfaceId) };
   }
 
   getThread(threadId: string): AssistantThreadState {
@@ -1081,8 +1083,7 @@ export class AssistantRuntime {
     const safeUserText = redactSensitiveData(text) as string;
     let scopeFailureOutcome: "quota_refusal" | "guard_failure" | undefined;
     const assessment = text.length > this.#maxInputCharacters ? undefined : await assessScopeSafely(this.#scopeClassifier, safeUserText, {
-      domain: packForScope.id, description: packForScope.scopeDescription ?? packForScope.label,
-      hasShortlist: tx.taskState.shortlist.length > 0, hasSelectedStay: Boolean(tx.taskState.selectedStayRef), hasOffer: Boolean(tx.taskState.currentOfferId),
+      ...scopeContextFor(packForScope, tx.taskState),
       turnContext: this.#turnContext(packForScope),
     }, this.#scopeOuterTimeoutMs, (error) => {
       // A retry failure carries the stage's decisive error; the first failure's outcome stands for refused or skipped retries (ADR 0106 amendment).
@@ -1355,7 +1356,7 @@ export class AssistantRuntime {
             tx.place(PENDING_ACTION_STAGE, surfaceId);
 
             activeStage = "a2ui";
-            const a2uiMessages = candidatePack().pendingActionSurface(action, surfaceId);
+            const a2uiMessages = renderPackSurface(candidatePack(), "pending_action", action, surfaceId);
             tx.addSurface({ surfaceId, a2uiMessages });
           } else if (execution.projectedSurface) {
             const surface = execution.projectedSurface;

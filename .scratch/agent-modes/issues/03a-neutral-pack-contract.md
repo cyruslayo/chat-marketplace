@@ -79,3 +79,63 @@ Per CLAUDE.md "Test scope", run only these:
 - Any commerce change, and any change to the stays prompt text.
 
 ## Comments
+
+### Agent, implementation (Agent modes issue 03a)
+
+Status at this entry: `ready-for-agent`. It is not set to `resolved`, for the two gaps listed under Definition of Done, items 1 and 2.
+
+**Commerce baseline (recorded before the first code change).** `composeSystemInstruction(createCommerceAssistantPack(...))` on the unedited tree: length 766, sha256 `fdfcac01229706caf06956f298d92fbd71dd93b72ac35abbc9456beeb348d8d2`. AC6 asserts both values. `commerce-assistant-pack.ts` is not edited.
+
+**ADR table (step 1, read before code).**
+
+| ADR | Constraint | Where it lands |
+| --- | --- | --- |
+| 0107 decisions 1, 3 | A mode is the pack's static `presentation`, validated at registration; the model never writes it. | `AssistantPackRegistry.register` calls `validateModePresentation` and throws `Assistant domain pack <id> declares an invalid presentation` (no value echoed). Stays declares `GUEST_MODES.stays`. |
+| 0099 decision 4 | Packs declare; the platform consumes. | All new hooks are optional declarations; no new platform import into a pack. |
+| 0099 decision 7 | The interface is shaped against two packs. | Only the stays pack and the fake shop pack exist; the second real pack is slice 6. Not claimed as proven against two real packs. |
+| 0074 | Fail-closed surfaces: an undeclared kind renders nothing and never falls through. | `renderPackSurface`: a pack with `surfaces` reads only that map (`hasOwnProperty`); a missing legacy method returns `[]`. `packAtRisk` is `true` unless the hook returns `false`. |
+| 0104 decisions 1, 5 | Commerce stays off; commerce pack unchanged. | `commerce-assistant-pack.ts` untouched; AC6 hash. |
+| 0106 scope | The classifier verdict stays advisory; facts add input, not authority. | `scopeContextFor` adds `facts`; the classifier merges them into the same minimal JSON. Stays facts repeat the three existing booleans, so the stays JSON is unchanged. |
+| 0075 | Minimal projection; no persistence change. | `parseState` never coerces; nothing persisted. |
+| 0077 | One copy source. | Stays presentation refers to `GUEST_MODES.stays` in `guest-content.ts`; nothing copied. |
+
+Read in full: 0107, 0099, 0104, 0106, 0074. 0075 and 0077 were checked against the spec's table, not re-read in full.
+
+**Files changed.**
+
+- `apps/local-guest/src/assistant/assistant-platform.ts`: five booking renderers optional (`pendingActionSurface`, `bookingRequestSurface`, `conditionalOfferSurface`, `cardPaymentSurface`, `bookingContractSurface`); new optional `presentation`, `surfaces`, `initialState`, `parseState`, `stateSummary`, `scopeFacts`, `atRisk`; `PACK_SURFACE_KINDS`, `renderPackSurface`, `scopeContextFor`, `packAtRisk`; registry validation.
+- `apps/local-guest/src/assistant/scope-classifier.ts`: `ScopeContext.facts` (optional), merged into the classifier's minimal JSON.
+- `apps/local-guest/src/assistant/assistant-runtime.ts`: scope context built by `scopeContextFor`; the two pending-action renders go through `renderPackSurface`.
+- `apps/local-guest/src/assistant/shortlet-stage-handlers.ts`: the seven booking renders go through `renderPackSurface`.
+- `apps/local-guest/src/assistant/shortlet-assistant-pack.ts`: `STAYS_BOOKING_SURFACES` (one set of functions, used by both `surfaces` and the legacy methods); `parseShortletTaskState`; `presentation`, `surfaces`, `initialState`, `parseState`, `stateSummary`, `scopeFacts`, `atRisk`. `SHORTLET_PROMPT_SECTION` is not changed.
+- `test/helpers/fake-domain-pack.ts`: extended `createFakeShopPack` with a valid presentation, `surfaces: {}`, `initialState`, `parseState`, `stateSummary`, `scopeFacts`, `atRisk`; the four booking methods removed.
+- `test/assistant-pack-contract.test.ts` (new): seven tests, one per criterion.
+
+Deviations from the spec:
+- `stateSummary` returns `AssistantTaskSummary | undefined` (undefined for an unparseable state), not a bare `{label, status}`, to match `parseState`'s fail-closed rule.
+- `atRisk` in `packAtRisk` uses `!== false`, so a hook that returns a non-boolean counts as at risk.
+- "Five booking methods" is read as the five renderers in `assistant-platform.ts` lines 173 to 177 (pending action plus the four booking/payment/contract renderers). `unitDetailSurface` stays required.
+
+**Verification (exact commands, counts; all with `env -u LLM_API_KEY`, run in `C:\AI2026\chat-marketplace-03a`).**
+
+1. `npx tsx --test test/assistant-pack-contract.test.ts` before implementation: failed to load (`packAtRisk` not exported). Red as intended.
+2. `npm run check`: exit 0 (root `tsc --noEmit` covers `test/**/*`, plus apps/cloudflare, tsconfig.test.json, tsconfig.tooling.json and the Worker bundle guard).
+3. `npx tsx --test test/assistant-pack-contract.test.ts`: tests 7, pass 7, fail 0.
+4. `npx tsx --test test/assistant-pack-registry.test.ts test/assistant-neutral-preamble.test.ts`: tests 7, pass 7, fail 0.
+5. `npx tsx --test test/assistant-cold-journey.test.ts`: tests 4, pass 4, fail 0 (assistant runtime enabled, cold restore before every event).
+6. `npx tsx --test test/commerce-agent-tools.test.ts test/shortlet-assistant-evals.test.ts`: tests 66, pass 66, fail 0.
+7. Not run, per Test scope: full `npm test` and `npm run test:workers` (batch pre-merge gate).
+
+**Definition of Done (`docs/agents/issue-tracker.md`).**
+
+1. Every criterion has a named test: partly met. Seven tests, one per criterion. AC3's second clause ("a restore that cannot parse its state creates no task") is not tested: no restore path consumes `parseState` yet (03b). AC7 compares output for `pending_action` only. The four booking kinds share the same function references by construction, but no test compares their rendered output, because that needs a full artifact fixture from `test/render-*.test.ts`, and copying it is anti-pattern 4.
+2. Failure paths asserted: met for AC1 (unknown key, over-length string), AC2 (undeclared kind, no legacy fall-through, no-booking pack), AC3 (`null`, array, unknown goal, bad `stayIntent`, bad fake shape), AC5 (absent hook fails closed).
+3. ADRs listed and cited: met (table above).
+4. No unused injected dependency: met, no constructor parameter added.
+5. No invented policy string: met. The only new text is the registration error message.
+6. No credential or identity material in logs: not applicable.
+7. `npm run check` clean: met. Full `npm test` is the per-batch gate (Test scope), not run here.
+
+Status stays `ready-for-agent` until items 1 (AC3 restore clause, AC7 booking-kind outputs) are closed. The owner decides whether to accept these as deferred to 03b or to add an artifact fixture.
+
+**Scope notes.** No persistence change, no CSS or client change, no stays prompt change (`ASSISTANT_SYSTEM_INSTRUCTION` is equal to `composeSystemInstruction(stays)`). No formatter was run. The fake pack now satisfies the registry's presentation check.

@@ -20,13 +20,14 @@ import { unitDetailArtifactFromProjection } from "../../../web/src/unit-detail-a
 import { requestDraftArtifactFromProjection } from "../../../web/src/request-draft-artifact.js";
 import { requestDraftArtifactToA2UI } from "../../../web-agent/src/request-draft-a2ui.js";
 import { extendedStayDraftFacts } from "../../../web-agent/src/extended-stay-presentation.js";
-import { GUEST_ASSISTANT_COPY, GUEST_AMENITY_IDS, GUEST_CHANGE_EXPLANATION, GUEST_FACILITY_COPY, guestAmenityLabel, guestCapabilityReply, type GuestCapabilityStage } from "../../../web-agent/src/guest-content.js";
+import { GUEST_ASSISTANT_COPY, GUEST_AMENITY_IDS, GUEST_CHANGE_EXPLANATION, GUEST_FACILITY_COPY, GUEST_MODES, guestAmenityLabel, guestCapabilityReply, type GuestCapabilityStage } from "../../../web-agent/src/guest-content.js";
 import type { LocalGuestEnvironment } from "../fixture.js";
 import type { AssistantToolDefinition } from "./assistant-model.js";
 import type {
   AssistantStayReference,
   AssistantTaskState,
 } from "./assistant-state.js";
+import { createInitialTaskState } from "./assistant-state.js";
 import type { PendingAssistantAction } from "./pending-actions.js";
 import type { ConciergeIntent, ScopeAssessment } from "./scope-classifier.js";
 import { pendingActionToA2UI } from "./pending-action-a2ui.js";
@@ -1514,6 +1515,30 @@ function sentStageReply(taskState: AssistantTaskState, environment: LocalGuestEn
   return guestCapabilityReply(stage, unit === undefined || unit === null ? undefined : { title: unit.title, operatorName: unit.operator?.name });
 }
 
+/**
+ * Issue 03a: the stays booking renderers, declared once. The pack's `surfaces` map and its legacy methods of the same name both read
+ * these functions, so the two forms render the same A2UI.
+ */
+const STAYS_BOOKING_SURFACES = {
+  booking_request: (artifact: unknown, surfaceId: string) => bookingRequestArtifactToA2UI({ artifact: artifact as never, surfaceId }),
+  conditional_offer: (artifact: unknown, surfaceId: string) => conditionalOfferArtifactToA2UI({ artifact: artifact as never, surfaceId }),
+  card_payment: (artifact: unknown, surfaceId: string) => cardPaymentArtifactToA2UI({ artifact: artifact as never, surfaceId }),
+  booking_contract: (artifact: unknown, surfaceId: string) => bookingContractArtifactToA2UI({ artifact: artifact as never, surfaceId }),
+  pending_action: (artifact: unknown, surfaceId: string) => pendingActionToA2UI({ action: artifact as PendingAssistantAction, surfaceId }) as readonly unknown[],
+} as const;
+
+/** Issue 03a: the stays task state, parsed without coercion. Undefined for any value that is not a stays task state (ADR 0075). */
+function parseShortletTaskState(value: unknown): AssistantTaskState | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  if (!("goal" in value) || !("stayIntent" in value) || !("shortlist" in value)) return undefined;
+  const { goal, stayIntent, shortlist } = value;
+  const goals: readonly unknown[] = [null, "find_stay", "book_stay", "manage_booking"];
+  if (!goals.includes(goal)) return undefined;
+  if (typeof stayIntent !== "object" || stayIntent === null || Array.isArray(stayIntent)) return undefined;
+  if (!Array.isArray(shortlist)) return undefined;
+  return value as AssistantTaskState;
+}
+
 /** The shortlet pack: prompt section, tools and surface projections for the shortlet domain. */
 export function createShortletAssistantPack(environment: LocalGuestEnvironment): AssistantDomainPack {
   return {
@@ -1521,6 +1546,17 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     label: "Stays",
     starterDescription: "Find an inspected apartment in Lagos or Abuja and book it.",
     promptSection: SHORTLET_PROMPT_SECTION,
+    presentation: GUEST_MODES.stays,
+    surfaces: STAYS_BOOKING_SURFACES,
+    initialState: () => createInitialTaskState(),
+    parseState: (value) => parseShortletTaskState(value),
+    stateSummary: (state) => {
+      const parsed = parseShortletTaskState(state);
+      return parsed === undefined ? undefined : shortletTaskSummary(parsed);
+    },
+    scopeFacts: (state) => ({ hasShortlist: state.shortlist.length > 0, hasSelectedStay: Boolean(state.selectedStayRef), hasOffer: Boolean(state.currentOfferId) }),
+    // ADR 0074: the open proposal is at risk when the search no longer holds the stay it names. Issue 03f decides the tier.
+    atRisk: (state) => !proposalStillAuthorised(state.pendingAction, state),
     scopeDescription: "Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.",
     dateClarification: GUEST_ASSISTANT_COPY.datesClarification,
     stayDetailsClarification: GUEST_ASSISTANT_COPY.stayClarification,
@@ -1626,11 +1662,11 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
       const artifact = unitDetailArtifactFromProjection({ unit: unitProjection, checkIn, checkOut, projectionVersion: 1, viewer: environment.guestPrincipal() });
       return unitDetailArtifactToA2UI({ artifact, surfaceId, demo: environment.config.demo === true });
     },
-    pendingActionSurface: (action, surfaceId) => pendingActionToA2UI({ action, surfaceId }) as readonly unknown[],
-    bookingRequestSurface: (artifact, surfaceId) => bookingRequestArtifactToA2UI({ artifact: artifact as never, surfaceId }),
-    conditionalOfferSurface: (artifact, surfaceId) => conditionalOfferArtifactToA2UI({ artifact: artifact as never, surfaceId }),
-    cardPaymentSurface: (artifact, surfaceId) => cardPaymentArtifactToA2UI({ artifact: artifact as never, surfaceId }),
-    bookingContractSurface: (artifact, surfaceId) => bookingContractArtifactToA2UI({ artifact: artifact as never, surfaceId }),
+    pendingActionSurface: STAYS_BOOKING_SURFACES.pending_action,
+    bookingRequestSurface: STAYS_BOOKING_SURFACES.booking_request,
+    conditionalOfferSurface: STAYS_BOOKING_SURFACES.conditional_offer,
+    cardPaymentSurface: STAYS_BOOKING_SURFACES.card_payment,
+    bookingContractSurface: STAYS_BOOKING_SURFACES.booking_contract,
     revalidateProposal: (action) => {
       if (action.type !== "request_to_book") return { ok: true };
       const refs = action.authoritativeReferences;

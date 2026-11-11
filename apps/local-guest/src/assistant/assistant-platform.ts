@@ -1,11 +1,12 @@
 import type { AssistantToolDefinition, AssistantToolResult } from "./assistant-model.js";
 import type { AssistantStageHandler } from "./assistant-stage-handler.js";
-import type { ConciergeIntent, ScopeAssessment } from "./scope-classifier.js";
+import type { ConciergeIntent, ScopeAssessment, ScopeContext } from "./scope-classifier.js";
 import type { AssistantTaskState, AssistantTurnSurface } from "./assistant-state.js";
 import type { PendingAssistantAction } from "./pending-actions.js";
 import type { LocalGuestEnvironment } from "../fixture.js";
 import type { CommandPrincipal } from "../../../../packages/platform-core/src/envelope.js";
 import { MAX_PLANNER_TOOL_ROUNDS } from "../turn-budget.js";
+import { validateModePresentation, type ModePresentation } from "../../../web-agent/src/guest-content.js";
 
 /**
  * The platform half of the concierge agent (ADR 0099: the platform owns the Agent; a pack
@@ -170,11 +171,35 @@ export interface AssistantDomainPack {
   /** Projections the runtime renders for this pack's authoritative results. */
   discoverySurface(artifact: unknown, surfaceId: string): readonly unknown[];
   unitDetailSurface(input: { readonly unitId: string; readonly checkIn: string; readonly checkOut: string; readonly surfaceId: string }): readonly unknown[];
-  pendingActionSurface(action: PendingAssistantAction, surfaceId: string): readonly unknown[];
-  bookingRequestSurface(artifact: unknown, surfaceId: string): readonly unknown[];
-  conditionalOfferSurface(artifact: unknown, surfaceId: string): readonly unknown[];
-  cardPaymentSurface(artifact: unknown, surfaceId: string): readonly unknown[];
-  bookingContractSurface(artifact: unknown, surfaceId: string): readonly unknown[];
+  /**
+   * The five booking-stage renderers are optional (issue 03a). Read them through `renderPackSurface`: a pack that declares `surfaces`
+   * gets only those, and a pack without them and without the legacy method renders nothing.
+   */
+  pendingActionSurface?(action: PendingAssistantAction, surfaceId: string): readonly unknown[];
+  bookingRequestSurface?(artifact: unknown, surfaceId: string): readonly unknown[];
+  conditionalOfferSurface?(artifact: unknown, surfaceId: string): readonly unknown[];
+  cardPaymentSurface?(artifact: unknown, surfaceId: string): readonly unknown[];
+  bookingContractSurface?(artifact: unknown, surfaceId: string): readonly unknown[];
+  /**
+   * ADR 0107 decisions 1 and 3 (issue 03a): the mode this pack presents as. Validated at registration with `validateModePresentation`;
+   * the model never writes it. Undefined registers the pack without a presentation.
+   */
+  readonly presentation?: ModePresentation;
+  /**
+   * ADR 0074 / ADR 0099 (issue 03a): renderers keyed by a stage kind the pack declares (see `PACK_SURFACE_KINDS`). A pack that declares
+   * this map gets only these renderers; an undeclared kind renders nothing and never falls through to a legacy method.
+   */
+  readonly surfaces?: Readonly<Record<string, (artifact: unknown, surfaceId: string) => readonly unknown[]>>;
+  /** Issue 03a (ADR 0099): the pack's own initial task state. Pack-owned; the platform never reads its fields. */
+  initialState?(): unknown;
+  /** Issue 03a: parses a restored state. Returns undefined for any unknown shape; it never coerces (ADR 0075 minimal projection). */
+  parseState?(value: unknown): unknown;
+  /** Issue 03a: the task rail summary of a pack-owned state. Undefined when the state does not parse. */
+  stateSummary?(state: unknown): AssistantTaskSummary | undefined;
+  /** Issue 03a (ADR 0106 scope): facts about the stays-shaped task state the classifier may see. They add classifier input, not authority. */
+  scopeFacts?(state: AssistantTaskState): Readonly<Record<string, boolean>>;
+  /** Issue 03a (ADR 0074): whether the task state is at risk. Absent means at risk (fail closed). Issue 03f consumes it. */
+  atRisk?(state: AssistantTaskState): boolean;
   /** Validates references and renders a reply from current server-owned operation data. */
   renderReply?(plan: AssistantReplyPlan | undefined, results: readonly AssistantToolResult[], latestUserText: string, taskState?: AssistantTaskState): string;
   /** A control outcome the pack's current results imply for a reply (for example no current booking). Undefined keeps the runtime's outcome. */
@@ -211,6 +236,52 @@ export interface AssistantDomainPack {
 export function pendingProposalAuthorised(pack: AssistantDomainPack, state: AssistantTaskState): boolean {
   if (!state.pendingAction) return true;
   return pack.proposalStillAuthorised?.(state.pendingAction, state) === true;
+}
+
+/** Issue 03a: the stage kinds a pack's booking renderers are keyed by. The stays pack declares each of them in `surfaces`. */
+export const PACK_SURFACE_KINDS = ["booking_request", "conditional_offer", "card_payment", "booking_contract", "pending_action"] as const;
+export type PackSurfaceKind = typeof PACK_SURFACE_KINDS[number];
+
+/**
+ * Issue 03a (ADR 0074, ADR 0099): the A2UI for one booking stage kind. A pack that declares `surfaces` is read only through that map,
+ * and an undeclared kind renders nothing (fail closed). A pack without `surfaces` keeps using its legacy method, and a missing legacy
+ * method also renders nothing.
+ */
+export function renderPackSurface(pack: AssistantDomainPack, kind: PackSurfaceKind, artifact: unknown, surfaceId: string): readonly unknown[] {
+  if (pack.surfaces !== undefined) {
+    if (!Object.prototype.hasOwnProperty.call(pack.surfaces, kind)) return [];
+    return pack.surfaces[kind]?.(artifact, surfaceId) ?? [];
+  }
+  switch (kind) {
+    case "booking_request": return pack.bookingRequestSurface?.(artifact, surfaceId) ?? [];
+    case "conditional_offer": return pack.conditionalOfferSurface?.(artifact, surfaceId) ?? [];
+    case "card_payment": return pack.cardPaymentSurface?.(artifact, surfaceId) ?? [];
+    case "booking_contract": return pack.bookingContractSurface?.(artifact, surfaceId) ?? [];
+    case "pending_action": return pack.pendingActionSurface?.(artifact as PendingAssistantAction, surfaceId) ?? [];
+  }
+}
+
+/**
+ * Issue 03a (ADR 0106 scope, ADR 0099): the classifier's view of the task state. The three stays booleans are always supplied; a pack
+ * that declares `scopeFacts` adds its own facts. Facts add classifier input only and grant no authority.
+ */
+export function scopeContextFor(pack: AssistantDomainPack, taskState: AssistantTaskState): Omit<ScopeContext, "turnContext"> {
+  const base = {
+    domain: pack.id,
+    description: pack.scopeDescription ?? pack.label,
+    hasShortlist: taskState.shortlist.length > 0,
+    hasSelectedStay: Boolean(taskState.selectedStayRef),
+    hasOffer: Boolean(taskState.currentOfferId),
+  };
+  const facts = pack.scopeFacts?.(taskState);
+  return facts === undefined ? base : { ...base, facts };
+}
+
+/**
+ * Issue 03a (ADR 0074): whether a pack's task state is at risk. A pack without the `atRisk` hook is at risk (fail closed).
+ */
+export function packAtRisk(pack: AssistantDomainPack, state: AssistantTaskState): boolean {
+  return pack.atRisk ? pack.atRisk(state) !== false : true;
 }
 
 /** Returns only tools declared for both validated intents and the pack's current state. */
@@ -269,6 +340,10 @@ export class AssistantPackRegistry {
   #activeId: string | undefined;
 
   register(pack: AssistantDomainPack): void {
+    // ADR 0107 decision 3: a presentation is validated once, here. The error names the pack and never echoes the value.
+    if (pack.presentation !== undefined && validateModePresentation(pack.presentation) === undefined) {
+      throw new Error(`Assistant domain pack ${pack.id} declares an invalid presentation`);
+    }
     this.#packs.set(pack.id, pack);
     this.#activeId ??= pack.id;
   }
