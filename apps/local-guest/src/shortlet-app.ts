@@ -783,7 +783,7 @@ export class LocalGuestApp {
   readonly #modelCallBudget: ModelCallBudget | null;
   readonly #paystackCheckoutTimeoutMs: number;
   readonly #onCardCheckoutFailed: ((event: CardCheckoutFailedEvent) => void) | null;
-  /** ADR 0107: the composition root's default Agent Mode. Stays for every host today; not read from task state (one pack). */
+  /** ADR 0107: the composition root's default Agent Mode, used when the active task presents no mode (issue 03c). */
   readonly #defaultMode: ModePresentation = GUEST_MODES.stays;
 
   constructor(
@@ -2097,9 +2097,18 @@ export class LocalGuestApp {
       surfaces: this.#withWaiting(thread, this.#withOpenProposalCard(threadId, normalized.surfaces)),
       ...(journey === undefined ? {} : { journey }),
       ...(criteria === undefined ? {} : { criteria }),
-      mode: this.#defaultMode,
+      mode: this.#modeFor(threadId),
       ...(this.#assistantRuntime?.hasThread(threadId) ? { tasks: this.#assistantRuntime.getTaskRail(threadId), verticals: this.#verticals() } : {}),
     };
+  }
+
+  /**
+   * ADR 0107 decision 2 (issue 03c): the mode the thread's active task presents as, derived on the server from that task's pack.
+   * The default mode when the thread has no active task, its domain is not registered, or its pack declares no presentation. A
+   * mode sent by the client is never read here.
+   */
+  #modeFor(threadId: string): ModePresentation {
+    return this.#assistantRuntime?.activePresentation(threadId) ?? this.#defaultMode;
   }
 
   /**
@@ -2110,7 +2119,7 @@ export class LocalGuestApp {
     if (!result.ok) return result;
     // ADR 0107: every successful response carries the mode, on the assistant and non-assistant paths alike. Set before any
     // early return below, so a thread missing from the map still returns it.
-    const mode = this.#defaultMode;
+    const mode = this.#modeFor(threadId);
     const thread = this.#threads.get(threadId);
     if (!thread) return { ...result, mode };
     // Issue 03a AC1 applies to assistant responses too: a chip edit must return the strip it just changed.

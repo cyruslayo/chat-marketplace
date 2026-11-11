@@ -428,6 +428,16 @@
   .ui-action-bar > * { min-width: 0; }
   .ui-action-bar .ui-button { flex: 1 1 12rem; }
 
+  /* Agent Mode tokens (ADR 0107 decision 4, issue 03c): one block per registered mode id, scoped by html[data-mode]. A mode changes
+     accents only. The stays values reference the colour roles above, so each theme (light, forced dark, system dark) resolves them
+     from its own roles. Components read --mode-* tokens from issue 03g; test-only token blocks live under test/fixtures, never here. */
+  :root[data-mode="stays"] {
+    --mode-accent: var(--color-action);
+    --mode-accent-subtle: var(--color-action-subtle);
+    --mode-on-accent: var(--color-on-action);
+    --mode-tint: var(--color-accent-subtle);
+  }
+
   /* Guest UI kit (guest-ui-consistency): the same components on every screen, chat workspace and standalone page. */
   .ui-appbar { display: flex; align-items: center; gap: var(--space-3); min-block-size: 4rem; padding: var(--space-2) var(--layout-gutter-mobile); border-block-end: 1px solid var(--color-border-subtle); background: var(--color-surface); }
   .ui-appbar__brand { display: inline-flex; align-items: center; min-block-size: var(--control-min-target); color: var(--color-text); font-family: var(--font-display); font-size: 1.25rem; font-weight: 600; letter-spacing: -0.01em; text-decoration: none; }

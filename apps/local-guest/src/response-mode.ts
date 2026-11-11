@@ -14,3 +14,13 @@ export function assertValidResponseMode(value: unknown): void {
 export function readResponseMode(value: unknown): ModePresentation | undefined {
   return validateModePresentation(value);
 }
+
+/**
+ * Issue 03c (ADR 0107 decisions 2 and 6): writes the response's mode id to the document's data-mode, and only from a validated
+ * presentation. An absent or malformed mode leaves the attribute as it is. The client never sets the mode from a user action.
+ */
+export function applyResponseModeTo(root: { readonly dataset: Record<string, string | undefined> }, value: unknown): void {
+  const mode = readResponseMode(value);
+  if (mode === undefined || root.dataset.mode === mode.id) return;
+  root.dataset.mode = mode.id;
+}
