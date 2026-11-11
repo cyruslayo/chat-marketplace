@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { datedFixture, LIVE_LIKE_CLOCK, restartedDatedApp, scriptedPlanner, type DatedFixture } from "./helpers/guest-date-fixtures.js";
-import { SCRIPT, STAY_TEXT, successOf } from "./helpers/assistant-cold-journey-harness.js";
+import { SCRIPT, STAY_TEXT, successOf, tap } from "./helpers/assistant-cold-journey-harness.js";
 import { createFakeShopPack } from "./helpers/fake-domain-pack.js";
 import { TASK_START_EVENT, TASK_SWITCH_EVENT, type AssistantDomainPack } from "../apps/local-guest/src/assistant/assistant-platform.js";
 import type { AssistantTaskRailEntry, TaskRestoreRefusal } from "../apps/local-guest/src/assistant/assistant-runtime.js";
@@ -123,7 +123,7 @@ test("AC4: A cold restore keeps the persisted taskId unchanged; it does not mint
   } finally { f.close(); }
 });
 
-test("AC5: A stored activeTaskId that is not in tasks is refused: the restore returns false and no task is created (fail closed).", async () => {
+test("AC5: A stored activeTaskId that is not in tasks is ignored: no task is created, and the stays progress is restored as a legacy blob is (owner decision, 12 Nov 2026).", async () => {
   const f = openFixture();
   try {
     await startShop(f, THREAD);
@@ -132,12 +132,13 @@ test("AC5: A stored activeTaskId that is not in tasks is refused: the restore re
 
     const restored = coldApp(f, THREAD);
     assert.equal(restored.runtime.taskListRefusal(tasks, "task-missing"), "INVALID_TASK_LIST", "the list names no active task");
-    assert.equal(restored.runtime.hasThread(THREAD), false, "the thread is not restored");
+    // This shop-only thread holds no stays progress, so it restores as a legacy blob without stays context does: not at all.
+    assert.equal(restored.runtime.hasThread(THREAD), false, "no partial restore of the list");
     assert.deepEqual(restored.runtime.getTaskRail(THREAD), [], "no task is created");
   } finally { f.close(); }
 });
 
-test("AC6: A stored task whose domain is not registered is refused with UNKNOWN_DOMAIN, and the thread is not restored with it.", async () => {
+test("AC6: A stored task whose domain is not registered is ignored with UNKNOWN_DOMAIN: no unregistered task is created (owner decision, 12 Nov 2026).", async () => {
   const f = openFixture();
   try {
     await startShop(f, THREAD);
@@ -146,7 +147,7 @@ test("AC6: A stored task whose domain is not registered is refused with UNKNOWN_
     // The restart composes no shop pack, so the shop task's domain is unregistered on this host.
     const restored = coldApp(f, THREAD, []);
     assert.equal(restored.runtime.taskListRefusal(tasks, activeTaskId), "UNKNOWN_DOMAIN");
-    assert.equal(restored.runtime.hasThread(THREAD), false, "the thread is not restored with the unregistered task");
+    assert.equal(restored.runtime.hasThread(THREAD), false, "no partial restore of the list");
     assert.deepEqual(restored.runtime.getTaskRail(THREAD), []);
   } finally { f.close(); }
 });
@@ -198,4 +199,46 @@ test("a restore that cannot parse its state creates no task", async () => {
     assert.equal(restored.runtime.hasThread(THREAD), false, "the thread is not restored");
     assert.deepEqual(restored.runtime.getTaskRail(THREAD), [], "no task is created");
   } finally { f.close(); }
+});
+
+// Owner decision (12 Nov 2026): an invalid persisted task list is ignored and the thread restores as a legacy blob does. The stays
+// progress (search, shortlist, unit view) survives the cold restore, no unknown or invalid task is created, and one closed
+// diagnostic records the refusal (ADR 0075: no ids, text or tokens in it).
+const INVALID_LISTS: readonly { readonly label: string; readonly reason: string; readonly mutate: (projection: Record<string, unknown>) => void }[] = [
+  { label: "no active task", reason: "INVALID_TASK_LIST", mutate: (projection) => { projection.activeTaskId = "task-missing"; } },
+  { label: "a repeated domain", reason: "INVALID_TASK_LIST", mutate: (projection) => { projection.tasks = [{ taskId: "task-1", domain: "shortlet" }, { taskId: "task-dup", domain: "shortlet" }]; } },
+  { label: "an unregistered domain", reason: "UNKNOWN_DOMAIN", mutate: (projection) => { projection.tasks = [{ taskId: "task-1", domain: "shortlet" }, { taskId: "task-ghost", domain: "ghost" }]; } },
+];
+
+test("an invalid persisted task list leaves the stays progress intact after a cold restore, creates no task, and records one closed diagnostic", async () => {
+  const f = openFixture();
+  const events: object[] = [];
+  const telemetry = f.environment.telemetry as { track(event: object): void };
+  const originalTrack = telemetry.track.bind(telemetry);
+  telemetry.track = (event: object) => { events.push(event); originalTrack(event); };
+  try {
+    for (const [index, invalid] of INVALID_LISTS.entries()) {
+      const threadId = `g-b03b010${index + 1}`;
+      const search = successOf(await f.app.handleTurn(threadId, STAY_TEXT), `search (${invalid.label})`);
+      rewriteStored(f, threadId, invalid.mutate);
+      events.length = 0;
+
+      const restored = coldApp(f, threadId);
+      const rail = restored.runtime.getTaskRail(threadId);
+      assert.deepEqual(rail.map((entry) => [entry.taskId, entry.domain, entry.active]), [["task-1", "shortlet", true]], `${invalid.label}: only the stays task is restored, active`);
+      assert.ok((restored.runtime.getThread(threadId).taskState.shortlist.length ?? 0) > 0, `${invalid.label}: the shortlist survives the restore`);
+
+      const refusals = events.filter((event) => (event as { type?: unknown }).type === "assistant.task.restore.refused.v1");
+      assert.deepEqual(refusals.map((event) => (event as { reason?: unknown }).reason), [invalid.reason], `${invalid.label}: one closed diagnostic with the closed reason`);
+      const diagnostic = JSON.stringify(refusals);
+      for (const forbidden of [threadId, "task-missing", "task-dup", "task-ghost", STAY_TEXT]) assert.equal(diagnostic.includes(forbidden), false, `${invalid.label}: the diagnostic carries no ids or text`);
+
+      // The guest keeps going after the cold restore: the search's unit view still opens (cold restore before the event).
+      const detail = await tap(f, threadId, search.surfaces[0]!, `View after ${invalid.label}`);
+      assert.match(detail.surfaces[0]!.surfaceId, /:unit:detail:/, `${invalid.label}: the stays progress still answers a guest event`);
+    }
+  } finally {
+    telemetry.track = originalTrack;
+    f.close();
+  }
 });

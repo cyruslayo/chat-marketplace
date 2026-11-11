@@ -770,6 +770,22 @@ export class AssistantRuntime {
     return undefined;
   }
 
+  /**
+   * Issue 03b (owner decision, 12 Nov 2026): taskListRefusal, plus one closed diagnostic when the list is refused. The event carries the
+   * closed reason only: no ids, no text, no tokens (ADR 0075).
+   */
+  checkPersistedTaskList(tasks: readonly PersistedAssistantTask[], activeTaskId: string): TaskRestoreRefusal | undefined {
+    const refusal = this.taskListRefusal(tasks, activeTaskId);
+    if (refusal !== undefined) {
+      try {
+        this.#environment.telemetry.track({ type: "assistant.task.restore.refused.v1", reason: refusal });
+      } catch {
+        // Telemetry must never change the restore.
+      }
+    }
+    return refusal;
+  }
+
   /** Issue 03b (ADR 0106): the thread's task ids and domains as the durable projection stores them, or undefined without a runtime thread. */
   persistedTasksFor(threadId: string): { readonly activeTaskId: string; readonly tasks: readonly PersistedAssistantTask[] } | undefined {
     const thread = this.#threads.get(threadId);
@@ -783,9 +799,11 @@ export class AssistantRuntime {
     if (this.threadBusy(threadId)) return false;
     const principal = this.#environment.guestPrincipal();
     if (!threadId || input.principalId !== principal.id || input.tenantId !== this.#environment.config.tenantId || principal.tenantId !== input.tenantId) return false;
-    // Issue 03b (ADR 0075, fail closed): the persisted task list is checked whole before any state changes, so a refused list creates no task.
-    const persisted = input.tasks ?? [{ taskId: INITIAL_TASK_ID, domain: STAYS_DOMAIN }];
-    const activeTaskId = input.activeTaskId ?? INITIAL_TASK_ID;
+    // Issue 03b (owner decision, 12 Nov 2026): an invalid persisted list is ignored, never applied in part. The thread then restores as a
+    // legacy blob does: one stays task (task-1) that takes the stays state, so the stays progress survives. The refusal is recorded once.
+    const listIsUsable = input.tasks !== undefined && this.checkPersistedTaskList(input.tasks, input.activeTaskId ?? INITIAL_TASK_ID) === undefined;
+    const persisted = listIsUsable && input.tasks !== undefined ? input.tasks : [{ taskId: INITIAL_TASK_ID, domain: STAYS_DOMAIN }];
+    const activeTaskId = listIsUsable ? (input.activeTaskId ?? INITIAL_TASK_ID) : INITIAL_TASK_ID;
     if (this.taskListRefusal(persisted, activeTaskId) !== undefined) return false;
     const thread = this.getThread(threadId);
     // Re-keyed, never re-minted: each persisted id is kept. The stays task takes the restored state; any other task starts from its

@@ -3296,7 +3296,8 @@ export class LocalGuestApp {
     // Issue 03b (ADR 0106, ADR 0107 decision 11): a thread with no stays context restores its persisted task list (for example a shop
     // task started before any stays search). A legacy thread with neither stays context nor a task list is not restored, as before.
     if (!context) {
-      if (thread.assistantTasks) {
+      // An invalid list is ignored (owner decision, 12 Nov 2026): with no stays progress it restores nothing, as a legacy blob does.
+      if (thread.assistantTasks && runtime.checkPersistedTaskList(thread.assistantTasks.tasks, thread.assistantTasks.activeTaskId) === undefined) {
         runtime.restoreShortletState(threadId, {
           principalId: this.#environment.guestPrincipal().id,
           tenantId: this.#environment.config.tenantId,

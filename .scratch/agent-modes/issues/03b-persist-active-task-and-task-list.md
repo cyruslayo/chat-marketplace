@@ -1,6 +1,6 @@
 # Persist the active task and the task list across a cold restore
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 03a (pack-owned `initialState` is used for a restored non-stays task). Owner release as in 03a (ADR 0107 "Settled", 8 Nov 2026).
 Requested: 10 Nov 2026
@@ -25,7 +25,7 @@ The projection is stored in `guest_threads.thread_json` (`domains/shortlet/src/g
 1. **Projection fields.** Add optional `activeTaskId?: string` and `tasks?: readonly { taskId: string; domain: string }[]` to `GuestPersistentProjection`. Ids and domains only: no task state, no timeline, no text. Parse them fail closed: a malformed list rejects the projection, as an invalid projection is rejected today.
 2. **Write.** `#projectionFor` writes both fields from the thread's task list.
 3. **Legacy blobs.** A stored blob with neither field restores as one task with domain `shortlet` (the stays pack id, `shortlet-assistant-pack.ts:1520`), taking the existing restore path unchanged.
-4. **Re-key, never re-mint.** `restoreShortletState` accepts the persisted `activeTaskId` and `tasks`. The persisted ids are kept as they are. A task whose `domain` is not registered is refused with the existing `UNKNOWN_DOMAIN` path. An `activeTaskId` that is not in `tasks` is refused and creates no task (fail closed).
+4. **Re-key, never re-mint.** `restoreShortletState` accepts the persisted `activeTaskId` and `tasks`. The persisted ids are kept as they are. An invalid list (no active task, a repeated id or domain, a task whose `domain` is not registered, a non-stays pack whose initial state does not parse, or a list over its bounds) is ignored as a whole and never applied in part: the thread restores as a legacy blob does, one stays task (`task-1`) taking the stays progress. No unknown or invalid task is created (fail closed). The refusal is recorded as one closed diagnostic, `assistant.task.restore.refused.v1` with a closed `reason` (no ids, text or tokens; ADR 0075). Owner decision, 12 Nov 2026, replacing the earlier whole-thread refusal.
 5. **Non-active tasks restore identity only.** A restored non-active task starts from the pack's `initialState()` (03a). This is a stated limit: per-task state persistence arrives with lanes (03d). Record it in Comments.
 6. **Guard unchanged.** A client event naming a task id from another thread keeps returning `UNKNOWN_TASK` (`assistant-runtime.ts:557`).
 
@@ -50,8 +50,8 @@ Each is its own `test()` in `test/assistant-task-persistence.test.ts`.
 2. With the fake shop task (`createFakeShopPack`) active, a cold restore (new `LocalGuestApp` over the same store) leaves the shop task active.
 3. A legacy stored blob with neither field restores to one `shortlet` task, active.
 4. A cold restore keeps the persisted `taskId` unchanged; it does not mint a new id.
-5. A stored `activeTaskId` that is not in `tasks` is refused: the restore returns `false` and no task is created (fail closed).
-6. A stored task whose domain is not registered is refused with `UNKNOWN_DOMAIN`, and the thread is not restored with it.
+5. A stored `activeTaskId` that is not in `tasks` is ignored (owner decision, 12 Nov 2026): no task is created, and the stays progress of the thread is restored as a legacy blob is (see the stays-progress test in `test/assistant-task-persistence.test.ts`).
+6. A stored task whose domain is not registered is ignored with `UNKNOWN_DOMAIN` (recorded as the diagnostic reason): no unregistered task is created, and the stays progress is kept (owner decision, 12 Nov 2026).
 7. A malformed `tasks` list (non-string id, extra key, array instead of object) rejects the projection, as an invalid projection is rejected today.
 8. A client `platform.task.switch` naming a task id from another thread returns `UNKNOWN_TASK` after a cold restore.
 
@@ -92,7 +92,7 @@ Status at this entry: `ready-for-agent`. It is not set to `resolved`: Definition
 | 0107 decision 11 and correction 1 | Restore by `activeTaskId` is the target; persisted ids are the first half. | Ids and domains persisted (AC1); the lane (03d) is not built here. |
 | 0075, 0093 | Minimal projection; no task state, timeline or text in the store. | `parsePersistedTaskList` accepts only `taskId` and `domain` (AC1, AC7). |
 | 0099 decision 4 | The platform owns threads and tasks. | Task list stays in the platform thread state; store location unchanged (0101). |
-| 0074 | Fail-closed proposals and ids. | A refused list creates no task and no thread (AC5, AC6, parse-gate test). |
+| 0074 | Fail-closed proposals and ids. | An invalid list creates no task and is ignored as a whole; the stays progress is kept (AC5, AC6, stays-progress test). |
 
 **Files changed.**
 
@@ -133,8 +133,32 @@ Not touched: `commerce-assistant-pack.ts`, `apps/local-guest/dist/*`, `_headers`
 **Deviations and open points (for the owner).**
 
 - Non-stays task state. The restore does not store the pack's `initialState()`. It checks it with the pack's `parseState` (the cannot-parse gate) and stores `createInitialTaskState()`, because `AssistantTask.state` is the platform's stays-shaped state until per-task state arrives with lanes (03d). The shop fake pack's `{ items: [] }` is therefore validated, not stored.
-- A refused restore resets the assistant side of the thread. Per the spec ("the thread is not restored with it"), an unregistered domain (for example commerce, when `COMMERCE_ENABLED` is off) makes `restoreShortletState` return false, and the thread's stays state is not restored either. The next save then writes the runtime's default list. The guest timeline is still restored. Please confirm this is the intended fail-closed behaviour, or ask for a separate "task parked" state.
+- SUPERSEDED by the owner decision of 12 Nov 2026 (see the last entry): a refused list is now ignored and the stays progress is kept. The text below describes the earlier whole-thread refusal, which no longer applies. A refused restore resets the assistant side of the thread. Per the spec ("the thread is not restored with it"), an unregistered domain (for example commerce, when `COMMERCE_ENABLED` is off) makes `restoreShortletState` return false, and the thread's stays state is not restored either. The next save then writes the runtime's default list. The guest timeline is still restored. Please confirm this is the intended fail-closed behaviour, or ask for a separate "task parked" state.
 - A thread with no stays context but a persisted list now restores that list (a shop task started before any stays search). A legacy thread with neither is unchanged. This widens which threads the runtime restores. The 23-file sweep passed, but it is the one behaviour change outside the spec's list.
 - `restoreShortletState` keeps its `boolean` return (AC5 says "returns false"). The closed reason comes from `taskListRefusal`, which the tests call.
 
 **Scope notes.** No formatter was run. No file under `apps/local-guest/dist/` or `_headers` changed. Nothing was pushed or merged.
+
+### Owner decision, 12 Nov 2026: an invalid persisted task list is ignored (supersedes Deviations, point 1)
+
+The owner decided that an invalid persisted task list must not refuse the thread. The list alone is ignored, and the thread restores as a legacy blob does: one stays task (`task-1`) that takes the stays progress (search, shortlist, unit view, request, offer).
+
+- **Scope of "invalid".** No active task; a repeated id or domain; a task whose domain is not registered; a non-stays pack whose initial state does not parse under its own `parseState`; a list over its bounds (parsing rejects a malformed list before this point, as before).
+- **Behaviour.** `restoreShortletState` checks the list once, with `checkPersistedTaskList`. An invalid list is never applied in part. The restore then uses the legacy single stays task. No unknown or invalid task is created. Forged, unknown or superseded ids still fail closed (`STALE_SURFACE`, `ARTIFACT_MISMATCH`; the forged contact-surface test in `test/assistant-cold-journey.test.ts` covers this path). A thread with no stays progress and an invalid list is not restored, as a legacy blob with no stays context is not.
+- **Diagnostic.** One closed event per refusal, through the telemetry the runtime already uses for `assistant.control.outcome.v1`: `{ type: "assistant.task.restore.refused.v1", reason }`. `reason` is one of `INVALID_TASK_LIST`, `UNKNOWN_DOMAIN`, `UNPARSEABLE_STATE` (the closed enum `TaskRestoreRefusal`). The event carries no ids, text or tokens (ADR 0075). A failing telemetry sink never changes the restore.
+- **Tests first.** New test `an invalid persisted task list leaves the stays progress intact after a cold restore, creates no task, and records one closed diagnostic` runs three invalid lists (no active task, repeated domain, unregistered domain). Each runs with the assistant enabled, a cold restore before every event, the 27 Oct 2026 clock, and a guest with no seeded phone or email. It asserts: the stays task is the only restored task; the shortlist survives; the diagnostic has the expected reason and no ids or text; and a cold `View` on the search result still opens the unit detail. Run before the change: 9 pass, 1 fail (the new test: the whole thread was refused). After the change: 10 of 10 pass. The first run after the change failed only on a missing `tap` import in the test file, which was fixed.
+- **Existing tests updated.** AC5 and AC6 were reworded to the amended criteria (ignored, not refused). Their shop-only fixtures hold no stays progress, so they still assert no partial restore and no task. The cannot-parse test and the rest are unchanged.
+- **Issue text amended.** Step 4, acceptance criteria 5 and 6, the ADR table row for 0074, and the superseded deviation note above.
+- **Basis for the size bounds.** ADR 0106 (resource controls, amended 27 Oct 2026) allows additional size limits as documented configurable engineering settings. The bounds in `parsePersistedTaskList` (at most 32 tasks; ids and domains up to 120 characters) are those settings. They are module constants, not yet injectable options. This closes the DoD item 5 gap I recorded at 731451d.
+
+**Verification for this decision (`env -u LLM_API_KEY`, worktree `C:\AI2026\chat-marketplace-03b`).**
+
+1. `npm run check`: exit 0 after the change.
+2. `npx tsx --test test/assistant-task-persistence.test.ts`: tests 10, pass 10, fail 0.
+3. `npx tsx --test test/assistant-pack-contract.test.ts`: tests 8, pass 8, fail 0.
+4. `npx tsx --test test/assistant-cold-journey.test.ts`: tests 4, pass 4, fail 0.
+5. `npx tsx --test test/assistant-runtime-boundary.test.ts`: tests 5, pass 5, fail 0.
+6. `npx tsx --test test/assistant-persistent-continuity.test.ts test/assistant-pending-action-restore.test.ts`: tests 13, pass 13, fail 0.
+7. Not run: full `npm test` and full `npm run test:workers` (per-batch gate, Test scope). The earlier data-migration Worker spec was not rerun: the change does not touch Worker code, and that spec passed 29 of 29 solo on the previous commit.
+
+**Definition of Done, after this decision.** Items 1 to 6 are met (item 5 as above). Item 7 is met for `npm run check` and the per-issue tests. `npm test` passes: not run, because it is the once-per-batch pre-merge gate under Test scope, and the owner asked for that exception to be noted. Status is set to `resolved` on that basis. The batch gate must still run before merge to main.
