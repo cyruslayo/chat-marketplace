@@ -10,7 +10,7 @@ import { GUEST_MODES } from "../apps/web-agent/src/guest-content.js";
 import { contrastRatio } from "./helpers/landing-tokens.js";
 import { createFakeShopPack } from "./helpers/fake-domain-pack.js";
 import { modeTokens, MODE_TOKEN_NAMES, resolveToken, themeColors, type ModeTheme } from "./helpers/mode-tokens.js";
-import { coldModeApp, coldModeTurn, modeScriptModel } from "./helpers/mode-follows-task-harness.js";
+import { coldModeApp, coldModeTurn, modeScriptModel, rewriteStoredProjection, type ColdModeApp } from "./helpers/mode-follows-task-harness.js";
 import { taskRailModel } from "./helpers/assistant-task-rail.js";
 import { STAY_TEXT } from "./helpers/assistant-cold-journey-harness.js";
 import { restartFixture } from "./helpers/guest-restart.js";
@@ -173,7 +173,79 @@ test("AC8: a mode switch does not change #active-workspace's data-mode, which st
   assert.doesNotMatch(openingTagById(shopHtml, "active-workspace"), /data-mode="shop"/, "the workspace never takes a mode id");
 });
 
-test.skip("AC9: after a cold restore with the shop task active, the state read and the next response both carry mode.id shop", () => {
-  // Blocked by issue 03b: the active task id and task list are not persisted yet (GuestPersistentProjection), so a cold
-  // restore rebuilds the stays task and this criterion cannot hold until 03b lands. Not verified in 03c.
+/** Starts the shop task on the thread through one event, on the app it is given (the caller cold-restores first). */
+async function startShopTask(app: ColdModeApp["app"], threadId: string) {
+  return app.handleEventAsync(threadId, {
+    name: TASK_START_EVENT,
+    surfaceId: `thread-${threadId}:tasks`,
+    sourceComponentId: "task-rail",
+    timestamp: new Date("2026-10-27T10:05:00Z").toISOString(),
+    context: { domain: "shop" },
+  });
+}
+
+test("AC9: after a cold restore with the shop task active, the state read and the next response both carry mode.id shop", async () => {
+  const path = temporaryDatabasePath("mode-follows-task-ac9.sqlite");
+  const threadId = "g-03c0000009";
+  const model = modeScriptModel();
+
+  // The stays search and the shop start each run on their own cold restore (ADR 0106: every event is a cold restore).
+  assert.equal((await coldModeTurn(path, model, threadId, STAY_TEXT)).ok, true);
+  const started = coldModeApp(path, model);
+  try {
+    started.app.getState(threadId);
+    const result = await startShopTask(started.app, threadId);
+    assert.equal(result.ok, true);
+    assert.equal(result.ok ? result.mode?.id : undefined, "shop", "starting the shop task carries shop");
+  } finally {
+    started.close();
+  }
+
+  // A new application over the same store: the state read and the next response both carry shop.
+  const restored = coldModeApp(path, model);
+  try {
+    assert.equal(restored.app.getState(threadId)?.mode?.id, "shop", "the state read after the cold restore carries shop");
+    const turn = await restored.app.handleTurn(threadId, "Show me the products");
+    assert.equal(turn.ok, true);
+    assert.equal(turn.ok ? turn.mode?.id : undefined, "shop", "the next response after the cold restore carries shop");
+    assert.equal(restored.runtime.getTaskRail(threadId).find((entry) => entry.active)?.domain, "shop", "the shop task is still the active one");
+  } finally {
+    restored.close();
+  }
+});
+
+test("AC9 fail closed: a legacy blob or an invalid persisted task list restores the stays mode, never shop", async () => {
+  const path = temporaryDatabasePath("mode-follows-task-ac9-fail-closed.sqlite");
+  const model = modeScriptModel();
+  const cases: readonly { readonly label: string; readonly threadId: string; readonly mutate: (projection: Record<string, unknown>) => void }[] = [
+    { label: "a legacy blob with neither activeTaskId nor tasks", threadId: "g-03c0000010", mutate: (projection) => { delete projection.activeTaskId; delete projection.tasks; } },
+    { label: "an active task id that names no listed task", threadId: "g-03c0000011", mutate: (projection) => { projection.activeTaskId = "task-missing"; } },
+  ];
+  for (const { label, threadId, mutate } of cases) {
+    assert.equal((await coldModeTurn(path, model, threadId, STAY_TEXT)).ok, true, `${label}: the stays search runs`);
+    const started = coldModeApp(path, model);
+    try {
+      started.app.getState(threadId);
+      assert.equal((await startShopTask(started.app, threadId)).ok, true, `${label}: the shop task starts`);
+    } finally {
+      started.close();
+    }
+
+    const damaged = coldModeApp(path, model);
+    try {
+      damaged.app.getState(threadId);
+      rewriteStoredProjection(damaged.environment, threadId, mutate);
+    } finally {
+      damaged.close();
+    }
+
+    const restored = coldModeApp(path, model);
+    try {
+      assert.equal(restored.app.getState(threadId)?.mode?.id, "stays", `${label}: the state read carries stays`);
+      const turn = await restored.app.handleTurn(threadId, "Show me the products");
+      assert.equal(turn.ok ? turn.mode?.id : undefined, "stays", `${label}: the next response carries stays`);
+    } finally {
+      restored.close();
+    }
+  }
 });

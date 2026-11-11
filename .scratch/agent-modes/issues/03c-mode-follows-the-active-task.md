@@ -1,8 +1,8 @@
 # Derive the mode from the active task and apply it on the client
 
-Status: ready-for-agent
+Status: resolved
 Type: task
-Blocked by: 03a (presentation on the pack). 03b is not required for the stays-only path, but the fake-pack switch test in AC1 and AC9 needs 03b's persisted `activeTaskId`. Owner release as in 03a (ADR 0107 "Settled", 8 Nov 2026).
+Blocked by: 03a (merged) and 03b (merged; AC9 runs on the persisted `activeTaskId`). Owner release as in 03a (ADR 0107 "Settled", 8 Nov 2026).
 Requested: 10 Nov 2026
 
 ## Parent
@@ -121,3 +121,29 @@ Status at this entry: ready-for-agent. Not resolved: AC9 is skipped (blocked by 
 7. npm run check and npm test pass: npm run check passes. npm test is the batch gate, not run here. Not met until the batch gate runs.
 
 Status stays ready-for-agent.
+
+### Agent, AC9 completion (gate/agent-modes-seams-1)
+
+**AC9 ticked.** The `test.skip` at the end of `test/agent-mode-follows-task.test.ts` is replaced by two passing tests. Each event is a cold restore (assistant runtime on, clock 2026-10-27, staging-like guest with no phone or email):
+
+- `AC9: after a cold restore with the shop task active, the state read and the next response both carry mode.id shop`: stays search, shop start on a cold restore, then a new app over the same store. The state read and the next response both carry `shop`, and shop is the active rail entry.
+- `AC9 fail closed: a legacy blob or an invalid persisted task list restores the stays mode, never shop`: a legacy blob (no `activeTaskId`, no `tasks`) and an invalid list (`activeTaskId` naming no listed task) both restore `stays` in the state read and the next response.
+
+The shared harness gained `environment` on `ColdModeApp` and `rewriteStoredProjection()` in `test/helpers/mode-follows-task-harness.ts`, so the test does not copy the 03b fixtures. No source change was needed: both tests passed on the first run.
+
+**Commands and counts** (worktree `C:\AI2026\chat-marketplace-gate-seams`, each prefixed `env -u LLM_API_KEY`):
+
+1. `npm run check`: exit 0 (root tsc, apps/cloudflare, test and tooling configs, and the worker bundle guard).
+2. `npx tsx --test test/agent-mode-follows-task.test.ts test/assistant-task-persistence.test.ts test/assistant-cold-journey.test.ts test/agent-mode-shell.test.ts test/assistant-pack-contract.test.ts`: tests 41, pass 41, fail 0, skipped 0. The follows-task file is 10 of 10 (the skip is gone); the other four files pass in full.
+
+**Definition of Done, checked for resolution.**
+
+1. Every criterion has a named test: met (AC1 to AC9; AC9 has a happy-path test and a fail-closed test).
+2. Failure paths asserted: met (malformed mode, body mode ignored, unregistered domain, contrast, legacy blob, invalid list).
+3. ADRs listed and cited: met (table in the earlier entry).
+4. No unused injected dependency: met (no constructor parameter added).
+5. No invented policy string: met (no new policy text).
+6. No credentials in logs: not applicable.
+7. `npm run check` and `npm test` pass: `npm run check` passes. The full `npm test` is the once-per-batch pre-merge gate and has NOT been run for this issue, per the owner's test scope. This is the one item left open, and it belongs to the batch gate.
+
+Status set to resolved on that basis. Not run in this session: `npm run test:workers` and the full `npm test` (batch gate), the real-Chrome files, and the capture sweep (this commit changes no UI or CSS).

@@ -31,6 +31,8 @@ export function modeScriptModel(): ScriptedAssistantModel {
 export interface ColdModeApp {
   readonly app: LocalGuestApp;
   readonly runtime: ShortletAssistantRuntime;
+  /** The store the application reads, for tests that rewrite a stored projection (a legacy or invalid task list). */
+  readonly environment: LocalGuestEnvironment;
   close(): void;
 }
 
@@ -38,7 +40,16 @@ export function coldModeApp(databasePath: string, model: AssistantModelClient): 
   const environment = LocalGuestEnvironment.openNode({ databasePath, clock: LIVE_LIKE_CLOCK, ...STAGING_GUEST_CONFIG });
   const runtime = new ShortletAssistantRuntime(environment, model, { additionalPacks: [createFakeShopPack()] });
   const app = new LocalGuestApp(environment, { assistantRuntime: runtime });
-  return { app, runtime, close: () => environment.close() };
+  return { app, runtime, environment, close: () => environment.close() };
+}
+
+/** Rewrites the stored thread projection in place, as a legacy or tampered store would hold it (no other field changes). */
+export function rewriteStoredProjection(environment: LocalGuestEnvironment, threadId: string, mutate: (projection: Record<string, unknown>) => void): void {
+  const record = environment.interactionStore.findThread(threadId);
+  if (!record) throw new Error("the thread is stored before it is rewritten");
+  const projection = JSON.parse(record.threadJson) as Record<string, unknown>;
+  mutate(projection);
+  environment.interactionStore.saveThread({ ...record, threadJson: JSON.stringify(projection) });
 }
 
 /** One guest message on a cold restore: the state read a page load makes runs first, then the turn. */
