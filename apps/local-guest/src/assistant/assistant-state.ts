@@ -126,6 +126,11 @@ export interface AssistantTask {
   readonly taskId: string;
   readonly domain: string;
   state: AssistantTaskState;
+  /**
+   * Issue 03d (ADR 0107 decision 11): this task's own model history. While the task is active, the thread's `conversationHistory`
+   * is this same array. Never persisted; a cold restore starts it empty (owner decision O1).
+   */
+  conversationHistory: AssistantConversationStep[];
   /** The task's own workspace, saved when it is deactivated and restored when it is re-opened. */
   activeSurfaces: Map<string, string>;
   supersededSurfaces: Set<string>;
@@ -138,7 +143,8 @@ export interface AssistantThreadState {
   readonly threadId: string;
   readonly guestActorId: string;
   readonly tenantId: string;
-  readonly conversationHistory: AssistantConversationStep[];
+  /** The active task's model history (mirrors `tasks[activeTaskId].conversationHistory`; issue 03d). */
+  conversationHistory: AssistantConversationStep[];
   tasks: AssistantTask[];
   activeTaskId: string;
   /** The active task's state (mirrors `tasks[activeTaskId].state`). */

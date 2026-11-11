@@ -70,3 +70,68 @@ Each is its own `test()` in `test/assistant-task-lanes.test.ts`.
 - Cross-lane hand-over and undo (03f).
 
 ## Comments
+
+### Agent, implementation (Agent modes issue 03d)
+
+Status at this entry: `ready-for-agent`. It is not set to `resolved`: AC5 is blocked (Gap 1), and the once-per-batch `npm test` gate has not run.
+
+**Environment.** `node_modules` in this worktree was a junction to `C:\AI2026\chat-marketplace\node_modules`, which is an empty directory (no packages; created 11 Nov 2026). The lane tests could not load `@cylayo/weaver-core`. I removed the empty junction link in this worktree only and ran `npm ci` here (162 packages; `node_modules/` is git-ignored). The main checkout and the other worktrees were not written to.
+
+**Step 7 check (New conversation, verified before any edit to the reset path).** No server reset exists. `apps/local-guest/src/client.ts` `startNewConversation` writes a new `g-<uuid>` thread id to `sessionStorage` and reloads `/`. It sends no command and never calls `/api/reset`, and the previous thread's lanes stay on the server untouched (the client comment cites ADR-0079 and issue 13a). No server code resets one lane. O5 ("active lane only") therefore cannot be applied as written without changing 13a's behaviour, so I did not change it. AC5 is skipped with its reason; a separate test records the current behaviour.
+
+**ADR table (steps 1 to 3).** Read in relevant part: 0107 (decision 2, decision 11, corrections 1 to 5) and 0106 ("Tools and context", "Resource controls and evaluation"). Read as summary and cited clauses: 0074, 0075, 0093. ADR 0079 was checked for the New conversation wording: its text is about replayable interaction streams and does not contain it; the "committed work stays visible" rule comes from the client comment that cites it.
+
+| ADR | Constraint | Where it lands |
+| --- | --- | --- |
+| 0107 decision 11 | One lane per task: its timeline and its own model history. | Shell lane map keyed by task id (`timelineTaskId`, `laneTimelines`, `#alignTimelineLane` in shortlet-app.ts). Runtime `AssistantTask.conversationHistory`, mirrored to the thread by `syncActiveTask` (assistant-turn-transaction.ts). |
+| 0107 decision 2 | Restore by `activeTaskId`; the client never sets the active task. | `#restoredLanes` takes the active lane from the usable list, using the same check as the runtime (`taskListRefusal`). |
+| 0107 correction 2 (proposed) | Rebuild model history from facts. | Not done. Owner decision O1: empty. `restoreShortletState` gives every task `conversationHistory: []`. |
+| 0107 correction 4 | "New conversation" resets the active lane only (open). | Open; see Gap 1. |
+| 0106 cold restore | Ids the guest holds are re-keyed, never re-minted. | Lanes are keyed by the persisted task ids. AC3 checks the stored ids before and after restores. |
+| 0106 resource controls | Extra limits are documented configurable engineering settings. | `laneTimelineCap` injectable; default `DEFAULT_LANE_TIMELINE_CAP = 100` (owner decision O3). Bounds 2 to 1000 are engineering bounds, as in 03b. |
+| 0106 tools and context | Planner context comes from committed, validated state only. | Planner history is the active task's `conversationHistory`. AC2 checks that no planner request of the shop turn carries stays text. |
+| 0075 | Minimal interaction data; no model text stored; no restricted material in logs. | Projection `lanes` stores id, domain and guest-visible copy only. AC4 checks no history key is stored. AC7 checks the diagnostic carries no id or text. |
+| 0074 | Fail-closed; a switch removes the open proposal. | Unchanged. AC1 checks the removal notice and that no proposal stays open. |
+| 0079 and 13a | Committed work stays visible on New conversation. | Unchanged (a thread switch). Current-behaviour test. |
+| 0093 | Minimal projection of guest state. | Task entries stay id and domain only. Lanes add guest copy only. |
+
+**Deviations from the spec (owner to confirm).**
+1. Steps 1 and 2 said `AssistantTask.timeline` and a mirrored thread `timeline`. Not built that way. The transcript is shell state (`GuestThreadState`), so the lane map lives in the shell, keyed by task id, and `thread.timeline` is the active lane. A runtime-owned transcript would need seeding whenever a runtime thread is created, and a legacy thread with a transcript but no runtime thread would lose it. Model history is on `AssistantTask` as the spec says. The optional per-entry `taskId` is not added: the lane record carries the id.
+2. Switch copy. Every assistant-managed result gets the fixed timeline copy (`#assistantTimelineMessage`), so a switch shows "I can help...", not "Switched to your Shop task." (the response messages are not written to the transcript). The shop lane on first visit therefore holds that one reply, not zero entries. AC1 asserts exactly that.
+3. Isolation defect found by AC2 and fixed. `#safeAssistantTimelineMessage` read stays-only thread facts (shortlist, request, offer, discovery), so a shop result showed "I found 1 matching stay in Lekki Phase 1." in the shop lane. A task on another domain now shows `ASSISTANT_CONTROL_COPY.taskClarification` (new copy). Stays threads are unchanged.
+4. The refusal reason is `INVALID_TASK_LIST`, from the existing closed enum (the spec names the enum, not a new value). A lanes list naming an unknown task is ignored as a whole; the active lane is the top-level timeline.
+5. `lanes` is written only when the thread has more than one task, so a stays-only stored projection keeps its shape.
+6. Every restored and written lane (and the top-level timeline) is capped. A stays transcript longer than 100 entries is trimmed on its next write. This only changes transcripts above the cap.
+7. New guest copy: `LANE_SUMMARY_TEXT` ("Earlier messages in this task are not shown.", the receipt that replaces trimmed entries) and `taskClarification` ("I can help with this task. What would you like to do next?"). Owner to confirm both.
+
+**Test-first.** `test/assistant-task-lanes.test.ts` was written before the source change. First real run (after `npm ci`, before any source change): tests 9, pass 1 (AC8, the legacy path, already passed), fail 7, skipped 1 (AC5, by design). The first harness draft used `modeScriptModel`, which does not run a real stays search (the search was refused as `tool_denial` and the guest text was discarded). I switched the lane tests to `scriptedPlanner`, the date-aware harness the persistence tests use, before implementing. The shared `coldModeApp` helper gained an optional `appOptions` argument (the cap); existing callers are unchanged.
+
+**Commands and counts** (`C:\AI2026\chat-marketplace-03d`, each prefixed `env -u LLM_API_KEY`):
+1. `npx tsx --test test/assistant-task-lanes.test.ts` (red, before the source change): tests 9, pass 1, fail 7, skipped 1.
+2. `npm run check`: exit 0 after the implementation and again after the final edits.
+3. `npx tsx --test test/assistant-task-lanes.test.ts` (final): tests 9, pass 8, fail 0, skipped 1 (AC5 by design; the current-behaviour test passes).
+4. `npx tsx --test test/assistant-task-lanes.test.ts test/assistant-context-isolation.test.ts test/assistant-task-rail.test.ts test/assistant-task-persistence.test.ts test/assistant-thread-lock.test.ts`: tests 57, pass 56, fail 0, skipped 1.
+5. `npx tsx --test test/assistant-cold-journey.test.ts test/agent-mode-shell.test.ts test/assistant-pack-contract.test.ts test/agent-mode-follows-task.test.ts test/assistant-persistent-continuity.test.ts test/assistant-pending-action-restore.test.ts`: tests 44, pass 44, fail 0, skipped 0. `agent-mode-shell` and `assistant-cold-journey` are unedited.
+6. `npm run test:workers -- apps/cloudflare/test/data-migration.spec.ts` (the stored projection is Worker-visible; the bundle guard runs first): tests 29, pass 29, fail 0.
+7. Not run, per Test scope: full `npm test` and full `npm run test:workers`. These are the once-per-batch pre-merge gate.
+
+**Definition of Done (`docs/agents/issue-tracker.md`).**
+1. Every criterion has a dedicated named test: not met. AC1 to AC4 and AC6 to AC8 have one each. AC5 is skipped (Gap 1).
+2. Failure paths asserted: met where the criterion names one. AC7 (unknown lane id: lanes ignored, active lane kept, one closed diagnostic, no ids or text). AC6 (cap holds; the summary replaces the oldest entries; no repeated summary). AC4 (no history key stored).
+3. ADRs listed and cited: met for the rows above. 0074, 0075 and 0093 were read as summary plus cited clauses, not in full; 0079 is checked as stated.
+4. No unused injected dependency: met. `laneTimelineCap` is used by `#capActiveLane`, `#persistedLanes`, `#restoredLanes` and the projection.
+5. No invented policy string or constant: partly met. `DEFAULT_LANE_TIMELINE_CAP` is owner decision O3. The bounds 2 to 1000 are engineering bounds (as 03b). `LANE_SUMMARY_TEXT` and `taskClarification` are new guest copy, not yet confirmed (Gap 2).
+6. No credential or identity material in logs: met. The diagnostic carries the closed reason only.
+7. `npm run check` clean: met. `npm test` passes: not run, because it is the once-per-batch pre-merge gate (Test scope).
+
+**Gaps (why the status stays `ready-for-agent`).**
+- Gap 1 (AC5, O5): "New conversation" is a client thread switch (13a). The server has no path that resets one lane. Owner to choose: (a) keep the thread switch and drop the active-lane reset from 03d, or (b) add a server lane reset and a control that calls it. Until then AC5 cannot be tested as written.
+- Gap 2: copy to confirm: `LANE_SUMMARY_TEXT`, `taskClarification`, and the reply a switch shows in each lane ("I can help...").
+- Gap 3: correction 2 (rebuilding model history from facts) is still unconfirmed. This issue restores history empty, per O1.
+- Gap 4: the batch gate (`npm test`, and `npm run test:workers` in full) has not run.
+
+**Observations for the owner (not changed here).**
+- A non-active task's pending-proposal notice is not persisted across a cold restore. Only the active task's state is restored from the thread (03b's design). AC1 therefore reads the notice on the same application straight after the switch.
+- On a turn that switches task, the history commit writes the switching turn into the origin lane (the lane active at the start of the turn). The "canonical task facts" summary in that write is built from the new task's state. It is one summary line per switch turn, with no guest text from the new lane.
+
+**Scope notes.** No formatter was run. `client.ts` is unchanged, so `apps/local-guest/dist/client.js` is not regenerated. `commerce-assistant-pack.ts`, `_headers` and screenshots are untouched. Nothing was pushed, merged or deployed.

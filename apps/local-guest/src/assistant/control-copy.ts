@@ -6,4 +6,9 @@ export const ASSISTANT_CONTROL_COPY = {
   unregisteredTask: "This task is not available in this conversation any more. Choose another task from the task list, or start a new one, to continue.",
   /** ADR 0074: a confirmation after a search change or task switch removed the proposal. Nothing was sent. */
   proposalReplaced: "That Booking Request was replaced when you changed your search or switched task, so nothing was sent. Ask me again if you still want this stay.",
+  /**
+   * Issue 03d: the fixed reply of a task on a domain other than stays. The stays copy reads stays facts (the shortlist, the request,
+   * the offer), which a task on another domain does not hold, so its lane shows this instead. Copy for the owner to confirm.
+   */
+  taskClarification: "I can help with this task. What would you like to do next?",
 } as const;

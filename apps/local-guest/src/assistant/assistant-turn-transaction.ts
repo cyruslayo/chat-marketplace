@@ -146,6 +146,9 @@ export class TurnTransaction {
 export function syncActiveTask(thread: AssistantThreadState): void {
   const active = thread.tasks.find((task) => task.taskId === thread.activeTaskId);
   if (!active) return;
+  // Issue 03d (ADR 0107 decision 11): the thread holds the active lane's model history. A switch hands the thread the target's
+  // array; the outgoing task keeps the array it held, because commit sites write their history before the task changes.
+  thread.conversationHistory = active.conversationHistory;
   active.state = thread.taskState;
   active.activeSurfaces = thread.activeSurfaces;
   active.supersededSurfaces = thread.supersededSurfaces;

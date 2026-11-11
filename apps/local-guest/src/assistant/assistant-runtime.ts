@@ -267,7 +267,7 @@ export type TaskRestoreRefusal = "INVALID_TASK_LIST" | "UNKNOWN_DOMAIN" | "UNPAR
 /** The stays pack's domain id, the only domain whose state the restore takes from the thread (ADR 0107). */
 const STAYS_DOMAIN = "shortlet";
 /** The id the first task of a thread gets (a legacy projection restores this task). */
-const INITIAL_TASK_ID = "task-1";
+export const INITIAL_TASK_ID = "task-1";
 
 export const DEFAULT_ASSISTANT_REPLY_MAX_OUTPUT_TOKENS = 128;
 export const DEFAULT_ASSISTANT_PLANNING_MAX_OUTPUT_TOKENS = 1024;
@@ -605,6 +605,7 @@ export class AssistantRuntime {
       taskId: `task-${crypto.randomUUID()}`,
       domain,
       state: createInitialTaskState(),
+      conversationHistory: [],
       activeSurfaces: new Map(),
       supersededSurfaces: new Set(),
       lastSurfaces: [],
@@ -734,6 +735,7 @@ export class AssistantRuntime {
         taskId: INITIAL_TASK_ID,
         domain: this.#activePack.id,
         state: createInitialTaskState(),
+        conversationHistory: [],
         activeSurfaces: new Map(),
         supersededSurfaces: new Set(),
         lastSurfaces: [],
@@ -743,7 +745,8 @@ export class AssistantRuntime {
         threadId,
         guestActorId: this.#environment.config.guestId,
         tenantId: this.#environment.config.tenantId,
-        conversationHistory: [],
+        // Issue 03d: the active lane's history is the initial task's array (the thread mirrors the active task).
+        conversationHistory: initialTask.conversationHistory,
         tasks: [initialTask],
         activeTaskId: initialTask.taskId,
         taskState: initialTask.state,
@@ -796,6 +799,17 @@ export class AssistantRuntime {
     return refusal;
   }
 
+  /** Issue 03d: the thread's active task id, or undefined without a runtime thread. The shell aligns its active lane to it. */
+  activeTaskIdFor(threadId: string): string | undefined {
+    return this.#threads.get(threadId)?.activeTaskId;
+  }
+
+  /** Issue 03d: the domain of the thread's active task, or undefined without a runtime thread or an active task. */
+  activeDomainFor(threadId: string): string | undefined {
+    const thread = this.#threads.get(threadId);
+    return thread?.tasks.find((task) => task.taskId === thread.activeTaskId)?.domain;
+  }
+
   /** Issue 03b (ADR 0106): the thread's task ids and domains as the durable projection stores them, or undefined without a runtime thread. */
   persistedTasksFor(threadId: string): { readonly activeTaskId: string; readonly tasks: readonly PersistedAssistantTask[] } | undefined {
     const thread = this.#threads.get(threadId);
@@ -822,6 +836,8 @@ export class AssistantRuntime {
       taskId: entry.taskId,
       domain: entry.domain,
       state: entry.domain === STAYS_DOMAIN ? cloneTaskState(input.taskState) : createInitialTaskState(),
+      // Issue 03d (owner decision O1): model history is not restored; every lane starts empty.
+      conversationHistory: [],
       activeSurfaces: new Map(),
       supersededSurfaces: new Set(),
       lastSurfaces: [],

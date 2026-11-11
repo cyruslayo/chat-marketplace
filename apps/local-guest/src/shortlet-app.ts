@@ -177,6 +177,7 @@ import {
   parseGuestProjection,
   type PersistedActiveContact,
   type PersistedAssistantContext,
+  type PersistedLane,
   type PersistedPendingAction,
   type PersistedReplacedProposal,
   type GuestPersistentProjection,
@@ -226,12 +227,15 @@ import {
 } from "./concierge.js";
 import {
   AssistantRuntime,
+  INITIAL_TASK_ID,
   type AssistantControlOutcome,
   type AssistantShortletRestoreInput,
   type AssistantTaskRailEntry,
   type AssistantVertical,
   type PersistedAssistantTask,
+  type TaskRestoreRefusal,
 } from "./assistant/assistant-runtime.js";
+import { DEFAULT_LANE_TIMELINE_CAP, capLaneTimeline, validateLaneTimelineCap } from "./assistant/task-lanes.js";
 import { ASSISTANT_CONTROL_COPY } from "./assistant/control-copy.js";
 import { createInitialTaskState, isAssistantBudgetPer, type AssistantStayReference, type AssistantTaskState } from "./assistant/assistant-state.js";
 import { redactSensitiveData } from "../../../packages/platform-core/src/redaction.js";
@@ -653,6 +657,9 @@ const EVENT_STAGE_ALLOW_LIST: Readonly<Record<string, string>> = Object.freeze({
 
 export const THREAD_ID_PATTERN = /^g-[a-f0-9-]{6,64}$/;
 
+/** The stays pack's domain id (ADR 0107): the one task whose timeline copy may read stays facts (issue 03d). */
+const STAYS_TASK_DOMAIN = "shortlet";
+
 /** Where the Guest is in the journey, for stage-aware free-text replies (issue 04a). */
 type GuestStage =
   | "discovery"
@@ -684,7 +691,12 @@ interface GuestThreadState {
   offerId: string | null;
   activeSurfaces: Map<string, string>;
   supersededSurfaces: Set<string>;
+  /** The active lane's transcript (ADR 0107 decision 11, issue 03d). Every write goes here after `#alignTimelineLane`. */
   timeline: GuestTimelineEntry[];
+  /** Issue 03d: the task id whose lane `timeline` holds. A thread's first lane is the initial task's id. */
+  timelineTaskId: string;
+  /** Issue 03d: the transcripts of the other lanes, keyed by task id. Model history is never kept here. */
+  laneTimelines: Map<string, GuestTimelineEntry[]>;
   lastSurfaces: GuestSurfacePayload[];
   /** Issue 03a: the criteria of each executed search, oldest first (for "Undo last change"). */
   searchHistory: DiscoverySearchContext[];
@@ -788,6 +800,8 @@ export class LocalGuestApp {
   readonly #onCardCheckoutFailed: ((event: CardCheckoutFailedEvent) => void) | null;
   /** ADR 0107: the composition root's default Agent Mode, used when the active task presents no mode (issue 03c). */
   readonly #defaultMode: ModePresentation = GUEST_MODES.stays;
+  /** Issue 03d (owner decision O3): the per-lane timeline cap, injected by the host; the default is DEFAULT_LANE_TIMELINE_CAP. */
+  readonly #laneTimelineCap: number;
 
   constructor(
     environment: LocalGuestEnvironment,
@@ -799,11 +813,14 @@ export class LocalGuestApp {
       readonly paystackCheckoutTimeoutMs?: number;
       /** Metadata-only observation of a failed chat card start (closed reason; ADR 0075). */
       readonly onCardCheckoutFailed?: (event: CardCheckoutFailedEvent) => void;
+      /** Issue 03d (owner decision O3): the most entries one task's lane keeps; older ones become one receipt summary. */
+      readonly laneTimelineCap?: number;
     } = {},
   ) {
     this.#environment = environment;
     this.#assistantRuntime = options.assistantRuntime ?? null;
     this.#modelCallBudget = options.modelCallBudget ?? null;
+    this.#laneTimelineCap = validateLaneTimelineCap(options.laneTimelineCap ?? DEFAULT_LANE_TIMELINE_CAP);
     const timeoutMs = options.paystackCheckoutTimeoutMs ?? PAYSTACK_CHECKOUT_PROVIDER_TIMEOUT_MS;
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0) throw new Error("paystackCheckoutTimeoutMs must be a positive integer");
     this.#paystackCheckoutTimeoutMs = timeoutMs;
@@ -2093,6 +2110,8 @@ export class LocalGuestApp {
     }
     const journey = this.#journeyFor(thread);
     const criteria = this.#criteriaFor(thread);
+    // Issue 03d: the response carries the active lane only.
+    this.#alignTimelineLane(threadId, thread);
     return {
       ok: true,
       threadId,
@@ -2112,6 +2131,76 @@ export class LocalGuestApp {
    */
   #modeFor(threadId: string): ModePresentation {
     return this.#assistantRuntime?.activePresentation(threadId) ?? this.#defaultMode;
+  }
+
+  /**
+   * Issue 03d (ADR 0107 decision 11): `thread.timeline` is the active lane. When the runtime's active task has changed, the outgoing lane
+   * is kept under its task id and the target's lane becomes the timeline. Every read and write of the timeline calls this first. A
+   * thread with no runtime thread has one lane, so nothing moves.
+   */
+  #alignTimelineLane(threadId: string, thread: GuestThreadState): void {
+    const activeTaskId = this.#assistantRuntime?.activeTaskIdFor(threadId);
+    if (activeTaskId === undefined || activeTaskId === thread.timelineTaskId) return;
+    thread.laneTimelines.set(thread.timelineTaskId, thread.timeline);
+    thread.timeline = thread.laneTimelines.get(activeTaskId) ?? [];
+    thread.laneTimelines.delete(activeTaskId);
+    thread.timelineTaskId = activeTaskId;
+  }
+
+  /** Issue 03d: keeps the active lane within the cap; a lane at or under it is unchanged. */
+  #capActiveLane(thread: GuestThreadState): void {
+    if (thread.timeline.length > this.#laneTimelineCap) thread.timeline = capLaneTimeline(thread.timeline, this.#laneTimelineCap);
+  }
+
+  /**
+   * Issue 03d (owner decision O2): the lanes the projection stores, one per persisted task, with the domain each holds. Stored only for a
+   * thread with more than one task; a one-task thread keeps the legacy top-level timeline alone, so its stored shape is unchanged.
+   */
+  #persistedLanes(thread: GuestThreadState): { readonly lanes?: readonly PersistedLane[] } {
+    const persisted = this.#assistantRuntime?.persistedTasksFor(thread.threadId);
+    if (persisted === undefined || persisted.tasks.length < 2) return {};
+    const lanes = persisted.tasks.map((task): PersistedLane => {
+      const lane = task.taskId === thread.timelineTaskId ? thread.timeline : (thread.laneTimelines.get(task.taskId) ?? []);
+      return { taskId: task.taskId, domain: task.domain, timeline: capLaneTimeline(lane, this.#laneTimelineCap).map(({ role, text }) => ({ role, text })) };
+    });
+    return { lanes };
+  }
+
+  /**
+   * Issue 03d (ADR 0107 decision 11, owner decisions O2 and O3): the lanes a stored projection restores. A usable task list names the active
+   * lane, as the runtime restores it; an unusable one restores as a legacy blob does, with the top-level timeline as the stays lane. The
+   * stored lanes are kept only when every lane names a persisted task with its domain and no id repeats. Otherwise the lanes list alone
+   * is refused, with one closed diagnostic (no ids, no text) and the active lane stays. Every restored lane is capped.
+   */
+  #restoredLanes(projection: GuestPersistentProjection): { timeline: GuestTimelineEntry[]; timelineTaskId: string; laneTimelines: Map<string, GuestTimelineEntry[]> } {
+    const cap = this.#laneTimelineCap;
+    const timeline = capLaneTimeline(projection.timeline, cap);
+    const laneTimelines = new Map<string, GuestTimelineEntry[]>();
+    const runtime = this.#assistantRuntime;
+    const persisted = projection.tasks !== undefined && projection.activeTaskId !== undefined ? { activeTaskId: projection.activeTaskId, tasks: projection.tasks } : undefined;
+    const usable = persisted !== undefined && runtime !== null && runtime.taskListRefusal(persisted.tasks, persisted.activeTaskId) === undefined;
+    const timelineTaskId = usable && persisted !== undefined ? persisted.activeTaskId : INITIAL_TASK_ID;
+    if (!usable || persisted === undefined || projection.lanes === undefined) return { timeline, timelineTaskId, laneTimelines };
+    const lanes: readonly PersistedLane[] = projection.lanes;
+    const ids = new Set(lanes.map((lane) => lane.taskId));
+    const named = ids.size === lanes.length && lanes.every((lane) => persisted.tasks.some((task) => task.taskId === lane.taskId && task.domain === lane.domain));
+    if (!named) {
+      this.#recordLaneRefusal("INVALID_TASK_LIST");
+      return { timeline, timelineTaskId, laneTimelines };
+    }
+    for (const lane of lanes) {
+      if (lane.taskId !== timelineTaskId) laneTimelines.set(lane.taskId, capLaneTimeline(lane.timeline, cap));
+    }
+    return { timeline, timelineTaskId, laneTimelines };
+  }
+
+  /** Issue 03d: the closed diagnostic for a refused lanes list (ADR 0075). Telemetry never changes the restore. */
+  #recordLaneRefusal(reason: TaskRestoreRefusal): void {
+    try {
+      this.#environment.telemetry.track({ type: "assistant.task.restore.refused.v1", reason });
+    } catch {
+      // Telemetry must never change the restore.
+    }
   }
 
   /**
@@ -2530,9 +2619,10 @@ export class LocalGuestApp {
     forCurrentRestore = false,
   ): GuestPersistentProjection {
     const current = thread.lastSurfaces.at(-1);
+    this.#alignTimelineLane(thread.threadId, thread);
     return {
       version: 1,
-      timeline: thread.timeline.map(({ role, text }) => ({ role, text })),
+      timeline: capLaneTimeline(thread.timeline, this.#laneTimelineCap).map(({ role, text }) => ({ role, text })),
       discoveryContext:
         thread.discoveryContext === null
           ? null
@@ -2559,6 +2649,8 @@ export class LocalGuestApp {
       assistantContext: thread.assistantContext,
       // Issue 03b (ADR 0107 decision 11, ADR 0106): the task ids and domains only; a cold restore re-keys them, never re-mints them.
       ...(this.#assistantRuntime?.persistedTasksFor(thread.threadId) ?? {}),
+      // Issue 03d (owner decision O2): each task's guest-visible lane, with the active lane's transcript in `timeline` above.
+      ...this.#persistedLanes(thread),
       pendingAction: thread.pendingAction,
       pendingActionSurfaceId: thread.pendingActionSurfaceId,
       replacedPendingAction: thread.replacedPendingAction,
@@ -2696,6 +2788,7 @@ export class LocalGuestApp {
       projection = null;
     }
     if (!projection) return null;
+    const lanes = this.#restoredLanes(projection);
 
     const thread: GuestThreadState = {
       threadId,
@@ -2717,7 +2810,9 @@ export class LocalGuestApp {
       offerId: projection.offerId,
       activeSurfaces: new Map(),
       supersededSurfaces: new Set(),
-      timeline: projection.timeline.map(({ role, text }) => ({ role, text })),
+      timeline: lanes.timeline,
+      timelineTaskId: lanes.timelineTaskId,
+      laneTimelines: lanes.laneTimelines,
       lastSurfaces: [],
       searchHistory: projection.searchHistory.map((context) => ({
         ...context,
@@ -3108,6 +3203,8 @@ export class LocalGuestApp {
       activeSurfaces: new Map(),
       supersededSurfaces: new Set(),
       timeline: [],
+      timelineTaskId: INITIAL_TASK_ID,
+      laneTimelines: new Map(),
       lastSurfaces: [],
       searchHistory: [],
       assistantContext: null,
@@ -3259,6 +3356,9 @@ export class LocalGuestApp {
   }
 
   #safeAssistantTimelineMessage(thread: GuestThreadState): string {
+    // Issue 03d: the copy below reads stays facts (shortlist, request, offer, discovery). A task on another domain never shows them.
+    const activeDomain = this.#assistantRuntime?.activeDomainFor(thread.threadId);
+    if (activeDomain !== undefined && activeDomain !== STAYS_TASK_DOMAIN) return ASSISTANT_CONTROL_COPY.taskClarification;
     const stage = this.#stageForSurfaceId(thread.lastSurfaces.at(-1)?.surfaceId ?? "");
     if (stage === REQUEST_STAGE && thread.draftId && !thread.requestId) return GUEST_ASSISTANT_COPY.draftReady;
     if (stage === UNIT_STAGE) return GUEST_ASSISTANT_COPY.detailsReady;
@@ -3486,6 +3586,8 @@ export class LocalGuestApp {
       this.#threads.get(threadId) ??
       (this.#environment.guestDataIsRemote ? null : this.#loadThread(threadId)) ??
       this.#createThread(threadId);
+    // Issue 03d: the turn's own text and replies go to the lane the turn leaves the guest in (a switch turn's text crosses with it).
+    this.#alignTimelineLane(threadId, thread);
     if (userText !== undefined)
       thread.timeline.push({ role: "user", text: redactSensitiveData(userText) as string });
     if (result.surfaces.length > 0) thread.lastSurfaces = [...result.surfaces];
@@ -3540,6 +3642,7 @@ export class LocalGuestApp {
     } catch {
       /* presentation telemetry is best-effort */
     }
+    this.#capActiveLane(thread);
     if (!this.#environment.guestDataIsRemote) this.#persistThread(thread);
   }
 

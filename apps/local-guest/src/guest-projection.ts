@@ -68,6 +68,18 @@ export interface GuestPersistentProjection {
    */
   readonly activeTaskId?: string;
   readonly tasks?: readonly PersistedAssistantTask[];
+  /**
+   * Issue 03d (ADR 0107 decision 11, owner decision O2): each task's guest-visible timeline, present only for a thread with more than one
+   * task. `timeline` above is the active lane. Model history is never stored here. Absent in legacy blobs.
+   */
+  readonly lanes?: readonly PersistedLane[];
+}
+
+/** Issue 03d: one task's lane as the projection stores it. The id and domain name the task; the timeline is guest-visible copy only. */
+export interface PersistedLane {
+  readonly taskId: string;
+  readonly domain: string;
+  readonly timeline: readonly { readonly role: "assistant" | "user" | "receipt"; readonly text: string }[];
 }
 
 /** The pending action as the runtime holds it, validated field by field on restore. Executed actions are never stored. */
@@ -320,6 +332,31 @@ function parsePersistedTaskList(value: Record<string, unknown>): { readonly acti
   return { activeTaskId, tasks: Object.freeze(parsed) };
 }
 
+/**
+ * Issue 03d (ADR 0075, ADR 0107 decision 11): the persisted lanes, closed by shape. Each entry holds an id, a domain and guest-visible
+ * entries only. Undefined means a legacy blob. A malformed shape rejects the projection (fail closed, as for the task list). Whether
+ * the ids name the persisted tasks is decided on restore, where only the lanes list is refused.
+ */
+function parsePersistedLanes(value: Record<string, unknown>): readonly PersistedLane[] | null | undefined {
+  if (value.lanes === undefined) return undefined;
+  if (!Array.isArray(value.lanes) || value.lanes.length > 32) return null;
+  const parsed: PersistedLane[] = [];
+  for (const entry of value.lanes) {
+    if (!isRecord(entry)) return null;
+    const keys = Object.keys(entry);
+    if (keys.length !== 3 || !keys.includes("taskId") || !keys.includes("domain") || !keys.includes("timeline")) return null;
+    if (typeof entry.taskId !== "string" || entry.taskId === "" || entry.taskId.length > 120) return null;
+    if (typeof entry.domain !== "string" || entry.domain === "" || entry.domain.length > 120) return null;
+    if (!Array.isArray(entry.timeline) || !entry.timeline.every(isPersistentTimelineEntry)) return null;
+    parsed.push({
+      taskId: entry.taskId,
+      domain: entry.domain,
+      timeline: Object.freeze(entry.timeline.map((item) => Object.freeze({ role: item.role, text: item.text }))),
+    });
+  }
+  return Object.freeze(parsed);
+}
+
 export function parseGuestProjection(value: unknown): GuestPersistentProjection | null {
   if (!isRecord(value) || value.version !== 1) return null;
   if (!Array.isArray(value.timeline) || !value.timeline.every(isPersistentTimelineEntry)) return null;
@@ -354,8 +391,11 @@ export function parseGuestProjection(value: unknown): GuestPersistentProjection 
   const replacedPendingAction = parsePersistedReplacedProposal(value.replacedPendingAction ?? null);
   const persistedTasks = parsePersistedTaskList(value);
   if (persistedTasks === null) return null;
+  const persistedLanes = parsePersistedLanes(value);
+  if (persistedLanes === null) return null;
   return Object.freeze({
     ...(persistedTasks === undefined ? {} : persistedTasks),
+    ...(persistedLanes === undefined ? {} : { lanes: persistedLanes }),
     activeContact,
     pendingAction,
     pendingActionSurfaceId,

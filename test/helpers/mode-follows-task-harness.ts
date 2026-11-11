@@ -36,10 +36,10 @@ export interface ColdModeApp {
   close(): void;
 }
 
-export function coldModeApp(databasePath: string, model: AssistantModelClient): ColdModeApp {
+export function coldModeApp(databasePath: string, model: AssistantModelClient, appOptions: { readonly laneTimelineCap?: number } = {}): ColdModeApp {
   const environment = LocalGuestEnvironment.openNode({ databasePath, clock: LIVE_LIKE_CLOCK, ...STAGING_GUEST_CONFIG });
   const runtime = new ShortletAssistantRuntime(environment, model, { additionalPacks: [createFakeShopPack()] });
-  const app = new LocalGuestApp(environment, { assistantRuntime: runtime });
+  const app = new LocalGuestApp(environment, { assistantRuntime: runtime, ...appOptions });
   return { app, runtime, environment, close: () => environment.close() };
 }
 
