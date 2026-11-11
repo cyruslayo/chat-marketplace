@@ -1,0 +1,40 @@
+inbox light 320: height 900 no horizontal overflow
+detail light 320: height 1997 no horizontal overflow
+  UNDER 44px: input "" 24x24
+  UNDER 44px: input "" 24x24
+  UNDER 44px: input "" 24x24
+inbox light 390: height 900 no horizontal overflow
+detail light 390: height 1853 no horizontal overflow
+  UNDER 44px: input "" 24x24
+  UNDER 44px: input "" 24x24
+  UNDER 44px: input "" 24x24
+inbox light 768: height 900 no horizontal overflow
+detail light 768: height 1677 no horizontal overflow
+  UNDER 44px: input "" 24x24
+  UNDER 44px: input "" 24x24
+  UNDER 44px: input "" 24x24
+inbox light 1280: height 900 no horizontal overflow
+detail light 1280: height 1397 no horizontal overflow
+  UNDER 44px: input "" 24x24
+  UNDER 44px: input "" 24x24
+  UNDER 44px: input "" 24x24
+inbox dark 320: height 900 no horizontal overflow
+detail dark 320: height 1997 no horizontal overflow
+  UNDER 44px: input "" 24x24
+  UNDER 44px: input "" 24x24
+  UNDER 44px: input "" 24x24
+inbox dark 390: height 900 no horizontal overflow
+detail dark 390: height 1853 no horizontal overflow
+  UNDER 44px: input "" 24x24
+  UNDER 44px: input "" 24x24
+  UNDER 44px: input "" 24x24
+inbox dark 768: height 900 no horizontal overflow
+detail dark 768: height 1677 no horizontal overflow
+  UNDER 44px: input "" 24x24
+  UNDER 44px: input "" 24x24
+  UNDER 44px: input "" 24x24
+inbox dark 1280: height 900 no horizontal overflow
+detail dark 1280: height 1397 no horizontal overflow
+  UNDER 44px: input "" 24x24
+  UNDER 44px: input "" 24x24
+  UNDER 44px: input "" 24x24

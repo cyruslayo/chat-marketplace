@@ -1,0 +1,8 @@
+long-thread light 320: height 901 deferred 16 no horizontal overflow
+long-thread light 390: height 901 deferred 16 no horizontal overflow
+long-thread light 768: height 901 deferred 16 no horizontal overflow
+long-thread light 1280: height 901 deferred 16 no horizontal overflow
+long-thread dark 320: height 901 deferred 16 no horizontal overflow
+long-thread dark 390: height 901 deferred 16 no horizontal overflow
+long-thread dark 768: height 901 deferred 16 no horizontal overflow
+long-thread dark 1280: height 901 deferred 16 no horizontal overflow

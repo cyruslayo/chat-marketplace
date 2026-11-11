@@ -32,7 +32,7 @@ Hypotheses from reading the code on 10 Nov 2026, to confirm or refute:
 - Research only: change no code, CSS, copy or tests. Phase 0 authorises no redesign (guideline §15).
 - Synthetic data only. Never open `staging-secrets.env` or print the environment; prefix commands with `env -u LLM_API_KEY`.
 - Run only one capture sweep or browser suite at a time. Delete any walkthrough log you create.
-- Write matrix rows into `.scratch/ux-guidelines/evidence-matrix.md`, keeping what you saw (Observed) separate from what it means (Priority).
+- Write matrix rows into `.scratch/ux-guidelines/evidence/02-rows.md` (column header from `evidence-matrix.md`; 05 merges them), keeping what you saw (Observed) separate from what it means (Priority).
 - Do not commit. The orchestrator reviews the work and commits it.
 
 ## Comments

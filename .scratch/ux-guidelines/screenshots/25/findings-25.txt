@@ -1,0 +1,8 @@
+composer light 320: height 701 text 16px no horizontal overflow
+composer light 390: height 701 text 16px no horizontal overflow
+composer light 768: height 701 text 16px no horizontal overflow
+composer light 1280: height 701 text 16px no horizontal overflow
+composer dark 320: height 701 text 16px no horizontal overflow
+composer dark 390: height 701 text 16px no horizontal overflow
+composer dark 768: height 701 text 16px no horizontal overflow
+composer dark 1280: height 701 text 16px no horizontal overflow

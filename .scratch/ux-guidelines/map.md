@@ -14,6 +14,7 @@ Every critical guest and Operator screen meets the screen contract (§5), vocabu
 - **Assistant-path issues** (06, 11, 22, and any change to `apps/local-guest/src/assistant/` or the shell/runtime sync) follow ADR 0106: runtime enabled, cold restore before every event, staging-like clock and guest.
 - **`client.ts` changes run one at a time:** 11, 14, 19, 21, 24.
 - **One capture sweep or browser suite at a time.**
+- **Phase 0 evidence:** each of 01 to 04 writes its rows to `evidence/NN-rows.md`, so parallel agents never share a file; 05 merges them into `evidence-matrix.md`. Agent prompts: `prompts/phase0.md`.
 - **Foundation CSS:** commit `shortlet-foundations.css` edits before running `test/landing-page.test.ts`, because it fails on any uncommitted change. Keep literal six-digit hex tokens and the committed formatting (`guest-kit.test.ts`, `shortlet-design-system.test.ts`).
 - **Browser support:** Baseline widely available features freely. Newly available features only with feature detection and graceful degradation. Reference device: a low-end Android phone running Chrome.
 - **Test scope:** per AGENTS.md. Each issue runs `npm run check` plus its own and affected tests. Each batch ends with the pre-merge gate on a merge worktree. Merge to main only with the owner's approval.
@@ -22,12 +23,12 @@ Every critical guest and Operator screen meets the screen contract (§5), vocabu
 
 | Batch | Phase | Issues | Notes |
 | --- | --- | --- | --- |
-| A | 0: re-baseline | 01, 02, 03, 04, 05 | Research. 04 is ready-for-human (staging timing). 05 is blocked by 01 to 04. |
+| A | 0: re-baseline | 01, 02, 03, 04, 05 | Research. 04 is ready-for-agent with an owner handoff at the Paystack step. 05 is blocked by 01 to 04. |
 | A | 1: state and copy | 06, 07, 08, 09, 10, 11, 12 | 06 to 11 are already confirmed from code. 10 is a grilling issue. 12 is blocked by 05. |
 | B | 2: hierarchy, controls, accessibility | 13 to 20 | 20 is blocked by 05. 14 and 19 change `client.ts`. |
 | C | 3: recovery, network, parity | 21 to 25 | 21 and 24 change `client.ts`. 22 is the regression suite. |
 | D | 4: Operator and Extended Stays | 26, 27, 28 | 28 is ready-for-human (counsel-approved text, ADR 0092). |
-| E | 5: user-observed gate | 29, 30, 31 | 29 is ready-for-human. 31 is blocked by every open P0 and P1. |
+| E | 5: user-observed gate | 29, 30, 31, 32 | 29 is ready-for-human. 30 is resolved (owner approved the events); 32 implements them. 31 is blocked by every open P0 and P1. |
 
 Frontier: the first open, unblocked, unclaimed issue in number order.
 
@@ -49,10 +50,11 @@ Frontier: the first open, unblocked, unclaimed issue in number order.
 
 ## Open owner decisions
 
-- **"Amount Due Now"** (guideline §9/§10) versus the current `GUEST_FACT_LABELS.amountDueNow` = "Total to complete booking". Raised in 05.
+- **"Amount Due Now"** (guideline §9/§10) versus the current `GUEST_FACT_LABELS.amountDueNow` = "Total to complete booking". **Open, back with the owner (11 Nov 2026).** The glossary meaning (`domains/shortlet/CONTEXT.md`: All-In Stay Total plus any upfront deposit) is what the label already shows. Guest UI consistency issue 12 (c0db5d5, 2 Oct 2026) chose the plain wording on purpose: the stay and the deposit are collected as two payments, so "Amount Due Now ₦390,000" would misread when the first charge is ₦370,000. Do not change the label until the owner decides. 05 records the outcome.
 - **Server-computed total plus deposit** in `discovery-a2ui.ts:147`. **Decided in 10:** render the existing projected `amountDueNowKobo`; no presentation-level addition, no follow-up domain task.
 - **Whether the owner maintains `@cylayo/weaver-web`.** **Decided:** yes, but the published 0.2.1/0.3.1 ignore the A2UI accessibility labels and there is no newer release, so 13 (and 16, which found no guest Modal) use the owner-approved client fallback.
-- **Counsel-approved Extended Stay text.** Supplied in 28.
+- **Counsel-approved Extended Stay text.** 28 added only the owner-approved structural line; the cancellation and Notice to End terms still need counsel text (an open gate for 31).
+- **Funnel events (30).** **Decided 11 Nov 2026:** all three approved; implemented in 32.
 
 ## Context pointers
 

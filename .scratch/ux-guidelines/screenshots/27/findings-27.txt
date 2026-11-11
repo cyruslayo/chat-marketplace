@@ -1,0 +1,9 @@
+offer page status 200; schedule shown; periods 6
+offer light 320: height 1617 no horizontal overflow
+offer light 390: height 1573 no horizontal overflow
+offer light 768: height 1291 no horizontal overflow
+offer light 1280: height 1267 no horizontal overflow
+offer dark 320: height 1617 no horizontal overflow
+offer dark 390: height 1573 no horizontal overflow
+offer dark 768: height 1291 no horizontal overflow
+offer dark 1280: height 1267 no horizontal overflow

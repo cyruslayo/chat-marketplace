@@ -1,0 +1,17 @@
+chat-discovery light 320: height 901 no horizontal overflow
+chat-compare light 320: height 901 no horizontal overflow
+search-page light 320: height 2460 no horizontal overflow
+chat-discovery light 390: height 900 no horizontal overflow
+search-page light 390: height 2442 no horizontal overflow
+chat-discovery light 768: height 900 no horizontal overflow
+search-page light 768: height 2722 no horizontal overflow
+chat-discovery light 1280: height 901 no horizontal overflow
+search-page light 1280: height 2804 no horizontal overflow
+chat-discovery dark 320: height 900 no horizontal overflow
+search-page dark 320: height 2460 no horizontal overflow
+chat-discovery dark 390: height 900 no horizontal overflow
+search-page dark 390: height 2442 no horizontal overflow
+chat-discovery dark 768: height 900 no horizontal overflow
+search-page dark 768: height 2722 no horizontal overflow
+chat-discovery dark 1280: height 901 no horizontal overflow
+search-page dark 1280: height 2804 no horizontal overflow

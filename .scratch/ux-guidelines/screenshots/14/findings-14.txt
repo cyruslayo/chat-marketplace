@@ -1,0 +1,8 @@
+workspace light 320: height 901 h1 1 no horizontal overflow
+workspace light 390: height 901 h1 1 no horizontal overflow
+workspace light 768: height 901 h1 1 no horizontal overflow
+workspace light 1280: height 901 h1 1 no horizontal overflow
+workspace dark 320: height 901 h1 1 no horizontal overflow
+workspace dark 390: height 901 h1 1 no horizontal overflow
+workspace dark 768: height 901 h1 1 no horizontal overflow
+workspace dark 1280: height 901 h1 1 no horizontal overflow

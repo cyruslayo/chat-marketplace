@@ -1,6 +1,6 @@
 # 30 · Privacy-safe funnel signals
 
-Status: ready-for-human
+Status: resolved
 Type: research
 Blocked by: none
 Phase: 5 (Batch E)
@@ -71,3 +71,7 @@ Ready for the owner's decision. Issues 29 (study), 31 (sign-off) remain owner-ru
 ## Answer
 
 The §13 signals are already covered by the domain transition events, the interaction-rejection events, `assistant.control.outcome.v1` and the two closed payment log lines, with three gaps: discovery results production, draft corrections and Operator response latency. Three closed-enum events are proposed for those, each carrying only enums or counts; no code was changed pending owner approval.
+
+### Owner approval (11 Nov 2026)
+
+The owner approved all three proposed events as written: `discovery.results` (`stage`, `resultCount`), `draft.correction` (`category`: dates, guests, budget, contact, other; `attempt`) and `operator.response.latency` (aggregate `bucket`, `count`). Implementation is issue 32.
