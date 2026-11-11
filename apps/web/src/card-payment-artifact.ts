@@ -39,6 +39,9 @@ export interface CardPaymentArtifact {
     readonly currentComponentAmountKobo?: number;
     readonly journeyVersion?: number;
     readonly journeyStage?: string;
+    /** Issue 27 (ADR 0092): the Extended Stay schedule from the offer quote. */
+    readonly stayType?: string;
+    readonly billingPeriods?: readonly { readonly index: number; readonly checkIn: string; readonly checkOut: string; readonly nights: number; readonly amountKobo: number; readonly dueDate: string }[];
     readonly currency: "NGN";
     readonly paymentWindowExpiresAt: string;
     readonly expectedPayerName?: string;
@@ -69,7 +72,7 @@ export function cardPaymentArtifactFromState({
   journey,
   now,
 }: {
-  readonly offer: { offerId: string; unitId: string; unit: { title: string }; dates: { checkIn: string; checkOut: string }; occupants?: readonly unknown[]; totalAmountDueNowKobo: number; refundableSecurityDepositKobo?: number; securityDeposit?: { policyVersion: string }; quote?: { allInStayTotalKobo?: number }; paymentWindow: { expiresAt: string }; status: string; parties: { primaryGuest: { id: string; name: string }; distinctPayer?: { id: string; name: string } | null }; tenantId?: string };
+  readonly offer: { offerId: string; unitId: string; unit: { title: string }; dates: { checkIn: string; checkOut: string }; occupants?: readonly unknown[]; totalAmountDueNowKobo: number; refundableSecurityDepositKobo?: number; securityDeposit?: { policyVersion: string }; quote?: { allInStayTotalKobo?: number; stayType?: string; billingPeriods?: readonly { index: number; checkIn: string; checkOut: string; nights: number; amountKobo: number; dueDate: string }[] }; paymentWindow: { expiresAt: string }; status: string; parties: { primaryGuest: { id: string; name: string }; distinctPayer?: { id: string; name: string } | null }; tenantId?: string };
   readonly viewer: CommandPrincipal;
   readonly session?: CardCheckoutSession;
   readonly reservation?: Reservation;
@@ -98,6 +101,8 @@ export function cardPaymentArtifactFromState({
     ...(offer.securityDeposit ? { depositPolicyVersion: offer.securityDeposit.policyVersion } : {}),
     ...(session || journey?.stage === "stay_settled" ? { currentComponent: journey?.stage === "stay_settled" ? "security_deposit" as const : session!.purpose, currentComponentAmountKobo: journey?.stage === "stay_settled" ? journey.deposit.amountKobo : session!.amountKobo } : {}),
     ...(journey ? { journeyVersion: journey.journeyVersion, journeyStage: journey.stage } : {}),
+    ...(offer.quote?.stayType === undefined ? {} : { stayType: offer.quote.stayType }),
+    ...(offer.quote?.billingPeriods === undefined ? {} : { billingPeriods: offer.quote.billingPeriods.map((period) => ({ index: period.index, checkIn: period.checkIn, checkOut: period.checkOut, nights: period.nights, amountKobo: period.amountKobo, dueDate: period.dueDate })) }),
     currency: "NGN",
     paymentWindowExpiresAt: offer.paymentWindow.expiresAt,
     ...(canInitialize ? { expectedPayerName: payer.name } : {}),

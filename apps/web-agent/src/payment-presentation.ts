@@ -1,6 +1,7 @@
 import type { CardPaymentArtifact } from "../../web/src/card-payment-artifact.js";
 import { guestPaymentStatus } from "./booking-presentation.js";
-import { GUEST_GLOSSARY, guestWaitingCopy } from "./guest-content.js";
+import { GUEST_FACT_LABELS, GUEST_GLOSSARY, guestWaitingCopy } from "./guest-content.js";
+import { billingPeriodLines, cardPaymentBillingPeriod } from "./extended-stay-presentation.js";
 
 type CardPaymentFacts = CardPaymentArtifact["facts"];
 
@@ -47,6 +48,8 @@ export interface PaymentScreenContent {
   readonly serverNow: string;
   readonly explanation: string;
   readonly steps: readonly string[];
+  /** Issue 27 (ADR 0092): the Extended Stay schedule and the period this payment covers, when known. */
+  readonly schedule?: { readonly heading: string; readonly periods: readonly string[]; readonly firstPeriodOnly: string; readonly currentPeriod?: string };
   readonly choice?: PaymentMethodChoice;
 }
 
@@ -54,6 +57,7 @@ export function paymentScreenContent(artifact: CardPaymentArtifact, now: Date, p
   const facts = artifact.facts;
   const copy = cardPaymentCopy(facts);
   const waiting = ["ready", "checkout_initiated", "deposit_required"].includes(facts.status) && !isCardPaymentProcessing(facts) && Date.parse(facts.paymentWindowExpiresAt) > now.getTime();
+  const currentPeriod = cardPaymentBillingPeriod(facts);
   return {
     state: facts.status === "ready" || facts.status === "deposit_required" ? "ready" : facts.status === "checkout_initiated" && waiting ? "handoff" : "closed",
     title: copy.title,
@@ -63,6 +67,13 @@ export function paymentScreenContent(artifact: CardPaymentArtifact, now: Date, p
     serverNow: now.toISOString(),
     explanation: copy.content,
     steps: waiting ? guestWaitingCopy("payment-window", operatorName).outcomes : [],
-
+    ...(facts.billingPeriods?.length ? {
+      schedule: {
+        heading: GUEST_FACT_LABELS.paymentSchedule,
+        periods: billingPeriodLines(facts.billingPeriods),
+        firstPeriodOnly: GUEST_FACT_LABELS.firstPeriodOnly,
+        ...(currentPeriod === undefined ? {} : { currentPeriod: `This payment is for ${GUEST_FACT_LABELS.billingPeriod} ${currentPeriod.index}.` }),
+      },
+    } : {}),
   };
 }

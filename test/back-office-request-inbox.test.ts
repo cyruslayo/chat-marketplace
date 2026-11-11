@@ -118,13 +118,13 @@ test("AC3 — A request that failed delivery is shown as Delivery Failed, never 
     f.advance(6 * MINUTE); // past the five-minute Technical Delivery Window (ADR 0043)
     const failed = row(await inbox(f), id);
     assert.match(failed.html, /data-status="delivery_failed"/);
-    assert.match(failed.text, /Delivery Failed/);
+    assert.match(failed.text, /Delivery failed/);
     assert.doesNotMatch(failed.text, /expired|missed|timed out|Respond by|minutes? left/i);
 
-    // Still Delivery Failed after the would-be response deadline, never re-labelled as a timeout.
+    // Still Delivery failed after the would-be response deadline, never re-labelled as a timeout.
     f.advance(30 * MINUTE);
     const later = row(await inbox(f), id);
-    assert.match(later.text, /Delivery Failed/);
+    assert.match(later.text, /Delivery failed/);
     assert.doesNotMatch(later.text, /expired/i);
     assert.equal(status(f, id), "delivery_failed");
 

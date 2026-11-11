@@ -78,7 +78,8 @@ test("AC5: The strip can be operated by keyboard alone and reflows at 320px", as
     await tab.insertText("181");
     await tab.pressKey("Enter");
     await tab.waitForText("Stays can be at most 180 nights. Please choose 180 nights or fewer.", 10_000);
-    assert.equal(await tab.evaluate<string>("document.getElementById('criteria-status').getAttribute('role')"), "alert");
+    // Issue 14: the criteria message is a polite status; the assertive alert region is reserved for errors.
+    assert.equal(await tab.evaluate<string>("document.getElementById('criteria-status').getAttribute('role')"), "status");
     assert.equal(await chipLabel(tab, "when"), "When: 10–13 Sept 2026 · 3 nights");
     await tab.pressKey("Escape");
 

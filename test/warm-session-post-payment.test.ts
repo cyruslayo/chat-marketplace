@@ -86,9 +86,10 @@ test("A typed booking status request after payment reports the confirmed contrac
   const threadId = "g-0ee2000501";
   const { session, offerId } = await bookedExtendedStayOverHttp(f, threadId, statusModel());
   try {
-    const contractId = contractOf(f, offerId).contractId;
+    // Issue 06: the reply carries no raw contract id; the assistant sends it only for a confirmed contract it holds.
+    assert.ok(contractOf(f, offerId).contractId, "the booking has a contract");
     const status = ok(await session.post("/api/turn", { text: STATUS_TEXT }), "booking status after payment");
-    assert.deepEqual(status.messages, [GUEST_ASSISTANT_COPY.confirmedBooking(contractId)], "the warm runtime sees the confirmed contract");
+    assert.deepEqual(status.messages, [GUEST_ASSISTANT_COPY.confirmedBooking], "the warm runtime sees the confirmed contract");
   } finally {
     session.close();
     f.close();
@@ -101,9 +102,10 @@ test("A typed booking status request after payment reports the confirmed contrac
   const { session, offerId } = await bookedExtendedStayOverHttp(f, threadId, statusModel());
   session.close();
   try {
-    const contractId = contractOf(f, offerId).contractId;
+    // Issue 06: the reply carries no raw contract id; the assistant sends it only for a confirmed contract it holds.
+    assert.ok(contractOf(f, offerId).contractId, "the booking has a contract");
     const status = successOf(await coldApp(f, threadId, statusModel()).app.handleTurn(threadId, STATUS_TEXT), "booking status after payment, cold");
-    assert.deepEqual(status.messages, [GUEST_ASSISTANT_COPY.confirmedBooking(contractId)], "a cold restore sees the confirmed contract");
+    assert.deepEqual(status.messages, [GUEST_ASSISTANT_COPY.confirmedBooking], "a cold restore sees the confirmed contract");
   } finally {
     f.close();
   }

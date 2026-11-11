@@ -311,9 +311,42 @@ export function committedWorkScope(
   return principal.id === env.guestPrincipal().id ? [principal.id] : null;
 }
 
+export type GuestSurfaceKind = "discovery" | "unit-detail" | "compare" | "request-draft" | "booking" | "payment" | "contact" | "general";
+
+/** Issue 19: the focused kinds, used for the server-owned placement decision. */
+export const FOCUSED_SURFACE_KINDS: ReadonlySet<GuestSurfaceKind> = new Set(["unit-detail", "request-draft", "booking", "payment", "contact"]);
+
+/** Issue 19: the server-owned surface kind. Explicit content markers win; the id is only a last-resort server hint. */
+export function guestSurfaceKindFor(surface: {
+  readonly surfaceId: string;
+  readonly kind?: GuestSurfaceKind;
+  readonly contactPurpose?: "phone" | "email";
+  readonly paymentScreen?: unknown;
+  readonly offerScreen?: unknown;
+  readonly confirmation?: unknown;
+  readonly requestScreen?: unknown;
+}): GuestSurfaceKind {
+  if (surface.kind !== undefined) return surface.kind;
+  if (surface.contactPurpose !== undefined) return "contact";
+  if (surface.paymentScreen !== undefined || surface.offerScreen !== undefined) return "payment";
+  if (surface.confirmation !== undefined || surface.requestScreen !== undefined) return "booking";
+  if (surface.surfaceId.includes(":discovery:")) return "discovery";
+  if (surface.surfaceId.includes(":unit:")) return "unit-detail";
+  if (surface.surfaceId.includes(":compare:")) return "compare";
+  if (surface.surfaceId.includes(":request:draft:") || surface.surfaceId.includes(":request:review:")) return "request-draft";
+  if (surface.surfaceId.includes(":request:")) return "booking";
+  if (surface.surfaceId.includes(":offer:") || surface.surfaceId.includes(":payment:")) return "payment";
+  if (surface.surfaceId.includes(":booking:")) return "booking";
+  return "general";
+}
+
 export interface GuestSurfacePayload {
   readonly surfaceId: string;
   readonly a2uiMessages: readonly A2UIServerMessage[];
+  /** Issue 19: the server-owned surface type the client reads instead of guessing from the id. */
+  readonly kind?: GuestSurfaceKind;
+  /** Issue 19: the declared contact field purpose, so the client never infers it from the label. */
+  readonly contactPurpose?: "phone" | "email";
   readonly mode?: "text" | "inline-surface" | "focused-surface";
   readonly status?:
     | "active"
@@ -3656,20 +3689,18 @@ export class LocalGuestApp {
     if (!result.ok) return result;
     return {
       ...result,
-      surfaces: result.surfaces.map((surface) => ({
-        ...surface,
-        mode:
-          surface.mode ??
-          (surface.surfaceId.includes(":unit:") ||
-          surface.surfaceId.includes(":request:") ||
-          surface.surfaceId.includes(":offer:") ||
-          surface.surfaceId.includes(":payment:") ||
-          surface.surfaceId.includes(":booking:")
-            ? "focused-surface"
-            : "inline-surface"),
-        status: surface.status ?? "active",
-        summary: surface.summary ?? "Current conversation workspace",
-      })),
+      surfaces: result.surfaces.map((surface) => {
+        const kind = guestSurfaceKindFor(surface);
+        return {
+          ...surface,
+          kind,
+          mode:
+            surface.mode ??
+            (FOCUSED_SURFACE_KINDS.has(kind) ? "focused-surface" : "inline-surface"),
+          status: surface.status ?? "active",
+          summary: surface.summary ?? "Current conversation workspace",
+        };
+      }),
     };
   }
 
@@ -4811,6 +4842,7 @@ export class LocalGuestApp {
     const artifact = this.#draftArtifact(thread, review ? "review" : "draft");
     return {
       surfaceId,
+      kind: "request-draft",
       mode: "focused-surface",
       summary: review ? "Request review" : "Request Draft",
       conventionalRoute: conventionalRequestDraftRoute(draftId),
@@ -5245,6 +5277,8 @@ export class LocalGuestApp {
       surfaces: [
         {
           surfaceId,
+          kind: "contact",
+          contactPurpose: kind,
           mode: "focused-surface",
           summary: baseLabel,
           conventionalRoute: `/guest/contact?kind=${kind}${kind === "phone" && thread.draftId ? `&returnTo=${encodeURIComponent(conventionalRequestDraftRoute(thread.draftId))}` : ""}`,
@@ -5403,6 +5437,7 @@ export class LocalGuestApp {
     const surfaceId = `thread-${thread.threadId}:request:${requestId}`;
     return {
       surfaceId,
+      kind: "booking",
       mode: "focused-surface",
       summary: status.label,
       conventionalRoute: conventionalBookingRequestRoute(requestId),
@@ -5459,6 +5494,7 @@ export class LocalGuestApp {
       thread.activeSurfaces.set(BOOKING_STAGE, bookingSurfaceId);
       return {
         surfaceId: bookingSurfaceId,
+        kind: "booking",
         mode: "focused-surface",
         summary: "Reservation confirmed",
         conventionalRoute: conventionalBookingContractRoute(
@@ -6079,6 +6115,7 @@ export class LocalGuestApp {
             : "View payment status";
     return {
       surfaceId,
+      kind: "payment",
       mode: "focused-surface",
       summary,
       conventionalRoute: conventionalCardPaymentRoute(thread.offerId!),
@@ -6158,9 +6195,9 @@ function discoverySurface(
 ): GuestSurfacePayload {
   return {
     surfaceId,
+    kind: "discovery",
     mode: "inline-surface",
     summary: discoverySummary(artifact.facts.filters),
-    // ADR-0080: the re-presented fallback keeps the same criteria as the live one.
     conventionalRoute: conventionalSearchRoute(artifact.facts.filters),
     textFallback: discoveryFallbackMessage(artifact),
     a2uiMessages: discoveryArtifactToA2UI({

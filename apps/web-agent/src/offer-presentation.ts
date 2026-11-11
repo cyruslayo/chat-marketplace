@@ -1,6 +1,8 @@
+import { billingPeriodLines } from "./extended-stay-presentation.js";
 import type { ConditionalOfferArtifact } from "../../web/src/conditional-offer-artifact.js";
 import {
   accommodationProviderLine,
+  GUEST_FACT_LABELS,
   GUEST_GLOSSARY,
   GUEST_PAYMENT_COPY,
   guestDisclosure,
@@ -21,6 +23,8 @@ export interface OfferScreenContent {
   readonly notes: readonly string[];
   readonly policies: readonly { readonly heading: string; readonly items: readonly string[] }[];
   readonly amount: string;
+  /** Issue 27 (ADR 0092): the Extended Stay payment schedule, projected, never calculated here. */
+  readonly schedule?: { readonly heading: string; readonly periods: readonly string[]; readonly firstPeriodOnly: string };
   readonly accept?: { readonly path: string; readonly surfaceId: string };
   readonly conversationPath: string;
   readonly searchPath?: string;
@@ -78,6 +82,7 @@ export function offerScreenContent(
       { heading: GUEST_PAYMENT_COPY.otherTerms, items: artifact.disclosures.map(guestDisclosure) },
     ],
     amount,
+    ...(facts.billingPeriods?.length ? { schedule: { heading: GUEST_FACT_LABELS.paymentSchedule, periods: billingPeriodLines(facts.billingPeriods), firstPeriodOnly: GUEST_FACT_LABELS.firstPeriodOnly } } : {}),
     ...(artifact.actions.some((action) => action.type === "accept") && surfaceId
       ? { accept: { path: `${path}/accept`, surfaceId } }
       : {}),

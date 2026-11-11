@@ -1,4 +1,4 @@
-import { GUEST_PHONE_COPY, GUEST_PAYMENT_COPY, GUEST_NOTICE_COPY } from "../../web-agent/src/guest-content.js";
+import { GUEST_PHONE_COPY, GUEST_PAYMENT_COPY, GUEST_NOTICE_COPY, GUEST_PAYMENT_CALLBACK_COPY } from "../../web-agent/src/guest-content.js";
 import { generatePlatformId } from "../../../packages/platform-core/src/index.js";
 import {
   createServer,
@@ -25,7 +25,7 @@ import type { AssetLoader } from "../../../packages/platform-core/src/asset-load
 import { nodeAssetLoader } from "../../../packages/platform-core/src/node-asset-loader.js";
 import { GUEST_HTML_SECURITY_HEADERS } from "../../../packages/platform-core/src/security-headers.js";
 import { toDiscoveryProjection, StayDateRange, dateKeyInLagos, type ExtendedStayPolicy } from "../../../domains/shortlet/src/index.js";
-import { billingPeriodStatusText, extendedStayUnitFacts } from "../../web-agent/src/extended-stay-presentation.js";
+import { billingPeriodStatusText, extendedStayUnitFacts, scheduleLeadText } from "../../web-agent/src/extended-stay-presentation.js";
 import { formatBookingMoney } from "../../web-agent/src/booking-presentation.js";
 import { formatGuestDate } from "../../web-agent/src/guest-content.js";
 import { GUEST_MODES, guestRefusalFor, type ModePresentation } from "../../web-agent/src/guest-content.js";
@@ -332,12 +332,12 @@ import {
 /**
  * The chat shell (ADR 0107): rendered from the Agent Mode presentation, stays by default. Hosts pass nothing and get stays.
  */
-export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays): string {
+export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays, notice?: string): string {
   return `<!DOCTYPE html>
 <html lang="en-NG" data-theme="system" data-mode="${escapeHtml(mode.id)}">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Shortlet Concierge</title>
   <link rel="stylesheet" href="/shortlet-foundations.css">
   <style>
@@ -375,7 +375,9 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays)
     #vertical-starters { margin-block-end: var(--space-4); }
     main { flex: 1; min-height: 0; display: flex; flex-direction: column; }
     /* ADR-0078: keep the conversation independently scrollable at the 320px launch viewport. */
-    #transcript { flex: 1 1 0; min-height: 22dvh; padding: var(--space-6) var(--layout-gutter-mobile) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; }
+    #transcript { flex: 1 1 0; min-height: 22dvh; padding: var(--space-6) var(--layout-gutter-mobile) var(--space-4); display: flex; flex-direction: column; gap: var(--space-3); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-gutter: stable; }
+    /* Issue 24: older turns defer their rendering until scrolled near; the intrinsic size keeps the scroll stable. */
+    #transcript .turn--deferred { content-visibility: auto; contain-intrinsic-size: auto none auto 4rem; }
     .conversation-heading { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     .turn { display: flex; flex-direction: column; gap: var(--space-1); }
     .turn.user { align-items: flex-end; }
@@ -390,7 +392,7 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays)
     .prompt-suggestions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-3); }
     .quick-replies { display: flex; flex-wrap: wrap; gap: var(--space-2); }
     .quick-reply { min-width: var(--control-min-target); justify-content: center; }
-    #workspace-region { min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 0 var(--layout-gutter-mobile) var(--space-4); }
+    #workspace-region { min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 0 var(--layout-gutter-mobile) var(--space-4); container-type: inline-size; scrollbar-gutter: stable; }
     #active-workspace { background: var(--color-surface-elevated); border: 1px solid var(--color-border); border-radius: var(--radius-workspace); padding: var(--space-4); box-shadow: var(--elevation-active); }
     #active-workspace[hidden], #workspace-region[hidden], #workspace-reopen[hidden], #empty-state[hidden] { display: none; }
     .workspace-heading { display: flex; justify-content: flex-start; align-items: flex-start; gap: var(--space-3); margin-bottom: var(--space-2); }
@@ -502,7 +504,7 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays)
     .criteria-status:empty { display: none; }
     form#composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: var(--space-2); padding: var(--space-2) var(--layout-gutter-mobile) max(var(--space-4), env(safe-area-inset-bottom)); border-top: 1px solid var(--color-border); background: var(--color-surface); position: sticky; bottom: 0; z-index: 10; }
     #composer-label { grid-column: 1 / -1; color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); font-weight: 600; }
-    #composer-input { min-width: 0; width: 100%; min-height: var(--control-min-field); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-pill); font-size: 1rem; background: var(--color-canvas); color: var(--color-text); }
+    #composer-input { min-width: 0; width: 100%; min-height: var(--control-min-field); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-pill); font-size: 1rem; background: var(--color-canvas); color: var(--color-text); field-sizing: content; max-block-size: 8rem; }
     #composer-submit { inline-size: 3rem; min-inline-size: 3rem; min-height: 3rem; padding: 0; border-radius: var(--radius-pill); }
     form#composer[data-focused="true"] { gap: var(--space-1) var(--space-2); padding-block: var(--space-1) max(var(--space-2), env(safe-area-inset-bottom)); background: var(--color-canvas); }
     form#composer[data-focused="true"] #composer-label { font-weight: 400; }
@@ -510,6 +512,7 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays)
     form#composer[data-focused="true"] #composer-submit { min-height: 2.75rem; }
     #composer-submit:disabled { background: var(--color-surface-subtle); cursor: progress; }
     #working-status { grid-column: 1 / -1; margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-small); }
+    #turn-cancel { grid-column: 1 / -1; justify-self: start; }
     @media (min-width: 48rem) {
       #transcript, #workspace-region, form#composer, #criteria-strip { padding-left: var(--layout-gutter-tablet); padding-right: var(--layout-gutter-tablet); }
     }
@@ -565,7 +568,7 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays)
   <div class="app guest-editorial">
     <header class="ui-appbar">
       ${agentMarkHtml(mode, "appbar")}
-      <a class="header-identity ui-appbar__brand" href="/" aria-label="Shortlet home"><h1>Shortlet</h1></a>
+      <a class="header-identity ui-appbar__brand" href="/" aria-label="Shortlet home"><span>Shortlet</span></a>
       <span class="header-note">Abuja · Lagos</span>
       <span class="ui-appbar__grow"></span>
       <div class="header-actions">
@@ -584,7 +587,8 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays)
     <nav id="journey-rail" class="ui-rail-nav" aria-label="${GUEST_JOURNEY.railLabel}" hidden><ol class="ui-rail"></ol></nav>
     <nav id="task-rail" class="ui-task-rail-nav" aria-label="${GUEST_TASK_RAIL.railLabel}" hidden><ol class="ui-task-rail"></ol></nav>
     <main id="main-content" tabindex="-1">
-      <section id="transcript" role="log" aria-live="polite" aria-relevant="additions" aria-labelledby="conversation-heading">
+      ${notice === undefined ? "" : `<div class="ui-banner ui-banner--warning" role="status" data-payment-notice="not-confirmed">${escapeHtml(notice)}</div>
+      `}<h1 id="route-heading" class="conversation-heading">${escapeHtml(mode.emptyState.heading)}</h1><section id="transcript" role="log" aria-live="polite" aria-relevant="additions" aria-labelledby="conversation-heading">
         <h2 id="conversation-heading" class="conversation-heading">Conversation</h2>
         <header id="task-step-header" class="ui-step-header" hidden></header>
         <section id="vertical-starters" class="ui-vertical-starters" hidden></section>
@@ -603,7 +607,7 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays)
           <div class="criteria-chips"></div>
           <form id="criteria-editor" hidden novalidate></form>
         </div>
-        <p id="criteria-status" class="criteria-status" role="alert"></p>
+        <p id="criteria-status" class="criteria-status" role="status"></p>
       </section>
       <div id="agent-dock" class="agent-dock" hidden>${agentMarkHtml(mode, "dock")}<span class="agent-dock__chip"></span></div>
       ${composerHtml(mode, "chat")}
@@ -673,7 +677,7 @@ function renderPeriodScheduleHtml(offerId: string, periods: readonly BillingPeri
     title: GUEST_FACT_LABELS.paymentSchedule,
     frame: appFrameHtml({ threadId: null, publicStep: "stay" }),
     style: "",
-    body: `<div class="guest-editorial"><section aria-label="${escapeHtml(GUEST_FACT_LABELS.paymentSchedule)}"><h1>${escapeHtml(GUEST_FACT_LABELS.paymentSchedule)}</h1><p>${escapeHtml(GUEST_FACT_LABELS.firstPeriodOnly)}</p><ol>${rows}</ol>${noticeLinkHtml}</section></div>`,
+    body: `<div class="guest-editorial"><section aria-label="${escapeHtml(GUEST_FACT_LABELS.paymentSchedule)}"><h1>${escapeHtml(GUEST_FACT_LABELS.paymentSchedule)}</h1><p>${escapeHtml(scheduleLeadText(periods))}</p><ol>${rows}</ol>${noticeLinkHtml}</section></div>`,
   });
 }
 
@@ -1251,6 +1255,25 @@ function sendPageError(
       action: { href: "/", label: "Back to your conversation" },
     }),
   );
+}
+
+/**
+ * Issue 07 (ADR 0047, 0046, 0080): a payment-provider return that cannot be verified gets a guest page, never raw JSON.
+ * The page states the problem, the effect and the next action, and never claims a payment or Reservation succeeded.
+ */
+export function renderPaymentCallbackFailureHtml(status: number, code: string, href = "/"): string {
+  return errorPage({
+    status,
+    code,
+    title: GUEST_PAYMENT_CALLBACK_COPY.title,
+    message: GUEST_PAYMENT_CALLBACK_COPY.message,
+    action: { href, label: GUEST_PAYMENT_CALLBACK_COPY.action },
+  });
+}
+
+function sendPaymentCallbackFailure(res: HttpResponseLike, status: number, code: string, href = "/"): void {
+  res.writeHead(status, GUEST_HTML_HEADERS);
+  res.end(renderPaymentCallbackFailureHtml(status, code, href));
 }
 
 /**
@@ -3750,7 +3773,8 @@ export function createGuestRequestHandler(
         }
       }
       res.writeHead(200, GUEST_HTML_HEADERS);
-      res.end(renderGuestShellHtml());
+      const paymentNotice = url.searchParams.get("payment") === "not-confirmed" ? GUEST_PAYMENT_CALLBACK_COPY.notConfirmedNotice : undefined;
+      res.end(renderGuestShellHtml(GUEST_MODES.stays, paymentNotice));
       return;
     }
 
@@ -5144,7 +5168,7 @@ export function createGuestRequestHandler(
       // ADR-0087: a callback is only a return signal; verification below is
       // the sole path allowed to advance the existing payment transition.
       if (!payments) {
-        sendJson(res, 503, { ok: false, code: "PAYSTACK_UNAVAILABLE" });
+        sendPaymentCallbackFailure(res, 503, "PAYSTACK_UNAVAILABLE");
         return;
       }
       const session = await resolveBrowserSession(
@@ -5159,7 +5183,7 @@ export function createGuestRequestHandler(
       );
       const reference = url.searchParams.get("reference");
       if (!session || !reference) {
-        sendJson(res, 400, { ok: false, code: "PAYMENT_CALLBACK_INVALID" });
+        sendPaymentCallbackFailure(res, 400, "PAYMENT_CALLBACK_INVALID");
         return;
       }
       const checkout =
@@ -5176,12 +5200,12 @@ export function createGuestRequestHandler(
           res.writeHead(303, { Location: `/bookings/periods/${encodeURIComponent(periodOfferId)}` });
           res.end();
         } catch {
-          sendJson(res, 400, { ok: false, code: "PERIOD_PAYMENT_CALLBACK_REJECTED" });
+          sendPaymentCallbackFailure(res, 400, "PERIOD_PAYMENT_CALLBACK_REJECTED", `/bookings/periods/${encodeURIComponent(periodOfferId)}`);
         }
         return;
       }
       if (!checkout) {
-        sendJson(res, 400, { ok: false, code: "PAYMENT_CALLBACK_UNKNOWN" });
+        sendPaymentCallbackFailure(res, 400, "PAYMENT_CALLBACK_UNKNOWN");
         return;
       }
       const principal: CommandPrincipal = {
@@ -5214,10 +5238,7 @@ export function createGuestRequestHandler(
           session.identity.principalIds,
         );
         if (!threadId) {
-          sendJson(res, 404, {
-            ok: false,
-            code: "PAYMENT_CALLBACK_THREAD_UNKNOWN",
-          });
+          sendPaymentCallbackFailure(res, 404, "PAYMENT_CALLBACK_THREAD_UNKNOWN");
           return;
         }
         await app.environment.cardPaymentApp.verifyAndConfirmPaystack(
@@ -5238,14 +5259,11 @@ export function createGuestRequestHandler(
         );
         if (threadId) {
           res.writeHead(303, {
-            Location: `/?threadId=${encodeURIComponent(threadId)}`,
+            Location: `/?threadId=${encodeURIComponent(threadId)}&payment=not-confirmed`,
           });
           res.end();
         } else
-          sendJson(res, 400, {
-            ok: false,
-            code: "PAYMENT_CALLBACK_REJECTED",
-          });
+          sendPaymentCallbackFailure(res, 400, "PAYMENT_CALLBACK_REJECTED");
       }
       return;
     }

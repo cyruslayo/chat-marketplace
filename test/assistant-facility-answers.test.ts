@@ -105,7 +105,7 @@ test("AC3: After submit, a vague turn gets the request-stage reply and the plann
     const reply = successOf(await typedTurn(f, threadId, VAGUE_TEXT, VAGUE_SCRIPT, planner), "vague turn");
     assert.equal(planner.length, 0, "no planner call answers the vague turn");
     assert.equal(reply.messages.length, 1, "one reply");
-    assert.match(reply.messages[0]!, /^Your Booking Request is with .+ for review; the details are in the workspace\. I can also answer questions about .+, such as parking or Wi-Fi\.$/, "the request-stage reply");
+    assert.match(reply.messages[0]!, /^Your Booking Request is with .+ for review; you can see it in your stay details\. I can also answer questions about .+, such as parking or Wi-Fi\.$/, "the request-stage reply");
     assert.equal(reply.surfaces.length, 0, "no surface is placed");
   } finally { f.close(); }
 });

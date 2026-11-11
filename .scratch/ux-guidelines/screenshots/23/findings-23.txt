@@ -1,0 +1,8 @@
+unit-detail light 320: height 900 no horizontal overflow
+unit-detail light 390: height 900 no horizontal overflow
+unit-detail light 768: height 900 no horizontal overflow
+unit-detail light 1280: height 901 no horizontal overflow
+unit-detail dark 320: height 900 no horizontal overflow
+unit-detail dark 390: height 900 no horizontal overflow
+unit-detail dark 768: height 900 no horizontal overflow
+unit-detail dark 1280: height 901 no horizontal overflow

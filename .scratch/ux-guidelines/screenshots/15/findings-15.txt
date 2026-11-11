@@ -1,0 +1,8 @@
+skip-link light 320: height 1861 no horizontal overflow
+skip-link light 390: height 1814 no horizontal overflow
+skip-link light 768: height 1877 no horizontal overflow
+skip-link light 1280: height 1919 no horizontal overflow
+skip-link dark 320: height 1861 no horizontal overflow
+skip-link dark 390: height 1814 no horizontal overflow
+skip-link dark 768: height 1877 no horizontal overflow
+skip-link dark 1280: height 1919 no horizontal overflow

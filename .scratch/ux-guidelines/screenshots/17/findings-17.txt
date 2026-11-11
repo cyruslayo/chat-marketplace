@@ -1,0 +1,16 @@
+search-page light 320: height 1864 no horizontal overflow
+chat light 320: height 900 no horizontal overflow
+search-page light 390: height 1816 no horizontal overflow
+chat light 390: height 900 no horizontal overflow
+search-page light 768: height 1879 no horizontal overflow
+chat light 768: height 900 no horizontal overflow
+search-page light 1280: height 1920 no horizontal overflow
+chat light 1280: height 901 no horizontal overflow
+search-page dark 320: height 1864 no horizontal overflow
+chat dark 320: height 900 no horizontal overflow
+search-page dark 390: height 1816 no horizontal overflow
+chat dark 390: height 900 no horizontal overflow
+search-page dark 768: height 1879 no horizontal overflow
+chat dark 768: height 900 no horizontal overflow
+search-page dark 1280: height 1920 no horizontal overflow
+chat dark 1280: height 901 no horizontal overflow
