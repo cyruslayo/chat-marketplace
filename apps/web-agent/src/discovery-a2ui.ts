@@ -133,19 +133,18 @@ export function fitReasons(unit: DiscoveryUnitProjection, filters: Readonly<Reco
 }
 
 /**
- * Issue 03b / ADR-0015: a result is described as within budget only when it
- * has an All-In Stay Total at or under the budget. The Refundable Security
- * Deposit is never part of that comparison (ADR-0016); when it takes the cash
- * needed over the budget, the card says so and shows the total to complete
- * booking.
+ * Issue 03b / ADR-0015 / issue 10: a result is described as within budget only when it has an All-In Stay Total at or
+ * under the budget. The Refundable Security Deposit is never part of that comparison (ADR-0016); when it takes the cash
+ * needed over the budget, the card shows the projected amount due now, never a presentation-level sum of two amounts.
  */
 function budgetNote(unit: DiscoveryUnitProjection, budgetKobo: number | undefined): string | undefined {
   const total = unit.price.allInStayTotalKobo;
   if (budgetKobo === undefined || total === null || total > budgetKobo) return undefined;
   const within = `Within your ${formatNgnKobo(budgetKobo)} budget (${GUEST_GLOSSARY.allInStayTotal}).`;
   const deposit = unit.price.refundableSecurityDepositKobo;
-  return deposit > 0 && total + deposit > budgetKobo
-    ? `${within} The ${GUEST_GLOSSARY.refundableSecurityDeposit} is paid separately, so the total to complete booking is ${formatNgnKobo(total + deposit)}.`
+  const amountDueNow = unit.price.amountDueNowKobo;
+  return deposit > 0 && amountDueNow !== null && amountDueNow > budgetKobo
+    ? `${within} The ${GUEST_GLOSSARY.refundableSecurityDeposit} is paid separately, so the ${GUEST_FACT_LABELS.amountDueNow.toLowerCase()} is ${formatNgnKobo(amountDueNow)}.`
     : within;
 }
 

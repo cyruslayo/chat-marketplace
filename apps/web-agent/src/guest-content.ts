@@ -26,9 +26,101 @@ export const GUEST_GLOSSARY = Object.freeze({
   operatorFallback: "the Operator",
 });
 
+/**
+ * Issue 60 (ADR 0075, ADR 0077): the closed refusal map. Every `ok:false` code the app can return maps to one class, and the class
+ * decides the guest copy and the client's behaviour. A code that is not listed fails closed to the generic `unavailable` copy.
+ */
+export type RefusalClass = "stale" | "forbidden" | "invalid" | "unavailable" | "busy";
+
+export type RefusalCode =
+  | "ACTION_NOT_AUTHORIZED" | "ACTIVE_TASK" | "ARTIFACT_MISMATCH" | "CARD_CHECKOUT_FAILED" | "CONCIERGE_UNAVAILABLE"
+  | "CONTINUOUS_OCCUPANCY_REFUSED" | "CRITERIA_LOCKED" | "CRITERIA_REJECTED" | "EXPIRED_SURFACE" | "INVALID_ARTIFACT"
+  | "INVALID_CONTEXT" | "INVALID_CRITERIA" | "INVALID_EVENT" | "INVALID_INPUT" | "INVALID_THREAD" | "INVALID_ROUTE"
+  | "NOTHING_TO_UNDO" | "OFFER_MISMATCH" | "PAYMENT_NOT_CONFIRMED" | "PAYSTACK_UNAVAILABLE" | "QUOTE_CHANGED"
+  | "REQUEST_MISMATCH" | "REQUEST_NOT_SUBMITTED" | "STALE_ACTION" | "STALE_SURFACE" | "TASK_UNAVAILABLE" | "THREAD_BUSY"
+  | "UNKNOWN_DOMAIN" | "UNKNOWN_TASK" | "UNKNOWN_THREAD" | "UNSUPPORTED_ACTION" | "UNSUPPORTED_EVENT";
+
+/** The copy for each class when a code gives none of its own. */
+export const GUEST_REFUSAL_DEFAULT: Readonly<Record<RefusalClass, string>> = Object.freeze({
+  stale: "These options have changed. Here are the current ones.",
+  forbidden: "That action isn't available here. Please use the options shown.",
+  invalid: "That action could not be completed here. Please try again from the current screen.",
+  unavailable: "Something went wrong. Please try again.",
+  busy: "That's still being processed. Please wait a moment and try again.",
+});
+
+interface GuestRefusalEntry { readonly class: RefusalClass; readonly copy?: string; readonly keepServerMessage?: true; }
+
+export const GUEST_REFUSAL: Readonly<Record<RefusalCode, GuestRefusalEntry>> = Object.freeze({
+  // stale: the guest's view or action no longer matches the server, so the client refreshes.
+  STALE_SURFACE: { class: "stale" },
+  STALE_ACTION: { class: "stale" },
+  EXPIRED_SURFACE: { class: "stale" },
+  ARTIFACT_MISMATCH: { class: "stale" },
+  INVALID_ARTIFACT: { class: "stale" },
+  OFFER_MISMATCH: { class: "stale" },
+  QUOTE_CHANGED: { class: "stale" },
+  REQUEST_MISMATCH: { class: "stale" },
+  // forbidden: the action is not permitted here. ACTION_NOT_AUTHORIZED carries mixed server messages (some internal), so it keeps a
+  // message only when it is one of the closed guest-copy constants in `KEPT_ACTION_NOT_AUTHORIZED_COPY` (see guestRefusalFor).
+  ACTION_NOT_AUTHORIZED: { class: "forbidden" },
+  UNSUPPORTED_ACTION: { class: "forbidden" },
+  UNSUPPORTED_EVENT: { class: "forbidden" },
+  ACTIVE_TASK: { class: "forbidden" },
+  // invalid: the request itself is malformed.
+  INVALID_CONTEXT: { class: "invalid" },
+  INVALID_EVENT: { class: "invalid" },
+  INVALID_INPUT: { class: "invalid" },
+  INVALID_CRITERIA: { class: "invalid" },
+  INVALID_ROUTE: { class: "invalid" },
+  INVALID_THREAD: { class: "invalid" },
+  UNKNOWN_TASK: { class: "invalid" },
+  // busy: a run is already in flight on this thread.
+  THREAD_BUSY: { class: "busy" },
+  // unavailable: the platform could not complete the action. These server messages are already closed guest copy, so keep them.
+  CONCIERGE_UNAVAILABLE: { class: "unavailable", keepServerMessage: true },
+  REQUEST_NOT_SUBMITTED: { class: "unavailable", keepServerMessage: true },
+  PAYMENT_NOT_CONFIRMED: { class: "unavailable", keepServerMessage: true },
+  CARD_CHECKOUT_FAILED: { class: "unavailable", keepServerMessage: true },
+  PAYSTACK_UNAVAILABLE: { class: "unavailable", keepServerMessage: true },
+  UNKNOWN_DOMAIN: { class: "unavailable", keepServerMessage: true },
+  UNKNOWN_THREAD: { class: "unavailable" },
+  // A task start or switch the platform could not complete (the task tool returned TASK_UNAVAILABLE, e.g. an unknown domain or task).
+  // It is a platform action that could not be performed in the current state, not a malformed request, so it is unavailable.
+  TASK_UNAVAILABLE: { class: "unavailable" },
+  // Already guest copy built from closed guest content; the server's message is kept.
+  CRITERIA_REJECTED: { class: "invalid", keepServerMessage: true },
+  CRITERIA_LOCKED: { class: "busy", keepServerMessage: true },
+  CONTINUOUS_OCCUPANCY_REFUSED: { class: "invalid", keepServerMessage: true },
+  NOTHING_TO_UNDO: { class: "invalid", keepServerMessage: true },
+});
+
+/**
+ * The mapped message and class for an `ok:false` result; an unknown code fails closed to the generic `unavailable` copy. `serverMessage`
+ * is the result's own message, needed only for ACTION_NOT_AUTHORIZED, which keeps it just when it is a closed guest-copy constant.
+ */
+export function guestRefusalFor(code: string, serverMessage?: string): { readonly class: RefusalClass; readonly message: string | null } {
+  const entry = (GUEST_REFUSAL as Readonly<Record<string, GuestRefusalEntry>>)[code];
+  if (entry === undefined) return { class: "unavailable", message: GUEST_REFUSAL_DEFAULT.unavailable };
+  if (entry.keepServerMessage) return { class: entry.class, message: null };
+  if (code === "ACTION_NOT_AUTHORIZED" && serverMessage !== undefined && KEPT_ACTION_NOT_AUTHORIZED_COPY.has(serverMessage)) {
+    return { class: entry.class, message: null };
+  }
+  return { class: entry.class, message: entry.copy ?? GUEST_REFUSAL_DEFAULT[entry.class] };
+}
+
 /** Server-authored concierge copy for replies whose facts come from current pack projections. */
+/** Issue 19 (ADR 0092: a month is 30 nights): the show-back words for a stay the guest stated in months. The only source of this wording. */
+export function guestStayMonthsWords(count: number): string {
+  return count === 1 ? "(1 month)" : `(${count} months)`;
+}
+
 export const GUEST_ASSISTANT_COPY = Object.freeze({
   stayClarification: "How many nights will you be staying, and for how many guests?",
+  // Issue 19 (ADR 0106): a model's nights that differ from the length the guest typed are refused, and that length is shown back.
+  // Owner decision (8 Nov 2026): the wording of the denial sentence. A months length shows its months in brackets.
+  statedStay: (nights: number, stated?: { readonly unit: "night" | "week" | "fortnight" | "month"; readonly count: number }) =>
+    `Just to check: you’d like ${nights} nights${stated?.unit === "month" ? ` ${guestStayMonthsWords(stated.count)}` : ""}. Shall I search for that?`,
   // Issue 08 (ADR 0106): an area the server does not know is refused with the closed list of areas it can search.
   areaClarification: (examples: string) => `I couldn't find that area. Which area should I search? For example: ${examples}.`,
   // Issue 07 (ADR 0106, ADR 0015): a budget the server cannot read from the guest's own words is refused, never searched as a guessed amount.
@@ -39,8 +131,9 @@ export const GUEST_ASSISTANT_COPY = Object.freeze({
   unitDatesClarification: "Add your check-in and checkout dates to see this apartment's price for your stay. Please write them with the day, month and year, for example 20 November 2026 to 23 November 2026.",
   // Issue 04 (ADR 0106 2 Nov 2026, ADR 0080, ADR 0077): the show-back of a relative date the guest must confirm. The deterministic
   // path says the same sentence (concierge.ts), so both paths show the same dates before a search.
-  dateShowBack: (arriving: string, leaving: string, nights: number, guests: number, place: string) =>
-    `Just to check: arriving ${arriving} and leaving ${leaving} (${nights} ${nights === 1 ? "night" : "nights"}), ${guests} ${guests === 1 ? "guest" : "guests"} in ${place}. Shall I search these dates? Reply "yes", or tell me different dates.`,
+  // Issue 19: a stay the guest stated in months shows its nights first and the months in brackets ("60 nights (2 months)").
+  dateShowBack: (arriving: string, leaving: string, nights: number, guests: number, place: string, stated?: { readonly unit: "night" | "week" | "fortnight" | "month"; readonly count: number }) =>
+    `Just to check: arriving ${arriving} and leaving ${leaving}${stated?.unit === "month" ? `, ${nights} nights ${guestStayMonthsWords(stated.count)}` : ` (${nights} ${nights === 1 ? "night" : "nights"})`}, ${guests} ${guests === 1 ? "guest" : "guests"} in ${place}. Shall I search these dates? Reply "yes", or tell me different dates.`,
   // Issue 04: an ambiguous phrase names its candidate days; one chip per day, and a tap chooses it.
   // Issue 13b (ADR 0106, 2 Nov 2026; ADR 0080): the same date check while a Request Draft is open. "yes" updates the draft; nothing is searched.
   draftDateShowBack: (arriving: string, leaving: string, nights: number, guests: number) =>
@@ -49,8 +142,22 @@ export const GUEST_ASSISTANT_COPY = Object.freeze({
   dateConfirmChip: "Yes",
   dateChangeChip: "Change dates",
   safeClarification: "I can help you find and compare stays, explain pricing, or check a booking status. What would you like to do?",
+  // Issue 59 (ADR 0106 amendment, ADR 0075): the fixed copy that re-asks the closed question the assistant last asked, when a terse
+  // answer was not understood. One sentence per code; no guest text is echoed and no model output is used.
+  openQuestion: Object.freeze({
+    where: "Which area would you like to stay in?",
+    party_size: "How many guests are staying?",
+    check_in: "Which day would you like to check in?",
+    nights: "How many nights would you like to stay?",
+    stay_length: "How long would you like to stay?",
+    pick_result: "Which one would you like to see?",
+    date_confirm: "Shall I use that date? Reply \"yes\", or tell me different dates.",
+    location_confirm: "Shall I search that area instead? Reply \"yes\", or tell me another area.",
+  }),
   // Shown when a turn is slower than a normal one; the guest is not told the request failed.
   stillWorking: "Still working on your request. A stay search can take a little longer, so please keep this page open.",
+  // Issue 21: the browser stopped waiting; the server may still answer. Never claim a server-side cancellation.
+  stoppedWaiting: "Stopped waiting. Your message may still be answered.",
   // ADR 0067 governs the support window and active-stay on-call coverage.
   generalSupport: "General human support is available daily from 8:00 AM to 8:00 PM WAT. Use the existing support channel provided with your stay.",
   activeStayEmergencySupport: "Active stays have 24/7 Human Incident Support. Use Active-Stay Emergency Support through your existing booking support route.",
@@ -68,15 +175,15 @@ export const GUEST_ASSISTANT_COPY = Object.freeze({
   draftReady: "Your Request Draft is ready to review. It has not been submitted.",
   offerInactive: "This Conditional Booking Offer is no longer active. Review the current booking details before continuing.",
   offerAmount: (total: string, due: string, deposit: string) => `The offer's All-In Stay Total is ${total}. The amount due now is ${due}. The refundable security deposit is shown separately as ${deposit}. Review the offer before accepting it.`,
-  confirmedBooking: (contractId: string) => `Your booking is confirmed under contract reference ${contractId}.`,
-  issuedOffer: (offerId: string) => `The Accommodation Provider has issued a Conditional Booking Offer under offer reference ${offerId}.`,
-  disclosedRequest: (requestId: string) => `Your Booking Request ${requestId} has been disclosed and is awaiting the Accommodation Provider's response.`,
+  confirmedBooking: "Your booking is confirmed. Your reservation is in your stay details.",
+  issuedOffer: "The Accommodation Provider has issued a Conditional Booking Offer. Review it in your stay details.",
+  disclosedRequest: "Request sent. Waiting for the Operator to respond.",
   noCurrentBooking: "You currently have no active booking or pending request.",
 });
 
 export const GUEST_COMMERCE_ASSISTANT_COPY = Object.freeze({
   searchResults: (count: number) => `I found ${count} current product ${count === 1 ? "offer" : "offers"}. Review the Commerce results below.`,
-  offer: "I found the current Merchant Offer. Review its details on the Commerce surface.",
+  offer: "I found the current Merchant Offer. Review its details below.",
   delivery: (count: number) => `I found ${count} current delivery ${count === 1 ? "option" : "options"}. Review the quotes below.`,
   cart: "I updated the Store Cart. Review its current quantities and prices below.",
   orderStatus: (status: string) => `The current Merchant Order status is ${status}.`,
@@ -90,6 +197,14 @@ export const GUEST_FORBIDDEN_TERMS: readonly RegExp[] = Object.freeze([
   /\bguest liability\b/i,
   /\bescrow\b/i,
   /\bhosts?\b/i,
+  // Issue 06 (guideline §9): internal state names and UI jargon never reach the guest. Two phrases stay legal or
+  // descriptive guest copy: "Dedicated workspace" is a real amenity, and "disclosed"/"undisclosed" appear in counsel's
+  // contract terms ("Undisclosed commercial use", "disclosed Pet Friendly terms"), so the forbidden form is the internal
+  // request state sentence.
+  /\bhas been disclosed\b/i,
+  /\bsurface\b/i,
+  /\bthe workspace\b/i,
+  /\bartifact\b/i,
 ]);
 
 /** Timeline markers for completed guest actions; rendered quietly, never as assistant turns. */
@@ -273,14 +388,14 @@ export type GuestCapabilityStage = "request" | "offer" | "payment" | "booking" |
 export function guestCapabilityReply(stage: GuestCapabilityStage, unit?: { readonly title: string; readonly operatorName?: string | undefined }): string {
   const about = unit === undefined ? "" : ` I can also answer questions about ${unit.title}, such as parking or Wi-Fi.`;
   if (stage === "request")
-    return `Your ${GUEST_GLOSSARY.bookingRequest} is with ${guestOperatorName(unit?.operatorName)} for review; the details are in the workspace.${about}`;
+    return `Your ${GUEST_GLOSSARY.bookingRequest} is with ${guestOperatorName(unit?.operatorName)} for review; you can see it in your stay details.${about}`;
   if (stage === "offer")
-    return `Your ${GUEST_GLOSSARY.conditionalBookingOffer} is in the workspace. Review it and accept it there if it suits you.${about}`;
+    return `Your ${GUEST_GLOSSARY.conditionalBookingOffer} is in your stay details. Review it and accept it there if it suits you.${about}`;
   if (stage === "payment")
-    return `Your payment step is in the workspace.${about}`;
+    return `Your payment step is in your stay details.${about}`;
   if (stage === "booking")
-    return `Your booking details are in the workspace.${about}`;
-  return `Your current details are in the workspace.${about}`;
+    return `Your booking is in your stay details.${about}`;
+  return `Everything so far is in your stay details.${about}`;
 }
 
 /** ADR-0006: names the contracting party only where the contract can form. */
@@ -343,7 +458,7 @@ export function guestDisclosure(text: string): string {
   if (window) return `Complete payment within the ${window[1]}-minute Payment Window shown above.`;
   // ADR 0085: pilot identity verification controls access, not offer acceptance or payment.
   if (text.trim() === "Primary guest identity verification and stay occupancy rules apply strictly to this booking offer.")
-    return "Guest identity verification is required before access. The Primary Guest must follow the disclosed occupancy rules.";
+    return "Guest identity verification is required before access. The Primary Guest must follow the occupancy rules set out for this booking.";
   return GUEST_DISCLOSURE_WORDING.find((entry) => entry.domain.test(text.trim()))?.guest ?? text;
 }
 
@@ -445,7 +560,7 @@ export const GUEST_FACT_LABELS = Object.freeze({
   paymentSchedule: "Payment schedule",
   billingPeriod: "Billing Period",
   /** Demo-launch issue 12: says the amount due now is the first Billing Period, not the whole stay (ADR 0092). */
-  firstPeriodOnly: "This is the first Billing Period only. Later Billing Periods are paid separately on their due dates.",
+  firstPeriodOnly: "This is the first Billing Period only. Later Billing Periods are paid separately on their due dates; they are not charged automatically.",
 });
 
 /**
@@ -636,7 +751,60 @@ export const GUEST_PAYMENT_COPY = {
   manual: "Manual bank transfer",
   manualHelp: "Pay our business account and upload your receipt. Your booking confirms only after we check the money has arrived. You can't switch until this attempt expires or is declined.",
   lateReview: "A late payment needs review and does not confirm your booking. Contact Shortlet if you sent money after the deadline.",
+  // The card-checkout failure message (ADR 0077). ACTION_NOT_AUTHORIZED keeps it because it is closed guest copy.
+  checkoutStartFailed: "The secure card checkout could not be started.",
 } as const;
+
+/** Issue 07 (guideline §9/§10, ADR 0047/0046): a payment-provider return that cannot be verified. Problem, effect, next action. */
+export const GUEST_PAYMENT_CALLBACK_COPY = Object.freeze({
+  title: "We could not confirm this payment yet",
+  message: "Your reservation is not confirmed. Check your booking status before trying again.",
+  action: "Check your booking status",
+  // Issue 07 AC3: shown on the thread when verification failed but the guest can still read the authoritative status.
+  notConfirmedNotice: "We could not confirm your payment. Your reservation is not confirmed. Check the latest booking status.",
+});
+
+/** Issue 11 (guideline §6 stale action, §9 HTTP conflict): a surface changed after the guest last saw it. */
+export const GUEST_CHANGED_ELSEWHERE = Object.freeze({
+  message: "This request changed while you were viewing it. Check the latest status.",
+});
+
+/** Issue 08 (guideline §9, §10): the security-deposit claim surface speaks guest words, never raw domain states or amounts. */
+export const GUEST_DEPOSIT_CLAIM_COPY = Object.freeze({
+  title: "Security Deposit Claim",
+  status: (status: string): string => {
+    switch (status) {
+      case "allocation_pending": return "Your deposit claim is being prepared";
+      case "validated_notification_pending": return "The notice is being sent";
+      case "response_open": return "Waiting for your response";
+      case "guest_accepted": return "You accepted this claim";
+      case "human_review": return "Under human review";
+      case "adjudicated": return "Decision issued";
+      case "no_claim_refund_pending": return "Your deposit refund is pending";
+      case "no_claim_refunded": return "Your deposit has been refunded";
+      case "reconciliation_required": return "This needs support review";
+      default: return "Status unavailable";
+    }
+  },
+  refundStatus: (status: string): string => {
+    switch (status) {
+      case "pending": return "Refund pending";
+      case "settled": return "Refunded";
+      case "reconciliation_required": return "Needs support review";
+      case "not_created": return "Not started";
+      case "not_applicable": return "Not applicable";
+      default: return "Status unavailable";
+    }
+  },
+  response: (response: string): string => response === "accept" ? "you accepted this claim" : response === "dispute" ? "you disputed this claim" : "your response is recorded",
+});
+
+/**
+ * ADR 0077: the only ACTION_NOT_AUTHORIZED server messages that are closed guest copy and may be kept. Every other message with that
+ * code (internal text such as "Offer cannot be accepted in current state." or "The requested action is not authorized.") is replaced
+ * by the fixed forbidden copy.
+ */
+const KEPT_ACTION_NOT_AUTHORIZED_COPY: ReadonlySet<string> = new Set([GUEST_PAYMENT_COPY.checkoutStartFailed]);
 
 /**
  * Agent Mode presentation (ADR 0107): the copy a mode gives the guest. The chat shell, the no-JS conversation page and the
@@ -848,4 +1016,111 @@ export function validateModePresentation(value: unknown): ModePresentation | und
   };
   deepFreeze(presentation);
   return presentation;
+}
+
+/**
+ * Monthly-stays issue 17 (ADR 0092, ADR 0077): the Notice to End copy, one source for the chat workspace and the standalone
+ * page. The action, heading, confirm and back labels were proposed in the issue and are awaiting owner confirmation (Comments).
+ */
+export const GUEST_NOTICE_COPY = Object.freeze({
+  action: "Give notice to end your stay",
+  heading: "End your stay early",
+  confirm: "Give notice",
+  back: "Keep my stay",
+  recordedBack: "Back to my stay",
+  /** Issue 18 (proposed for owner confirmation, 8 Nov 2026): refusals and the typed-confirmation reply. */
+  notExtended: "Giving notice applies to an Extended Stay. This is a Short Stay, so it cannot be ended early from here.",
+  notVerified: "You can give notice once you have checked in at the property.",
+  unavailable: "Notice to End is not available for this stay right now.",
+  cardOpened: "Here are the terms for giving notice. Press Give notice on the card to confirm.",
+  given: "Notice given. Your stay now ends on the new last night.",
+  stale: "The notice terms have changed. Ask again to see the current terms.",
+  newLastNight: "New last night",
+  newCheckOut: "New checkout",
+  refund: "Refund for paid nights after it",
+  owed: "Still to pay before then",
+  recordedHeading: "Notice given",
+  recordedLead: "Your stay now ends on the new last night below. Refunds are paid by hand, as the terms say.",
+});
+
+/**
+ * Monthly-stays issue 09 (ADR 0092 Extensions). Labels "Extend your stay" and "Request extension" are proposed for owner
+ * confirmation (8 Nov 2026); every other string here is new and listed in the issue's Comments for the owner.
+ */
+export const GUEST_EXTENSION_COPY = Object.freeze({
+  action: "Extend your stay",
+  heading: "Extend your stay",
+  confirm: "Request extension",
+  back: "Not now",
+  /** Refusals (a guest refusal, never an error): the reason names the one thing that stops the extension. */
+  notExtended: "Extending applies to an Extended Stay. A Short Stay cannot be extended to 30 nights or more from here.",
+  noticeInForce: "A Notice to End is in force, so this stay cannot be extended.",
+  pending: "An extension request is already waiting for the Operator.",
+  unavailable: "The unit is not available for every added night, so the stay cannot be extended.",
+  inspection: "The inspection or Management Authority does not cover the new checkout, so the stay cannot be extended.",
+  tooLong: "An Extended Stay is at most 180 nights in total, so the stay cannot be extended further.",
+  notAvailable: "This stay cannot be extended right now.",
+  cardOpened: "Here is the extension and what it adds. Press Request extension on the card to send it to the Operator. Nothing is agreed until the Operator approves.",
+  requested: "Extension requested. The Operator will reply by the time shown below. Nothing is added until they approve.",
+  approved: "Extension agreed. Your stay now ends on the new checkout.",
+  declined: "The Operator could not extend your stay. Nothing has changed.",
+  expired: "The Operator did not reply in time, so the extension was not made. Nothing has changed.",
+  stale: "The extension terms have changed. Ask again to see the current terms.",
+  addedNights: "Added nights",
+  newCheckOut: "New checkout",
+  addedAmount: "Added amount (paid as each period falls due)",
+  dueDate: "Due date for the added period",
+  respondBy: "Operator replies by",
+});
+
+export interface ExtensionFactsInput {
+  readonly addedNights: number;
+  readonly newCheckOut: string;
+  readonly addedAmountKobo: number;
+  /** The added period's due date: its Period Payment falls due 7 days before its first night (ADR 0092). */
+  readonly periodDueDate: string;
+}
+
+export interface ExtensionFactRow {
+  readonly key: "addedNights" | "newCheckOut" | "addedAmount" | "dueDate" | "respondBy";
+  readonly label: string;
+  readonly value: string;
+  readonly raw: string;
+}
+
+/** The extension facts in one order for the page and the chat card (ADR 0077, 0080). `money` formats kobo for the surface. */
+export function extensionFactRows(facts: ExtensionFactsInput, money: (kobo: number) => string, respondBy?: string): readonly ExtensionFactRow[] {
+  return [
+    { key: "addedNights", label: GUEST_EXTENSION_COPY.addedNights, value: `${facts.addedNights} ${facts.addedNights === 1 ? "night" : "nights"}`, raw: String(facts.addedNights) },
+    { key: "newCheckOut", label: GUEST_EXTENSION_COPY.newCheckOut, value: formatGuestDate(facts.newCheckOut) ?? facts.newCheckOut, raw: facts.newCheckOut },
+    { key: "addedAmount", label: GUEST_EXTENSION_COPY.addedAmount, value: money(facts.addedAmountKobo), raw: String(facts.addedAmountKobo) },
+    { key: "dueDate", label: GUEST_EXTENSION_COPY.dueDate, value: formatGuestDate(facts.periodDueDate) ?? facts.periodDueDate, raw: facts.periodDueDate },
+    ...(respondBy === undefined ? [] : [{ key: "respondBy" as const, label: GUEST_EXTENSION_COPY.respondBy, value: respondBy, raw: respondBy }]),
+  ];
+}
+
+/** The Notice to End facts as the domain calculated them (issue 18 AC1): one helper for the page and the chat card. */
+export interface NoticeFactsInput {
+  readonly newLastNight: string;
+  readonly newCheckOut: string;
+  readonly refundKobo: number;
+  readonly owedKobo: number;
+}
+
+/** One fact row: its copy label, the value shown, and the raw value a test or a hook reads. */
+export interface NoticeFactRow {
+  readonly key: "newLastNight" | "newCheckOut" | "refund" | "owed";
+  readonly label: string;
+  readonly value: string;
+  readonly raw: string;
+}
+
+/** The four facts in the issue 17 order. `money` formats kobo for the surface that shows them. */
+export function noticeFactRows(facts: NoticeFactsInput, money: (kobo: number) => string): readonly NoticeFactRow[] {
+  return [
+    { key: "newLastNight", label: GUEST_NOTICE_COPY.newLastNight, value: formatGuestDate(facts.newLastNight) ?? facts.newLastNight, raw: facts.newLastNight },
+    { key: "newCheckOut", label: GUEST_NOTICE_COPY.newCheckOut, value: formatGuestDate(facts.newCheckOut) ?? facts.newCheckOut, raw: facts.newCheckOut },
+    { key: "refund", label: GUEST_NOTICE_COPY.refund, value: money(facts.refundKobo), raw: String(facts.refundKobo) },
+    { key: "owed", label: GUEST_NOTICE_COPY.owed, value: money(facts.owedKobo), raw: String(facts.owedKobo) },
+  ];
 }

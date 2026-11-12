@@ -241,6 +241,10 @@ test("criterion 6: each shortlet stage handler declares the supersede rule the s
     { stage: "request", supersedes: ["unit"], confirms: "request_to_book" },
     { stage: "payment", supersedes: ["offer"], confirms: "accept_offer" },
     { stage: "booking", supersedes: ["payment"], confirms: "start_checkout" },
+    // Issue 18: the Notice to End card confirms only from its own button; it retires only its own stage.
+    { stage: "notice", supersedes: ["notice"], confirms: "give_notice" },
+    // Monthly-stays issue 09: the extension card confirms only from its own button; it retires only its own stage.
+    { stage: "extension", supersedes: ["extension"], confirms: "request_extension" },
   ]);
 });
 

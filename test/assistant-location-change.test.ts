@@ -65,7 +65,8 @@ test("AC1: With a Lagos search active, \"my friend lives in Abuja, is it far?\" 
     const asked = successOf(await typedTurn(f, THREAD, ABUJA_QUESTION, SCRIPT, planner), "Abuja question");
     assert.deepEqual(asked.messages, [locationConflictQuestion({ city: "Abuja", label: "Abuja" }, { city: "Lagos", neighbourhood: "Old Ikoyi" })],
       "the reply asks the change question in the deterministic wording");
-    assert.deepEqual(asked.quickReplies, [HELD_LABEL, ABUJA_LABEL], "the question offers the two area chips: the held area, then the new one");
+    // Issue 58: chips are structured `{ label, edit? }`; compare their labels.
+    assert.deepEqual(asked.quickReplies?.map((chip) => chip.label), [HELD_LABEL, ABUJA_LABEL], "the question offers the two area chips: the held area, then the new one");
     assert.equal(hasDiscoverySurface(asked), false, "no new results are shown while the question is open");
     assert.deepEqual(shortlistOf(f, THREAD), before, "the Ikoyi results are kept");
     assert.equal(stayIntentOf(f, THREAD).neighbourhood, "Old Ikoyi", "the search still holds Old Ikoyi");

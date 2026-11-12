@@ -1,4 +1,7 @@
-import { MAX_STAY_NIGHTS } from "../../../domains/shortlet/src/index.js";
+import {
+  EXTENDED_STAY_POLICY,
+  MAX_STAY_NIGHTS,
+} from "../../../domains/shortlet/src/index.js";
 
 /**
  * The approved marketing copy of the landing page. Sources: the copy deck (owner approval 12 Oct 2026: the deck table, the
@@ -21,7 +24,7 @@ export const LANDING_COPY = Object.freeze({
   /** Explicit owner approval, 20 Oct 2026, landing issue 13: live-demo illustrations, not inventory. */
   demoNotice: "Demo — illustrative photos, not live listings.",
   /** S01: hero eyebrow (kept). */
-  heroEyebrow: "Furnished apartments · Lagos and Abuja",
+  heroEyebrow: "Furnished apartments · by the night or month",
   /** S02: hero H1 in three parts, so the accent word is its own element (issue 06 item 3). See heroHeadingText. */
   heroHeading: {
     before: "Your apartment in Lagos or Abuja, ",
@@ -30,18 +33,18 @@ export const LANDING_COPY = Object.freeze({
   },
   /** S03: hero lede (issue 06 item 3). */
   heroLede:
-    "Say what you need. See only what you can book, at the full price. Your money stays yours until the apartment is confirmed for your dates.",
+    "Say what you need, for a few nights or a few months. See only what you can book, at the full price. Your money stays yours until it’s confirmed.",
   /** The visible label of the hero composer's text field (direction doc, Accessibility). */
   composerLabel: "Describe your stay",
   /** S04: composer placeholder, hero and closing composer. */
-  composerPlaceholder: "Where, when and who’s coming?",
+  composerPlaceholder: "Where, how long, who?",
   /** S05: primary button of the composer: hero, beat 5 and closing composer. */
   primaryAction: "See what you can book",
   /** Example chips under the hero composer (issue 06 item 6). Each chip fills the field; its nights are checked below. */
   exampleChips: [
     { text: "Somewhere quiet in Abuja for a week", nights: 7 },
     { text: "Lekki, 3 nights from Friday, 4 of us", nights: 3 },
-    { text: "Ikoyi, 2 weeks from 10 Sept", nights: 14 },
+    { text: "Ikoyi, 2 months from 5 Jan, relocating", nights: 60 },
   ],
   /** S06: reassurance under the hero and the closing composer. */
   reassurance: "Nothing is charged, and nothing is sent until you press send.",
@@ -102,7 +105,7 @@ export const LANDING_COPY = Object.freeze({
     {
       number: "3",
       title: "You pay, it’s confirmed",
-      body: "Once payment is verified, the Reservation is confirmed and arrival steps stay in the same chat.",
+      body: "Once payment is verified, the Reservation is confirmed. Staying a month or more? You pay 30 nights at a time, each on its own due date.",
       status: "Due now: the amount on your offer",
       tone: "warning",
     },
@@ -110,15 +113,30 @@ export const LANDING_COPY = Object.freeze({
   /** S09: small label under the example chat window (kept). */
   exampleLabel: "Example booking · real app screens",
   /** S07: section eyebrow. */
-  howEyebrow: "How it works · one trip, five screens",
+  howEyebrow: "How it works · one stay, five screens",
   /** S08: section H2. */
   howHeading: "Five screens you’ll see. Five hassles you won’t.",
   /** S10: FAQ section title. */
   faqHeading: "Questions, answered plainly",
   /** S11: closing H2. */
-  closingHeading: "Start with the trip, not the form.",
+  closingHeading: "Start with the stay, not the form.",
   /** S12: browser tab title. */
-  pageTitle: "Shortlet · Lagos and Abuja apartments, priced all-in",
+  pageTitle: "Shortlet · Lagos and Abuja apartments, nights or months",
+  /**
+   * Issue 16 band "Staying for months?", after the money section. The accent is the second sentence (the italic part).
+   * Built from the kit and landing tokens only; the facts are text, the kit's check icon marks each one.
+   */
+  monthsHeading: {
+    before: "Staying for months? ",
+    accent: "Pay one month at a time.",
+  },
+  monthsLine:
+    "Not a hotel bill for three months. Not a year paid upfront before you know the city.",
+  monthsFacts: [
+    "One monthly price, all-in.",
+    "Each apartment lists what’s included: power, water, internet, cleaning.",
+    "30 nights at a time, never more than one period ahead.",
+  ],
   /** Beat pain lines (issue 05 wording; issue 08 sub-task B changes how they are shown). */
   pain: [
     "retyping your trip on five sites, then chasing an agent on WhatsApp",
@@ -171,6 +189,11 @@ export const LANDING_COPY = Object.freeze({
       question: "And if the Operator says no?",
       answer:
         "No payment is due, and you can keep searching in the same conversation.",
+    },
+    {
+      question: "Can I stay for a month or longer?",
+      answer:
+        "Yes, from 30 nights up to 6 months, in apartments that offer it. You pay the first 30 nights to confirm, then each later 30 nights by its own due date.",
     },
     {
       question: "Which areas can I book?",
@@ -229,8 +252,9 @@ export function heroHeadingText(
 }
 
 /**
- * A problem with each example chip: an empty text, or a night count that is not a whole number from 1 to MAX_STAY_NIGHTS
- * (the Short Stay maximum, ADR 0023 as amended 1 Nov 2026). The limit comes from the domain, not from a copy here.
+ * A problem with each example chip: an empty text, or a night count that is not a whole number in a Short Stay (1 to
+ * MAX_STAY_NIGHTS, ADR 0023 as amended 1 Nov 2026) or an Extended Stay (EXTENDED_STAY_POLICY, 30 to 180 nights, ADR 0092 as
+ * amended 1 Nov 2026). Both limits come from the domain, not from a copy here.
  */
 export function validateExampleChips(
   chips: readonly { readonly text: string; readonly nights: number }[],
@@ -238,13 +262,17 @@ export function validateExampleChips(
   const problems: string[] = [];
   for (const chip of chips) {
     if (chip.text.trim() === "") problems.push("a chip has no text");
-    if (
-      !Number.isInteger(chip.nights) ||
-      chip.nights < 1 ||
-      chip.nights > MAX_STAY_NIGHTS
-    ) {
+    const shortStay =
+      Number.isInteger(chip.nights) &&
+      chip.nights >= 1 &&
+      chip.nights <= MAX_STAY_NIGHTS;
+    const extendedStay =
+      Number.isInteger(chip.nights) &&
+      chip.nights >= EXTENDED_STAY_POLICY.minimumNights &&
+      chip.nights <= EXTENDED_STAY_POLICY.maximumNights;
+    if (!shortStay && !extendedStay) {
       problems.push(
-        `"${chip.text}" describes ${chip.nights} nights; a Short Stay is 1 to ${MAX_STAY_NIGHTS} nights (ADR 0023)`,
+        `"${chip.text}" describes ${chip.nights} nights; a Short Stay is 1 to ${MAX_STAY_NIGHTS} nights (ADR 0023) and an Extended Stay is ${EXTENDED_STAY_POLICY.minimumNights} to ${EXTENDED_STAY_POLICY.maximumNights} nights (ADR 0092)`,
       );
     }
   }
@@ -268,6 +296,11 @@ export const LANDING_LENGTH_LIMITS = Object.freeze({
   trustLine: 70,
   apartmentsHeading: 55,
   apartmentsLine: 130,
+  monthsHeading: 55,
+  monthsLine: 130,
+  // The approved fact "Each apartment lists what’s included: power, water, internet, cleaning." is 71 characters; the
+  // owner approved the copy as written, so the limit is 75 for this slot (see issue 16 Comments).
+  monthsFact: 75,
   moneyHeading: 80,
   moneyCardTitle: 40,
   moneyCardBody: 170,
@@ -299,4 +332,10 @@ export const LANDING_FORBIDDEN_TERMS: readonly RegExp[] = Object.freeze([
   /\bAI\b/,
   /\bbot\b/i,
   /\brobot\b/i,
+  // Issue 16 (ADR 0092 guest wording): Extended Stays are stays, not tenancies.
+  /\brent\b/i,
+  /\blease\b/i,
+  /\btenant\b/i,
+  /\btenancy\b/i,
+  /\blandlord\b/i,
 ]);

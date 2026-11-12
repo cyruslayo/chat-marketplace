@@ -53,7 +53,7 @@ function stayIntentOf(runtime: AssistantRuntime, threadId: string): AssistantTas
 }
 
 function quickReplies(result: GuestTurnSuccess): readonly string[] {
-  return result.quickReplies ?? [];
+  return (result.quickReplies ?? []).map((chip) => chip.label);
 }
 
 test("AC1: \"Flat in Ikoyi next Friday for 3 nights, 2 guests\" gives two date chips and runs no search", async () => {

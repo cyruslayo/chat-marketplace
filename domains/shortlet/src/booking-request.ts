@@ -108,6 +108,10 @@ export class BookingRequestManager {
   readonly #extendedStayPolicy?: ExtendedStayPolicy;
   readonly #demoTerms: boolean;
   readonly #occupancy: ContinuousOccupancyLedger;
+  /** The Primary Guest's counted stays, shared with the extension guard (monthly-stays issue 09, ADR 0023). */
+  get continuousOccupancy(): ContinuousOccupancyLedger {
+    return this.#occupancy;
+  }
 
   constructor({
     repository = null,

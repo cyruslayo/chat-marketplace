@@ -1,7 +1,7 @@
 import type { DiscoveryArtifactProjection } from "../../../apps/web-agent/src/index.js";
 import { parseDiscoverySearchContext, type DiscoverySearchContext } from "./concierge.js";
 import { parsePendingDraftReplacement, type PendingDraftReplacement } from "./draft-replacement.js";
-import { isAssistantBudgetPer, type AssistantBudgetPer } from "./assistant/assistant-state.js";
+import { isAssistantBudgetPer, isOpenQuestion, type AssistantBudgetPer, type OpenQuestion } from "./assistant/assistant-state.js";
 import { SEARCH_AREAS } from "./stay-vocabulary.js";
 import type { PendingAssistantAction } from "./assistant/pending-actions.js";
 import type { ReplacedPendingAction } from "./assistant/assistant-state.js";
@@ -96,9 +96,10 @@ export function parsePersistedReplacedProposal(value: unknown): PersistedReplace
   return { id: value.id, reason: value.reason };
 }
 
-const PENDING_ACTION_TYPES: readonly string[] = ["request_to_book", "accept_offer", "start_checkout"];
-const PENDING_REFERENCE_STRINGS = ["stayRef", "unitId", "checkIn", "checkOut", "requestId", "offerId", "offerStatus"] as const;
-const PENDING_REFERENCE_NUMBERS = ["partySize", "stayTotalKobo", "refundableDepositKobo", "totalDueNowKobo", "offerVersion", "projectionVersion"] as const;
+// Issue 18: give_notice is restored like the other typed actions. An unlisted type still fails closed on load.
+const PENDING_ACTION_TYPES: readonly string[] = ["request_to_book", "accept_offer", "start_checkout", "give_notice", "request_extension"];
+const PENDING_REFERENCE_STRINGS = ["stayRef", "unitId", "checkIn", "checkOut", "requestId", "offerId", "offerStatus", "contractId", "noticeDate", "newLastNight", "newCheckOut", "periodDueDate"] as const;
+const PENDING_REFERENCE_NUMBERS = ["partySize", "stayTotalKobo", "refundableDepositKobo", "totalDueNowKobo", "offerVersion", "projectionVersion", "contractVersion", "refundKobo", "owedKobo", "addedNights", "addedAmountKobo"] as const;
 
 /** Fail closed: any malformed field, an executed action or an unknown type returns null (the action is not restored). */
 export function parsePersistedPendingAction(value: unknown): PersistedPendingAction | null {
@@ -165,8 +166,19 @@ function parseActiveContact(value: unknown): PersistedActiveContact | null {
   return { surfaceId: value.surfaceId, kind: value.kind, resumeContext };
 }
 
+/**
+ * Issue 19 (ADR 0106 Projection, amended 8 Nov 2026): the stay length the guest typed, with the nights it sets. It binds the next
+ * searches and drafts after a cold restore. A field of this context, not a record.
+ */
+export interface PersistedStatedStay {
+  readonly nights: number;
+  readonly unit: "night" | "week" | "month";
+  readonly count: number;
+}
+
 export interface PersistedAssistantContext {
-  readonly city: "Lagos" | "Abuja";
+  /** Issue 20 (ADR 0106 amended 8 Nov 2026): optional. A context with no area keeps only the guest's own facts that need no area. */
+  readonly city?: "Lagos" | "Abuja";
   readonly neighbourhood?: string;
   readonly checkIn?: string;
   /** Provenance for the server-selected fallback date; absent means unknown. */
@@ -184,6 +196,24 @@ export interface PersistedAssistantContext {
   readonly pendingLocation?: { readonly city: "Lagos" | "Abuja"; readonly neighbourhood?: string };
   /** Issue 04 (ADR 0106 2 Nov 2026, ADR 0093): the candidate dates of an unconfirmed relative phrase. A field of this context, not a record. */
   readonly pendingDate?: { readonly candidates: readonly string[]; readonly checkIn?: string };
+  /**
+   * Issue 57 (ADR 0106 amendment): the closed open-question code the assistant last asked. A field of this context, not a record; an
+   * unknown value is dropped (fail closed) so it can never name a question the runtime does not recognise.
+   */
+  readonly openQuestion?: OpenQuestion;
+  /** Issue 19 (ADR 0106, amended 8 Nov 2026): the stay length the guest typed. A field of this context, not a record. */
+  readonly statedStay?: PersistedStatedStay;
+}
+
+/** Issue 19: the stated length, closed (a night count, a week or a month with its count). Anything else is refused (fail closed). */
+function parseStatedStay(value: unknown): PersistedStatedStay | null {
+  if (!isRecord(value)) return null;
+  const { nights, unit, count } = value;
+  if (typeof nights !== "number" || !Number.isSafeInteger(nights) || nights < 1) return null;
+  if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 1) return null;
+  if (unit !== "night" && unit !== "week" && unit !== "month") return null;
+  if (unit === "night" && count !== nights) return null;
+  return { nights, unit, count };
 }
 
 /**
@@ -234,10 +264,29 @@ function isUnitDetail(value: unknown): value is { readonly unitId: string; reado
   return isRecord(value) && typeof value.unitId === "string" && typeof value.artifactId === "string";
 }
 
+/**
+ * Issue 20 (ADR 0106 amended 8 Nov 2026; ADR 0093): a context with no area holds only the guest's own facts that need no area: a typed
+ * check-in (isDemoDate false) with its checkout and nights, the stated length, party size and bedrooms. Any other field, or a check-in that
+ * is not marked guest-typed, refuses the context (fail closed).
+ */
+function isPartialAssistantContext(value: Record<string, unknown>): boolean {
+  const keys = Object.keys(value);
+  // Issue 57: the closed open-question code rides on a partial context too, so a clarification that saves facts with no area keeps both.
+  const ownKeys = ["checkIn", "isDemoDate", "checkOut", "nights", "partySize", "bedrooms", "statedStay", "openQuestion"];
+  if (keys.length === 0 || keys.some((key) => !ownKeys.includes(key))) return false;
+  const hasCheckIn = value.checkIn !== undefined;
+  if (hasCheckIn !== (value.isDemoDate === false)) return false;
+  return hasCheckIn || (value.checkOut === undefined && value.nights === undefined);
+}
+
 function parseAssistantContext(value: unknown): PersistedAssistantContext | null {
-  if (!isRecord(value) || (value.city !== "Lagos" && value.city !== "Abuja")) return null;
-  const allowed = new Set(["city", "neighbourhood", "checkIn", "isDemoDate", "checkOut", "nights", "partySize", "bedrooms", "maxBudgetKobo", "maxBudgetPer", "requiredAmenities", "selectedUnitId", "pendingLocation", "pendingDate"]);
+  if (!isRecord(value)) return null;
+  // Issue 20: an absent area is a partial context (checked below); a present one must be a closed area.
+  const area = value.city === "Lagos" || value.city === "Abuja" ? value.city : undefined;
+  if (value.city !== undefined && area === undefined) return null;
+  const allowed = new Set(["city", "neighbourhood", "checkIn", "isDemoDate", "checkOut", "nights", "partySize", "bedrooms", "maxBudgetKobo", "maxBudgetPer", "requiredAmenities", "selectedUnitId", "pendingLocation", "pendingDate", "statedStay", "openQuestion"]);
   if (Object.keys(value).some((key) => !allowed.has(key))) return null;
+  if (area === undefined && !isPartialAssistantContext(value)) return null;
   if (value.neighbourhood !== undefined && (typeof value.neighbourhood !== "string" || value.neighbourhood.length > 100)) return null;
   if (value.isDemoDate !== undefined && typeof value.isDemoDate !== "boolean") return null;
   for (const key of ["checkIn", "checkOut"] as const) {
@@ -255,11 +304,14 @@ function parseAssistantContext(value: unknown): PersistedAssistantContext | null
   const budgetPer: AssistantBudgetPer | undefined = value.maxBudgetPer === undefined
     ? "stay"
     : isAssistantBudgetPer(value.maxBudgetPer) ? value.maxBudgetPer : undefined;
+  // Issue 19: a stated length that does not parse is not guessed (the context is refused, so no search runs on it).
+  const statedStay = value.statedStay === undefined ? null : parseStatedStay(value.statedStay);
+  if (value.statedStay !== undefined && statedStay === null) return null;
   const budget = typeof value.maxBudgetKobo === "number" && budgetPer !== undefined
     ? { maxBudgetKobo: value.maxBudgetKobo, maxBudgetPer: budgetPer }
     : {};
   return {
-    city: value.city,
+    ...(area === undefined ? {} : { city: area }),
     ...(typeof value.neighbourhood === "string" ? { neighbourhood: value.neighbourhood } : {}),
     ...(typeof value.checkIn === "string" ? { checkIn: value.checkIn } : {}),
     ...(typeof value.isDemoDate === "boolean" ? { isDemoDate: value.isDemoDate } : {}),
@@ -270,6 +322,7 @@ function parseAssistantContext(value: unknown): PersistedAssistantContext | null
     ...budget,
     ...(Array.isArray(value.requiredAmenities) ? { requiredAmenities: [...value.requiredAmenities] as string[] } : {}),
     ...(typeof value.selectedUnitId === "string" ? { selectedUnitId: value.selectedUnitId } : {}),
+    ...(statedStay === null ? {} : { statedStay }),
     ...(value.pendingLocation === undefined ? {} : (() => {
       const pendingLocation = parsePendingLocation(value.pendingLocation);
       return pendingLocation === undefined ? {} : { pendingLocation };
@@ -278,6 +331,8 @@ function parseAssistantContext(value: unknown): PersistedAssistantContext | null
       const pendingDate = parsePendingDate(value.pendingDate);
       return pendingDate === undefined ? {} : { pendingDate };
     })()),
+    // Issue 57: an unknown open-question code is dropped, never restored (fail closed).
+    ...(isOpenQuestion(value.openQuestion) ? { openQuestion: value.openQuestion } : {}),
   };
 }
 

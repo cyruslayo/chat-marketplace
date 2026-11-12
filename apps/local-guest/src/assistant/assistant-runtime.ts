@@ -39,7 +39,7 @@ import { ModelScopeClassifier, ScopeClassificationError, assessScopeSafely, scop
 import { RetryingScopeClassifier, ScopeClassifierRetryError, SCOPE_TOTAL_BUDGET_MS, type ScopeClassifierRetryEvent, type ScopeClassifierRetryResult } from "./scope-classifier-retry.js";
 import { ASSISTANT_CONTROL_COPY } from "./control-copy.js";
 import { isProviderUnavailable } from "./fallback-model-client.js";
-import { searchAreaFor } from "../concierge.js";
+import { searchAreaFor, type GuestQuickReply } from "../concierge.js";
 import {
   cloneTaskState,
   createInitialTaskState,
@@ -50,7 +50,9 @@ import {
   replacePendingProposal,
   type AssistantStayReference,
   isAssistantBudgetPer,
+  isOpenQuestion,
   type AssistantBudgetPer,
+  type OpenQuestion,
 } from "./assistant-state.js";
 import { TurnTransaction, syncActiveTask } from "./assistant-turn-transaction.js";
 import { beginThreadRun, threadRunActive, THREAD_BUSY_CODE, THREAD_BUSY_MESSAGE } from "./assistant-thread-lock.js";
@@ -68,6 +70,7 @@ import {
 import {
   isExplicitConfirmation,
   isExplicitCancellation,
+  isTextConfirmable,
   type PendingAssistantAction,
 } from "./pending-actions.js";
 import {
@@ -121,7 +124,7 @@ export interface AssistantTurnOutput {
   readonly controlOutcome?: AssistantControlOutcome;
   readonly stopReason?: AssistantStopReason;
   /** Issue 10: one-tap replies for a clarification (never on scope, support or redirect replies). */
-  readonly quickReplies?: readonly string[];
+  readonly quickReplies?: readonly GuestQuickReply[];
 }
 
 /** A task's entry in the shell rail, derived from the active pack's `taskSummary`. */
@@ -225,6 +228,17 @@ export interface AssistantRuntimeOptions {
   /** Issue 05: the configured primary model id, written as `gen_ai.request.model`. The host supplies it. */
   readonly modelName?: string;
 }
+
+/** ADR 0106: the references the shell owns for the guest's thread (the draft, request, offer, reservation and contract it holds). */
+export interface AssistantShellReferences {
+  readonly currentDraftId?: string;
+  readonly currentBookingRequestId?: string;
+  readonly currentOfferId?: string;
+  readonly currentReservationId?: string;
+  readonly currentContractId?: string;
+}
+
+const SHELL_REFERENCE_KEYS = ["currentDraftId", "currentBookingRequestId", "currentOfferId", "currentReservationId", "currentContractId"] as const;
 
 export interface AssistantShortletRestoreInput {
   readonly principalId: string;
@@ -501,7 +515,7 @@ export class AssistantRuntime {
   }
 
   /** Issue 10: the one-tap replies the active pack gives a clarification on this thread, from its committed task state. */
-  clarificationQuickReplies(threadId: string, kind: AssistantClarificationKind): readonly string[] | undefined {
+  clarificationQuickReplies(threadId: string, kind: AssistantClarificationKind): readonly GuestQuickReply[] | undefined {
     const thread = this.#threads.get(threadId);
     if (!thread) return undefined;
     return this.#packForThread(threadId)?.clarificationQuickReplies?.(thread.taskState, kind);
@@ -817,6 +831,24 @@ export class AssistantRuntime {
     return { activeTaskId: thread.activeTaskId, tasks: thread.tasks.map((task) => ({ taskId: task.taskId, domain: task.domain })) };
   }
 
+  /**
+   * ADR 0106: the shell advances the guest's thread outside the assistant (a Request to Book makes a draft, a confirmed request
+   * becomes an offer, a payment confirms a stay). A warm thread is not rebuilt, so it adopts those references here, exactly as a
+   * cold restore derives them. Only the five shell references change: the history, surfaces and pending action are kept.
+   */
+  adoptShellReferences(threadId: string, references: AssistantShellReferences): boolean {
+    if (!this.hasThread(threadId) || this.threadBusy(threadId)) return false;
+    const thread = this.getThread(threadId);
+    const state = thread.taskState;
+    for (const key of SHELL_REFERENCE_KEYS) {
+      const value = references[key];
+      if (value === undefined) delete state[key];
+      else state[key] = value;
+    }
+    syncActiveTask(thread);
+    return true;
+  }
+
   /** Restores only app-validated canonical Shortlet state; no model history or provider metadata is accepted. */
   restoreShortletState(threadId: string, input: AssistantShortletRestoreInput): boolean {
     // Issue 06: a restore never rewrites a thread that a mutating run is changing; that run commits its own delta.
@@ -874,7 +906,7 @@ export class AssistantRuntime {
    * - A party size is recorded as a positive integer. A model-proposed fact is never recorded through this path.
    * - A budget chip (issue 06, ADR 0015) records its amount and whether it is for the stay or per night; `null` clears it.
    */
-  recordGuestStay(threadId: string, facts: { readonly checkIn?: string; readonly nights?: number; readonly partySize?: number; readonly budget?: { readonly kobo: number; readonly per: AssistantBudgetPer } | null }): boolean {
+  recordGuestStay(threadId: string, facts: { readonly checkIn?: string; readonly nights?: number; readonly statedStay?: { readonly nights: number; readonly unit: "night" | "week" | "month"; readonly count: number }; readonly partySize?: number; readonly budget?: { readonly kobo: number; readonly per: AssistantBudgetPer } | null }): boolean {
     if (this.threadBusy(threadId)) return false;
     const thread = this.#threads.get(threadId);
     if (!thread) return false;
@@ -894,6 +926,8 @@ export class AssistantRuntime {
       if (checkOut !== null) {
         stay.nights = facts.nights;
         stay.checkOut = checkOut;
+        // Issue 19 (owner decision, 8 Nov 2026): a nights chip edit replaces the stated length with its nights (unit night).
+        if (facts.statedStay !== undefined) stay.statedStay = { ...facts.statedStay };
       }
     }
     if (facts.partySize !== undefined && Number.isSafeInteger(facts.partySize) && facts.partySize > 0) stay.partySize = facts.partySize;
@@ -908,6 +942,33 @@ export class AssistantRuntime {
     const task = thread.tasks.find((entry) => entry.taskId === thread.activeTaskId);
     if (task) task.state = thread.taskState;
     return true;
+  }
+
+  /**
+   * Issue 57 (ADR 0106 amendment, 9 Nov 2026): records the closed code of the question the assistant last asked, or clears it with
+   * `null`. The shell calls this after a criteria-strip clarification and a "which one" ask. An unknown code is refused; it is never
+   * stored. It grants no authority: a terse answer still becomes a fact only through guest text, a chip or a confirmed show-back.
+   */
+  recordOpenQuestion(threadId: string, code: OpenQuestion | null): boolean {
+    if (this.threadBusy(threadId)) return false;
+    const thread = this.#threads.get(threadId);
+    if (!thread) return false;
+    if (code !== null && !isOpenQuestion(code)) return false;
+    this.#applyOpenQuestion(thread.taskState, code);
+    const task = thread.tasks.find((entry) => entry.taskId === thread.activeTaskId);
+    if (task) task.state = thread.taskState;
+    return true;
+  }
+
+  /** Sets or clears the open-question code on a task state (candidate or committed). An unknown code fails closed to "none". */
+  #applyOpenQuestion(state: AssistantTaskState, code: OpenQuestion | null): void {
+    if (code === null || !isOpenQuestion(code)) delete state.openQuestion;
+    else state.openQuestion = code;
+  }
+
+  /** Issue 57: the open question a reply's clarification kind asks, from the pack, or undefined. */
+  #clarificationOpenQuestion(pack: AssistantDomainPack, state: AssistantTaskState, kind: AssistantClarificationKind): OpenQuestion | undefined {
+    return pack.clarificationOpenQuestion?.(state, kind);
   }
 
   /**
@@ -1114,6 +1175,10 @@ export class AssistantRuntime {
     }
 
     if (tx.taskState.pendingAction && !tx.taskState.pendingAction.executed) {
+      if (isExplicitConfirmation(text) && !isTextConfirmable(tx.taskState.pendingAction.type)) {
+        // Issue 18 AC3: this card confirms only through its own button. The card stays open and nothing is executed.
+        return { ok: true, messages: [ASSISTANT_CONTROL_COPY.useCardButtons], surfaces: [], tasks: this.getTaskRail(threadId) };
+      }
       if (isExplicitConfirmation(text)) {
         // A confirmation that throws (not a stale proposal) has already dropped and committed the proposal. The turn returns the
         // closed unavailable code rather than throwing out of the chat turn.
@@ -1175,16 +1240,15 @@ export class AssistantRuntime {
 
     // 3. User message turn
     const originalUserText = text;
-    // Issue 04 (ADR 0106, 2 Nov 2026): a pending date show-back is settled by this turn before it is classified. Only the guest's
-    // explicit yes confirms it; any other turn closes it. The candidate state is committed only at a commit site.
-    // The committed state is settled too, so a refused turn (which commits nothing else) still closes an open show-back (fail closed).
-    candidatePack().settlePendingGuestFacts?.(text, thread.taskState, this.#environment.clock());
-    candidatePack().settlePendingGuestFacts?.(text, tx.taskState, this.#environment.clock());
+    // Issue 59 (ADR 0106 amendment, 9 Nov 2026): a pending date show-back is settled only after an in-scope or mixed verdict, so a
+    // refused turn leaves `pendingDate` intact and its show-back can be re-asked. Settlement writes the candidate state only; it is
+    // committed at a commit site like any other change.
     const packForScope = candidatePack();
     const safeUserText = redactSensitiveData(text) as string;
     let scopeFailureOutcome: "quota_refusal" | "guard_failure" | undefined;
     const assessment = text.length > this.#maxInputCharacters ? undefined : await assessScopeSafely(this.#scopeClassifier, safeUserText, {
       ...scopeContextFor(packForScope, tx.taskState),
+      ...(tx.taskState.openQuestion === undefined ? {} : { openQuestion: tx.taskState.openQuestion }),
       turnContext: this.#turnContext(packForScope),
     }, this.#scopeOuterTimeoutMs, (error) => {
       // A retry failure carries the stage's decisive error; the first failure's outcome stands for refused or skipped retries (ADR 0106 amendment).
@@ -1205,6 +1269,20 @@ export class AssistantRuntime {
       const controlOutcome = scopeFailureOutcome ?? scopeOutcome;
       // One count per turn: the outcome this turn returns (ADR 0106 telemetry, closed codes only).
       recordOutcome(controlOutcome);
+      // Issue 59 (ADR 0106 amendment): a scope redirect and a risk verdict keep the fixed copy with no re-ask. An unclear or failed
+      // verdict (ordinary risk) is no dead end: re-ask the closed question the assistant last asked, with its chips, or offer the pack's
+      // stage recovery chips when no question is open. No model output is used and no task state is committed.
+      const riskRefused = assessment !== undefined && assessment.risk !== "ordinary";
+      // Issue 59 step 4: a quota refusal is not a question the guest can answer, so it keeps the existing copy and offers no chips.
+      if (scopeOutcome === "scope_unavailable" && !riskRefused && scopeFailureOutcome !== "quota_refusal") {
+        const held = tx.taskState.openQuestion;
+        const chips = held === undefined
+          ? packForScope.recoveryQuickReplies?.(tx.taskState)
+          : packForScope.openQuestionQuickReplies?.(tx.taskState, held);
+        const message = held === undefined ? ASSISTANT_CONTROL_COPY.unavailable : packForScope.openQuestionCopy?.(held) ?? ASSISTANT_CONTROL_COPY.unavailable;
+        return { ok: true, messages: [message], surfaces: [], modelHandled: false, discardUserInput: true, controlOutcome,
+          tasks: this.getTaskRail(threadId), ...(chips === undefined || chips.length === 0 ? {} : { quickReplies: chips }) };
+      }
       return { ok: true, messages: [controlOutcome === "scope_redirect" ? ASSISTANT_CONTROL_COPY.redirect : ASSISTANT_CONTROL_COPY.unavailable],
         surfaces: [], modelHandled: false, discardUserInput: true, controlOutcome, tasks: this.getTaskRail(threadId) };
     }
@@ -1215,13 +1293,14 @@ export class AssistantRuntime {
       return { ok: true, messages: [ASSISTANT_CONTROL_COPY.unavailable], surfaces: [], modelHandled: false,
         discardUserInput: true, controlOutcome: "scope_unavailable", tasks: this.getTaskRail(threadId) };
     }
+    // Issue 59: the verdict is in scope (or validly mixed), so this turn settles any pending date show-back on the candidate state.
+    candidatePack().settlePendingGuestFacts?.(text, tx.taskState, this.#environment.clock());
     if (discardUserInput) text = scopedMixedInput(assessment);
     validatedDomainId = packForScope.id;
     validatedTurnIntents = assessment.intents;
     validatedTurnToolNames = toolNamesForValidatedIntents(packForScope, assessment.intents);
     taskSwitchPermitted = assessment.intents.includes("task_switch");
     candidateHistory.push({ role: "user", text: redactSensitiveData(discardUserInput ? text : originalUserText) as string });
-
     const userTextHistory: string[] = [...(thread.canonicalUserFactHistory ?? []), ...candidateHistory
       .filter((s): s is Extract<AssistantConversationStep, { role: "user" }> => s.role === "user")
       .map((s) => s.text)];
@@ -1231,7 +1310,12 @@ export class AssistantRuntime {
     let round = 0;
     let finalAssistantReply: string | undefined;
     // Issue 10: chips for a `clarify_stay` reply, from the pack's clarification hook; never set for other reply kinds.
-    let finalQuickReplies: readonly string[] | undefined;
+    let finalQuickReplies: readonly GuestQuickReply[] | undefined;
+    // Issue 57: the clarification kind that carries those chips, so the open-question code can be recorded (or cleared).
+    let finalClarificationKind: AssistantClarificationKind | undefined;
+    // Issue 20 (ADR 0106, amended 8 Nov 2026): a planner reply that asks for a missing stay fact (clarify_stay), with no successful operation,
+    // saves the guest's own facts at commit. Any other reply saves nothing from this turn.
+    let clarifiesStay = false;
     let activeStage: AssistantDiagnosticStage = "provider_request";
     let activeToolName: string | undefined;
     let hasSuccessfulApplicationOperation = false;
@@ -1310,8 +1394,10 @@ export class AssistantRuntime {
           controlOutcome = this.#replyControlOutcome(latestResults) ?? controlOutcome;
           finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "", tx.taskState)
             ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
-          finalQuickReplies = quickRepliesForReply(candidatePack(), plan, latestResults, tx.taskState);
+          finalClarificationKind = clarificationKindForReply(candidatePack(), plan, latestResults);
+          finalQuickReplies = finalClarificationKind === undefined ? undefined : candidatePack().clarificationQuickReplies?.(tx.taskState, finalClarificationKind);
           candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
+          clarifiesStay = plan?.kind === "clarify_stay";
           stopReason = "reply";
           break;
         }
@@ -1516,10 +1602,14 @@ export class AssistantRuntime {
         const plan = typeof parsedFinalPlan === "string" ? undefined : parsedFinalPlan;
         finalAssistantReply = candidatePack().renderReply?.(plan, latestResults, userTextHistory.at(-1) ?? "", tx.taskState)
           ?? "I can help with your current request. Please review the information shown and tell me what you need next.";
-        finalQuickReplies = quickRepliesForReply(candidatePack(), plan, latestResults, tx.taskState);
+        finalClarificationKind = clarificationKindForReply(candidatePack(), plan, latestResults);
+        finalQuickReplies = finalClarificationKind === undefined ? undefined : candidatePack().clarificationQuickReplies?.(tx.taskState, finalClarificationKind);
         candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
       }
 
+      // Issue 57 (ADR 0106 amendment): a clarification records the closed question it asks; any other committed answer clears it.
+      this.#applyOpenQuestion(tx.taskState, finalClarificationKind === undefined ? null : this.#clarificationOpenQuestion(candidatePack(), tx.taskState, finalClarificationKind) ?? null);
+      if (clarifiesStay && !hasSuccessfulApplicationOperation && !discardUserInput) candidatePack().recordGuestFacts?.(originalUserText, tx.taskState, this.#environment.clock());
       // 4. Commit Transaction (Item 24)
       this.#commitHistory(thread, candidateHistory, candidatePack(), tx.taskState);
       tx.commit(thread, { state: true, tasks: true, discovery: true, lastSurfaces: tx.surfaces.length > 0 ? tx.surfaces : tx.lastSurfaces });
@@ -1571,6 +1661,16 @@ export class AssistantRuntime {
         // details is a rejected tool call. The turn keeps the guest's message, commits no new task state, and asks the guest.
         controlOutcome = "tool_denial";
         recordOutcome(controlOutcome);
+        // Issue 59 (ADR 0106): the verdict was in scope, so a date show-back was already settled on the candidate state. Carry only
+        // that settled pending-date result into the committed state, so a confirmed check-in is not lost when the planner call is
+        // then refused. A refused verdict never reaches here, so it still leaves pendingDate intact and commits no check-in.
+        // The candidate settle above reads the guest's own words; `text` for a mixed verdict is the scoped task summary, so use
+        // `originalUserText` here to read the same words and recognise the guest's "Yes". The same settle also keeps the guest's
+        // stated length (issue 19), as main does for a refused planner date (issue 20 AC3).
+        candidatePack().settlePendingGuestFacts?.(originalUserText, thread.taskState, this.#environment.clock());
+        // Issue 20: a search missing its stay details asks the guest for the missing fact, so the guest's own facts are saved. Any other
+        // refused call (a date or budget the guest did not give, a length the guest did not state) saves nothing from this turn.
+        if (error instanceof AssistantStayDetailsError && !discardUserInput) candidatePack().recordGuestFacts?.(originalUserText, thread.taskState, this.#environment.clock());
         candidateHistory.push({ role: "assistant", text: "Server reply delivered." });
         this.#commitHistory(thread, candidateHistory, candidatePack(), thread.taskState);
         // A pack's guest-facing refusal carries its own sentence (ADR 0106; no guest identifier, ADR 0075).
@@ -1584,6 +1684,13 @@ export class AssistantRuntime {
           ? (error.clarification === "area" ? "area" : undefined)
           : error instanceof AssistantStayDetailsError ? "stay_details" : "dates";
         const quickReplies = chipKind === undefined ? undefined : candidatePack().clarificationQuickReplies?.(thread.taskState, chipKind);
+        // Issue 57 (ADR 0106 amendment): the refusal asks one question, so its closed code is recorded on the committed state. A
+        // refusal with no clarification code (an occupancy conflict) leaves any open question as it was.
+        if (chipKind !== undefined) {
+          this.#applyOpenQuestion(thread.taskState, this.#clarificationOpenQuestion(candidatePack(), thread.taskState, chipKind) ?? null);
+          const activeTask = thread.tasks.find((entry) => entry.taskId === thread.activeTaskId);
+          if (activeTask) activeTask.state = thread.taskState;
+        }
         return { ok: true, messages: [clarification ?? ASSISTANT_CONTROL_COPY.unavailable], surfaces: [], modelHandled: false,
           discardUserInput: false, controlOutcome, tasks: this.getTaskRail(threadId), stopReason,
           ...(quickReplies === undefined ? {} : { quickReplies }) };
@@ -1647,6 +1754,11 @@ export class AssistantRuntime {
     } catch {
       // Telemetry must never affect the authoritative workflow.
     }
+  }
+
+  /** Issue 18: true when a registered pack declares this button event (a pack's own card opener), so the shell forwards it by name. */
+  acceptsPackEvent(eventName: string): boolean {
+    return this.#packs.ids().some((id) => this.#packs.packFor(id)?.openActionNames?.includes(eventName) === true);
   }
 
   handleAssistantEvent(threadId: string, eventName: string, context: AssistantEventContext | null | undefined): AssistantTurnOutput {
@@ -1734,7 +1846,10 @@ export class AssistantRuntime {
 
     if (eventName === ASSISTANT_CONFIRM_ACTION_EVENT || eventName === ASSISTANT_CANCEL_ACTION_EVENT) {
       // ADR-0074: only the current authoritative surface retains action authority.
-      const activeSurfaceId = tx.activeSurfaces.get(PENDING_ACTION_STAGE);
+      // ADR 0074, issue 18 AC6/AC7: the card's id is derived from the persisted pending action, so a cold restore re-keys it rather
+      // than relying on the turn's in-memory stage map (which a restored app does not hold).
+      const pendingForSurface = tx.taskState.pendingAction;
+      const activeSurfaceId = pendingForSurface ? pendingActionSurfaceId(threadId, pendingForSurface.id) : undefined;
       if (!activeSurfaceId || context?.surfaceId !== activeSurfaceId) {
         return { ok: false, code: "STALE_SURFACE", message: "That action is no longer active." };
       }
@@ -1783,6 +1898,28 @@ export class AssistantRuntime {
         surfaces: execution.surfaces,
         tasks: this.getTaskRail(threadId),
       };
+    }
+
+    // Issue 18 (ADR 0099, 0074, 0106): a pack's own button opens the pack's own confirmation card, routed by the event name the pack
+    // declares. No planner call. The pack checks the pressed surface is current; the runtime only places the card it returns.
+    const opener = this.#packs.ids().map((id) => this.#packs.packFor(id)).find((candidate) => candidate?.openActionNames?.includes(eventName));
+    if (opener?.handleOpenAction) {
+      const opened = opener.handleOpenAction({
+        actionName: eventName,
+        context: (context ?? {}) as Record<string, unknown>,
+        taskState: tx.taskState,
+        threadId,
+        now: this.#environment.clock(),
+      });
+      if (!opened.ok) return { ok: false, code: opened.code, message: opened.message };
+      const surfaceId = pendingActionSurfaceId(threadId, opened.pendingAction.id);
+      tx.taskState.replacedPendingAction = null;
+      tx.taskState.pendingAction = opened.pendingAction;
+      tx.supersede(PENDING_ACTION_STAGE);
+      tx.place(PENDING_ACTION_STAGE, surfaceId);
+      const surface = { surfaceId, a2uiMessages: renderPackSurface(opener, "pending_action", opened.pendingAction, surfaceId) };
+      tx.commit(thread, { state: true, tasks: false, discovery: false, lastSurfaces: [surface] });
+      return { ok: true, messages: [opened.message], surfaces: [surface], tasks: this.getTaskRail(threadId) };
     }
 
     return { ok: false, code: "UNSUPPORTED_EVENT", message: "Unknown assistant action." };
@@ -1949,14 +2086,12 @@ export class AssistantRuntime {
  * ADR 0099 / ADR 0106 (issues 10, 09): the chips for a reply. The pack names a clarification its own results carry (a held location
  * question); otherwise a typed `clarify_stay` reply gets the plan chips. Anything else gets none.
  */
-function quickRepliesForReply(
+function clarificationKindForReply(
   pack: AssistantDomainPack,
   plan: AssistantReplyPlan | undefined,
   results: readonly AssistantToolResult[],
-  taskState: AssistantTaskState,
-): readonly string[] | undefined {
-  const kind: AssistantClarificationKind | undefined = pack.replyClarificationKind?.(results) ?? (plan?.kind === "clarify_stay" ? "plan" : undefined);
-  return kind === undefined ? undefined : pack.clarificationQuickReplies?.(taskState, kind);
+): AssistantClarificationKind | undefined {
+  return pack.replyClarificationKind?.(results) ?? (plan?.kind === "clarify_stay" ? "plan" : undefined);
 }
 
 function getSafeResultCount(result: unknown): number | undefined {

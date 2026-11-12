@@ -1,0 +1,16 @@
+callback-failure light 320: height 900 no horizontal overflow
+thread-notice light 320: height 901 no horizontal overflow
+callback-failure light 390: height 900 no horizontal overflow
+thread-notice light 390: height 901 no horizontal overflow
+callback-failure light 768: height 900 no horizontal overflow
+thread-notice light 768: height 901 no horizontal overflow
+callback-failure light 1280: height 900 no horizontal overflow
+thread-notice light 1280: height 901 no horizontal overflow
+callback-failure dark 320: height 900 no horizontal overflow
+thread-notice dark 320: height 901 no horizontal overflow
+callback-failure dark 390: height 900 no horizontal overflow
+thread-notice dark 390: height 901 no horizontal overflow
+callback-failure dark 768: height 900 no horizontal overflow
+thread-notice dark 768: height 901 no horizontal overflow
+callback-failure dark 1280: height 900 no horizontal overflow
+thread-notice dark 1280: height 901 no horizontal overflow

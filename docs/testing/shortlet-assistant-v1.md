@@ -97,3 +97,34 @@ Or start the full local guest concierge in live Gemini mode:
 npm run guest:local
 `
 Navigate to http://localhost:3001 and interact with the live assistant.
+
+## Terse follow-up cases (issue 61)
+
+Every offline test scripts the classifier verdict, so the live model's own reading of a terse answer is measured separately (ADR 0106: false refusals are evaluated separately). The offline cases in `test/assistant-terse-followups.test.ts` cover every row below, warm and cold; each asserts the classifier request's `openQuestion` code and the committed fact or next step.
+
+| Open question | Guest text | Expected fact |
+|---|---|---|
+| party_size | "just me" / "2" / "two of us" / "me and my wife" | partySize 1 / 2 / 2 / 2 |
+| nights | "a week" / "3" | nights 7 / 3 |
+| pick_result | "the first one" / "the second" | opens result 1 / 2 |
+| date_confirm | "yes" | check-in confirmed |
+| where | "Wuse 2" | Abuja, Wuse 2 |
+
+A case whose verdict comes back `unclear` falls back to the issue 59 re-ask (the fixed question plus its chips), never the generic `unavailable` copy.
+
+### Owner live run
+
+Agents never run the live eval: it calls a real provider and needs the key. The same rows live in `scripts/pilot-agent-smoke.ts` (via `scripts/pilot-agent-smoke-terse.ts`) and are reported in `.scratch/pilot-agent-smoke/agent-smoke-report.md` as closed codes only (scope, reason, the code sent, pass/fail) plus a false-refusal rate. The report carries no guest or model text.
+
+The owner runs it with `LLM_API_KEY` set for that command only (do not paste keys into shell history you share, and never print the environment). Every other command in this doc uses `env -u LLM_API_KEY`. The OpenRouter configuration:
+
+```
+CONCIERGE_MODE=openai-compatible \
+LLM_BASE_URL=https://openrouter.ai/api/v1 \
+LLM_MODEL=openai/gpt-6-luna \
+LLM_PROVIDER_LABEL=openrouter \
+LLM_API_KEY=…(owner-supplied)… \
+npm run pilot:local:agent-smoke
+```
+
+Then record the false-refusal rate in issue 61's Comments. Target on `openai/gpt-6-luna`: no false refusals across the cases.

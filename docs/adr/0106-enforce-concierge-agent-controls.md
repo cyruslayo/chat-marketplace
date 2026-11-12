@@ -93,9 +93,11 @@ This amendment does not change the verdict's authority, tool gating, the fail-cl
 ### Amendment (27 Oct 2026): structured stay facts from the criteria chips
 
 - Chip facts. The date chip and the guests chip are structured guest input. Beyond the confirmed check-in (see Structured dates above), the chip's nights and party size are guest-authored stay facts. The server records them in the assistant's task state so the next planner turn sees them and the persisted context keeps them.
+- Stated length (8 Nov 2026, issue 19). A stay length the guest typed (nights, weeks or months) is a guest-authored stay fact, as chip nights are. A month is 30 nights (ADR 0092).
 - Derivation. A confirmed check-in with chip nights gives the checkout by the same night-count rule as the planner's search (`checkOutForNights`), and StayDateRange validates it (ADR 0023 length, ADR 0055 horizon). An invalid stay records neither nights nor checkout. The check-in itself is still recorded when it is confirmed.
 - Authority. Nights and party size are not dates and carry no date authority. A planner date still needs guest text or a confirmed chip check-in. A model-proposed check-in is never recorded through this path, and a relative or unconfirmed chip date is not recorded.
 - Projection. The persisted assistant context keeps only the fields it already held (city, neighbourhood, check-in, checkout, nights, party size and the other filters). No new record is persisted (ADR 0093 minimal projection, ADR 0099 and ADR 0101).
+- Amendment (8 Nov 2026, issue 19): Projection. The persisted assistant context also keeps the guest's stated stay length (nights, and the unit and count the guest used), set only from guest text, a chip edit or guest dates, so it survives cold restores; no other field is added.
 
 ### Amendment (2 Nov 2026): confirmed date phrases are guest-authored
 
@@ -111,6 +113,27 @@ Owner decision of 2 Nov 2026 on issue 01 (`.scratch/assistant-concierge-parity/i
 - Spans (decision 6). "Next week", "next month" and "end of the month" never become a single day without a guest choice. The resolver returns a range with its grain, and the guest picks the day from day chips or the date chip, opened at the start of the range.
 - Configuration (AC2). The rule values are configuration, not literals in code. The date resolver takes one policy object with these defaults: week start Monday; the "next <weekday>" rule above; the fixed holiday list (25 December, 31 December); and the Booking Horizon of 90 days (ADR 0055). The resolver and the shortlet pack contain no literal values for them. The literals now in `concierge.ts` `relativeDates` move into this policy object in issue 02.
 - Boundaries. A resolved date beyond the Booking Horizon (ADR 0055) authorizes nothing. ISO tokens, English day-month literals and chip dates are unchanged. A rejected planner call remains a `tool_denial` (27 Oct amendment). No deterministic in-scope fast path is added: the model returns the guest's words, and the server resolves and shows them back. The confirmation is guest input, so the agent still makes no state transition (ADR 0080).
+
+### Amendment (8 Nov 2026): booking-change intents
+
+- Closed intents. `CONCIERGE_INTENTS` gains `end_booking` (a guest asks to end a stay early, giving notice) and `extend_booking` (a guest asks to stay longer). Both are closed labels in the scope classifier schema and validator, and nothing else in the list changes.
+- Mapping. `end_booking` maps only to the preview-only planner tool `propose_notice_to_end`. `extend_booking` maps only to the preview-only planner tool `propose_extension`. Each tool records nothing by itself. Its card is confirmed by the card's button only: `give_notice` and `request_extension` are not on the text-confirmation allow-list (ADR 0074), so a typed "yes", "ok", "confirm" or "go ahead" never executes them.
+- Support. The `support` intent offers neither tool. A support request such as a water or access problem never produces a notice or extension card.
+- Warm session runtime. A session's assistant runtime is not rebuilt between requests, so it adopts the shell's booking references (the draft, request, offer, reservation and contract the guest's thread holds) on every entry point (`getState`, `handleTurn`, `handleEvent`, `handleEventAsync`), with the same derivation a cold restore uses. History, surfaces and the pending action are kept. The offer-gated tools therefore see the same current offer on a warm and a cold runtime. The tool gates themselves are unchanged.
+
+### Amendment (8 Nov 2026, issue 20): a clarification keeps the guest's own facts
+
+A stay clarification (a planner reply that asks for a missing stay fact, or a search that is missing its stay details) still runs no search and no tool effect, and keeps nothing the model proposed. It saves the stay facts the guest's own words give (the area, a typed check-in or a typed stay with its checkout that the date rules accept, the stated length, party size and bedrooms) into the persisted assistant context, which may be partial (no area), so the next turn can use them after a cold restore. A refused date, budget or length call, a turn stopped by its deadline, an error, and a mixed or out-of-scope turn save nothing from the turn. No other field is added.
+
+### Amendment (9 Nov 2026): one closed open-question code
+
+Owner decision of 9 Nov 2026 on the chat hardening batch (`.scratch/shortlet-concierge-launch/issues/57-assistant-open-question-state.md`). The staging defect of 9 Nov 2026 showed a terse answer ("Just me") to a question the assistant itself asked being classified `unclear` and discarded.
+
+- Closed code. The classifier's minimal task summary and the planner's canonical task facts may each carry one `openQuestion` code naming the question the assistant last asked. The value set is `where | party_size | check_in | nights | stay_length | pick_result | date_confirm | location_confirm`. The code is server-set only, never derived from model output, and never carries text. A value outside the set is dropped (fail closed), on both the live path and a cold restore.
+- Authority unchanged. The code grants no permission. A fact still needs guest text, a structured chip (the 27 Oct amendment), or a confirmed show-back (the 2 Nov amendment). Date authority is unchanged: a terse answer to a `check_in` or `date_confirm` question is read only as the classifier's advisory reading of guest text, and the planner's date must still equal a guest literal or a confirmed chip/show-back.
+- No new data. No assistant prompt, reply, or conversation history is added to either model. The classifier still receives the current message plus a minimal server-built summary, and the planner still sees no assistant prose (ADR 0075).
+- Lifecycle. The code is overwritten when a turn asks a different question, and cleared when a turn commits an answer or runs a new search.
+- No keyword fast path. The classifier and planner read the code; the server does not branch on guest keywords to answer a question.
 
 ## Constraints retained
 

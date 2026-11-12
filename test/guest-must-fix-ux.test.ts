@@ -51,7 +51,7 @@ test("The concierge understands everyday requests such as \"this weekend\", \"me
     const ask = success(await fixture.send("/api/turn", { text: "Show me the apartment." }));
     assert.deepEqual(ask.surfaces, []);
     assert.match(ask.messages.join(" "), /Which one would you like to see\?/);
-    assert.deepEqual(ask.quickReplies?.slice(0, 2), ["The first one", "The second one"]);
+    assert.deepEqual((ask.quickReplies ?? []).slice(0, 2).map((chip) => chip.label), ["The first one", "The second one"]);
 
     // Choosing with the offered quick reply opens that apartment, the same as its View button.
     const opened = success(await fixture.send("/api/turn", { text: "The first one" }));

@@ -51,6 +51,11 @@ export class BookingRequestApplication {
   readonly #operatorAuthority?: OperatorRepresentativeAuthority;
   readonly #clock: () => Date;
 
+  /** The Primary Guest's counted stays (monthly-stays issue 09): the extension guard reads the same ledger as the booking path. */
+  get continuousOccupancy() {
+    return this.#manager.continuousOccupancy;
+  }
+
   constructor(
     manager: BookingRequestManager,
     options: { operatorAuthority?: OperatorRepresentativeAuthority; clock?: () => Date } = {}

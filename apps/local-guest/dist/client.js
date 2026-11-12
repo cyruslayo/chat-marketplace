@@ -9519,8 +9519,64 @@ Known schemas:
     revalidation: "We re-check price and availability when you send",
     operatorFallback: "the Operator"
   });
+  var GUEST_REFUSAL_DEFAULT = Object.freeze({
+    stale: "These options have changed. Here are the current ones.",
+    forbidden: "That action isn't available here. Please use the options shown.",
+    invalid: "That action could not be completed here. Please try again from the current screen.",
+    unavailable: "Something went wrong. Please try again.",
+    busy: "That's still being processed. Please wait a moment and try again."
+  });
+  var GUEST_REFUSAL = Object.freeze({
+    // stale: the guest's view or action no longer matches the server, so the client refreshes.
+    STALE_SURFACE: { class: "stale" },
+    STALE_ACTION: { class: "stale" },
+    EXPIRED_SURFACE: { class: "stale" },
+    ARTIFACT_MISMATCH: { class: "stale" },
+    INVALID_ARTIFACT: { class: "stale" },
+    OFFER_MISMATCH: { class: "stale" },
+    QUOTE_CHANGED: { class: "stale" },
+    REQUEST_MISMATCH: { class: "stale" },
+    // forbidden: the action is not permitted here. ACTION_NOT_AUTHORIZED carries mixed server messages (some internal), so it keeps a
+    // message only when it is one of the closed guest-copy constants in `KEPT_ACTION_NOT_AUTHORIZED_COPY` (see guestRefusalFor).
+    ACTION_NOT_AUTHORIZED: { class: "forbidden" },
+    UNSUPPORTED_ACTION: { class: "forbidden" },
+    UNSUPPORTED_EVENT: { class: "forbidden" },
+    ACTIVE_TASK: { class: "forbidden" },
+    // invalid: the request itself is malformed.
+    INVALID_CONTEXT: { class: "invalid" },
+    INVALID_EVENT: { class: "invalid" },
+    INVALID_INPUT: { class: "invalid" },
+    INVALID_CRITERIA: { class: "invalid" },
+    INVALID_ROUTE: { class: "invalid" },
+    INVALID_THREAD: { class: "invalid" },
+    UNKNOWN_TASK: { class: "invalid" },
+    // busy: a run is already in flight on this thread.
+    THREAD_BUSY: { class: "busy" },
+    // unavailable: the platform could not complete the action. These server messages are already closed guest copy, so keep them.
+    CONCIERGE_UNAVAILABLE: { class: "unavailable", keepServerMessage: true },
+    REQUEST_NOT_SUBMITTED: { class: "unavailable", keepServerMessage: true },
+    PAYMENT_NOT_CONFIRMED: { class: "unavailable", keepServerMessage: true },
+    CARD_CHECKOUT_FAILED: { class: "unavailable", keepServerMessage: true },
+    PAYSTACK_UNAVAILABLE: { class: "unavailable", keepServerMessage: true },
+    UNKNOWN_DOMAIN: { class: "unavailable", keepServerMessage: true },
+    UNKNOWN_THREAD: { class: "unavailable" },
+    // A task start or switch the platform could not complete (the task tool returned TASK_UNAVAILABLE, e.g. an unknown domain or task).
+    // It is a platform action that could not be performed in the current state, not a malformed request, so it is unavailable.
+    TASK_UNAVAILABLE: { class: "unavailable" },
+    // Already guest copy built from closed guest content; the server's message is kept.
+    CRITERIA_REJECTED: { class: "invalid", keepServerMessage: true },
+    CRITERIA_LOCKED: { class: "busy", keepServerMessage: true },
+    CONTINUOUS_OCCUPANCY_REFUSED: { class: "invalid", keepServerMessage: true },
+    NOTHING_TO_UNDO: { class: "invalid", keepServerMessage: true }
+  });
+  function guestStayMonthsWords(count) {
+    return count === 1 ? "(1 month)" : `(${count} months)`;
+  }
   var GUEST_ASSISTANT_COPY = Object.freeze({
     stayClarification: "How many nights will you be staying, and for how many guests?",
+    // Issue 19 (ADR 0106): a model's nights that differ from the length the guest typed are refused, and that length is shown back.
+    // Owner decision (8 Nov 2026): the wording of the denial sentence. A months length shows its months in brackets.
+    statedStay: (nights, stated) => `Just to check: you\u2019d like ${nights} nights${stated?.unit === "month" ? ` ${guestStayMonthsWords(stated.count)}` : ""}. Shall I search for that?`,
     // Issue 08 (ADR 0106): an area the server does not know is refused with the closed list of areas it can search.
     areaClarification: (examples) => `I couldn't find that area. Which area should I search? For example: ${examples}.`,
     // Issue 07 (ADR 0106, ADR 0015): a budget the server cannot read from the guest's own words is refused, never searched as a guessed amount.
@@ -9531,7 +9587,8 @@ Known schemas:
     unitDatesClarification: "Add your check-in and checkout dates to see this apartment's price for your stay. Please write them with the day, month and year, for example 20 November 2026 to 23 November 2026.",
     // Issue 04 (ADR 0106 2 Nov 2026, ADR 0080, ADR 0077): the show-back of a relative date the guest must confirm. The deterministic
     // path says the same sentence (concierge.ts), so both paths show the same dates before a search.
-    dateShowBack: (arriving, leaving, nights, guests, place) => `Just to check: arriving ${arriving} and leaving ${leaving} (${nights} ${nights === 1 ? "night" : "nights"}), ${guests} ${guests === 1 ? "guest" : "guests"} in ${place}. Shall I search these dates? Reply "yes", or tell me different dates.`,
+    // Issue 19: a stay the guest stated in months shows its nights first and the months in brackets ("60 nights (2 months)").
+    dateShowBack: (arriving, leaving, nights, guests, place, stated) => `Just to check: arriving ${arriving} and leaving ${leaving}${stated?.unit === "month" ? `, ${nights} nights ${guestStayMonthsWords(stated.count)}` : ` (${nights} ${nights === 1 ? "night" : "nights"})`}, ${guests} ${guests === 1 ? "guest" : "guests"} in ${place}. Shall I search these dates? Reply "yes", or tell me different dates.`,
     // Issue 04: an ambiguous phrase names its candidate days; one chip per day, and a tap chooses it.
     // Issue 13b (ADR 0106, 2 Nov 2026; ADR 0080): the same date check while a Request Draft is open. "yes" updates the draft; nothing is searched.
     draftDateShowBack: (arriving, leaving, nights, guests) => `Just to check: arriving ${arriving} and leaving ${leaving} (${nights} ${nights === 1 ? "night" : "nights"}), ${guests} ${guests === 1 ? "guest" : "guests"}. Shall I show your Request Draft with these dates? Reply "yes", or tell me different dates.`,
@@ -9539,8 +9596,22 @@ Known schemas:
     dateConfirmChip: "Yes",
     dateChangeChip: "Change dates",
     safeClarification: "I can help you find and compare stays, explain pricing, or check a booking status. What would you like to do?",
+    // Issue 59 (ADR 0106 amendment, ADR 0075): the fixed copy that re-asks the closed question the assistant last asked, when a terse
+    // answer was not understood. One sentence per code; no guest text is echoed and no model output is used.
+    openQuestion: Object.freeze({
+      where: "Which area would you like to stay in?",
+      party_size: "How many guests are staying?",
+      check_in: "Which day would you like to check in?",
+      nights: "How many nights would you like to stay?",
+      stay_length: "How long would you like to stay?",
+      pick_result: "Which one would you like to see?",
+      date_confirm: 'Shall I use that date? Reply "yes", or tell me different dates.',
+      location_confirm: 'Shall I search that area instead? Reply "yes", or tell me another area.'
+    }),
     // Shown when a turn is slower than a normal one; the guest is not told the request failed.
     stillWorking: "Still working on your request. A stay search can take a little longer, so please keep this page open.",
+    // Issue 21: the browser stopped waiting; the server may still answer. Never claim a server-side cancellation.
+    stoppedWaiting: "Stopped waiting. Your message may still be answered.",
     // ADR 0067 governs the support window and active-stay on-call coverage.
     generalSupport: "General human support is available daily from 8:00 AM to 8:00 PM WAT. Use the existing support channel provided with your stay.",
     activeStayEmergencySupport: "Active stays have 24/7 Human Incident Support. Use Active-Stay Emergency Support through your existing booking support route.",
@@ -9558,14 +9629,14 @@ Known schemas:
     draftReady: "Your Request Draft is ready to review. It has not been submitted.",
     offerInactive: "This Conditional Booking Offer is no longer active. Review the current booking details before continuing.",
     offerAmount: (total, due, deposit) => `The offer's All-In Stay Total is ${total}. The amount due now is ${due}. The refundable security deposit is shown separately as ${deposit}. Review the offer before accepting it.`,
-    confirmedBooking: (contractId) => `Your booking is confirmed under contract reference ${contractId}.`,
-    issuedOffer: (offerId) => `The Accommodation Provider has issued a Conditional Booking Offer under offer reference ${offerId}.`,
-    disclosedRequest: (requestId) => `Your Booking Request ${requestId} has been disclosed and is awaiting the Accommodation Provider's response.`,
+    confirmedBooking: "Your booking is confirmed. Your reservation is in your stay details.",
+    issuedOffer: "The Accommodation Provider has issued a Conditional Booking Offer. Review it in your stay details.",
+    disclosedRequest: "Request sent. Waiting for the Operator to respond.",
     noCurrentBooking: "You currently have no active booking or pending request."
   });
   var GUEST_COMMERCE_ASSISTANT_COPY = Object.freeze({
     searchResults: (count) => `I found ${count} current product ${count === 1 ? "offer" : "offers"}. Review the Commerce results below.`,
-    offer: "I found the current Merchant Offer. Review its details on the Commerce surface.",
+    offer: "I found the current Merchant Offer. Review its details below.",
     delivery: (count) => `I found ${count} current delivery ${count === 1 ? "option" : "options"}. Review the quotes below.`,
     cart: "I updated the Store Cart. Review its current quantities and prices below.",
     orderStatus: (status) => `The current Merchant Order status is ${status}.`,
@@ -9576,7 +9647,15 @@ Known schemas:
     /\bcontrolled catalogue\b/i,
     /\bguest liability\b/i,
     /\bescrow\b/i,
-    /\bhosts?\b/i
+    /\bhosts?\b/i,
+    // Issue 06 (guideline §9): internal state names and UI jargon never reach the guest. Two phrases stay legal or
+    // descriptive guest copy: "Dedicated workspace" is a real amenity, and "disclosed"/"undisclosed" appear in counsel's
+    // contract terms ("Undisclosed commercial use", "disclosed Pet Friendly terms"), so the forbidden form is the internal
+    // request state sentence.
+    /\bhas been disclosed\b/i,
+    /\bsurface\b/i,
+    /\bthe workspace\b/i,
+    /\bartifact\b/i
   ]);
   var GUEST_RECEIPTS = Object.freeze({
     draftCreated: "Draft created",
@@ -9672,6 +9751,16 @@ Known schemas:
     workspace: "Dedicated workspace"
   };
   var GUEST_AMENITY_IDS = Object.freeze(Object.keys(AMENITY_LABELS));
+  function formatGuestDate(value) {
+    const date2 = /* @__PURE__ */ new Date(`${value.slice(0, 10)}T00:00:00.000Z`);
+    if (!/^\d{4}-\d{2}-\d{2}/.test(value) || Number.isNaN(date2.getTime())) return void 0;
+    return new Intl.DateTimeFormat("en-NG", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      timeZone: "UTC"
+    }).format(date2);
+  }
   var GUEST_FACT_LABELS = Object.freeze({
     checkIn: "Check-in",
     checkOut: "Check-out",
@@ -9708,7 +9797,7 @@ Known schemas:
     paymentSchedule: "Payment schedule",
     billingPeriod: "Billing Period",
     /** Demo-launch issue 12: says the amount due now is the first Billing Period, not the whole stay (ADR 0092). */
-    firstPeriodOnly: "This is the first Billing Period only. Later Billing Periods are paid separately on their due dates."
+    firstPeriodOnly: "This is the first Billing Period only. Later Billing Periods are paid separately on their due dates; they are not charged automatically."
   });
   var GUEST_DEMO_NOTICE = "Demo: illustrative listings, not live bookings.";
   var GUEST_DEMO_TEST_PAYMENTS = "Payments use Paystack test mode with the published test card. Do not enter real personal data.";
@@ -9854,8 +9943,65 @@ Known schemas:
     transferHelp: "If you choose bank transfer, you can't switch to card until the transfer account expires.",
     manual: "Manual bank transfer",
     manualHelp: "Pay our business account and upload your receipt. Your booking confirms only after we check the money has arrived. You can't switch until this attempt expires or is declined.",
-    lateReview: "A late payment needs review and does not confirm your booking. Contact Shortlet if you sent money after the deadline."
+    lateReview: "A late payment needs review and does not confirm your booking. Contact Shortlet if you sent money after the deadline.",
+    // The card-checkout failure message (ADR 0077). ACTION_NOT_AUTHORIZED keeps it because it is closed guest copy.
+    checkoutStartFailed: "The secure card checkout could not be started."
   };
+  var GUEST_PAYMENT_CALLBACK_COPY = Object.freeze({
+    title: "We could not confirm this payment yet",
+    message: "Your reservation is not confirmed. Check your booking status before trying again.",
+    action: "Check your booking status",
+    // Issue 07 AC3: shown on the thread when verification failed but the guest can still read the authoritative status.
+    notConfirmedNotice: "We could not confirm your payment. Your reservation is not confirmed. Check the latest booking status."
+  });
+  var GUEST_CHANGED_ELSEWHERE = Object.freeze({
+    message: "This request changed while you were viewing it. Check the latest status."
+  });
+  var GUEST_DEPOSIT_CLAIM_COPY = Object.freeze({
+    title: "Security Deposit Claim",
+    status: (status) => {
+      switch (status) {
+        case "allocation_pending":
+          return "Your deposit claim is being prepared";
+        case "validated_notification_pending":
+          return "The notice is being sent";
+        case "response_open":
+          return "Waiting for your response";
+        case "guest_accepted":
+          return "You accepted this claim";
+        case "human_review":
+          return "Under human review";
+        case "adjudicated":
+          return "Decision issued";
+        case "no_claim_refund_pending":
+          return "Your deposit refund is pending";
+        case "no_claim_refunded":
+          return "Your deposit has been refunded";
+        case "reconciliation_required":
+          return "This needs support review";
+        default:
+          return "Status unavailable";
+      }
+    },
+    refundStatus: (status) => {
+      switch (status) {
+        case "pending":
+          return "Refund pending";
+        case "settled":
+          return "Refunded";
+        case "reconciliation_required":
+          return "Needs support review";
+        case "not_created":
+          return "Not started";
+        case "not_applicable":
+          return "Not applicable";
+        default:
+          return "Status unavailable";
+      }
+    },
+    response: (response) => response === "accept" ? "you accepted this claim" : response === "dispute" ? "you disputed this claim" : "your response is recorded"
+  });
+  var KEPT_ACTION_NOT_AUTHORIZED_COPY = /* @__PURE__ */ new Set([GUEST_PAYMENT_COPY.checkoutStartFailed]);
   var MODE_TEXT_MAX_LENGTH = 400;
   var MODE_BODY_MAX_LENGTH = 600;
   var MODE_STARTERS_MAX = 4;
@@ -10002,6 +10148,103 @@ Known schemas:
     deepFreeze(presentation);
     return presentation;
   }
+  var GUEST_NOTICE_COPY = Object.freeze({
+    action: "Give notice to end your stay",
+    heading: "End your stay early",
+    confirm: "Give notice",
+    back: "Keep my stay",
+    recordedBack: "Back to my stay",
+    /** Issue 18 (proposed for owner confirmation, 8 Nov 2026): refusals and the typed-confirmation reply. */
+    notExtended: "Giving notice applies to an Extended Stay. This is a Short Stay, so it cannot be ended early from here.",
+    notVerified: "You can give notice once you have checked in at the property.",
+    unavailable: "Notice to End is not available for this stay right now.",
+    cardOpened: "Here are the terms for giving notice. Press Give notice on the card to confirm.",
+    given: "Notice given. Your stay now ends on the new last night.",
+    stale: "The notice terms have changed. Ask again to see the current terms.",
+    newLastNight: "New last night",
+    newCheckOut: "New checkout",
+    refund: "Refund for paid nights after it",
+    owed: "Still to pay before then",
+    recordedHeading: "Notice given",
+    recordedLead: "Your stay now ends on the new last night below. Refunds are paid by hand, as the terms say."
+  });
+  var GUEST_EXTENSION_COPY = Object.freeze({
+    action: "Extend your stay",
+    heading: "Extend your stay",
+    confirm: "Request extension",
+    back: "Not now",
+    /** Refusals (a guest refusal, never an error): the reason names the one thing that stops the extension. */
+    notExtended: "Extending applies to an Extended Stay. A Short Stay cannot be extended to 30 nights or more from here.",
+    noticeInForce: "A Notice to End is in force, so this stay cannot be extended.",
+    pending: "An extension request is already waiting for the Operator.",
+    unavailable: "The unit is not available for every added night, so the stay cannot be extended.",
+    inspection: "The inspection or Management Authority does not cover the new checkout, so the stay cannot be extended.",
+    tooLong: "An Extended Stay is at most 180 nights in total, so the stay cannot be extended further.",
+    notAvailable: "This stay cannot be extended right now.",
+    cardOpened: "Here is the extension and what it adds. Press Request extension on the card to send it to the Operator. Nothing is agreed until the Operator approves.",
+    requested: "Extension requested. The Operator will reply by the time shown below. Nothing is added until they approve.",
+    approved: "Extension agreed. Your stay now ends on the new checkout.",
+    declined: "The Operator could not extend your stay. Nothing has changed.",
+    expired: "The Operator did not reply in time, so the extension was not made. Nothing has changed.",
+    stale: "The extension terms have changed. Ask again to see the current terms.",
+    addedNights: "Added nights",
+    newCheckOut: "New checkout",
+    addedAmount: "Added amount (paid as each period falls due)",
+    dueDate: "Due date for the added period",
+    respondBy: "Operator replies by"
+  });
+  function extensionFactRows(facts, money, respondBy) {
+    return [
+      { key: "addedNights", label: GUEST_EXTENSION_COPY.addedNights, value: `${facts.addedNights} ${facts.addedNights === 1 ? "night" : "nights"}`, raw: String(facts.addedNights) },
+      { key: "newCheckOut", label: GUEST_EXTENSION_COPY.newCheckOut, value: formatGuestDate(facts.newCheckOut) ?? facts.newCheckOut, raw: facts.newCheckOut },
+      { key: "addedAmount", label: GUEST_EXTENSION_COPY.addedAmount, value: money(facts.addedAmountKobo), raw: String(facts.addedAmountKobo) },
+      { key: "dueDate", label: GUEST_EXTENSION_COPY.dueDate, value: formatGuestDate(facts.periodDueDate) ?? facts.periodDueDate, raw: facts.periodDueDate },
+      ...respondBy === void 0 ? [] : [{ key: "respondBy", label: GUEST_EXTENSION_COPY.respondBy, value: respondBy, raw: respondBy }]
+    ];
+  }
+  function noticeFactRows(facts, money) {
+    return [
+      { key: "newLastNight", label: GUEST_NOTICE_COPY.newLastNight, value: formatGuestDate(facts.newLastNight) ?? facts.newLastNight, raw: facts.newLastNight },
+      { key: "newCheckOut", label: GUEST_NOTICE_COPY.newCheckOut, value: formatGuestDate(facts.newCheckOut) ?? facts.newCheckOut, raw: facts.newCheckOut },
+      { key: "refund", label: GUEST_NOTICE_COPY.refund, value: money(facts.refundKobo), raw: String(facts.refundKobo) },
+      { key: "owed", label: GUEST_NOTICE_COPY.owed, value: money(facts.owedKobo), raw: String(facts.owedKobo) }
+    ];
+  }
+
+  // apps/local-guest/src/quick-replies.ts
+  function isRecord3(value) {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
+  }
+  function isPositiveInteger(value) {
+    return typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
+  }
+  function exactKeys(value, expected) {
+    const actual = Object.keys(value).sort();
+    const sorted = [...expected].sort();
+    return actual.length === sorted.length && actual.every((key3, index) => key3 === sorted[index]);
+  }
+  function isQuickReplyEdit(value) {
+    if (!isRecord3(value)) return false;
+    if (value.field === "guests") return exactKeys(value, ["field", "partySize"]) && isPositiveInteger(value.partySize);
+    if (value.field === "where") return exactKeys(value, ["field", "area"]) && typeof value.area === "string" && value.area.length > 0 && value.area.length <= 120;
+    if (value.field === "when") {
+      return exactKeys(value, ["field", "checkIn", "nights"]) && typeof value.checkIn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.checkIn) && !Number.isNaN(Date.parse(`${value.checkIn}T00:00:00Z`)) && isPositiveInteger(value.nights);
+    }
+    return false;
+  }
+  function isQuickReplyList(value) {
+    if (!Array.isArray(value)) return void 0;
+    const replies = [];
+    for (const item of value) {
+      if (!isRecord3(item) || typeof item.label !== "string" || item.label === "") continue;
+      if (item.edit === void 0) {
+        replies.push({ label: item.label });
+        continue;
+      }
+      if (isQuickReplyEdit(item.edit)) replies.push({ label: item.label, edit: item.edit });
+    }
+    return replies;
+  }
 
   // apps/local-guest/src/turn-budget.ts
   var SCOPE_CLASSIFIER_BUDGET_MS = 8e3;
@@ -10013,6 +10256,112 @@ Known schemas:
   var CLIENT_TURN_TIMEOUT_MS = SERVER_TURN_MAX_MS + CLIENT_TURN_TRANSPORT_MARGIN_MS;
   var CLIENT_REQUEST_TIMEOUT_MS = 1e4;
   var TURN_STILL_WORKING_AFTER_MS = 1e4;
+
+  // apps/local-guest/src/stale-surface-response.ts
+  function changedElsewhereRecovery(code) {
+    if (code === "EXPIRED_SURFACE") return { kind: "expired" };
+    if (code === "STALE_SURFACE" || code === "STALE_ACTION") return { kind: "stale" };
+    if (code === "ARTIFACT_MISMATCH") return { kind: "stale", message: GUEST_CHANGED_ELSEWHERE.message };
+    return void 0;
+  }
+
+  // apps/local-guest/src/a2ui-accessibility.ts
+  function isRecord4(value) {
+    return typeof value === "object" && value !== null;
+  }
+  function accessibleNameFor(visibleText, label) {
+    return label.toLocaleLowerCase().includes(visibleText.toLocaleLowerCase()) ? label : `${visibleText}: ${label}`;
+  }
+  function labelledControls(messages) {
+    const components = /* @__PURE__ */ new Map();
+    for (const message of messages) {
+      if (!isRecord4(message) || !isRecord4(message.updateComponents)) continue;
+      const list = message.updateComponents.components;
+      if (!Array.isArray(list)) continue;
+      for (const component of list) {
+        if (!isRecord4(component) || typeof component.id !== "string" || typeof component.component !== "string") continue;
+        components.set(component.id, component);
+      }
+    }
+    const controls = [];
+    for (const component of components.values()) {
+      if (component.component !== "Button") continue;
+      const label = component.accessibility?.label;
+      if (typeof label !== "string" || label.trim() === "") continue;
+      const visibleText = component.child === void 0 ? void 0 : components.get(component.child)?.text;
+      if (typeof visibleText !== "string" || visibleText.trim() === "") continue;
+      const visible = visibleText.trim();
+      const accessible = label.trim();
+      controls.push({ visibleText: visible, accessibleLabel: accessible, name: accessibleNameFor(visible, accessible) });
+    }
+    return controls;
+  }
+  function applyAccessibilityLabels(mount, messages) {
+    const controls = labelledControls(messages);
+    if (controls.length === 0) return;
+    const buttons = Array.from(mount.querySelectorAll('button[data-a2ui-component="Button"]'));
+    const used = /* @__PURE__ */ new Set();
+    for (const control of controls) {
+      const button = buttons.find((candidate) => !used.has(candidate) && candidate.textContent?.trim() === control.visibleText);
+      if (!button) continue;
+      used.add(button);
+      button.setAttribute("aria-label", control.name);
+    }
+  }
+
+  // apps/local-guest/src/contact-field.ts
+  function contactFieldAttributes(purpose) {
+    return purpose === "phone" ? { type: "tel", inputMode: "tel", autocomplete: "tel" } : { type: "email", inputMode: "email", autocomplete: "email" };
+  }
+
+  // apps/local-guest/src/turn-cancel.ts
+  function combinedAbortSignal(user, timeoutMs, any = typeof AbortSignal.any === "function" ? (signals) => AbortSignal.any(signals) : void 0) {
+    const timeout = AbortSignal.timeout(timeoutMs);
+    if (any !== void 0) return any([user, timeout]);
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    if (user.aborted) abort();
+    else user.addEventListener("abort", abort, { once: true });
+    timeout.addEventListener("abort", abort, { once: true });
+    return controller.signal;
+  }
+
+  // apps/local-guest/src/image-layout.ts
+  var IMAGE_SHAPE_HINT = { width: 800, height: 600 };
+  function positive(value) {
+    const parsed = Number(value);
+    return value !== null && Number.isFinite(parsed) && parsed > 0 ? parsed : void 0;
+  }
+  function reserveSpace(image) {
+    const width = positive(image.getAttribute("width"));
+    const height = positive(image.getAttribute("height"));
+    if (width !== void 0 && height !== void 0) return;
+    if (width === void 0 && height === void 0 && image.complete && image.naturalWidth > 0 && image.naturalHeight > 0) {
+      image.setAttribute("width", String(image.naturalWidth));
+      image.setAttribute("height", String(image.naturalHeight));
+      return;
+    }
+    const ratio = IMAGE_SHAPE_HINT.height / IMAGE_SHAPE_HINT.width;
+    if (width !== void 0) image.setAttribute("height", String(Math.round(width * ratio)));
+    else if (height !== void 0) image.setAttribute("width", String(Math.round(height / ratio)));
+    else {
+      image.setAttribute("width", String(IMAGE_SHAPE_HINT.width));
+      image.setAttribute("height", String(IMAGE_SHAPE_HINT.height));
+    }
+  }
+  function applyImageLayout(mount) {
+    const images = Array.from(mount.querySelectorAll("img"));
+    images.forEach((image, index) => {
+      reserveSpace(image);
+      if (index === 0) {
+        image.loading = "eager";
+        image.setAttribute("fetchpriority", "high");
+      } else {
+        image.loading = "lazy";
+        image.removeAttribute("fetchpriority");
+      }
+    });
+  }
 
   // apps/local-guest/src/guest-turn-recovery.ts
   function turnEntriesSince(timeline, text) {
@@ -10253,6 +10602,7 @@ Known schemas:
       ticket,
       breakdown,
       sections: [
+        ...content.schedule ? [`${content.schedule.currentPeriod === void 0 ? "" : `<p>${escapeHtml(content.schedule.currentPeriod)}</p>`}${paymentScheduleHtml(content.schedule)}`] : [],
         `<p class="payment-explanation">${escapeHtml(content.explanation)}</p>`,
         ...content.choice ? [paymentChoiceHtml(content.choice)] : slots.sections === void 0 ? [] : [slots.sections],
         ...content.steps.length ? [
@@ -10271,8 +10621,24 @@ Known schemas:
   function stepsHtml(items) {
     return `<ol class="ui-steps">${items.map((item, index) => `<li><span class="ui-steps__number">${index + 1}</span><span>${escapeHtml(item)}</span></li>`).join("")}</ol>`;
   }
+  function confirmationExtensionHtml(extension) {
+    const outcome = extension.outcome === void 0 ? "" : `<p data-extension-outcome="${escapeHtml(extension.outcome)}">${escapeHtml(GUEST_EXTENSION_COPY[extension.outcome])}</p>`;
+    if (extension.requested) {
+      const rows = extensionFactRows(extension.requested.facts, formatNgnKobo, formatWAT(extension.requested.respondBy));
+      return `<section class="ui-panel" aria-labelledby="extension-requested-heading" data-extension-requested><h2 id="extension-requested-heading">${escapeHtml(GUEST_EXTENSION_COPY.heading)}</h2><p>${escapeHtml(GUEST_EXTENSION_COPY.requested)}</p>${extensionFactsDlHtml(rows)}</section>`;
+    }
+    const button = extension.offered ? `<div class="request-actions"><button class="ui-button ui-button--secondary ui-button--block" type="button" data-extension-open>${escapeHtml(GUEST_EXTENSION_COPY.action)}</button></div>` : "";
+    return `<section class="ui-panel" aria-labelledby="extension-heading" data-extension-step><h2 id="extension-heading">${escapeHtml(GUEST_EXTENSION_COPY.heading)}</h2>${outcome}${button}</section>`;
+  }
+  function extensionFactsDlHtml(rows) {
+    return `<dl class="ui-facts ui-facts--stacked">${rows.map((row) => `<dt>${escapeHtml(row.label)}</dt><dd data-extension-fact="${escapeHtml(row.key)}">${escapeHtml(row.value)}</dd>`).join("")}</dl>`;
+  }
+  function confirmationNoticeHtml(notice) {
+    if (notice.kind === "action") return `<div class="request-actions"><button class="ui-button ui-button--secondary ui-button--block" type="button" data-notice-open>${escapeHtml(GUEST_NOTICE_COPY.action)}</button></div>`;
+    return `<section class="ui-panel" aria-labelledby="notice-recorded-heading" data-notice-recorded><h2 id="notice-recorded-heading">${escapeHtml(GUEST_NOTICE_COPY.recordedHeading)}</h2><p>${escapeHtml(GUEST_NOTICE_COPY.recordedLead)}</p>${noticeFactsDlHtml(notice.facts)}</section>`;
+  }
   function confirmationScreenHtml(content, ticket, breakdown) {
-    return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}<div class="confirmation-reference"><dl class="ui-facts ui-facts--stacked"><dt>Booking reference</dt><dd>${escapeHtml(content.bookingReference)}</dd></dl></div><section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}<a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Ask about arrival</a></section><div class="request-actions">${content.scheduleHref ? `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.scheduleHref)}">View payment schedule</a>` : ""}</div><details class="ui-panel booking-details" id="booking-details"><summary class="ui-button ui-button--secondary ui-button--block">Full contract terms</summary><p>${escapeHtml(content.details)}</p></details></section>`;
+    return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}${content.notice ? confirmationNoticeHtml(content.notice) : ""}${content.extension ? confirmationExtensionHtml(content.extension) : ""}<div class="confirmation-reference"><dl class="ui-facts ui-facts--stacked"><dt>Booking reference</dt><dd>${escapeHtml(content.bookingReference)}</dd></dl></div><section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}<a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Ask about arrival</a></section><div class="request-actions">${content.scheduleHref ? `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.scheduleHref)}">View payment schedule</a>` : ""}</div><details class="ui-panel booking-details" id="booking-details"><summary class="ui-button ui-button--secondary ui-button--block">Full contract terms</summary><p>${escapeHtml(content.details)}</p></details></section>`;
   }
   function signInOfferHtml(content) {
     return `<section class="ui-panel" data-sign-in-offer aria-labelledby="sign-in-offer-title"><h2 id="sign-in-offer-title">${escapeHtml(GUEST_ACCOUNT_COPY.offerTitle)}</h2><p>${escapeHtml(GUEST_ACCOUNT_COPY.offerIntro)}</p><form method="post" action="/account/sign-in"><div class="ui-field"><label class="ui-field__label" for="sign-in-offer-email">${escapeHtml(GUEST_ACCOUNT_COPY.emailLabel)}</label><input id="sign-in-offer-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" maxlength="254" required value="${escapeHtml(content.email)}"></div><input type="hidden" name="return" value="${escapeHtml(content.returnPath)}"><button class="ui-button ui-button--secondary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.offerButton)}</button></form></section>`;
@@ -10317,6 +10683,18 @@ Known schemas:
     const thumb = parts.photoSrc === void 0 ? icon("photo") : `<img src="${escapeHtml(parts.photoSrc)}" alt="" width="64" height="64" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
     return `<a class="ui-result-row" href="${escapeHtml(parts.href)}"><span class="ui-result-row__thumb">${thumb}</span><span class="ui-result-row__body"><span class="ui-result-row__title">${escapeHtml(parts.title)}</span><span class="ui-result-row__price">${escapeHtml(parts.total)} <span>${escapeHtml(parts.totalLabel)}</span></span></span>${icon("chevron-right")}</a>`;
   }
+  function noticeFactsDlHtml(facts) {
+    const rows = noticeFactRows(facts, formatNgnKobo);
+    const cells = rows.map((row) => {
+      const attribute = row.key === "newLastNight" ? ` data-new-last-night="${escapeHtml(row.raw)}"` : row.key === "refund" ? ` data-refund-kobo="${escapeHtml(row.raw)}"` : row.key === "owed" ? ` data-owed-kobo="${escapeHtml(row.raw)}"` : "";
+      return `<dt>${escapeHtml(row.label)}</dt><dd${attribute}>${escapeHtml(row.value)}</dd>`;
+    }).join("");
+    return `<dl class="ui-facts ui-facts--stacked">${cells}</dl>`;
+  }
+
+  // apps/web-agent/src/booking-contract-a2ui.ts
+  var NOTICE_OPEN_EVENT = "shortlet.assistant.open-notice";
+  var EXTENSION_OPEN_EVENT = "shortlet.assistant.open-extension";
 
   // apps/local-guest/src/guest-surface-fallback.ts
   function mountGuestSurfaceOrFallback(options) {
@@ -10358,7 +10736,9 @@ Known schemas:
   var announcer = requiredElement("announcer");
   var errorAnnouncer = requiredElement("error-announcer");
   var emptyState = requiredElement("empty-state");
+  var routeHeading = requiredElement("route-heading");
   var workingStatus = requiredElement("working-status");
+  var turnCancel = requiredElement("turn-cancel");
   var journeyRail = requiredElement("journey-rail");
   var taskRail = requiredElement("task-rail");
   var verticalStarters = requiredElement("vertical-starters");
@@ -10398,7 +10778,7 @@ Known schemas:
     }
     return created;
   }
-  function isRecord3(value) {
+  function isRecord5(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
   }
   function isSafeImageUrl(value) {
@@ -10715,6 +11095,15 @@ Known schemas:
       breakdown.outerHTML
     );
     root.replaceChildren(template.content);
+    const bookingSurfaceId = activePayload?.surfaceId;
+    root.querySelector("[data-notice-open]")?.addEventListener("click", () => {
+      if (bookingSurfaceId === void 0) return;
+      void sendEvent({ name: NOTICE_OPEN_EVENT, surfaceId: bookingSurfaceId, sourceComponentId: "booking-contract-notice-action", timestamp: (/* @__PURE__ */ new Date()).toISOString(), context: { surfaceId: bookingSurfaceId } });
+    });
+    root.querySelector("[data-extension-open]")?.addEventListener("click", () => {
+      if (bookingSurfaceId === void 0) return;
+      void sendEvent({ name: EXTENSION_OPEN_EVENT, surfaceId: bookingSurfaceId, sourceComponentId: "booking-contract-extension-action", timestamp: (/* @__PURE__ */ new Date()).toISOString(), context: { surfaceId: bookingSurfaceId } });
+    });
     root.querySelector(".request-next a")?.addEventListener("click", (event) => {
       event.preventDefault();
       askShortlet();
@@ -10858,13 +11247,13 @@ Known schemas:
   function viewUnitIds(payload) {
     const ids = [];
     for (const message of payload?.a2uiMessages ?? []) {
-      if (!isRecord3(message) || !isRecord3(message.updateComponents) || !Array.isArray(message.updateComponents.components))
+      if (!isRecord5(message) || !isRecord5(message.updateComponents) || !Array.isArray(message.updateComponents.components))
         continue;
       for (const component of message.updateComponents.components) {
-        if (!isRecord3(component) || !isRecord3(component.action) || !isRecord3(component.action.event))
+        if (!isRecord5(component) || !isRecord5(component.action) || !isRecord5(component.action.event))
           continue;
         const context = component.action.event.context;
-        if (component.action.event.name === "shortlet.discovery.view-unit" && isRecord3(context) && typeof context.unitId === "string")
+        if (component.action.event.name === "shortlet.discovery.view-unit" && isRecord5(context) && typeof context.unitId === "string")
           ids.push(context.unitId);
       }
     }
@@ -11133,7 +11522,7 @@ Known schemas:
     if (kind === "discovery") decorateDiscoveryCards(mount);
     if (kind === "compare") decorateComparison(mount);
     if (kind === "unit-detail") organizeUnitDetail(mount);
-    if (kind === "booking" || kind === "payment") organizeBookingTicket(mount);
+    if (kind === "booking" || kind === "request-draft" || kind === "payment") organizeBookingTicket(mount);
     if (activePayload?.requestScreen)
       organizeRequestScreen(mount, activePayload.requestScreen);
     if (activePayload?.confirmation)
@@ -11165,20 +11554,20 @@ Known schemas:
     return Array.isArray(value) && value.every((item) => typeof item === "string");
   }
   function isWaitingState(value) {
-    return isRecord3(value) && ["operator-response", "offer-payment-window", "payment-window"].includes(
+    return isRecord5(value) && ["operator-response", "offer-payment-window", "payment-window"].includes(
       String(value.kind)
     ) && typeof value.heading === "string" && typeof value.deadlineText === "string" && typeof value.deadlineAt === "string" && Number.isFinite(Date.parse(value.deadlineAt)) && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow)) && isStringList(value.outcomes) && isStringList(value.meanwhile);
   }
   function isConfirmation(value) {
-    return isRecord3(value) && typeof value.bookingReference === "string" && value.bookingReference !== "" && typeof value.depositCollected === "boolean" && isStringList(value.steps) && isSafeInternalRoute(value.conversationHref) && isSafeInternalRoute(value.detailsHref) && typeof value.details === "string";
+    return isRecord5(value) && typeof value.bookingReference === "string" && value.bookingReference !== "" && typeof value.depositCollected === "boolean" && isStringList(value.steps) && isSafeInternalRoute(value.conversationHref) && isSafeInternalRoute(value.detailsHref) && typeof value.details === "string";
   }
   function isSignInOffer(value) {
-    return isRecord3(value) && typeof value.email === "string" && typeof value.returnPath === "string";
+    return isRecord5(value) && typeof value.email === "string" && typeof value.returnPath === "string";
   }
   function isRequestScreen(value) {
-    if (!isRecord3(value) || typeof value.state !== "string" || !["draft", "review", "sent", "not-accepted"].includes(value.state) || typeof value.tone !== "string" || !["neutral", "warning", "danger"].includes(value.tone) || typeof value.title !== "string" || typeof value.status !== "string" || !isStringList(value.steps) || !isStringList(value.notes))
+    if (!isRecord5(value) || typeof value.state !== "string" || !["draft", "review", "sent", "not-accepted"].includes(value.state) || typeof value.tone !== "string" || !["neutral", "warning", "danger"].includes(value.tone) || typeof value.title !== "string" || typeof value.status !== "string" || !isStringList(value.steps) || !isStringList(value.notes))
       return false;
-    const action = (candidate) => isRecord3(candidate) && isSafeInternalRoute(candidate.path) && typeof candidate.label === "string" && (candidate.surfaceId === void 0 || typeof candidate.surfaceId === "string");
+    const action = (candidate) => isRecord5(candidate) && isSafeInternalRoute(candidate.path) && typeof candidate.label === "string" && (candidate.surfaceId === void 0 || typeof candidate.surfaceId === "string");
     if (!action(value.primary) || value.secondary !== void 0 && !action(value.secondary))
       return false;
     if (["banner", "provider", "guests", "sentAt"].some(
@@ -11189,22 +11578,22 @@ Known schemas:
       return false;
     if (value.changeHref !== void 0 && !isSafeInternalRoute(value.changeHref))
       return false;
-    return value.deadline === void 0 || isRecord3(value.deadline) && typeof value.deadline.iso === "string" && Number.isFinite(Date.parse(value.deadline.iso)) && typeof value.deadline.text === "string";
+    return value.deadline === void 0 || isRecord5(value.deadline) && typeof value.deadline.iso === "string" && Number.isFinite(Date.parse(value.deadline.iso)) && typeof value.deadline.text === "string";
   }
   function isOfferScreen(value) {
-    if (!isRecord3(value) || !["live", "expired", "accepted", "closed"].includes(String(value.state)) || ["title", "status", "provider", "consequence", "amount"].some(
+    if (!isRecord5(value) || !["live", "expired", "accepted", "closed"].includes(String(value.state)) || ["title", "status", "provider", "consequence", "amount"].some(
       (key3) => typeof value[key3] !== "string"
-    ) || typeof value.deadlineIso !== "string" || !Number.isFinite(Date.parse(value.deadlineIso)) || typeof value.serverNow !== "string" || !Number.isFinite(Date.parse(value.serverNow)) || !isStringList(value.steps) || !isStringList(value.notes) || !Array.isArray(value.policies) || !value.policies.every((section) => isRecord3(section) && typeof section.heading === "string" && isStringList(section.items)) || !isSafeInternalRoute(value.conversationPath) || value.searchPath !== void 0 && !isSafeInternalRoute(value.searchPath))
+    ) || typeof value.deadlineIso !== "string" || !Number.isFinite(Date.parse(value.deadlineIso)) || typeof value.serverNow !== "string" || !Number.isFinite(Date.parse(value.serverNow)) || !isStringList(value.steps) || !isStringList(value.notes) || !Array.isArray(value.policies) || !value.policies.every((section) => isRecord5(section) && typeof section.heading === "string" && isStringList(section.items)) || !isSafeInternalRoute(value.conversationPath) || value.searchPath !== void 0 && !isSafeInternalRoute(value.searchPath))
       return false;
-    return value.accept === void 0 || value.state === "live" && isRecord3(value.accept) && isSafeInternalRoute(value.accept.path) && typeof value.accept.surfaceId === "string" && value.accept.surfaceId !== "";
+    return value.accept === void 0 || value.state === "live" && isRecord5(value.accept) && isSafeInternalRoute(value.accept.path) && typeof value.accept.surfaceId === "string" && value.accept.surfaceId !== "";
   }
   function isPaymentScreen(value) {
-    return isRecord3(value) && ["ready", "handoff"].includes(String(value.state)) && ["success", "warning", "danger", "neutral"].includes(String(value.tone)) && ["title", "status", "explanation"].every(
+    return isRecord5(value) && ["ready", "handoff"].includes(String(value.state)) && ["success", "warning", "danger", "neutral"].includes(String(value.tone)) && ["title", "status", "explanation"].every(
       (key3) => typeof value[key3] === "string"
-    ) && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow)) && (value.deadlineIso === void 0 || typeof value.deadlineIso === "string" && Number.isFinite(Date.parse(value.deadlineIso))) && isStringList(value.steps) && (value.choice === void 0 || value.state === "ready" && isRecord3(value.choice) && isSafeInternalRoute(value.choice.action) && typeof value.choice.providerTransfer === "boolean" && typeof value.choice.amount === "string" && (value.choice.manualAction === void 0 || isSafeInternalRoute(value.choice.manualAction)));
+    ) && typeof value.serverNow === "string" && Number.isFinite(Date.parse(value.serverNow)) && (value.deadlineIso === void 0 || typeof value.deadlineIso === "string" && Number.isFinite(Date.parse(value.deadlineIso))) && isStringList(value.steps) && (value.choice === void 0 || value.state === "ready" && isRecord5(value.choice) && isSafeInternalRoute(value.choice.action) && typeof value.choice.providerTransfer === "boolean" && typeof value.choice.amount === "string" && (value.choice.manualAction === void 0 || isSafeInternalRoute(value.choice.manualAction)));
   }
   function isSurfacePayload(value) {
-    if (!isRecord3(value) || typeof value.surfaceId !== "string" || value.surfaceId.trim() === "" || !Array.isArray(value.a2uiMessages))
+    if (!isRecord5(value) || typeof value.surfaceId !== "string" || value.surfaceId.trim() === "" || !Array.isArray(value.a2uiMessages))
       return false;
     if (value.mode !== void 0 && value.mode !== "text" && value.mode !== "inline-surface" && value.mode !== "focused-surface")
       return false;
@@ -11244,36 +11633,36 @@ Known schemas:
     upcoming: "not started"
   };
   function isJourney(value) {
-    if (!isRecord3(value) || typeof value.current !== "string" || !Array.isArray(value.steps) || value.steps.length === 0)
+    if (!isRecord5(value) || typeof value.current !== "string" || !Array.isArray(value.steps) || value.steps.length === 0)
       return false;
     return value.steps.every(
-      (step) => isRecord3(step) && typeof step.id === "string" && typeof step.label === "string" && typeof step.state === "string" && step.state in JOURNEY_STATE_TEXT
+      (step) => isRecord5(step) && typeof step.id === "string" && typeof step.label === "string" && typeof step.state === "string" && step.state in JOURNEY_STATE_TEXT
     );
   }
   function isCriteria(value) {
-    if (!isRecord3(value) || typeof value.key !== "string" || typeof value.editable !== "boolean" || typeof value.canUndo !== "boolean")
+    if (!isRecord5(value) || typeof value.key !== "string" || typeof value.editable !== "boolean" || typeof value.canUndo !== "boolean")
       return false;
     if (!Array.isArray(value.areas) || !value.areas.every(
-      (area) => isRecord3(area) && typeof area.id === "string" && typeof area.label === "string"
+      (area) => isRecord5(area) && typeof area.id === "string" && typeof area.label === "string"
     ))
       return false;
-    const labelled = (field2) => field2 === void 0 || isRecord3(field2) && typeof field2.label === "string";
+    const labelled = (field2) => field2 === void 0 || isRecord5(field2) && typeof field2.label === "string";
     return labelled(value.where) && labelled(value.when) && labelled(value.guests) && labelled(value.budget);
   }
   function isGuestTask(value) {
-    if (!isRecord3(value) || typeof value.taskId !== "string" || typeof value.domain !== "string" || typeof value.domainLabel !== "string" || typeof value.status !== "string" || typeof value.active !== "boolean")
+    if (!isRecord5(value) || typeof value.taskId !== "string" || typeof value.domain !== "string" || typeof value.domainLabel !== "string" || typeof value.status !== "string" || typeof value.active !== "boolean")
       return false;
     if (value.tone !== void 0 && !["info", "success", "warning", "danger"].includes(String(value.tone)))
       return false;
     return value.badge === void 0 || typeof value.badge === "number" && Number.isInteger(value.badge) && value.badge >= 0;
   }
   function isGuestVertical(value) {
-    if (!isRecord3(value) || typeof value.domain !== "string" || typeof value.label !== "string")
+    if (!isRecord5(value) || typeof value.domain !== "string" || typeof value.label !== "string")
       return false;
     return value.description === void 0 || typeof value.description === "string";
   }
   function readGuestResponse(value) {
-    if (!isRecord3(value) || typeof value.ok !== "boolean")
+    if (!isRecord5(value) || typeof value.ok !== "boolean")
       throw new Error("Invalid server response");
     if (value.messages !== void 0 && (!Array.isArray(value.messages) || value.messages.some((message) => typeof message !== "string")))
       throw new Error("Invalid response messages");
@@ -11285,7 +11674,7 @@ Known schemas:
       throw new Error("Invalid response journey");
     if (value.criteria !== void 0 && !isCriteria(value.criteria))
       throw new Error("Invalid response criteria");
-    if (value.quickReplies !== void 0 && !isStringList(value.quickReplies))
+    if (value.quickReplies !== void 0 && !Array.isArray(value.quickReplies))
       throw new Error("Invalid response quick replies");
     if (value.tasks !== void 0 && (!Array.isArray(value.tasks) || value.tasks.some((task) => !isGuestTask(task))))
       throw new Error("Invalid response tasks");
@@ -11331,9 +11720,20 @@ Known schemas:
     }
     document.startViewTransition(update);
   }
+  function dropPaymentNoticeFlag() {
+    try {
+      const url = new URL(window.location.href);
+      if (!url.searchParams.has("payment")) return;
+      url.searchParams.delete("payment");
+      window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    } catch {
+    }
+  }
+  dropPaymentNoticeFlag();
   var threadId = getThreadId();
   var shellState = createConversationShellState();
   var activePayload;
+  var transcriptAnnouncesTurn = false;
   var isLoading = false;
   var eventInFlight = false;
   var lastActivatedControl;
@@ -11352,6 +11752,12 @@ Known schemas:
   function announce(text, assertive = false) {
     (assertive ? errorAnnouncer : announcer).textContent = text;
   }
+  var RENDERED_TURN_WINDOW = 6;
+  function deferOlderTurns() {
+    const turns = transcript.querySelectorAll(".turn");
+    const cutoff = Math.max(0, turns.length - RENDERED_TURN_WINDOW);
+    turns.forEach((turn, index) => turn.classList.toggle("turn--deferred", index < cutoff));
+  }
   function addTurn(role, text) {
     emptyState.hidden = true;
     const turn = document.createElement("article");
@@ -11365,6 +11771,7 @@ Known schemas:
     bubble.textContent = text;
     turn.appendChild(bubble);
     transcript.appendChild(turn);
+    deferOlderTurns();
     transcript.scrollTop = transcript.scrollHeight;
     requestAnimationFrame(() => {
       if (turn.isConnected) transcript.scrollTop = transcript.scrollHeight;
@@ -11411,7 +11818,7 @@ Known schemas:
   }
   function modeFor(surface) {
     if (surface.mode) return surface.mode;
-    return surface.surfaceId.includes(":unit:") || surface.surfaceId.includes(":request:") || surface.surfaceId.includes(":offer:") || surface.surfaceId.includes(":booking:") || surface.surfaceId.includes(":payment:") ? "focused-surface" : "inline-surface";
+    return surface.kind === "unit-detail" || surface.kind === "request-draft" || surface.kind === "booking" || surface.kind === "payment" || surface.kind === "contact" ? "focused-surface" : "inline-surface";
   }
   function presentationFor(surface) {
     const mode = modeFor(surface);
@@ -11442,7 +11849,8 @@ Known schemas:
     if (canReopen)
       workspaceReopen.textContent = `Return to ${guestSurfaceHeading(current.summary).toLocaleLowerCase()}`;
   }
-  function enhanceGuestContactField(mount) {
+  function enhanceGuestContactField(mount, purpose) {
+    if (purpose === void 0) return;
     const synchronize = () => {
       const wrapper = mount.querySelector(
         '[data-a2ui-component="TextField"]'
@@ -11450,16 +11858,15 @@ Known schemas:
       const label = wrapper?.querySelector("label");
       const input = wrapper?.querySelector("input");
       if (!wrapper || !label || !input) return;
-      const labelText = label.textContent?.trim() ?? "";
-      const kind = /^phone number/i.test(labelText) ? "phone" : /^email address/i.test(labelText) ? "email" : void 0;
-      if (!kind) return;
+      const kind = purpose;
       const hint = wrapper.previousElementSibling instanceof HTMLElement && wrapper.previousElementSibling.dataset.a2uiComponent === "Text" ? wrapper.previousElementSibling : void 0;
       const error2 = wrapper.nextElementSibling instanceof HTMLElement && wrapper.nextElementSibling.dataset.a2uiComponent === "Text" ? wrapper.nextElementSibling : void 0;
       if (hint) hint.id = `guest-contact-${kind}-help`;
       input.required = true;
-      input.type = kind === "phone" ? "tel" : "email";
-      input.inputMode = kind === "phone" ? "tel" : "email";
-      input.autocomplete = kind === "phone" ? "tel" : "email";
+      const attributes = contactFieldAttributes(kind);
+      input.type = attributes.type;
+      input.inputMode = attributes.inputMode;
+      input.autocomplete = attributes.autocomplete;
       if (error2) {
         error2.id = `guest-contact-${kind}-error`;
         error2.setAttribute("role", "alert");
@@ -11568,7 +11975,7 @@ Known schemas:
   var sheetQuery = window.matchMedia("(max-width: 63.999rem)");
   var sheetInHistory = isSheetState(history.state);
   function isSheetState(state) {
-    return isRecord3(state) && state.shortletSheet === true;
+    return isRecord5(state) && state.shortletSheet === true;
   }
   function sheetOpen() {
     return sheetQuery.matches && shellState.activeSurface?.mode === "focused-surface" && shellState.focusedSurfaceOpen && !activeWorkspace.hidden;
@@ -11576,7 +11983,7 @@ Known schemas:
   function syncSheetHistory() {
     const open = sheetOpen();
     if (open && !sheetInHistory) {
-      history.pushState({ ...isRecord3(history.state) ? history.state : {}, shortletSheet: true }, "");
+      history.pushState({ ...isRecord5(history.state) ? history.state : {}, shortletSheet: true }, "");
       sheetInHistory = true;
     } else if (!open && sheetInHistory) {
       sheetInHistory = false;
@@ -11587,6 +11994,7 @@ Known schemas:
     focusedScrollTop = workspaceRegion.scrollTop;
     shellState = closeFocusedSurface(shellState);
     composerForm.dataset.focused = "false";
+    routeHeading.textContent = appliedMode.emptyState.heading;
     activeWorkspace.hidden = true;
     showReopen();
     const target = focusTarget.isConnected && !focusTarget.hidden ? focusTarget : workspaceReopen;
@@ -11603,18 +12011,20 @@ Known schemas:
   }
   function renderSurface(surface, moveFocus = false) {
     stopCountdown();
+    lastActivatedControl = void 0;
     const presentation = presentationFor(surface);
     const previousScroll = activePayload?.surfaceId === surface.surfaceId ? shellState.focusedSurfaceOpen ? workspaceRegion.scrollTop : focusedScrollTop : 0;
     focusedScrollTop = previousScroll;
     composerForm.dataset.focused = presentation.mode === "focused-surface" ? "true" : "false";
     activePayload = surface;
+    routeHeading.textContent = guestSurfaceHeading(presentation.summary);
     activeWorkspace.replaceChildren();
     activeWorkspace.hidden = presentation.mode === "focused-surface" && !shellState.focusedSurfaceOpen;
     activeWorkspace.tabIndex = -1;
     workspaceRegion.hidden = false;
     activeWorkspace.dataset.mode = presentation.mode;
     activeWorkspace.dataset.status = presentation.status;
-    activeWorkspace.dataset.surfaceKind = surface.surfaceId.includes(":unit:") ? "unit-detail" : surface.surfaceId.includes(":compare:") ? "compare" : surface.surfaceId.includes(":discovery:") ? "discovery" : surface.surfaceId.includes(":payment:") || surface.surfaceId.includes(":offer:") ? "payment" : surface.surfaceId.includes(":request:") || surface.surfaceId.includes(":booking:") ? "booking" : "general";
+    activeWorkspace.dataset.surfaceKind = surface.kind ?? "general";
     activeWorkspace.classList.remove("workspace-arrival");
     void activeWorkspace.offsetWidth;
     activeWorkspace.classList.add("workspace-arrival");
@@ -11686,7 +12096,7 @@ Known schemas:
     }
     for (const message of surface.a2uiMessages) {
       const processed = weaver.runtime.process(message);
-      if (processed.ok && isRecord3(message) && "createSurface" in message) createdSurfaceIds.add(surface.surfaceId);
+      if (processed.ok && isRecord5(message) && "createSurface" in message) createdSurfaceIds.add(surface.surfaceId);
       if (!processed.ok) {
         trackTelemetry("weaver-rendering-failure");
         trackTelemetry("fallback-rendered");
@@ -11714,10 +12124,12 @@ Known schemas:
     mount.dataset.renderer = "weaver";
     mount.dataset.surfaceId = surface.surfaceId;
     enhanceSurfacePresentation(mount, activeWorkspace.dataset.surfaceKind ?? "general");
+    applyAccessibilityLabels(mount, surface.a2uiMessages);
     if (surface.requestScreen && surface.waiting?.kind === "operator-response" && presentation.status === "active" && !mount.querySelector(".request-screen")) {
       mount.before(renderWaiting(surface.waiting));
     }
-    enhanceGuestContactField(mount);
+    enhanceGuestContactField(mount, surface.contactPurpose);
+    applyImageLayout(mount);
     enhanceListingImages(mount);
     if (presentation.conventionalRoute) {
       const link = document.createElement("a");
@@ -11740,18 +12152,19 @@ Known schemas:
       }
     }
     trackTelemetry(presentation.mode === "focused-surface" ? "focused-surface-opened" : "inline-surface-rendered");
-    if (moveFocus) announce(`${guestSurfaceHeading(presentation.summary)} is ready.`);
+    if (moveFocus && !transcriptAnnouncesTurn) announce(`${guestSurfaceHeading(presentation.summary)} is ready.`);
     syncSheetHistory();
   }
   function acceptSurface(surface, preserveConversation = false) {
     const before = shellState.historicalSummaries.length;
+    const firstSurface = shellState.activeSurface === void 0;
     const replaced = shellState.activeSurface !== void 0 && shellState.activeSurface.surfaceId !== surface.surfaceId;
     const keepConversationOpen = preserveConversation || !replaced && shellState.activeSurface?.mode === "focused-surface" && !shellState.focusedSurfaceOpen;
     shellState = replaceActiveSurface(shellState, presentationFor(surface));
     if (keepConversationOpen) shellState = closeFocusedSurface(shellState);
     if (replaced) trackTelemetry("surface-replaced");
     for (const summary of shellState.historicalSummaries.slice(before)) addHistoricalSummary(summary);
-    renderSurface(surface, replaced && !preserveConversation);
+    renderSurface(surface, (replaced || firstSurface) && !preserveConversation);
     syncSheetHistory();
   }
   function renderSurfaces(surfaces, preserveConversation = false) {
@@ -11768,6 +12181,7 @@ Known schemas:
   }
   function renderJourney(journey) {
     if (!journey) return;
+    if (journey.current === "confirmed") document.querySelector("[data-payment-notice]")?.remove();
     const list = document.createElement("ol");
     list.className = "ui-rail";
     let current;
@@ -12099,8 +12513,10 @@ Known schemas:
     try {
       const response = await postJson("/api/event", { threadId, name, surfaceId: `thread-${threadId}:criteria`, sourceComponentId: "criteria-strip", timestamp: (/* @__PURE__ */ new Date()).toISOString(), context });
       if (!response.ok) {
-        criteriaStatus.textContent = response.message ?? "That change could not be applied.";
-        if (response.code === "STALE_SURFACE" || response.code === "CRITERIA_LOCKED") void refreshServerState();
+        const recovery = changedElsewhereRecovery(response.code);
+        criteriaStatus.textContent = recovery?.message ?? response.message ?? "That change could not be applied.";
+        const refusal = applyRefusal(response);
+        if (recovery || refusal === "stale" || response.code === "CRITERIA_LOCKED") void refreshServerState();
         return;
       }
       criteriaStatus.textContent = "";
@@ -12162,40 +12578,74 @@ Known schemas:
   }
   function renderQuickReplies(replies) {
     clearQuickReplies();
-    if (!replies || replies.length === 0) return;
+    const chips = isQuickReplyList(replies) ?? [];
+    if (chips.length === 0) return;
     const group = document.createElement("div");
     group.className = "quick-replies";
     group.setAttribute("role", "group");
     group.setAttribute("aria-label", "Suggested replies");
-    for (const text of replies) {
+    for (const reply of chips) {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "ui-chip quick-reply";
-      button.textContent = text;
+      button.textContent = reply.label;
       button.addEventListener("click", () => {
         if (isLoading) return;
         clearQuickReplies();
-        addTurn("user", text);
-        void sendTurn(text);
+        addTurn("user", reply.label);
+        if (reply.edit !== void 0) {
+          const basedOn = currentCriteria?.key;
+          if (basedOn === void 0) {
+            void sendTurn(reply.label);
+            return;
+          }
+          void sendCriteriaEvent(CRITERIA_EDIT_EVENT, { ...reply.edit, basedOn });
+          return;
+        }
+        void sendTurn(reply.label);
       });
       group.appendChild(button);
     }
     transcript.appendChild(group);
     transcript.scrollTop = transcript.scrollHeight;
   }
+  var lastRefusalSignature;
+  var REFUSAL_CLASSES = ["stale", "forbidden", "invalid", "unavailable", "busy"];
+  function isRefusalClass(value) {
+    return typeof value === "string" && REFUSAL_CLASSES.includes(value);
+  }
+  function applyRefusal(response) {
+    const byCode = response.code === "STALE_SURFACE" || response.code === "STALE_ACTION" || response.code === "EXPIRED_SURFACE" ? "stale" : void 0;
+    const cls = isRefusalClass(response.refusal) ? response.refusal : byCode;
+    if (cls === "stale") {
+      shellState = markActiveSurfaceStatus(shellState, response.code === "EXPIRED_SURFACE" ? "expired" : "stale");
+      if (activePayload) renderSurface({ ...activePayload, status: shellState.activeSurface?.status });
+      void refreshServerState();
+    }
+    return cls;
+  }
   function renderResponse(response) {
     if (!response.ok) {
-      const message = response.message ?? "That action could not be completed.";
+      const recovery = changedElsewhereRecovery(response.code);
+      const message = recovery?.message ?? response.message ?? "That action could not be completed.";
       if (response.code === "quota_refusal" || response.code === "CONCIERGE_UNAVAILABLE") setAgentMark({ type: "turn-refused", code: response.code });
-      if (response.code === "STALE_SURFACE" || response.code === "STALE_ACTION" || response.code === "EXPIRED_SURFACE") {
-        shellState = markActiveSurfaceStatus(shellState, response.code === "EXPIRED_SURFACE" ? "expired" : "stale");
+      const cls = applyRefusal(response);
+      if (recovery) {
+        shellState = markActiveSurfaceStatus(shellState, recovery.kind);
         if (activePayload) renderSurface({ ...activePayload, status: shellState.activeSurface?.status });
         void refreshServerState();
       }
-      addTurn("assistant", message);
+      if (!recovery && (cls === "forbidden" || cls === "invalid") && lastActivatedControl?.isConnected && activeWorkspace.contains(lastActivatedControl)) {
+        lastActivatedControl.setAttribute("aria-disabled", "true");
+      }
+      const signature = `${response.code ?? ""}|${cls ?? ""}|${message}`;
+      const duplicate = signature === lastRefusalSignature;
+      lastRefusalSignature = signature;
+      if (!duplicate) addTurn("assistant", message);
       announce(message, true);
       return false;
     }
+    lastRefusalSignature = void 0;
     renderJourney(response.journey);
     renderCriteria(response.criteria);
     renderTaskRail(response.tasks);
@@ -12205,7 +12655,9 @@ Known schemas:
     renderQuickReplies(response.quickReplies);
     if ((response.messages ?? []).length > 0) trackTelemetry("text-response-rendered");
     const surfaces = response.surfaces ?? [];
+    transcriptAnnouncesTurn = (response.messages ?? []).length > 0;
     renderSurfaces(surfaces);
+    transcriptAnnouncesTurn = false;
     for (const receipt of response.receipts ?? []) addReceipt(receipt);
     landAgentReply();
     return true;
@@ -12230,7 +12682,7 @@ Known schemas:
     }
     return false;
   }
-  async function postJson(path, body, timeoutMs = CLIENT_REQUEST_TIMEOUT_MS) {
+  async function postJson(path, body, timeoutMs = CLIENT_REQUEST_TIMEOUT_MS, userSignal) {
     const response = await fetch(path, body === void 0 ? {} : {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -12238,7 +12690,7 @@ Known schemas:
       // ADR-0079 bounds establishment; aborting the client wait never rolls back
       // a command that the server may already have committed. A turn waits for the
       // server's worst case (turn-budget.ts), so the wait ends only after the server can finish.
-      signal: AbortSignal.timeout(timeoutMs)
+      signal: userSignal === void 0 ? AbortSignal.timeout(timeoutMs) : combinedAbortSignal(userSignal, timeoutMs)
     });
     if (!response.ok) throw new Error(`Guest request failed with HTTP ${response.status}`);
     return readGuestResponse(await response.json());
@@ -12271,15 +12723,33 @@ Known schemas:
   async function sendTurn(text) {
     if (isLoading) return;
     setLoading(true);
+    const cancel = new AbortController();
+    let stoppedByGuest = false;
+    const showCancel = setTimeout(() => {
+      turnCancel.hidden = false;
+    }, TURN_STILL_WORKING_AFTER_MS);
     const stillWorking = setTimeout(() => {
       workingStatus.textContent = GUEST_ASSISTANT_COPY.stillWorking;
     }, TURN_STILL_WORKING_AFTER_MS);
+    const stop = () => {
+      stoppedByGuest = true;
+      cancel.abort();
+    };
+    turnCancel.addEventListener("click", stop);
     try {
-      if (renderResponse(await postJson("/api/turn", { threadId, text }, CLIENT_TURN_TIMEOUT_MS))) {
+      if (renderResponse(await postJson("/api/turn", { threadId, text }, CLIENT_TURN_TIMEOUT_MS, cancel.signal))) {
         if (composerInput.value.trim() === text) composerInput.value = "";
       }
     } catch {
-      if (await showLandedTurn(text)) {
+      if (stoppedByGuest) {
+        if (await showLandedTurn(text)) {
+          if (composerInput.value.trim() === text) composerInput.value = "";
+        } else {
+          if (composerInput.value.trim() === "") composerInput.value = text;
+          addTurn("assistant", GUEST_ASSISTANT_COPY.stoppedWaiting);
+          announce(GUEST_ASSISTANT_COPY.stoppedWaiting);
+        }
+      } else if (await showLandedTurn(text)) {
         if (composerInput.value.trim() === text) composerInput.value = "";
       } else {
         addRetryTurn("The concierge is temporarily unavailable. Your message is still in the composer; please try again.", () => {
@@ -12288,11 +12758,15 @@ Known schemas:
         announce("The concierge is temporarily unavailable. Your message remains in the composer.", true);
       }
     } finally {
+      clearTimeout(showCancel);
       clearTimeout(stillWorking);
+      turnCancel.hidden = true;
+      turnCancel.removeEventListener("click", stop);
       setLoading(false);
     }
   }
   async function sendEvent(action) {
+    if (lastActivatedControl?.isConnected && activeWorkspace.contains(lastActivatedControl) && lastActivatedControl.getAttribute("aria-disabled") === "true") return;
     const current = shellState.activeSurface;
     if (!current || current.surfaceId !== action.surfaceId || !canUseSurfaceActions(current.status)) {
       addTurn("assistant", fallbackSummary(current ?? { surfaceId: action.surfaceId, mode: "inline-surface", status: "stale", summary: "This workspace" }));
@@ -12471,14 +12945,14 @@ Known schemas:
     }
   }
   function isCommittedWork(value) {
-    return isRecord3(value) && (value.kind === "request" || value.kind === "offer" || value.kind === "reservation") && typeof value.threadId === "string" && typeof value.route === "string" && value.route.startsWith("/") && (value.unitTitle === void 0 || typeof value.unitTitle === "string");
+    return isRecord5(value) && (value.kind === "request" || value.kind === "offer" || value.kind === "reservation") && typeof value.threadId === "string" && typeof value.route === "string" && value.route.startsWith("/") && (value.unitTitle === void 0 || typeof value.unitTitle === "string");
   }
   async function fetchCommittedWork() {
     try {
       const response = await fetch("/api/committed-work", { signal: AbortSignal.timeout(CLIENT_REQUEST_TIMEOUT_MS) });
       if (!response.ok) return null;
       const body = await response.json();
-      if (!isRecord3(body) || body.ok !== true || !Array.isArray(body.committedWork) || !body.committedWork.every(isCommittedWork)) return null;
+      if (!isRecord5(body) || body.ok !== true || !Array.isArray(body.committedWork) || !body.committedWork.every(isCommittedWork)) return null;
       return body.committedWork;
     } catch {
       return null;

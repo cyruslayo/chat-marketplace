@@ -82,7 +82,7 @@ test("AC3: After a clarify reply, the quick replies match the missing criterion"
       const threadId = `g-${crypto.randomUUID()}`;
       const clarify = success(await fixture.send("/api/turn", { threadId, text: scenario.opener }));
       assert.match(clarify.messages.join(" "), scenario.asks);
-      const replies = clarify.quickReplies ?? [];
+      const replies = (clarify.quickReplies ?? []).map((chip) => chip.label);
       assert.ok(replies.length >= 3, `${scenario.filled}: offers quick replies`);
       // Each quick reply, sent as the next message, answers exactly that question.
       for (const reply of replies) {

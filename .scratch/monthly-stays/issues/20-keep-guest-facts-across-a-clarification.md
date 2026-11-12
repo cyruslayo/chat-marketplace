@@ -1,0 +1,214 @@
+# 20 · Keep the guest's own facts across a clarification turn
+
+Status: resolved
+Type: task
+Blocked by: 19
+Requested: 8 Nov 2026
+
+## Why
+
+Found while finishing issue 19 (see its Comments and `test/assistant-partial-facts-across-turns.test.ts`, whose two restore cases are `test.todo`). On the assistant path, when the concierge has to ask for a missing fact, the turn is a clarification and, under ADR 0106, "commits no task state" (`apps/local-guest/src/assistant/assistant-runtime.ts` ~87). The assistant context is persisted only once it has a city (`apps/local-guest/src/shortlet-app.ts` ~3118–3119, synced ~3494), and a cold restore clears the conversation history (`assistant-runtime.ts` ~779). A warm process survives on that history; a cold restore (every staging request) does not:
+
+| Turn 1 → turn 2 | Warm | Cold restore |
+|---|---|---|
+| "Ikoyi from 5 Jan for 3 nights" → "2 of us" | searches | asks for the dates again |
+| "Ikoyi, 2 months from 5 Jan" → "2 of us" | searches 60 nights | asks for the dates again |
+
+The landing chip flow ("Ikoyi, 2 months from 5 Jan, relocating", then the party size) hits this on staging.
+
+## Owner decision (8 Nov 2026)
+
+Narrow amendment to ADR 0106: a clarification turn still runs **no search, no tool effect, and keeps nothing the model proposed**, but it **saves the facts the guest's own words gave** into the existing persisted assistant context, so the next turn can use them after a cold restore. Ship together with issue 19.
+
+## What to build
+
+1. **Guest-authored facts only.** From the current guest text (and structured guest input), using the existing readers and authority rules: city/area (`resolveLocationMention` / the closed area list), check-in (the existing date-authority rules: ISO token, English day-month literal, or confirmed relative phrase; ADR 0106 "Structured dates"), stated length (issue 19's `statedStay`) and nights, party size, bedrooms. Nothing the planner or classifier proposed is saved on a clarification turn. A check-in that the date rules would refuse is not saved.
+2. **Persist a partial context.** The existing assistant context projection may be saved with only some of these fields (no city required). No new fields beyond issue 19's `statedStay`; no new table (ADR 0093 minimal projection). A cold restore seeds the task state from it exactly as for a full context.
+3. **Next turn.** The facts restored from a clarification turn are guest-authored, so the planner's search must use them (a planner search that contradicts a saved guest fact is a `tool_denial`, as for chip facts and the stated length). A new guest fact replaces the saved one; a chip edit replaces it too.
+4. **Show-back.** The criteria strip after a clarification turn shows the saved facts (it already must come back on assistant responses, AGENTS.md).
+5. **ADR 0106.** Add a dated line "Amendment (8 Nov 2026, issue 20)" stating the narrowed rule above. Change nothing else.
+6. Turn the two `test.todo` cases in `test/assistant-partial-facts-across-turns.test.ts` into passing tests.
+
+## Acceptance criteria
+
+- AC1: Cold restore before every event: "Ikoyi from 5 Jan for 3 nights" then "2 of us" searches Ikoyi, 5–8 Jan, 2 guests.
+- AC2: Cold restore before every event: "Ikoyi, 2 months from 5 Jan" then "2 of us" searches 60 nights, and the strip shows "60 nights (2 months)".
+- AC3: A clarification turn saves nothing the planner proposed: a scripted planner that invents a check-in the guest never typed leaves no check-in in the saved context.
+- AC4: A check-in the date rules refuse (e.g. "next month" without confirmation) is not saved.
+- AC5: A new guest fact or a chip edit in turn 2 replaces the saved fact.
+- AC6: The landing chip flow over the HTTP routes (landing handoff, demo off, cold restore between requests): "Ikoyi, 2 months from 5 Jan, relocating" then "2 guests" searches 60 nights.
+- AC7: The persisted assistant context gains no field beyond issue 19's `statedStay` (assert its keys).
+- AC8: The existing assistant tests (cold journey, criteria strip, date literals, scope controls, pending-action restore, persistent continuity, warm session) pass unchanged.
+
+## ADR compliance
+
+| ADR | Constraint |
+|---|---|
+| 0106 | Date authority; guest-authored facts; `tool_denial`; cold restore; no keyword fast path; domain-neutral runtime; amended narrowly here |
+| 0093 | Minimal persisted projection |
+| 0092, 0023 | Stay lengths |
+
+## Definition of Done
+
+See `docs/agents/issue-tracker.md`. Record commands and pass counts in Comments.
+
+## Comments
+
+### Implementation (8 Nov 2026, commit ec16505, branch feat/month-phrasing)
+
+Files: `apps/local-guest/src/assistant/shortlet-assistant-pack.ts` (`recordGuestAuthoredFacts`, `guestTypedCheckIn`, the
+`recordGuestFacts` hook); `apps/local-guest/src/assistant/assistant-platform.ts` (the optional hook on the pack interface);
+`apps/local-guest/src/assistant/assistant-runtime.ts` (the hook call after the scope check, for in-scope, non-mixed turns, on the
+committed and the candidate state); `apps/local-guest/src/assistant/date-tokens.ts` (`mentionsCheckOut`);
+`apps/local-guest/src/guest-projection.ts` (`city` optional; `isPartialAssistantContext`; the parser refuses any area-less context
+that holds more than the guest's own fields); `apps/local-guest/src/shortlet-app.ts` (`#partialAssistantContext`; the context search
+runs no search without an area and keeps the strip's criteria; the restore leaves `location` unset without an area);
+`docs/adr/0106-enforce-concierge-agent-controls.md` (one dated line, "Amendment (8 Nov 2026, issue 20)", nothing else).
+Tests: `test/assistant-clarification-facts.test.ts` (new: AC1 to AC5, AC7); `test/assistant-clarification-facts-http.test.ts` (new: AC6,
+cold HTTP, one new handler per request, `/welcome/start` then `/api/turn`); `test/assistant-partial-facts-across-turns.test.ts` (the two
+`test.todo` cold cases are now passing tests); `test/helpers/stay-length-fixtures.ts` (`storedAssistantContext`, `criteriaEditEvent`);
+`test/stay-length-persisted.test.ts` (uses the shared `criteriaEditEvent`; no behaviour change); `test/stay-length-assistant.test.ts`
+(one assertion, see Deviation below).
+
+What is saved on a clarification turn (guest text only): the area (`resolveLocationMention`, only when the held city is the same or
+absent); one day the guest typed (an ISO token or an English day-month literal, `guestDateLiterals`) that the booking horizon and the
+stay rules accept, when the text names no checkout; a new check-in replaces the held dates and sets `isDemoDate` false; the checkout and
+nights come only from the stated length (issue 19) with that check-in, by `validatedCheckOutForNights`; party size and bedrooms from
+`extractStayRequestFacts`. The planner's and classifier's slots are never inputs.
+
+### Commands and pass counts
+
+- `env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test test/assistant-clarification-facts.test.ts test/assistant-clarification-facts-http.test.ts`:
+  7 pass, 0 fail (AC1, AC2, AC3, AC4, AC5, AC6, AC7).
+- Before the implementation, the same three files: 9 of 11 failed (the seven new AC tests and the two cold partial-facts cases); the two warm
+  cases passed.
+- Affected set (20 files: the 2 new files, `test/assistant-partial-facts-across-turns.test.ts`, every `test/stay-length-*.test.ts`,
+  assistant-cold-journey, assistant-date-literals, assistant-checkout-dates, assistant-scope-controls, assistant-pending-action-restore,
+  assistant-persistent-continuity, assistant-runtime-boundary, assistant-pack-registry, assistant-location-change, assistant-budget-chip,
+  guest-criteria-strip, warm-session-post-payment, landing-monthly-copy):
+  `env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test <20 files>`: 155 pass, 0 fail (exit 0).
+  The first run had 2 fails (a same-date check-in in `assistant-scope-controls` "Date role AC2", fixed by `mentionsCheckOut`; and
+  issue 19's AC3 nights assertion, see Deviation); the second run is the one recorded.
+- Wider set (files that read the persisted context or the restore path, plus the restart and projection tests):
+  `assistant-discovery-view`, `assistant-short-stays-29-nights`, `assistant-where-chip` and the `*restart*` and `*projection*` test
+  files: 69 pass, 0 fail.
+- `env -u LLM_API_KEY npm run check` on the committed tree (`ec16505`, clean except the untracked `node_modules` symlink): exit 0.
+- Not run: the real-Chrome strip file (strip markup and `client.ts` are unchanged, so no `client.js` rebuild); the full `npm test` and
+  `npm run test:workers` (the batch gate, CLAUDE.md).
+
+### Acceptance criteria (named tests)
+
+- AC1: `assistant-clarification-facts.test.ts`, "AC1 Cold restore before every event: ..." (5 Jan to 8 Jan, 2 guests; the strip reads
+  "5–8 Jan 2027 · 3 nights", the stored context holds Old Ikoyi and 2 guests).
+- AC2: same file, "AC2 ..." (the search ends 6 Mar 2027; the strip reads "... · 60 nights (2 months)").
+- AC3: same file, "AC3 ..." (a planner check-in the guest never typed: `tool_denial` with the dated clarification, no search; the saved
+  context has no check-in, checkout or nights, and keeps the guest's 60-nights length and Lagos).
+- AC4: same file, "AC4 ..." ("next month", and an ISO date beyond the booking horizon: no check-in saved, no search).
+- AC5: same file, "AC5 ..." (a new check-in replaces 5 Jan with 12 Jan; a criteria chip edit replaces it with 20 Jan).
+- AC6: `assistant-clarification-facts-http.test.ts`, "AC6 ..." (the landing handoff to `/welcome/start`, then `/api/turn` "2 guests",
+  each through a new handler: strip "60 nights (2 months)", stored checkout 2027-03-06).
+- AC7: same file as AC1, "AC7 ..." (the persisted keys stay within issue 19's list, asserted after the clarification and after the search).
+- AC8: no new test. The existing suites in the affected set pass (155 pass), with one assertion changed, see Deviation.
+
+### Deviation from AC8 ("unchanged") — owner decision needed
+
+`test/stay-length-assistant.test.ts`, issue 19 AC3 ("a planner call with 61 nights is a tool_denial"): the assertion
+`persistedStay(...).nights === undefined` encoded the gap this issue closes. The guest's own words ("2 months from 5 Jan") now save the
+60 nights with their check-in, so the test asserts `nights === 60` and `nights !== 61`. The 61-night call is still refused and no
+61-night stay is recorded. Because AC8 says "unchanged", the status stays `ready-for-agent` until the owner accepts this one edit. If the
+owner rejects it, the alternative is to save the check-in and the stated length only, without the derived nights; that also breaks the
+show-back on a clarification turn (AC4 of the brief, item 4), so it is not implemented here.
+
+### Decisions and gaps for the owner
+
+- A text that names a checkout anywhere saves no check-in ("5 Jan to 8 Jan", "use 6 Nov for both the check-in and checkout dates").
+  That is fail closed; a check-in paired with a checkout could be saved later as a separate decision.
+- "2 of us" is not read by the deterministic reader (the existing `GUESTS_PATTERN`), so party size on that phrase comes from the
+  planner on the next turn, as before. Not changed.
+- AC6 says the assistant search reply shows "60 nights (2 months)". The assistant search reply carries no nights today (issue 19 note),
+  so the months show on the criteria strip; the test checks the strip.
+- ADR 0106 was amended with one line only; no other ADR or policy was changed. No new literal, no new persisted field, and no `any`.
+- The map row for issue 20 is unchanged (`ready-for-agent`) pending the AC8 decision above.
+
+### Status
+
+Status stays `ready-for-agent`: AC1 to AC7 pass; AC8 passes with one owner-decision assertion change (see Deviation).
+
+### Coordinator decision and follow-up (8 Nov 2026): AC8 edit accepted, range and "N of us" phrasings
+
+- Coordinator decision (not an owner decision): the edit to `test/stay-length-assistant.test.ts` (issue 19 AC3, `nights` now 60, `!== 61`)
+  is ACCEPTED. The old `nights === undefined` encoded the gap this issue closes, and the 61-night refusal is still asserted. AC8 therefore
+  passes on the coordinator's reading.
+- Date ranges (`apps/local-guest/src/assistant/shortlet-assistant-pack.ts`, `guestTypedDates`, `validatedStay`): a literal range ("5–8 Jan",
+  "5 Jan to 8 Jan", "from 5 Jan until 8 Jan") or two literal days joined by to/until/till/through is a check-in and checkout, saved with nights
+  and statedStay unit night when StayDateRange accepts it (ADR 0023/0092 lengths, ADR 0055 horizon). The shared resolver (`resolveStayDatePhrases`)
+  is the only reader; no new date parser. Ambiguous text saves no dates: a relative or span phrase, a refused literal, two check-ins ("5 Jan or 6 Jan"),
+  a checkout not after the check-in, or a checkout keyword. The inner day of a range ("8 Jan" inside "5–8 Jan") is one reading, not a second date.
+- Party size (`apps/local-guest/src/concierge.ts`, `PARTY_OF_US_PATTERN`): "N of us" / "the N of us", digits or number words of two or more
+  (NUMBER_WORDS). It is read by the shared `extractStayRequestFacts`, so the deterministic and the assistant paths both read it. "us", "a few of us"
+  and "some of us" give no party.
+- New test file: `test/assistant-clarification-ranges.test.ts`, four tests named as the coordinator asked: "A date range in a clarification turn is
+  kept after a cold restore" (three phrasings, each a cold restore before every event: the strip reads "5–8 Jan 2027 · 3 nights"), "An ambiguous date
+  range saves no dates", "'4 of us' is read as a party of 4 on both paths" (deterministic `criteria.guests.count` 4; assistant saved partySize 4),
+  "'a few of us' gives no party size" (both paths).
+- ADR 0106: the issue 20 amendment line now names "a typed check-in or a typed stay with its checkout" (the same line, nothing else).
+
+Commands and pass counts (all `env -u LLM_API_KEY NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow npx tsx --test <files>`):
+- The new file: 4 pass, 0 fail (the first run had one failure: the inner day of "5–8 Jan" was a second reading; fixed in the reader).
+- Extended affected set (29 files: the 20 from the previous record, the new file, `test/assistant-checkout-dates.test.ts`,
+  `test/guest-discovery-reasons.test.ts`, and the non-browser landing files `landing-chip-limit`, `landing-handoff`, `landing-monthly-copy`,
+  `landing-page-motion`, `landing-page`, `landing-port`): 220 pass, 0 fail, exit 0.
+- Wider set (`assistant-discovery-view`, `assistant-short-stays-29-nights`, `assistant-where-chip`, `assistant-date-literal-authority`, and the
+  `*restart*` test files; the `*projection*` glob matched no files): 77 pass, 0 fail, exit 0.
+- `env -u LLM_API_KEY npm run check` on the committed tree (code commit `54459f1`, clean except the untracked `node_modules` symlink): exit 0.
+- Not run: the real-Chrome strip file (strip markup unchanged), the full `npm test` and `npm run test:workers` (batch gate).
+
+Code commits: `ec16505` (the issue 20 change), `54459f1` (ranges and "N of us"). Records: `758785b`, and the resolving commit below.
+
+### Status
+
+Status: resolved. AC1 to AC7 pass; AC8 passes on the coordinator decision above; the follow-up tests pass. Map row: resolved.
+
+### Gate regressions on a14d4a6 and the fix (8 Nov 2026, commit b4da196)
+
+The pre-merge gate found five failures, all passing at c2ba3bd and failing solo on a14d4a6. Causes, per test (solo runs of the same files):
+
+- `test/assistant-budget-phrase.test.ts` AC4 (line 101): the turn is a complete stay. The save completed the stay on turn start, so the pack's
+  server-chosen call searched without the planner, bypassing the refused budget (`searches.length` 1, expected 0).
+- `test/assistant-parity.test.ts` line 193, "nights changed on a Request Draft": the same early save changed the held stay on a non-clarification
+  turn (`14–17 Dec · 3 nights`, expected `14–16 Dec · 2 nights`).
+- `test/assistant-turn-stop-reasons.test.ts` (the turn_deadline test, and the tool_denial test "A planner date the guest did not give"): the
+  turn-start save changed `stayIntent` on turns that must leave the thread unchanged.
+- `test/assistant-recorded-journeys.test.ts` (line 678, first test): the early save changed the scope classifier's context on turn 1 (`hasShortlist`
+  true, from a discovery query the shell ran for the saved area), then the planner's canonical facts (`"city":"Lagos"`, recorded `null`).
+
+Fix (owner rule: a stay clarification saves; nothing else does):
+- The save moved to the two clarification points: a planner reply with `clarify_stay` and no successful operation (saved at commit), and a
+  search missing its stay details (`AssistantStayDetailsError`, saved on the refused-call path). Refused date, budget and length calls, turn
+  deadlines, errors and mixed or out-of-scope turns save nothing from the turn.
+- The shell runs no discovery query for a context with no search: the sync re-queries only a thread that already holds results, and a restore
+  rebuilds results only for a thread with a result or a search history.
+
+Changed tests (coordinator review; each explained):
+1. `test/assistant-recorded-journeys.test.ts`, `withOwnerAreaFact`: the recording `missing-information-clarification` was made before issue 20 and
+   says `"city":null` in the planner's canonical facts at step 4, after "I want somewhere in Ikoyi". That is exactly the gap the owner closed (a
+   missing-fact clarification keeps the guest's own area). The in-memory copy replaces that one fact (asserted to occur once). The recording file is
+   not edited, and every other request and turn output is still compared. All five journeys pass.
+2. `test/assistant-clarification-facts.test.ts` AC3: the assertion that the area of a refused planner date is saved is changed to "no area". A refused
+   date is not a missing-fact clarification (coordinator rule). Its `statedStay` assertion is unchanged (issue 19's settle, before issue 20).
+3. `test/stay-length-assistant.test.ts` AC3 (issue 19): my earlier edit (`nights 60`, `!== 61`) is reverted to the original assertion
+   (`nights === undefined`). Under the narrowed rule the refused 61-night turn saves no nights, so the original assertion holds again. This
+   reverts the change the coordinator accepted; AC8 "unchanged" holds again for this file.
+
+Not changed: `test/assistant-recording-clients.test.ts` (out of scope). On Linux one test fails in its cleanup (`rmdirSync` on a symlink that stands
+in for a Windows junction, ENOTDIR). The file is unchanged since ae167e8 and the failure is in the test's own teardown, not in the code it tests.
+
+Commands and counts:
+- Five failing tests plus the issue 20 files (`assistant-budget-phrase`, `assistant-parity`, `assistant-recorded-journeys`,
+  `assistant-turn-stop-reasons`, `assistant-clarification-facts`, `assistant-clarification-facts-http`, `assistant-clarification-ranges`,
+  `assistant-partial-facts-across-turns`, `stay-length-assistant`): 70 pass, 0 fail, exit 0 (before the gate fix: 5 fail).
+- Wide non-browser set (the 60 `test/assistant-*.test.ts` files, excluding the Chromium file, plus the `stay-length-*` files, `assistant-cold-journey`,
+  `assistant-scope-controls`, `assistant-date-literals`, `assistant-checkout-dates`, `guest-discovery-reasons`, and the issue 20 files):
+  `npx tsx --test <65 files>`: 514 tests, 513 pass, 1 fail. The fail is `assistant-recording-clients` (the teardown above), which is pre-existing.
+- `env -u LLM_API_KEY npm run check` on the committed tree (`b4da196`): exit 0.
+- Not run: the full `npm test`, `npm run test:workers` and the Chromium files (the batch gate).

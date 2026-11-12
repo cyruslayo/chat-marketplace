@@ -64,13 +64,24 @@ function withNoticeKey(state: AssistantTaskState): AssistantTaskState {
   return { ...state, replacedPendingAction: state.replacedPendingAction ?? null, pendingDraftReplacement: state.pendingDraftReplacement ?? null };
 }
 
+/**
+ * ADR 0106 (9 Nov 2026): a turn that asks a question records the closed open-question code (`assistant-state.ts`). A rejected tool call
+ * may be followed by such a clarification, so these equality snapshots compare every other field and the tests assert the code where it
+ * matters. Only that one key is normalised.
+ */
+function withoutOpenQuestion(state: AssistantTaskState): AssistantTaskState {
+  const copy: AssistantTaskState = { ...state };
+  delete copy.openQuestion;
+  return copy;
+}
+
 function threadSnapshot(thread: AssistantThreadState): string {
   return JSON.stringify({
-    taskState: withNoticeKey(thread.taskState),
+    taskState: withNoticeKey(withoutOpenQuestion(thread.taskState)),
     activeTaskId: thread.activeTaskId,
     // Issue 03d: a task's model history is not part of this snapshot. It was not compared before 03d (it lived on the thread). The
     // rejected-call contract is about task state and surfaces; history is compared by its own test (see the history test below).
-    tasks: thread.tasks.map(({ conversationHistory: _history, ...task }) => ({ ...task, state: withNoticeKey(task.state) })),
+    tasks: thread.tasks.map(({ conversationHistory: _history, ...task }) => ({ ...task, state: withNoticeKey(withoutOpenQuestion(task.state)) })),
     activeSurfaces: thread.activeSurfaces,
     supersededSurfaces: thread.supersededSurfaces,
     lastSurfaces: thread.lastSurfaces,
@@ -281,6 +292,8 @@ test("a start_task call without its required domain is rejected before any task 
     assert.match(String(results[0]?.result.message), /"domain"/);
     const after = runtime.getThread("task-start-missing-domain");
     assert.equal(after.tasks.length, taskCountBefore);
+    // The rejected start_task creates no task; the follow-up clarification asks for the area, which records the open question only.
+    assert.equal(after.taskState.openQuestion, "where", "the follow-up clarification records the area question");
     assert.equal(threadSnapshot(after), snapshotBefore);
   } finally {
     env.close();

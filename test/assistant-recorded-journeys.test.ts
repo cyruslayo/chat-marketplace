@@ -25,6 +25,10 @@ const NAMED_JOURNEYS = [
   "confirm-after-search-change",
 ] as const;
 
+// The recordings were re-recorded offline with `scripts/record-assistant-journey.ts` (the scripted model, no provider) so they carry
+// the current planner canonical facts: the issue 20 guest-authored area and the issue 57 (ADR 0106, 9 Nov) `openQuestion` code. The
+// earlier in-memory area patch is no longer needed; every request, tool result and turn output is compared as recorded.
+
 test("Replaying a recording through a fresh runtime reproduces the recorded messages, surface ids, component types and task rail for every turn.", async () => {
   for (const journey of NAMED_JOURNEYS) {
     const recording = loadRecording(journey);

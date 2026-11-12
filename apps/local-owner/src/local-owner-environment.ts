@@ -66,6 +66,10 @@ import {
   OwnerPayoutError,
   OwnerRecoveryError,
   SqliteOwnerPayableLedger,
+  NoticeToEndManager,
+  ExtendedStayExtensionManager,
+  checkInNoticePorts,
+  recordedNoticeRefundPort,
   type OwnerPayableProjection,
   type AccessStatus,
   type CheckInSupportState,
@@ -108,7 +112,7 @@ import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit
 import { SqliteTelemetry } from "../../../packages/platform-core/src/sqlite-telemetry.js";
 import type { TelemetryEvent } from "../../../packages/platform-core/src/telemetry.js";
 import { EXTENDED_STAY_POLICY, SqliteRevenueAccountingRepository, SqliteRevenueReleaseStateStore } from "../../../domains/shortlet/src/index.js";
-import { DEMO_TRUST_EXPIRES_ON } from "../../../domains/shortlet/src/index.js";
+import { DEMO_TRUST_EXPIRES_ON, ExtensionRefusedError, extensionStatusAt, type ExtensionRequestRecord, type ExtensionStatus } from "../../../domains/shortlet/src/index.js";
 
 export interface LocalOwnerFixtureConfig {
   readonly databasePath: string;
@@ -246,6 +250,20 @@ export interface OperatorOwnerPayable {
    * Null for a Short Stay. Carries no Period Payment reference and no guest identity (ADR 0075).
    */
   readonly periods: readonly OwnerPeriodPayable[] | null;
+  /** Monthly-stays issue 17 (ADR 0092): the Notice to End recorded on the contract, or null. Amounts in kobo. */
+  readonly notice: OwnerNoticeView | null;
+}
+
+/** The Notice to End as the back office shows it: the date given, the new last night and checkout, and the amounts. */
+export interface OwnerNoticeView {
+  readonly noticeDate: string;
+  readonly effectiveDate: string;
+  readonly newLastNight: string;
+  readonly newCheckOut: string;
+  /** Paid nights after the new last night, refunded at nightly contracted values; null for a notice recorded before refunds were stored. */
+  readonly refundKobo: number | null;
+  /** Unpaid nights up to the new last night, owed at nightly contracted values; null for a notice recorded before this was stored. */
+  readonly owedKobo: number | null;
 }
 
 /**
@@ -416,7 +434,7 @@ const CALENDAR_REFUSAL_MESSAGES: Readonly<
   request_pending:
     "A Booking Request is waiting for your answer on these dates. Decline it first, then block the dates",
   payment_pending:
-    "These dates are confirmed and awaiting payment (Payment Pending). A block cannot displace them: this needs human handling",
+    "These dates are confirmed and awaiting payment (payment pending). A block cannot displace them: this needs human handling",
   booked: "These dates are booked. A booked stay cannot be overridden",
   blocked: "These dates are already blocked",
   held: "These dates are under an Operator Hold",
@@ -578,6 +596,10 @@ export class LocalApartmentOwnerEnvironment {
   readonly #manualTransferStore: SqliteManualTransferStore;
   /** Cancellation outcomes and owner payouts (B7, ADR 0089); the cancellation ledger port posts here. */
   readonly ownerPayableLedger: SqliteOwnerPayableLedger;
+  /** ADR 0092 Notice to End (monthly-stays issue 17): the same manager as the guest composition, over the shared tables. */
+  readonly noticeToEnd: NoticeToEndManager;
+  /** Monthly-stays issue 09: the Operator approves or declines extension requests in the back office (ADR 0092). */
+  readonly extensions: ExtendedStayExtensionManager;
 
   #demoRequests: string[] = [];
 
@@ -636,6 +658,33 @@ export class LocalApartmentOwnerEnvironment {
       this.#sqlDatabase,
       this.clock,
     );
+    // Monthly-stays issue 17 (ADR 0092 amended, ADR 0060, ADR 0061, ADR 0089). Period 1 is paid once the contract exists; a later
+    // period is paid when its Period Payment is recorded (the same rows the owner projection reads).
+    const noticeCheckIn = checkInNoticePorts(this.#checkInStore);
+    this.noticeToEnd = new NoticeToEndManager({
+      contracts: {
+        getContract: (contractId: string) => {
+          const contract = this.#bookingState.findContractById(contractId);
+          if (!contract) throw new Error("Booking Contract is not found");
+          return contract;
+        },
+        mutateContract: (contractId, expectedVersion, mutation) => this.#bookingState.mutateContract(contractId, expectedVersion, mutation),
+      },
+      periods: {
+        projectBillingPeriods: (offerId) => [
+          { periodIndex: 1, status: "paid" },
+          ...this.interactionStore.listPeriodPayments(offerId).map((record) => ({ periodIndex: record.periodIndex, status: "paid" })),
+        ],
+        paymentsFor: (offerId) => this.interactionStore.listPeriodPayments(offerId).map((record) => ({ periodIndex: record.periodIndex, pspReference: record.pspReference })),
+      },
+      owners: this.ownerPayableLedger,
+      arrival: noticeCheckIn.arrival,
+      failures: noticeCheckIn.failures,
+      refunds: recordedNoticeRefundPort(),
+      extendedStayPolicy: this.config.extendedStayPolicy ?? EXTENDED_STAY_POLICY,
+      demoTerms: this.config.demo === true,
+      clock: this.clock,
+    });
     this.audit = new SqliteAuditLog(this.#sqlDatabase);
     this.telemetry = new SqliteTelemetry(this.#sqlDatabase, dependencies.telemetrySink === undefined ? {} : { sink: dependencies.telemetrySink });
     this.grantStore = new SqliteOperatorRepresentativeGrantStore(
@@ -730,6 +779,21 @@ export class LocalApartmentOwnerEnvironment {
           revision: 1,
         }),
       },
+    });
+    this.extensions = new ExtendedStayExtensionManager({
+      contracts: {
+        getContract: (contractId: string) => {
+          const contract = this.#bookingState.findContractById(contractId);
+          if (!contract) throw new Error("Booking Contract is not found");
+          return contract;
+        },
+        mutateContract: (contractId, expectedVersion, mutation) => this.#bookingState.mutateContract(contractId, expectedVersion, mutation),
+      },
+      units: this.unitRepository,
+      calendar: this.calendar,
+      continuousOccupancy: this.bookingRequestApp.continuousOccupancy,
+      extendedStayPolicy: this.config.extendedStayPolicy ?? EXTENDED_STAY_POLICY,
+      clock: this.clock,
     });
     this.conditionalOfferApp = createConditionalOfferApplication({
       bookingRequestApplication: this.bookingRequestApp,
@@ -1057,6 +1121,50 @@ export class LocalApartmentOwnerEnvironment {
         ? unitRecord.title
         : "Apartment name not on file";
     return Object.freeze({ ownerName, apartmentTitle });
+  }
+
+  /**
+   * Monthly-stays issue 09 (ADR 0092 Extensions): the extension requests this operator can decide, for this operator's tenant only.
+   * Each confirmed Booking Request's offer leads to its contract; a request still awaiting its response at the clock is listed.
+   */
+  listExtensionRequests(principal: CommandPrincipal): readonly { readonly contractId: string; readonly reservationId: string; readonly unitId: string; readonly request: ExtensionRequestRecord; readonly status: ExtensionStatus }[] {
+    const now = this.clock();
+    return this.listOperatorRequestArtifacts(principal).flatMap((artifact) => {
+      if (artifact.facts.status !== "confirmed") return [];
+      const stored = this.interactionStore.findConditionalOfferByRequestId(artifact.facts.requestId);
+      if (!stored) return [];
+      const offer = offerRecordFromJson(stored.offerJson);
+      if (!offer) return [];
+      const snapshot = this.interactionStore.findBookingSnapshotByOfferId(offer.offerId);
+      if (!snapshot) return [];
+      const contract = this.#bookingState.findContractById(snapshot.contractId);
+      if (!contract || contract.tenantId !== principal.tenantId || contract.extensionRequest === undefined) return [];
+      const status = extensionStatusAt(contract.extensionRequest, now);
+      if (status !== "awaiting_operator") return [];
+      return [{ contractId: contract.contractId, reservationId: contract.reservationId, unitId: contract.unitId, request: contract.extensionRequest, status }];
+    });
+  }
+
+  /**
+   * The Operator's approval of an extension request (ADR 0092, ADR 0082). The principal must hold an active representative grant
+   * for the contract's Operator (fail closed), and the domain re-checks the tenant and the request's state.
+   */
+  approveExtensionRequest(contractId: string, principal: CommandPrincipal, extensionId: string): ExtensionRequestRecord {
+    this.#assertActsForContractOperator(contractId, principal);
+    return this.extensions.approveExtension(contractId, principal, extensionId);
+  }
+
+  /** The Operator's decline of an extension request (ADR 0092, ADR 0082). Nothing changes except the recorded decision. */
+  declineExtensionRequest(contractId: string, principal: CommandPrincipal, extensionId: string): ExtensionRequestRecord {
+    this.#assertActsForContractOperator(contractId, principal);
+    return this.extensions.declineExtension(contractId, principal, extensionId);
+  }
+
+  #assertActsForContractOperator(contractId: string, principal: CommandPrincipal): void {
+    const contract = this.#bookingState.findContractById(contractId);
+    const actsFor = contract !== null && principal.role === "operator" && !!principal.id && !!principal.tenantId
+      && this.grantStore.canActForOperator({ actorId: principal.id, operatorId: contract.parties.operator.id, tenantId: principal.tenantId });
+    if (!actsFor) throw new ExtensionRefusedError("NOT_OPERATOR", "Only the Operator can decide an extension");
   }
 
   listOperatorRequestArtifacts(
@@ -2154,6 +2262,7 @@ export class LocalApartmentOwnerEnvironment {
             reservation.reservationId,
           ),
           payouts: this.ownerPayableLedger.listPayouts(reservation.reservationId),
+          noticeAdjustments: this.ownerPayableLedger.listPeriodNoticeAdjustments(reservation.reservationId),
           recoveries: this.ownerPayableLedger.listRecoveries(
             reservation.reservationId,
           ),
@@ -2195,6 +2304,16 @@ export class LocalApartmentOwnerEnvironment {
             })
         : null,
       periods: periodPayables ?? null,
+      notice: contract.noticeToEnd
+        ? {
+            noticeDate: contract.noticeToEnd.noticeDate,
+            effectiveDate: contract.noticeToEnd.effectiveDate,
+            newLastNight: contract.noticeToEnd.newLastNight,
+            newCheckOut: contract.dates.checkOut,
+            refundKobo: contract.noticeToEnd.refundKobo ?? null,
+            owedKobo: contract.noticeToEnd.owedKobo ?? null,
+          }
+        : null,
     });
   }
 

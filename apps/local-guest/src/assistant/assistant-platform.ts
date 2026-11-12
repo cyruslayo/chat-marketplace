@@ -1,7 +1,8 @@
 import type { AssistantToolDefinition, AssistantToolResult } from "./assistant-model.js";
 import type { AssistantStageHandler } from "./assistant-stage-handler.js";
 import type { ConciergeIntent, ScopeAssessment, ScopeContext } from "./scope-classifier.js";
-import type { AssistantTaskState, AssistantTurnSurface } from "./assistant-state.js";
+import type { AssistantTaskState, AssistantTurnSurface, OpenQuestion } from "./assistant-state.js";
+import type { GuestQuickReply } from "../concierge.js";
 import type { PendingAssistantAction } from "./pending-actions.js";
 import type { LocalGuestEnvironment } from "../fixture.js";
 import type { CommandPrincipal } from "../../../../packages/platform-core/src/envelope.js";
@@ -145,7 +146,18 @@ export interface AssistantDomainPack {
    * Issue 10 (ADR 0099, 0106): the one-tap replies for a clarification, from the committed task state. The runtime only passes them
    * on: it never adds chips to a scope, support or redirect reply. Undefined adds no chips.
    */
-  clarificationQuickReplies?(taskState: AssistantTaskState, kind: AssistantClarificationKind): readonly string[] | undefined;
+  clarificationQuickReplies?(taskState: AssistantTaskState, kind: AssistantClarificationKind): readonly GuestQuickReply[] | undefined;
+  /**
+   * Issue 57 (ADR 0106 amendment): the closed open-question code a clarification asks, from the committed task state and the
+   * clarification kind. The runtime stores it so a terse answer can be read against it. Undefined adds no code.
+   */
+  clarificationOpenQuestion?(taskState: AssistantTaskState, kind: AssistantClarificationKind): OpenQuestion | undefined;
+  /** Issue 57/59: the fixed copy that re-asks a closed open question. Provided by the pack so the runtime imports no web-agent copy. */
+  openQuestionCopy?(code: OpenQuestion): string;
+  /** Issue 59 (ADR 0106 amendment): the chips that answer a closed open question, from the committed task state. Undefined adds none. */
+  openQuestionQuickReplies?(taskState: AssistantTaskState, code: OpenQuestion): readonly GuestQuickReply[] | undefined;
+  /** Issue 59 (ADR 0106 amendment): stage-appropriate recovery chips when a turn is not understood and no question is held. */
+  recoveryQuickReplies?(taskState: AssistantTaskState): readonly GuestQuickReply[] | undefined;
   /**
    * Issue 09 (ADR 0099): the clarification a turn's successful results ask for, when the pack's own result says so (for example a
    * location question held as pending). The runtime then offers that clarification's chips. Undefined keeps the plan's own chips.
@@ -157,6 +169,8 @@ export interface AssistantDomainPack {
    * turn is classified. Pure over that state; the runtime calls it once per guest turn.
    */
   settlePendingGuestFacts?(text: string, taskState: AssistantTaskState, now: Date): void;
+  /** Issue 20 (ADR 0106, amended 8 Nov 2026): saves the stay facts the guest's own words give on an in-scope turn. Never a planner proposal. */
+  recordGuestFacts?(text: string, taskState: AssistantTaskState, now: Date): void;
   /** Pack-owned minimal facts for model history. Raw execution results remain local to the platform. */
   projectToolResult?(name: string, result: Record<string, unknown>, limits: { readonly maxItems: number }): Record<string, unknown>;
   /** Canonical bounded facts used when older operation pairs leave retained history. */
@@ -227,6 +241,15 @@ export interface AssistantDomainPack {
   /** Re-reads authoritative truth before a proposed booking request is confirmed. */
   revalidateProposal(action: PendingAssistantAction): { readonly ok: true } | { readonly ok: false; readonly code: string; readonly message: string };
   /** Optional pack-owned command adapter; the pack must route through the platform ActionSpec gate. */
+  /** Issue 18: button events a pack opens its own confirmation card from, routed by name (no planner call). */
+  readonly openActionNames?: readonly string[];
+  handleOpenAction?(input: {
+    readonly actionName: string;
+    readonly context: Record<string, unknown>;
+    readonly taskState: AssistantTaskState;
+    readonly threadId: string;
+    readonly now: Date;
+  }): { readonly ok: true; readonly pendingAction: PendingAssistantAction; readonly message: string } | { readonly ok: false; readonly code: string; readonly message: string };
   handlePlatformAction?(input: { readonly actionName: string; readonly context: Record<string, unknown>; readonly principal: CommandPrincipal; readonly taskId: string; readonly activeSurfaceId?: string }): { readonly ok: true; readonly message: string; readonly surface?: AssistantTurnSurface } | { readonly ok: false; readonly code: string; readonly message: string };
 }
 

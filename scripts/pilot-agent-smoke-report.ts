@@ -4,6 +4,7 @@ import type { PerformanceReport, JourneyPerformance } from "./pilot-agent-smoke-
 import { MAX_PILOT_AGENT_SMOKE_RUNS } from "./pilot-agent-smoke-budget.js";
 import { SMOKE_GRADING_PROFILE } from "./pilot-agent-smoke-grading.js";
 import { ASSISTANT_CONTROL_OUTCOMES, type AssistantControlOutcome } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { renderTerseFollowUpReport, type TerseFollowUpReport } from "./pilot-agent-smoke-terse.js";
 
 export interface SmokeScenarioReport {
   readonly scenario: string;
@@ -52,6 +53,8 @@ export interface SmokeResult {
   readonly note: string;
   /** Optional: absent on older results; providers without usage yield "unavailable" fields, never zero. */
   readonly performance?: PerformanceReport;
+  /** Optional (issue 61): the live terse-follow-up cases and their closed-code verdicts and false-refusal rate. */
+  readonly terseFollowUps?: TerseFollowUpReport;
 }
 
 export const SMOKE_RESULT_FILE = "agent-smoke-result.json";
@@ -126,6 +129,7 @@ export function renderSmokeMarkdown(result: SmokeResult): string {
     ...result.scenarios.map((entry) => `| ${entry.scenario} | ${entry.selectedApplicationOperation ?? "—"} | ${entry.surfaceSelected ?? "—"} | ${entry.authoritativeEntities.join(", ") || "—"} | ${entry.semanticResult} | ${entry.failureClassification ?? "—"} |`),
     "",
     ...(result.performance ? performanceLines(result.performance) : []),
+    ...(result.terseFollowUps ? renderTerseFollowUpReport(result.terseFollowUps) : []),
     "No prompts, model prose, or credentials are recorded in this report.",
     "",
   ];

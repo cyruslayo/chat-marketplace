@@ -47,6 +47,9 @@ export interface ConditionalOfferArtifact {
     readonly guestConductRules: readonly string[];
     readonly paymentWindowExpiresAt: string;
     readonly aggregateVersions: Readonly<Record<string, string | number>>;
+    /** Issue 27 (ADR 0092): an Extended Stay's stay type and every contracted Billing Period, from the quote. */
+    readonly stayType?: string;
+    readonly billingPeriods?: readonly { readonly index: number; readonly checkIn: string; readonly checkOut: string; readonly nights: number; readonly amountKobo: number; readonly dueDate: string }[];
   };
   readonly amounts: readonly { readonly type: "all-in-stay-total" | "refundable-security-deposit" | "amount-due-now"; readonly amountKobo: number; readonly currency: string }[];
   readonly actions: readonly ConditionalOfferArtifactAction[];
@@ -72,7 +75,7 @@ export function conditionalOfferArtifactFromOffer(
     : offer.status;
   const projectionVersion = offer.offerVersion * 10 + phase(effectiveStatus);
   const id = conditionalOfferArtifactId(offer.offerId);
-  const quote = offer.quote as { currency?: string; cancellationPolicy?: { type?: string; version?: string; policySummary?: string }; policyVersions?: Record<string, string> };
+  const quote = offer.quote as { currency?: string; cancellationPolicy?: { type?: string; version?: string; policySummary?: string }; policyVersions?: Record<string, string>; stayType?: string; billingPeriods?: readonly { index: number; checkIn: string; checkOut: string; nights: number; amountKobo: number; dueDate: string }[] };
   const currency = quote.currency ?? "NGN";
   const canAccept = viewer.role === "guest"
     && !!viewer.id
@@ -109,6 +112,8 @@ export function conditionalOfferArtifactFromOffer(
     guestConductRules: [...offer.policies.guestConductRules],
     paymentWindowExpiresAt: offer.paymentWindow.expiresAt,
     aggregateVersions: { ...offer.aggregateVersions },
+    ...(quote.stayType === undefined ? {} : { stayType: quote.stayType }),
+    ...(quote.billingPeriods === undefined ? {} : { billingPeriods: quote.billingPeriods.map((period) => ({ index: period.index, checkIn: period.checkIn, checkOut: period.checkOut, nights: period.nights, amountKobo: period.amountKobo, dueDate: period.dueDate })) }),
   };
   const actions: readonly ConditionalOfferArtifactAction[] = canAccept
     ? [{ type: "accept", artifactId: id, offerId: offer.offerId, expectedStatus: "issued", offerVersion: offer.offerVersion, projectionVersion, confirmationToken: offer.confirmationToken, confirmationTokenDigests: Object.freeze([...(offer.confirmationTokenDigests ?? [])]) }]
