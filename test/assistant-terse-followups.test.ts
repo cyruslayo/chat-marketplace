@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { CRITERIA_EDIT_EVENT } from "../apps/local-guest/src/shortlet-app.js";
 import { GUEST_ASSISTANT_COPY } from "../apps/web-agent/src/guest-content.js";
+import { ModelScopeClassifier } from "../apps/local-guest/src/assistant/scope-classifier.js";
+import type { AssistantModelClient, AssistantModelRequest, AssistantModelResponse } from "../apps/local-guest/src/assistant/assistant-model.js";
 import { assertOk, openChipDriver, stagingGuest } from "./helpers/assistant-chip-session.js";
 import {
   classifiedMessage,
@@ -11,8 +13,10 @@ import {
   OPENROUTER,
   scopeVerdict,
   searchToolCall,
+  wireDatedApp,
 } from "./helpers/guest-date-fixtures.js";
 import { clientWith, completion, jsonResponse, type CapturedRequest } from "./helpers/openai-compatible-client.js";
+import { TERSE_FOLLOW_UP_CASES } from "../scripts/pilot-agent-smoke-terse.js";
 
 // Issue 61 (ADR 0106 amendment): terse follow-ups. Every offline test scripts the classifier verdict, so none catches a live model
 // reading "Just me" as unclear. These cases pin the wiring: the classifier request carries the open-question code, the scripted
@@ -163,6 +167,10 @@ for (const cold of [false, true]) {
         assertOk(await driver.typed("Show me the apartment."), "ask which");
         assertOk(await driver.typed(text), text);
         assert.equal(openQuestionSentFor(harness.scopeMessages, harness.requests, text), "pick_result", `${text}: the classifier sees pick_result`);
+        // Issue 61: a pick_result question is only answerable against a result list, so the request must show that one exists as a
+        // closed count (never unit text). A cold restore rebuilds the shortlist from the discovery results before the turn.
+        const pickContext = contextOf([...harness.requests].reverse().find((candidate) => isScopeRequest(candidate) && classifiedMessage(candidate) === text)!);
+        assert.ok(typeof pickContext.resultCount === "number" && pickContext.resultCount > 0, `${text}: the classifier is told how many results are shown`);
         assert.equal(driver.step().runtime.getThread(THREAD).taskState.selectedStayRef, stayRef, `${text}: opens ${stayRef}`);
       } finally { environment.close(); }
     }
@@ -199,3 +207,90 @@ test("(warm) the where answer is read against the where open question and commit
     assert.equal(driver.stay().neighbourhood, "Wuse 2");
   } finally { environment.close(); }
 });
+
+// Issue 61 item 1 (nights:week): a fresh thread with only the open-question code must reach the classifier first, and the classifier
+// request must carry the code. It rules out a stated-stay or shell path that answers before the classifier and a context that drops
+// the code: the first model call is the classifier, and its envelope names `nights`.
+test("(fresh thread) openQuestion nights reaches the classifier first and the request carries the code", async () => {
+  const environment = stagingGuest();
+  try {
+    const requests: CapturedRequest[] = [];
+    const { client } = clientWith((request: CapturedRequest) => {
+      requests.push(request);
+      if (isScopeRequest(request)) return completion({ content: JSON.stringify(scopeVerdict({}, ["search"])) });
+      return completion({ content: JSON.stringify({ kind: "clarify_stay", references: [] }) });
+    }, OPENROUTER);
+    const fixture = wireDatedApp(environment, client);
+    const threadId = "g-af61trace";
+    fixture.runtime.getThread(threadId);
+    fixture.runtime.recordOpenQuestion(threadId, "nights");
+    await fixture.runtime.handleTurn(threadId, "a week");
+    const first = requests[0];
+    assert.ok(first, "the turn made a model call");
+    assert.equal(isScopeRequest(first), true, "the classifier is the first model call: no path answers before it");
+    assert.equal(contextOf(first).openQuestion, "nights", "the classifier request carries the open question");
+    assert.equal(contextOf(first).hasShortlist, false);
+    assert.equal(contextOf(first).resultCount, 0);
+  } finally { environment.close(); }
+});
+
+// Issue 61 item 3 (pick_result): the classifier's structured-output schema and its instruction must accept every scope and reason the
+// server parser accepts, and state how a positional pick answers the question. A mismatch here makes a valid verdict unreachable.
+test("the concierge_scope schema and instruction allow every scope and reason the parser accepts", async () => {
+  const requests: AssistantModelRequest[] = [];
+  const client: AssistantModelClient = {
+    generate: async (request: AssistantModelRequest): Promise<AssistantModelResponse> => {
+      requests.push(request);
+      return { text: JSON.stringify(scopeVerdict()) };
+    },
+  };
+  const classifier = new ModelScopeClassifier(client, 1_000);
+  const verdict = await classifier.assess("the first one", {
+    domain: "shortlet", description: "shortlet stays", hasShortlist: true, hasSelectedStay: false, hasOffer: false,
+    openQuestion: "pick_result", resultCount: 2,
+  });
+  assert.ok(verdict, "a valid verdict is returned");
+  const request = requests[0]!;
+  const schema = request.structuredOutput?.schema as {
+    readonly properties: { readonly scope: { readonly enum: readonly string[] }; readonly reasonCode: { readonly enum: readonly string[] }; readonly slots: { readonly properties: { readonly nights: { readonly minimum?: number }; readonly guests: { readonly minimum?: number } } } };
+  };
+  assert.deepEqual(schema.properties.scope.enum, ["in_scope", "mixed", "out_of_scope", "unclear"]);
+  assert.deepEqual(schema.properties.reasonCode.enum, ["supported", "mixed", "outside", "unclear"]);
+  assert.equal(schema.properties.slots.properties.nights.minimum, 1);
+  assert.equal(schema.properties.slots.properties.guests.minimum, 1);
+  assert.match(request.systemInstruction, /supported for in_scope, mixed for mixed, outside for out_of_scope, unclear for unclear/);
+  assert.match(request.systemInstruction, /openQuestion is pick_result .*names a position among the shown results/);
+  // The context envelope itself carries only closed codes and a count; no unit or listing text.
+  const user = [...request.history].reverse().find((step) => step.role === "user");
+  assert.ok(user && "text" in user);
+  const envelope = JSON.parse(user.text) as { readonly context: Record<string, unknown> };
+  assert.equal(envelope.context.openQuestion, "pick_result");
+  assert.equal(envelope.context.resultCount, 2);
+  assert.deepEqual(Object.keys(envelope.context).sort(), ["description", "domain", "hasOffer", "hasSelectedStay", "hasShortlist", "openQuestion", "resultCount"]);
+});
+
+// Issue 61 review: the eval must not teach to the test. The instruction states general rules, never a case's own words, so a live
+// pass is the model's reading and not a quoted phrase (ADR 0106: no deterministic in-scope fast path).
+test("the scope-classifier instruction quotes none of the live eval's case texts", async () => {
+  const instructions: string[] = [];
+  const client: AssistantModelClient = {
+    generate: async (request: AssistantModelRequest): Promise<AssistantModelResponse> => {
+      instructions.push(request.systemInstruction);
+      return { text: JSON.stringify(scopeVerdict()) };
+    },
+  };
+  const classifier = new ModelScopeClassifier(client, 1_000);
+  for (const testCase of TERSE_FOLLOW_UP_CASES) {
+    await classifier.assess(testCase.text, {
+      domain: "shortlet", description: "shortlet stays", hasShortlist: false, hasSelectedStay: false, hasOffer: false,
+      openQuestion: testCase.openQuestion, resultCount: testCase.seededResults ?? 0,
+    });
+  }
+  assert.equal(instructions.length, TERSE_FOLLOW_UP_CASES.length, "every case was classified");
+  const instruction = instructions[0]!;
+  assert.ok(instructions.every((entry) => entry === instruction), "one instruction for every case");
+  for (const testCase of TERSE_FOLLOW_UP_CASES) {
+    assert.ok(!instruction.toLowerCase().includes(testCase.text.toLowerCase()), `the instruction quotes eval case ${testCase.id}`);
+  }
+});
+

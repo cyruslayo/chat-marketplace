@@ -1,6 +1,6 @@
 # Evals for terse follow-ups (offline cases plus owner-run live cases)
 
-Status: claimed
+Status: resolved
 Type: AFK (the live run is owner-run)
 Blocked by: 57, 58, 59
 Requested: 9 Nov 2026
@@ -42,13 +42,31 @@ Every offline test scripts the classifier verdict (`scriptedPlanner` in `test/he
 - [x] Each offline case asserts the open-question code on the classifier request and the committed fact.
 - [x] A case with an `unclear` verdict falls back to the issue 59 re-ask, not to `unavailable`.
 - [x] The live eval lists the cases and reports a false-refusal rate. It is checked offline only with a fake model client.
-- [ ] Owner: the live run is recorded in Comments with its rate. Target: no false refusals across the cases on `openai/gpt-6-luna`.
+- [x] Owner: the live run is recorded in Comments with its rate. Target: no false refusals across the cases on `openai/gpt-6-luna`.
 
 ## Verification
 
 `npm run check`; `env -u LLM_API_KEY npx tsx --test test/assistant-terse-followups.test.ts test/assistant-open-question.test.ts`. Record the counts in Comments.
 
 ## Comments
+
+- 11 Nov 2026, review revision on `fix/terse-followups` (offline only; the issue stays claimed until a new live run passes).
+  - The classifier instruction no longer quotes eval inputs. It states general rules only (a party size in words or as a relationship; a stay length in days, weeks or months; a named position among the shown results). New test: the instruction must not contain any `TERSE_FOLLOW_UP_CASES` text, case-insensitive.
+  - Held-out cases added to the table, absent from the instruction and every other prompt: `party_size:held-out-partner`, `nights:held-out-fortnight`, `pick_result:held-out-last` (three results shown). Request budget is now 13 cases × 4 = 52, separate from the journey budget.
+  - No-verdict scoring tightened: it passes only on `successful_model_handling` AND the answered slot held in task state, read with closed values (party size, nights, a selected result within the shown count, a date, a city). `support_guidance` is a FAIL. `no_response` stays a FAIL and is counted separately as a timeout, with the classifier caps shown in the report (5 s first attempt, 3 s retry, 8 s stage).
+  - No fixtures re-recorded: the recordings store `toolNames`, `structuredOutputName` and `history`, not `systemInstruction`, so the instruction change does not diverge them.
+  - Commands (all with `env -u LLM_API_KEY`, `NODE_ENV=test`): `npm run check` clean; `npx tsx --test test/assistant-terse-followups.test.ts test/pilot-agent-smoke-report.test.ts` 34 of 34 pass; the 12-file list 127 of 127 pass.
+
+- 2026-11-11 20:17, owner live run (`npm run pilot:local:agent-smoke -- --request-limit 16`, OpenRouter `openai/gpt-6-luna`, f836c5d): journey PASS (4/4 tasks, 0 guard failures, 13 model calls). Terse suite: run, 18 of 40 requests used, false-refusal rate 0.250 (2 of 8 cases with a verdict), 2 failed cases, so not valid for acceptance.
+  - `pick_result:first`, `pick_result:second`: scope `unclear`, reason `unclear`, code sent `pick_result`, FAIL (false refusals).
+  - `party_size:couple`: scope failed, reason failed, code sent `party_size`, FAIL (no verdict read).
+  - `nights:week`: scope failed, reason failed, code sent none, FAIL (no verdict read).
+  - Passed: `party_size:solo`, `party_size:numeral`, `party_size:pair`, `nights:numeral`, `date_confirm:affirm`, `where:area`.
+- Offline fix batch on `fix/terse-followups` (the issue stays claimed until a new live run passes; the owner reruns with `-- --request-limit 16`):
+  - `nights:week` was a measurement defect, not a missing open question: a cold-restore trace shows the classifier is the first model call and its request carries `openQuestion: nights`. A classifier attempt that gives up before its response lands was reported as "code sent none"; the report now records the closed `no_response` failure and the turn's closed control outcome, and scores the case from that outcome (never as a false refusal).
+  - `party_size:couple` now reports the closed parse-failure code (`not_json`, `scope_missing`, `scope_invalid`, `reason_missing`, `reason_invalid`, `tool_calls`, `text_missing`), with no model text. The classifier instruction now states the scope-to-reason mapping the parser enforces.
+  - `pick_result:*`: the classifier context now carries a closed result count, and the instruction states that a positional reply to `pick_result` answers it. The eval seeds a shown result list (count only) for these cases.
+  - The default 10-request limit is unchanged; the live command in `docs/testing/shortlet-assistant-v1.md` passes `--request-limit 16` because the 4-step journey needs about 12 calls.
 
 - 9 Nov 2026, offline cases landed on `fix/chat-hardening` (issue NOT yet resolved: the full case table offline and the live eval remain). Commands (all with `env -u LLM_API_KEY`, `NODE_ENV=test`):
   - `npm run check`: clean.
@@ -82,3 +100,14 @@ Every offline test scripts the classifier verdict (`scriptedPlanner` in `test/he
   - A provider rate limit or failure inside the suite stops it with a closed skip reason (`rate_limited` / `provider_failure`, via `providerStopReason`), instead of spending the remaining budget; the suite's own budget stop maps to `terse_budget_exceeded`.
   - Offline tests added: one fake returns invalid JSON for a case (failedCases 1, rate 1 of the 9 with a verdict, rendered "Failed cases: 1" / "Valid for acceptance: no"); one fake throws a provider 429 (status skipped, reason `rate_limited`); the unguarded guard test now asserts `skipped` / `provider_failure`.
   - Commands (all with `env -u LLM_API_KEY`, `NODE_ENV=test`): `npm run check`: clean. The 8-file list (`test/assistant-terse-followups.test.ts test/assistant-open-question.test.ts test/assistant-no-dead-ends.test.ts test/pilot-agent-smoke-report.test.ts test/pilot-agent-smoke-grading.test.ts test/pilot-agent-smoke-metrics.test.ts test/pilot-agent-smoke-budget.test.ts test/pilot-agent-smoke-reference.test.ts`): 91 of 91 pass.
+
+- 12 Nov 2026, owner live run passed (acceptance). Run from a clean detached worktree (`C:\AI2026\chat-marketplace-eval`) at 570da79, local pilot bootstrapped, `npm run pilot:local:agent-smoke -- --request-limit 16`, model `openai/gpt-6-luna` via OpenRouter. Closed codes only (ADR 0075):
+  - Journey: PASS, 1 attempted, 4 completed tasks, 0 guard failures, 0 false refusals, 0 prohibited effects, provider stop none.
+  - Terse suite: status run, request budget 52, used 27, false-refusal rate 0.000 (0 of 13 cases with a verdict), failed cases 0, classifier timeouts 0, valid for acceptance: yes. All 13 cases (including the held-out `party_size:held-out-partner`, `nights:held-out-fortnight`, `pick_result:held-out-last`) returned `in_scope` / `supported` with the expected open-question code sent.
+  - Earlier live run (11 Nov 2026, 20:17, f836c5d) for the record: 6 of 10 PASS, rate 0.250; fixed by 925473b and 570da79 (classifier `resultCount` context and pick rule, closed parse-failure diagnostics, timeout recorded as `no_response`, eval texts kept out of the instruction).
+  - Not in this issue's scope, carried to a new issue: the pass rule checks the classifier verdict, not that the thread keeps the answer. The Slot column showed `no` for `party_size:numeral`, `nights:numeral`, the three `pick_result` cases and `date_confirm:affirm`, and `pick_result:second` recorded no control outcome. Each case starts on an empty thread, so some of these may be eval set-up artefacts; that issue diagnoses them in a realistic cold journey first.
+- 12 Nov 2026, pre-merge gate on fix/terse-followups (570da79, based on main f836c5d); resolved. All with `env -u LLM_API_KEY`, `NODE_ENV=test`:
+  - `npm run build`, `npm run check`: clean.
+  - `npm test`: phase 1 3213 of 3219; phase 2 43 of 47 files (plus 1 timed out). Every red file was rerun solo: `guest-cross-tab-concurrency` 18/18, `model-quota-host-recovery` 12/12, `guest-account-page-chromium` 5/5, `pilot-agent-smoke-reference` "four-turn" 1/1 twice (11 s and 16 s; the gate run hit the 60 s child timeout under load). Accepted: the two commerce real-browser files; `landing-page-chromium` (41/43 solo, a CDP socket close and a hero-visibility capture; this branch touches no landing, shell or CSS file).
+  - `npm run test:workers`: 25 timeouts under load; solo `commerce-market` 40/40, `daily-export` 9/9, `data-migration` 29/29.
+  - Capture sweep not run: no screen, shell or CSS change.

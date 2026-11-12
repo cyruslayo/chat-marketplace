@@ -1,9 +1,11 @@
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
-import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { AssistantRuntime, type AssistantTurnOutput } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 import { createShortletAssistantPack } from "../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
 import type { AssistantModelClient, AssistantModelRequest, AssistantModelResponse } from "../apps/local-guest/src/assistant/assistant-model.js";
+import type { AssistantControlOutcome } from "../apps/local-guest/src/assistant/assistant-platform.js";
+import { isOpenQuestion, type AssistantStayReference, type AssistantTaskState, type OpenQuestion } from "../apps/local-guest/src/assistant/assistant-state.js";
 import type { ConciergeIntent } from "../apps/local-guest/src/assistant/scope-classifier.js";
-import { isOpenQuestion, type OpenQuestion } from "../apps/local-guest/src/assistant/assistant-state.js";
+import { SCOPE_FIRST_ATTEMPT_TIMEOUT_MS, SCOPE_RETRY_TIMEOUT_MS, SCOPE_TOTAL_BUDGET_MS } from "../apps/local-guest/src/assistant/scope-classifier-retry.js";
 import { providerStopReason } from "./pilot-agent-smoke-budget.js";
 
 /**
@@ -16,21 +18,30 @@ export interface TerseFollowUpCase {
   readonly id: string;
   readonly openQuestion: OpenQuestion;
   readonly text: string;
+  /** For a `pick_result` case: the closed number of results shown before the turn (a count only; never unit text). */
+  readonly seededResults?: number;
 }
 
 /**
  * The issue 61 case table. Each `id` is a neutral label (never the guest's words), so the report can name the case without carrying
  * guest text (ADR 0075); `text` is the guest message the eval sends and is never reported.
+ *
+ * The first ten cases are the original table. The three `held-out` cases are deliberately absent from the classifier instruction and
+ * every other prompt: they check that a pass is the model's reading, not wording it was shown. The instruction only states general
+ * rules (a party size in words or as a relationship, a stay length in days/weeks/months, a named position among the shown results).
  */
 export const TERSE_FOLLOW_UP_CASES: readonly TerseFollowUpCase[] = [
   { id: "party_size:solo", openQuestion: "party_size", text: "just me" },
   { id: "party_size:numeral", openQuestion: "party_size", text: "2" },
   { id: "party_size:pair", openQuestion: "party_size", text: "two of us" },
   { id: "party_size:couple", openQuestion: "party_size", text: "me and my wife" },
+  { id: "party_size:held-out-partner", openQuestion: "party_size", text: "my partner and I" },
   { id: "nights:week", openQuestion: "nights", text: "a week" },
   { id: "nights:numeral", openQuestion: "nights", text: "3" },
-  { id: "pick_result:first", openQuestion: "pick_result", text: "the first one" },
-  { id: "pick_result:second", openQuestion: "pick_result", text: "the second" },
+  { id: "nights:held-out-fortnight", openQuestion: "nights", text: "two weeks" },
+  { id: "pick_result:first", openQuestion: "pick_result", text: "the first one", seededResults: 2 },
+  { id: "pick_result:second", openQuestion: "pick_result", text: "the second", seededResults: 2 },
+  { id: "pick_result:held-out-last", openQuestion: "pick_result", text: "the last one", seededResults: 3 },
   { id: "date_confirm:affirm", openQuestion: "date_confirm", text: "yes" },
   { id: "where:area", openQuestion: "where", text: "Wuse 2" },
 ];
@@ -39,12 +50,40 @@ export const TERSE_FOLLOW_UP_CASES: readonly TerseFollowUpCase[] = [
 export type TerseScopeCode = "in_scope" | "mixed" | "out_of_scope" | "unclear" | "failed";
 export type TerseReasonCode = "supported" | "mixed" | "outside" | "unclear" | "failed";
 
+/**
+ * Closed reason the harness could not read a verdict. `no_request` names a turn that never reached the classifier,
+ * `no_response` a classifier request whose response never arrived before the stage gave up, and the rest name the response
+ * defect. Every value is metadata only (ADR 0075).
+ */
+export type TerseScopeFailureCode =
+  | "no_request"
+  | "no_response"
+  | "tool_calls"
+  | "text_missing"
+  | "not_json"
+  | "scope_missing"
+  | "scope_invalid"
+  | "reason_missing"
+  | "reason_invalid";
+
+/** The closed path a case's turn took (issue 61 scoring). */
+export type TerseCasePath = "classifier" | "classifier_failed" | "answered_without_classifier";
+
 export interface TerseFollowUpResult {
   readonly id: string;
   readonly openQuestion: OpenQuestion;
   readonly scope: TerseScopeCode;
   readonly reasonCode: TerseReasonCode;
   readonly openQuestionSent: OpenQuestion | null;
+  /** The closed number of results the classifier request carried, or null when it carried none. */
+  readonly resultCountSent: number | null;
+  /** The closed reason no verdict was read, or null when one was read. */
+  readonly scopeFailure: TerseScopeFailureCode | null;
+  /** The turn's closed control outcome, `threw`, or null when the turn never ran. */
+  readonly controlOutcome: AssistantControlOutcome | "threw" | null;
+  /** True when the thread held the answered slot after the turn, read from task state with closed values. */
+  readonly answeredSlotHeld: boolean;
+  readonly path: TerseCasePath;
   readonly pass: boolean;
   readonly falseRefusal: boolean;
 }
@@ -65,8 +104,10 @@ export interface TerseFollowUpReport {
   readonly requestBudget: number;
   readonly requestsUsed: number;
   readonly cases: readonly TerseFollowUpResult[];
-  /** Cases whose classifier verdict never arrived; they are excluded from the false-refusal denominator and block acceptance. */
+  /** Cases whose classifier verdict never arrived and whose turn did not answer: they block acceptance and are not false refusals. */
   readonly failedCases: number;
+  /** Cases whose classifier response never arrived before the stage gave up. A latency failure, counted apart from refusals. */
+  readonly timeouts: number;
   /** In-scope cases refused as unclear or out_of_scope, divided by the cases that returned a verdict. */
   readonly falseRefusalRate: number;
 }
@@ -85,11 +126,50 @@ const SCOPES: readonly TerseScopeCode[] = ["in_scope", "mixed", "out_of_scope", 
 const REASONS: readonly TerseReasonCode[] = ["supported", "mixed", "outside", "unclear"];
 
 interface ObserverVerdict {
-  scope: TerseScopeCode;
-  reasonCode: TerseReasonCode;
+  /** True once a `concierge_scope` request was seen: the request side proves the context that was sent. */
+  requested: boolean;
+  /** True when the last seen `concierge_scope` request received a response before the case read its verdict. */
+  responded: boolean;
+  scope: TerseScopeCode | null;
+  reasonCode: TerseReasonCode | null;
+  failure: TerseScopeFailureCode | null;
   openQuestionSent: OpenQuestion | null;
+  resultCountSent: number | null;
   /** Set when a provider call threw; the suite stops rather than spend more of its budget on a failing provider. */
   provider?: { readonly status?: number; readonly errorClass?: string };
+}
+
+/** Reads a closed verdict or the closed defect from one classifier response. The response text is never kept (ADR 0075). */
+function readVerdict(response: AssistantModelResponse): { readonly scope: TerseScopeCode; readonly reasonCode: TerseReasonCode } | { readonly failure: TerseScopeFailureCode } {
+  if (response.toolCalls !== undefined && response.toolCalls.length > 0) return { failure: "tool_calls" };
+  if (typeof response.text !== "string") return { failure: "text_missing" };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(response.text);
+  } catch {
+    return { failure: "not_json" };
+  }
+  const value = parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
+  if (!("scope" in value)) return { failure: "scope_missing" };
+  if (typeof value.scope !== "string" || !(SCOPES as readonly string[]).includes(value.scope)) return { failure: "scope_invalid" };
+  if (!("reasonCode" in value)) return { failure: "reason_missing" };
+  if (typeof value.reasonCode !== "string" || !(REASONS as readonly string[]).includes(value.reasonCode)) return { failure: "reason_invalid" };
+  return { scope: value.scope as TerseScopeCode, reasonCode: value.reasonCode as TerseReasonCode };
+}
+
+/** Reads the closed request-side facts (open question and result count) from the classifier envelope. */
+function readRequestContext(request: AssistantModelRequest): { readonly openQuestion: OpenQuestion | null; readonly resultCount: number | null } {
+  const user = [...request.history].reverse().find((step) => step.role === "user");
+  if (!user || !("text" in user)) return { openQuestion: null, resultCount: null };
+  try {
+    const envelope = JSON.parse(user.text) as { readonly context?: { readonly openQuestion?: unknown; readonly resultCount?: unknown } };
+    const context = envelope.context;
+    const openQuestion = isOpenQuestion(context?.openQuestion) ? context.openQuestion : null;
+    const resultCount = typeof context?.resultCount === "number" && Number.isSafeInteger(context.resultCount) ? context.resultCount : null;
+    return { openQuestion, resultCount };
+  } catch {
+    return { openQuestion: null, resultCount: null };
+  }
 }
 
 /** Observes each classifier request/response; never stores model text beyond the closed codes it reads immediately. */
@@ -97,9 +177,14 @@ function observeClassifier(model: AssistantModelClient): {
   readonly client: AssistantModelClient;
   readonly takeLast: () => ObserverVerdict;
 } {
-  let last: ObserverVerdict = { scope: "failed", reasonCode: "failed", openQuestionSent: null };
+  let last: ObserverVerdict = { requested: false, responded: false, scope: null, reasonCode: null, failure: null, openQuestionSent: null, resultCountSent: null };
   const client: AssistantModelClient = {
     generate: async (request: AssistantModelRequest): Promise<AssistantModelResponse> => {
+      const isScope = request.structuredOutput?.name === "concierge_scope";
+      if (isScope) {
+        const sent = readRequestContext(request);
+        last = { ...last, requested: true, responded: false, openQuestionSent: sent.openQuestion, resultCountSent: sent.resultCount };
+      }
       let response: AssistantModelResponse;
       try {
         response = await model.generate(request);
@@ -110,23 +195,11 @@ function observeClassifier(model: AssistantModelClient): {
         last = { ...last, provider: { ...(status === undefined ? {} : { status }), ...(errorClass === undefined ? {} : { errorClass }) } };
         throw error;
       }
-      if (request.structuredOutput?.name === "concierge_scope") {
-        let scope: TerseScopeCode = "failed";
-        let reasonCode: TerseReasonCode = "failed";
-        try {
-          const parsed = JSON.parse(response.text ?? "") as { readonly scope?: unknown; readonly reasonCode?: unknown };
-          if (typeof parsed.scope === "string" && (SCOPES as readonly string[]).includes(parsed.scope)) scope = parsed.scope as TerseScopeCode;
-          if (typeof parsed.reasonCode === "string" && (REASONS as readonly string[]).includes(parsed.reasonCode)) reasonCode = parsed.reasonCode as TerseReasonCode;
-        } catch { /* A parsed failure stays `failed`; the text is discarded. */ }
-        const user = [...request.history].reverse().find((step) => step.role === "user");
-        let openQuestionSent: OpenQuestion | null = null;
-        if (user && "text" in user) {
-          try {
-            const envelope = JSON.parse(user.text) as { readonly context?: { readonly openQuestion?: unknown } };
-            if (isOpenQuestion(envelope.context?.openQuestion)) openQuestionSent = envelope.context.openQuestion;
-          } catch { /* No context means no code sent. */ }
-        }
-        last = { scope, reasonCode, openQuestionSent };
+      if (isScope) {
+        const verdict = readVerdict(response);
+        last = "failure" in verdict
+          ? { ...last, responded: true, scope: null, reasonCode: null, failure: verdict.failure }
+          : { ...last, responded: true, scope: verdict.scope, reasonCode: verdict.reasonCode, failure: null };
       }
       return response;
     },
@@ -140,9 +213,80 @@ function emptyThreadId(index: number): string {
 }
 
 /**
+ * A closed number of shown results, so a `pick_result` question is read by the classifier against a result list that exists.
+ * Only the count reaches the classifier; the synthetic references never leave this harness and are never reported (ADR 0075).
+ */
+function seededResults(count: number): readonly AssistantStayReference[] {
+  return Array.from({ length: count }, (_unused, index): AssistantStayReference => ({
+    stayRef: `stay-${index + 1}`, unitId: `unit-${index + 1}`, title: `Result ${index + 1}`, city: "Lagos", neighbourhood: "Old Ikoyi",
+    capacity: 2, amenities: [], nightlyKobo: 50_000_00 + index * 5_000_00, allInStayTotalKobo: null, mandatoryFeesKobo: 0,
+    refundableSecurityDepositKobo: 0, amountDueNowKobo: null, inspectionStatus: "verified", managementAuthorityStatus: "verified",
+  }));
+}
+
+/**
+ * True when the thread holds the slot the open question asked for, read from task state with closed values only (issue 61: a
+ * no-verdict case passes only when the guest's answer landed). `expectedResultCount` is the number of results the case showed, so
+ * a selected result must be one of them. It never reads guest or model text.
+ */
+export function holdsAnsweredSlot(state: AssistantTaskState, openQuestion: OpenQuestion, expectedResultCount: number): boolean {
+  const stay = state.stayIntent;
+  switch (openQuestion) {
+    case "party_size":
+      return Number.isSafeInteger(stay.partySize) && (stay.partySize ?? 0) > 0;
+    case "nights":
+    case "stay_length":
+      return (Number.isSafeInteger(stay.nights) && (stay.nights ?? 0) > 0) || stay.statedStay !== undefined;
+    case "pick_result": {
+      if (typeof state.selectedStayRef !== "string") return false;
+      const match = /^stay-(\d+)$/.exec(state.selectedStayRef);
+      const index = match ? Number(match[1]) : Number.NaN;
+      return Number.isSafeInteger(index) && index >= 1 && index <= expectedResultCount;
+    }
+    case "check_in":
+    case "date_confirm":
+      return typeof stay.checkIn === "string" && /^\d{4}-\d{2}-\d{2}$/.test(stay.checkIn);
+    case "where":
+    case "location_confirm":
+      return stay.location === "Lagos" || stay.location === "Abuja";
+  }
+}
+
+/**
+ * Scores one case (issue 61). A verdict-bearing case passes when it is in scope and the classifier was shown the same open question;
+ * a refusal is a false refusal. A case with no verdict passes only when the turn's closed outcome is a model answer AND the thread
+ * then holds the answered slot; `support_guidance`, a missing slot, a scope failure or a guard failure is a failed case, never a
+ * false refusal. No code here branches on guest text.
+ */
+export function scoreTerseCase(input: {
+  readonly expected: OpenQuestion;
+  readonly scope: TerseScopeCode;
+  readonly openQuestionSent: OpenQuestion | null;
+  readonly controlOutcome: AssistantControlOutcome | "threw" | null;
+  readonly answeredSlotHeld: boolean;
+}): { readonly path: TerseCasePath; readonly pass: boolean; readonly falseRefusal: boolean } {
+  if (input.scope !== "failed") {
+    return {
+      path: "classifier",
+      pass: (input.scope === "in_scope" || input.scope === "mixed") && input.openQuestionSent === input.expected,
+      falseRefusal: input.scope === "unclear" || input.scope === "out_of_scope",
+    };
+  }
+  const answered = input.controlOutcome === "successful_model_handling" && input.answeredSlotHeld;
+  return { path: answered ? "answered_without_classifier" : "classifier_failed", pass: answered, falseRefusal: false };
+}
+
+/** The closed reason no verdict was read from what the observer saw. */
+function scopeFailureOf(observed: ObserverVerdict): TerseScopeFailureCode | null {
+  if (observed.scope !== null) return null;
+  if (observed.responded) return observed.failure ?? "not_json";
+  return observed.requested ? "no_response" : "no_request";
+}
+
+/**
  * Runs every case once: the server sets the open question, then the guest sends the terse text. The verdict is the classifier's
- * closed codes; the case passes when it is in scope AND the classifier was shown the same open question. Nothing is asserted about
- * model text (there is none in the result).
+ * closed codes; the case passes when it is in scope AND the classifier was shown the same open question, or when the turn answered
+ * without the classifier (its closed path is recorded). Nothing is asserted about model text (there is none in the result).
  */
 export async function evaluateTerseFollowUps(model: AssistantModelClient, options: TerseFollowUpOptions = {}): Promise<TerseFollowUpReport> {
   const requestBudget = options.requestBudget ?? TERSE_REQUEST_BUDGET;
@@ -158,38 +302,49 @@ export async function evaluateTerseFollowUps(model: AssistantModelClient, option
         const runtime = new AssistantRuntime(environment, observer.client, { packs: [createShortletAssistantPack(environment)] });
         const threadId = emptyThreadId(index);
         runtime.getThread(threadId);
+        if (testCase.openQuestion === "pick_result") runtime.applyDiscoveryShortlist(threadId, seededResults(testCase.seededResults ?? 0));
         runtime.recordOpenQuestion(threadId, testCase.openQuestion);
+        let turnOutput: AssistantTurnOutput | undefined;
+        let threw = false;
         try {
           // The host wraps this in an active provider turn, so the guarded model's reservation and transport accounting see it.
-          await (options.runCase ?? ((_id, run) => run()))(testCase.id, async () => { await runtime.handleTurn(threadId, testCase.text); });
+          await (options.runCase ?? ((_id, run) => run()))(testCase.id, async () => { turnOutput = await runtime.handleTurn(threadId, testCase.text); });
         } catch {
-          // A hard failure leaves no verdict (recorded as `failed`); a provider stop is detected from the observer below.
+          threw = true;
         }
-        const verdict = observer.takeLast();
-        if (verdict.provider !== undefined) {
+        const observed = observer.takeLast();
+        if (observed.provider !== undefined) {
           // A provider rate limit or failure stops the suite; it must not keep spending its budget on a failing provider.
           const known = options.skipReason?.();
           if (known !== undefined) { skipReason = known; break; }
-          const stop = providerStopReason({ providerStatusCode: verdict.provider.status, providerErrorClass: verdict.provider.errorClass, budgetExceeded: false });
+          const stop = providerStopReason({ providerStatusCode: observed.provider.status, providerErrorClass: observed.provider.errorClass, budgetExceeded: false });
           skipReason = stop === "PROVIDER_RATE_LIMITED" ? "rate_limited" : "provider_failure";
           break;
         }
-        const pass = (verdict.scope === "in_scope" || verdict.scope === "mixed") && verdict.openQuestionSent === testCase.openQuestion;
+        const scope = observed.scope ?? "failed";
+        const reasonCode = observed.reasonCode ?? "failed";
+        const controlOutcome: AssistantControlOutcome | "threw" | null = threw ? "threw" : turnOutput?.controlOutcome ?? null;
+        // The closed slot check: a no-verdict case passes only when the answer landed in task state (party size, nights or a shown result).
+        const answeredSlotHeld = holdsAnsweredSlot(runtime.getThread(threadId).taskState, testCase.openQuestion, testCase.seededResults ?? 0);
+        const scored = scoreTerseCase({ expected: testCase.openQuestion, scope, openQuestionSent: observed.openQuestionSent, controlOutcome, answeredSlotHeld });
         results.push({
           id: testCase.id,
           openQuestion: testCase.openQuestion,
-          scope: verdict.scope,
-          reasonCode: verdict.reasonCode,
-          openQuestionSent: verdict.openQuestionSent,
-          pass,
-          falseRefusal: verdict.scope === "unclear" || verdict.scope === "out_of_scope",
+          scope,
+          reasonCode,
+          openQuestionSent: observed.openQuestionSent,
+          resultCountSent: observed.resultCountSent,
+          scopeFailure: scopeFailureOf(observed),
+          controlOutcome,
+          answeredSlotHeld,
+          ...scored,
         });
       } finally {
         environment.close();
       }
     }
   }
-  // The false-refusal rate is over the cases that returned a verdict; a `failed` case (no verdict) is excluded and counted.
+  // The false-refusal rate is over the cases that returned a verdict; a case with no verdict is excluded and counted separately.
   const verdictCases = results.filter((entry) => entry.scope !== "failed");
   const refused = verdictCases.filter((entry) => entry.falseRefusal).length;
   return {
@@ -198,10 +353,14 @@ export async function evaluateTerseFollowUps(model: AssistantModelClient, option
     requestBudget,
     requestsUsed: options.requestsUsed?.() ?? 0,
     cases: results,
-    failedCases: results.length - verdictCases.length,
+    failedCases: results.filter((entry) => entry.path === "classifier_failed").length,
+    timeouts: results.filter((entry) => entry.scopeFailure === "no_response").length,
     falseRefusalRate: verdictCases.length === 0 ? 0 : refused / verdictCases.length,
   };
 }
+
+/** The classifier stage's configured caps, shown so a latency failure is read against the budget it exceeded. */
+const CLASSIFIER_TIMEOUT_TEXT = `${SCOPE_FIRST_ATTEMPT_TIMEOUT_MS / 1000} s first attempt, ${SCOPE_RETRY_TIMEOUT_MS / 1000} s retry, ${SCOPE_TOTAL_BUDGET_MS / 1000} s stage`;
 
 /** Renders the section as a markdown table of closed codes only. */
 export function renderTerseFollowUpReport(report: TerseFollowUpReport): string[] {
@@ -215,12 +374,13 @@ export function renderTerseFollowUpReport(report: TerseFollowUpReport): string[]
     `- Request budget: ${report.requestBudget}; used: ${report.requestsUsed}`,
     `- False-refusal rate: ${report.falseRefusalRate.toFixed(3)} (${refused} of ${verdictCases.length} cases with a verdict)`,
     `- Failed cases: ${report.failedCases}`,
+    `- Classifier timeouts: ${report.timeouts} (no_response; ${CLASSIFIER_TIMEOUT_TEXT})`,
     `- Valid for acceptance: ${acceptable ? "yes" : `no${report.status !== "run" ? " (suite skipped)" : " (a case failed)"}`}`,
     "",
     ...(report.cases.length === 0 ? [] : [
-      "| Case | Open question | Scope | Reason | Code sent | Result |",
-      "|---|---|---|---|---|---|",
-      ...report.cases.map((entry) => `| ${entry.id} | ${entry.openQuestion} | ${entry.scope} | ${entry.reasonCode} | ${entry.openQuestionSent ?? "none"} | ${entry.pass ? "PASS" : "FAIL"} |`),
+      "| Case | Open question | Scope | Reason | Code sent | Results | Failure | Outcome | Slot | Path | Result |",
+      "|---|---|---|---|---|---|---|---|---|---|---|",
+      ...report.cases.map((entry) => `| ${entry.id} | ${entry.openQuestion} | ${entry.scope} | ${entry.reasonCode} | ${entry.openQuestionSent ?? "none"} | ${entry.resultCountSent ?? "none"} | ${entry.scopeFailure ?? "none"} | ${entry.controlOutcome ?? "none"} | ${entry.answeredSlotHeld ? "held" : "no"} | ${entry.path} | ${entry.pass ? "PASS" : "FAIL"} |`),
     ]),
     "",
   ];

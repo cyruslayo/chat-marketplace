@@ -1,0 +1,14 @@
+INVALID 400 
+Guest contact
+Skip to main content
+Guest contact
+Used only to coordinate your booking and payment.
+Phone number 
+*
+Required before you send a Booking Request. Enter a Nigerian mobile number, such as 0801 234 5678 or +234 801 234 5678. This is for booking coordination, not identity verification.
+Enter a Nigerian mobile number, such as 0801 234 5678.
+Save phone number
+INPUT <input id="phoneNumber" name="phoneNumber" type="tel" inputmode="tel" autocomplete="tel" enterkeyhint="done" maxlength="32" required aria-describedby="phoneNumber-help phoneNumber-error" aria-invalid="true" value="0801">
+LINKS [ '<a class="ui-skip-link" href="#main-content">Skip to main content' ]
+WELCOME START fresh 303 /conversation?threadId=g-37ff00d3-dc45-4202-be78-838d830375ec 
+

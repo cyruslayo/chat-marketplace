@@ -1,0 +1,420 @@
+TAP version 13
+# Subtest: AC2: A component without an accessibility label keeps its visible-text name
+ok 1 - AC2: A component without an accessibility label keeps its visible-text name
+  ---
+  duration_ms: 248.8042
+  type: 'test'
+  ...
+# Subtest: AC3: The visible label text is contained in the accessible name for every labelled control
+ok 2 - AC3: The visible label text is contained in the accessible name for every labelled control
+  ---
+  duration_ms: 5.547
+  type: 'test'
+  ...
+# Subtest: AC3 (option 1 pinning): The discovery budget note renders the projected amount due now, not a sum of two amounts
+ok 3 - AC3 (option 1 pinning): The discovery budget note renders the projected amount due now, not a sum of two amounts
+  ---
+  duration_ms: 399.6144
+  type: 'test'
+  ...
+# Subtest: AC3 (option 1 pinning): A null projected amount due now omits the amount sentence
+ok 4 - AC3 (option 1 pinning): A null projected amount due now omits the amount sentence
+  ---
+  duration_ms: 35.1244
+  type: 'test'
+  ...
+# Subtest: AC3 (option 1 pinning): An amount due now within the budget omits the amount sentence
+ok 5 - AC3 (option 1 pinning): An amount due now within the budget omits the amount sentence
+  ---
+  duration_ms: 21.6946
+  type: 'test'
+  ...
+# Subtest: AC1: The approved wording is recorded with its source
+ok 6 - AC1: The approved wording is recorded with its source
+  ---
+  duration_ms: 35.6391
+  type: 'test'
+  ...
+# Subtest: AC2: The wording is shown for Extended Stays only
+ok 7 - AC2: The wording is shown for Extended Stays only
+  ---
+  duration_ms: 17.5726
+  type: 'test'
+  ...
+# Subtest: AC3: No guest string uses lease, tenancy, rent or landlord
+ok 8 - AC3: No guest string uses lease, tenancy, rent or landlord
+  ---
+  duration_ms: 46.5119
+  type: 'test'
+  ...
+# Subtest: AC1: The Extended Stay offer shows the full range, the All-In Stay Total and every Billing Period with its due date
+ok 9 - AC1: The Extended Stay offer shows the full range, the All-In Stay Total and every Billing Period with its due date
+  ---
+  duration_ms: 265.504
+  type: 'test'
+  ...
+# Subtest: AC2: The Extended Stay payment screen shows which period is being paid and the later periods
+ok 10 - AC2: The Extended Stay payment screen shows which period is being paid and the later periods
+  ---
+  duration_ms: 33.4872
+  type: 'test'
+  ...
+# Subtest: AC2: The period label comes from the payment component, not a matching amount
+ok 11 - AC2: The period label comes from the payment component, not a matching amount
+  ---
+  duration_ms: 31.367
+  type: 'test'
+  ...
+# Subtest: AC3: The schedule page wording matches each period's paid or due state
+ok 12 - AC3: The schedule page wording matches each period's paid or due state
+  ---
+  duration_ms: 2.8568
+  type: 'test'
+  ...
+# Subtest: AC4: A Short Stay offer is unchanged
+ok 13 - AC4: A Short Stay offer is unchanged
+  ---
+  duration_ms: 11.6062
+  type: 'test'
+  ...
+# (node:100624) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC1: An ARTIFACT_MISMATCH rejection marks the surface out of date and refreshes the current state
+ok 14 - AC1: An ARTIFACT_MISMATCH rejection marks the surface out of date and refreshes the current state
+  ---
+  duration_ms: 186.2312
+  type: 'test'
+  ...
+# Subtest: AC2: The guest sees the changed-elsewhere message, never a raw code
+ok 15 - AC2: The guest sees the changed-elsewhere message, never a raw code
+  ---
+  duration_ms: 5.5931
+  type: 'test'
+  ...
+# Subtest: AC3: A forged artifact id is still rejected after a cold restore
+ok 16 - AC3: A forged artifact id is still rejected after a cold restore
+  ---
+  duration_ms: 9150.857
+  type: 'test'
+  ...
+# Subtest: AC4: The draft entered before the rejection is not lost
+ok 17 - AC4: The draft entered before the rejection is not lost
+  ---
+  duration_ms: 11140.2618
+  type: 'test'
+  ...
+# (node:35864) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC1: The viewport meta includes interactive-widget=resizes-content on guest pages
+ok 18 - AC1: The viewport meta includes interactive-widget=resizes-content on guest pages
+  ---
+  duration_ms: 12.7295
+  type: 'test'
+  ...
+# Subtest: AC2: The composer grows with content up to its limit, and browsers without field-sizing keep the current behaviour
+ok 19 - AC2: The composer grows with content up to its limit, and browsers without field-sizing keep the current behaviour
+  ---
+  duration_ms: 9.3235
+  type: 'test'
+  ...
+# Subtest: AC3: Composer text is at least 16px
+ok 20 - AC3: Composer text is at least 16px
+  ---
+  duration_ms: 7.4763
+  type: 'test'
+  ...
+# Subtest: AC1: Stay dates render with the en-NG locale
+ok 21 - AC1: Stay dates render with the en-NG locale
+  ---
+  duration_ms: 197.5681
+  type: 'test'
+  ...
+# Subtest: AC2: Every guest-visible time-of-day value is in Africa/Lagos and labelled WAT
+ok 22 - AC2: Every guest-visible time-of-day value is in Africa/Lagos and labelled WAT
+  ---
+  duration_ms: 1670.9024
+  type: 'test'
+  ...
+# Subtest: AC3: A test pins the date and time format at a DST-free instant and at the UTC day boundary
+ok 23 - AC3: A test pins the date and time format at a DST-free instant and at the UTC day boundary
+  ---
+  duration_ms: 8.3151
+  type: 'test'
+  ...
+# (node:7748) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC3: Criteria status messages are polite, and only errors use the alert region
+ok 24 - AC3: Criteria status messages are polite, and only errors use the alert region
+  ---
+  duration_ms: 19.4208
+  type: 'test'
+  ...
+# Subtest: AC4: Each guest route has exactly one H1, naming the current task
+ok 25 - AC4: Each guest route has exactly one H1, naming the current task
+  ---
+  duration_ms: 3.0637
+  type: 'test'
+  ...
+# Subtest: AC2: A turn with an assistant message is announced by the transcript, not twice
+ok 26 - AC2: A turn with an assistant message is announced by the transcript, not twice
+  ---
+  duration_ms: 5.5286
+  type: 'test'
+  ...
+# Subtest: AC1: Every guest img element has width and height attributes
+ok 27 - AC1: Every guest img element has width and height attributes
+  ---
+  duration_ms: 217.5956
+  type: 'test'
+  ...
+# Subtest: AC2: At most one image per screen has fetchpriority high
+ok 28 - AC2: At most one image per screen has fetchpriority high
+  ---
+  duration_ms: 62.5906
+  type: 'test'
+  ...
+# (node:32532) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC1: The model-path request receipt names the request as sent and waiting for the Operator, with no raw ID in its main text
+ok 29 - AC1: The model-path request receipt names the request as sent and waiting for the Operator, with no raw ID in its main text
+  ---
+  duration_ms: 11.779
+  type: 'test'
+  ...
+# Subtest: AC2: No exported guest string contains a forbidden term, and the sweep fails when one is added
+ok 30 - AC2: No exported guest string contains a forbidden term, and the sweep fails when one is added
+  ---
+  duration_ms: 31.1596
+  type: 'test'
+  ...
+# Subtest: AC3: An assistant-enabled cold-restore journey shows the new receipt after submit
+ok 31 - AC3: An assistant-enabled cold-restore journey shows the new receipt after submit
+  ---
+  duration_ms: 16423.0057
+  type: 'test'
+  ...
+# Subtest: AC1: No visible guest control is under 44 by 44 CSS px at any capture width
+ok 32 - AC1: No visible guest control is under 44 by 44 CSS px at any capture width
+  ---
+  duration_ms: 10.3542
+  type: 'test'
+  ...
+# Subtest: AC2: No guest text is under 12px
+ok 33 - AC2: No guest text is under 12px
+  ---
+  duration_ms: 8.6874
+  type: 'test'
+  ...
+# Subtest: AC3: A busy control styled only with aria-busy shows the busy state
+ok 34 - AC3: A busy control styled only with aria-busy shows the busy state
+  ---
+  duration_ms: 1.7173
+  type: 'test'
+  ...
+# Subtest: AC1: Older transcript turns are skipped for rendering until scrolled near, and keep their size, with no scroll jump
+ok 35 - AC1: Older transcript turns are skipped for rendering until scrolled near, and keep their size, with no scroll jump
+  ---
+  duration_ms: 53.4024
+  type: 'test'
+  ...
+# Subtest: AC3: Opening or closing the workspace does not shift the layout when a scrollbar appears
+ok 36 - AC3: Opening or closing the workspace does not shift the layout when a scrollbar appears
+  ---
+  duration_ms: 18.2045
+  type: 'test'
+  ...
+# Subtest: AC4: The skeleton animates opacity, not background position
+ok 37 - AC4: The skeleton animates opacity, not background position
+  ---
+  duration_ms: 2.0465
+  type: 'test'
+  ...
+# Subtest: AC1: Use of Modal on the guest path is recorded
+ok 38 - AC1: Use of Modal on the guest path is recorded
+  ---
+  duration_ms: 217.4499
+  type: 'test'
+  ...
+# Subtest: AC1: Deposit-claim amounts use the same ₦ format as every other guest money value
+ok 39 - AC1: Deposit-claim amounts use the same ₦ format as every other guest money value
+  ---
+  duration_ms: 165.8864
+  type: 'test'
+  ...
+# Subtest: AC2: Deposit-claim statuses show guest words, never raw enum values
+ok 40 - AC2: Deposit-claim statuses show guest words, never raw enum values
+  ---
+  duration_ms: 3.5768
+  type: 'test'
+  ...
+# Subtest: AC3: Pending-action surfaces use the glossary money labels
+ok 41 - AC3: Pending-action surfaces use the glossary money labels
+  ---
+  duration_ms: 5.1984
+  type: 'test'
+  ...
+# Subtest: AC4: The format-guard test fails on a builder that calls toLocaleString on kobo
+ok 42 - AC4: The format-guard test fails on a builder that calls toLocaleString on kobo
+  ---
+  duration_ms: 22.3298
+  type: 'test'
+  ...
+# (node:183124) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC1: A stale, superseded or expired action is refused after a cold restore, and the current state is shown
+ok 43 - AC1: A stale, superseded or expired action is refused after a cold restore, and the current state is shown
+  ---
+  duration_ms: 4959.3482
+  type: 'test'
+  ...
+# Subtest: AC2: The same action from two tabs takes effect once
+ok 44 - AC2: The same action from two tabs takes effect once
+  ---
+  duration_ms: 6223.0482
+  type: 'test'
+  ...
+# Subtest: AC3: A model timeout leaves the previous facts visible and the draft intact
+ok 45 - AC3: A model timeout leaves the previous facts visible and the draft intact
+  ---
+  duration_ms: 4991.8291
+  type: 'test'
+  ...
+# Subtest: AC4: An invalid generated surface renders its text fallback and standard route
+ok 46 - AC4: An invalid generated surface renders its text fallback and standard route
+  ---
+  duration_ms: 115.0186
+  type: 'test'
+  ...
+# Subtest: AC5: Provider return without verified payment never shows a confirmed reservation
+ok 47 - AC5: Provider return without verified payment never shows a confirmed reservation
+  ---
+  duration_ms: 7.4636
+  type: 'test'
+  ...
+# Subtest: AC6: The no-JS route offers the same authoritative standard route for the same command
+ok 48 - AC6: The no-JS route offers the same authoritative standard route for the same command
+  ---
+  duration_ms: 6253.1317
+  type: 'test'
+  ...
+# Subtest: AC1: Every standard guest page has a skip link as its first focusable element
+ok 49 - AC1: Every standard guest page has a skip link as its first focusable element
+  ---
+  duration_ms: 159.7135
+  type: 'test'
+  ...
+# Subtest: AC3: The skip link is at least 44 by 44 CSS px when focused
+ok 50 - AC3: The skip link is at least 44 by 44 CSS px when focused
+  ---
+  duration_ms: 61.422
+  type: 'test'
+  ...
+# (node:169728) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC1: Every guest surface type carries an explicit kind, and the client reads it instead of the id
+ok 51 - AC1: Every guest surface type carries an explicit kind, and the client reads it instead of the id
+  ---
+  duration_ms: 15.0666
+  type: 'test'
+  ...
+# Subtest: AC2: The phone and email fields get tel/email inputmode and autocomplete from their declared purpose, not their label text
+ok 52 - AC2: The phone and email fields get tel/email inputmode and autocomplete from their declared purpose, not their label text
+  ---
+  duration_ms: 14.1345
+  type: 'test'
+  ...
+# Subtest: AC3: Changing a surface id prefix or a field label does not change the enhancement
+ok 53 - AC3: Changing a surface id prefix or a field label does not change the enhancement
+  ---
+  duration_ms: 1.1758
+  type: 'test'
+  ...
+# Subtest: AC4: Kinds and purposes survive a cold restore
+ok 54 - AC4: Kinds and purposes survive a cold restore
+  ---
+  duration_ms: 13096.8552
+  type: 'test'
+  ...
+# Subtest: AC4: The fallback path works when AbortSignal.any is unavailable
+ok 55 - AC4: The fallback path works when AbortSignal.any is unavailable
+  ---
+  duration_ms: 30.8071
+  type: 'test'
+  ...
+# Subtest: AC4: The AbortSignal.any path ends on the user cancel
+ok 56 - AC4: The AbortSignal.any path ends on the user cancel
+  ---
+  duration_ms: 3.2942
+  type: 'test'
+  ...
+# Subtest: AC3: A turn that landed before the cancel is shown, not lost
+ok 57 - AC3: A turn that landed before the cancel is shown, not lost
+  ---
+  duration_ms: 10.4794
+  type: 'test'
+  ...
+# Subtest: AC1: Operator request detail shows human dates, not ISO strings
+ok 58 - AC1: Operator request detail shows human dates, not ISO strings
+  ---
+  duration_ms: 6.494
+  type: 'test'
+  ...
+# Subtest: AC2: Every Operator status label is plain sentence case
+ok 59 - AC2: Every Operator status label is plain sentence case
+  ---
+  duration_ms: 1.5808
+  type: 'test'
+  ...
+# Subtest: AC3: A second Confirm while the first is in flight is not sent, and the server still refuses a duplicate decision
+ok 60 - AC3: A second Confirm while the first is in flight is not sent, and the server still refuses a duplicate decision
+  ---
+  duration_ms: 1.4899
+  type: 'test'
+  ...
+# Subtest: AC4: The legacy dashboard is removed or shows no internal status names
+ok 61 - AC4: The legacy dashboard is removed or shows no internal status names
+  ---
+  duration_ms: 1.6735
+  type: 'test'
+  ...
+# (node:110196) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: AC1: An invalid, unknown-thread or rejected callback returns an HTML guest page, not JSON, with a link to the booking status
+ok 62 - AC1: An invalid, unknown-thread or rejected callback returns an HTML guest page, not JSON, with a link to the booking status
+  ---
+  duration_ms: 8252.6538
+  type: 'test'
+  ...
+# Subtest: AC2: The page never says the payment or reservation succeeded
+ok 63 - AC2: The page never says the payment or reservation succeeded
+  ---
+  duration_ms: 28.3617
+  type: 'test'
+  ...
+# Subtest: AC3: A failed verification that redirects to the thread shows a not-confirmed status message there
+ok 64 - AC3: A failed verification that redirects to the thread shows a not-confirmed status message there
+  ---
+  duration_ms: 15070.5588
+  type: 'test'
+  ...
+# Subtest: AC3: The not-confirmed notice does not outlive a later confirmation
+ok 65 - AC3: The not-confirmed notice does not outlive a later confirmation
+  ---
+  duration_ms: 2627.1675
+  type: 'test'
+  ...
+# Subtest: AC4: No reference, token or provider text appears in the page or the logs
+ok 66 - AC4: No reference, token or provider text appears in the page or the logs
+  ---
+  duration_ms: 3861.9402
+  type: 'test'
+  ...
+1..66
+# tests 66
+# suites 0
+# pass 66
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 156603.67

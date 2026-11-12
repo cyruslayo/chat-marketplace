@@ -1,0 +1,52 @@
+Provider bank transfer 200 /payments/offers/offer-7a7081b8-5092-43c2-bced-4441816863dc/transfer
+
+Transfer to complete your booking · Shortlet
+Skip to main content
+Shortlet
+Search
+ (completed)
+Stay
+ (completed)
+Request
+ (completed)
+Offer
+ (completed)
+Pay
+ (current step)
+Confirmed
+ (not started)
+Booking payment · Bank transfer
+Transfer to complete your booking
+Waiting for your transfer
+Transfer by 
+11:20 am WAT, 3 Sept 2026
+ · 20 minutes left
+Your stay
+Luxury 2-Bedroom Apartment in Old Ikoyi
+Check-in
+10
+Thu, 10 Sept 2026
+→
+Check-out
+13
+Sun, 13 Sept 2026
+3 nights · 2 guests
+All-In Stay Total
+₦370,000
+Refundable Security Deposit (separate): 
+₦20,000
+Total to complete booking: 
+₦390,000
+This payment: 
+₦370,000
+Bank
+Local Demo Bank
+Account number
+4407319691 
+Copy account number
+Exact amount
+₦370,000
+Transfer the exact amount. Your booking confirms automatically once the transfer arrives.
+This account is for this booking only and stops accepting payment at the deadline.
+Complete local demo transfer
+Back to your conversation

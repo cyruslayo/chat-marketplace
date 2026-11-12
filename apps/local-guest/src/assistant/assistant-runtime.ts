@@ -1248,6 +1248,7 @@ export class AssistantRuntime {
     let scopeFailureOutcome: "quota_refusal" | "guard_failure" | undefined;
     const assessment = text.length > this.#maxInputCharacters ? undefined : await assessScopeSafely(this.#scopeClassifier, safeUserText, {
       ...scopeContextFor(packForScope, tx.taskState),
+      resultCount: tx.taskState.shortlist.length,
       ...(tx.taskState.openQuestion === undefined ? {} : { openQuestion: tx.taskState.openQuestion }),
       turnContext: this.#turnContext(packForScope),
     }, this.#scopeOuterTimeoutMs, (error) => {

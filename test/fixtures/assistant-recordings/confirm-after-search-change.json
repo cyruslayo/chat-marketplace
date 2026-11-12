@@ -12,7 +12,7 @@
         "history": [
           {
             "role": "user",
-            "text": "{\"message\":\"I need a place in Ikoyi for 4 nights for 2 guests from 14 December 2026\",\"context\":{\"domain\":\"shortlet\",\"description\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\",\"hasShortlist\":false,\"hasSelectedStay\":false,\"hasOffer\":false}}"
+            "text": "{\"message\":\"I need a place in Ikoyi for 4 nights for 2 guests from 14 December 2026\",\"context\":{\"domain\":\"shortlet\",\"description\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\",\"hasShortlist\":false,\"hasSelectedStay\":false,\"hasOffer\":false,\"resultCount\":0}}"
           }
         ]
       },
@@ -133,7 +133,7 @@
         "history": [
           {
             "role": "user",
-            "text": "{\"message\":\"Request the first one.\",\"context\":{\"domain\":\"shortlet\",\"description\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\",\"hasShortlist\":true,\"hasSelectedStay\":false,\"hasOffer\":false}}"
+            "text": "{\"message\":\"Request the first one.\",\"context\":{\"domain\":\"shortlet\",\"description\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\",\"hasShortlist\":true,\"hasSelectedStay\":false,\"hasOffer\":false,\"resultCount\":1}}"
           }
         ]
       },
@@ -236,7 +236,7 @@
         "history": [
           {
             "role": "user",
-            "text": "{\"message\":\"Actually Lekki, same dates\",\"context\":{\"domain\":\"shortlet\",\"description\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\",\"hasShortlist\":true,\"hasSelectedStay\":true,\"hasOffer\":false}}"
+            "text": "{\"message\":\"Actually Lekki, same dates\",\"context\":{\"domain\":\"shortlet\",\"description\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\",\"hasShortlist\":true,\"hasSelectedStay\":true,\"hasOffer\":false,\"resultCount\":1}}"
           }
         ]
       },
