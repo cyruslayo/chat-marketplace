@@ -6,7 +6,8 @@ import { renderBenchmarkDocument, validateLiveBenchmarkResult, type SmokeResult 
 import { buildPerformanceReport } from "../scripts/pilot-agent-smoke-metrics.js";
 import { SMOKE_GRADING_PROFILE } from "../scripts/pilot-agent-smoke-grading.js";
 import { ASSISTANT_CONTROL_OUTCOMES } from "../apps/local-guest/src/assistant/assistant-runtime.js";
-import { evaluateTerseFollowUps, renderTerseFollowUpReport, scoreTerseCase } from "../scripts/pilot-agent-smoke-terse.js";
+import { evaluateTerseFollowUps, holdsAnsweredSlot, renderTerseFollowUpReport, scoreTerseCase } from "../scripts/pilot-agent-smoke-terse.js";
+import { createInitialTaskState } from "../apps/local-guest/src/assistant/assistant-state.js";
 import type { AssistantModelClient, AssistantModelRequest, AssistantModelResponse } from "../apps/local-guest/src/assistant/assistant-model.js";
 
 // The preserved live result is the golden complete report fixture.
@@ -163,7 +164,7 @@ function fakeTerseModel(refuse: (message: string) => "unclear" | "out_of_scope" 
 
 test("Issue 61: a fake client that answers every case gives a false-refusal rate of 0", async () => {
   const report = await evaluateTerseFollowUps(fakeTerseModel(() => null));
-  assert.equal(report.cases.length, 10);
+  assert.equal(report.cases.length, 13);
   assert.equal(report.failedCases, 0);
   assert.equal(report.falseRefusalRate, 0);
   assert.ok(report.cases.every((entry) => entry.pass && !entry.falseRefusal));
@@ -171,9 +172,9 @@ test("Issue 61: a fake client that answers every case gives a false-refusal rate
 
 test("Issue 61: a fake client that refuses one case gives the expected false-refusal rate", async () => {
   const report = await evaluateTerseFollowUps(fakeTerseModel((message) => message === "just me" ? "unclear" : null));
-  assert.equal(report.cases.length, 10);
+  assert.equal(report.cases.length, 13);
   assert.equal(report.failedCases, 0);
-  assert.equal(report.falseRefusalRate, 1 / 10);
+  assert.equal(report.falseRefusalRate, 1 / 13);
   const refused = report.cases.filter((entry) => entry.falseRefusal);
   assert.equal(refused.length, 1);
   assert.equal(refused[0]!.id, "party_size:solo");
@@ -184,7 +185,7 @@ test("Issue 61: a fake client that refuses one case gives the expected false-ref
 test("Issue 61: the rendered terse report carries closed codes only, never guest or model text", async () => {
   const report = await evaluateTerseFollowUps(fakeTerseModel(() => null));
   const rendered = renderTerseFollowUpReport(report).join("\n");
-  assert.doesNotMatch(rendered, /just me|two of us|me and my wife|a week|Wuse 2|the first one|the second/i, "no guest text");
+  assert.doesNotMatch(rendered, /just me|two of us|me and my wife|a week|Wuse 2|the first one|the second|my partner and I|two weeks|the last one/i, "no guest text");
   assert.match(rendered, /in_scope/);
   assert.match(rendered, /party_size/);
 });
@@ -208,7 +209,7 @@ test("Issue 61: cases run through an active provider turn reach the classifier; 
     skipReason: () => undefined,
   });
   assert.equal(run.status, "run");
-  assert.equal(run.cases.length, 10);
+  assert.equal(run.cases.length, 13);
   assert.ok(run.cases.every((entry) => entry.scope !== "failed"), "every case reaches the classifier through the guard");
   assert.ok(run.requestsUsed > 0, "the guarded requests are counted");
 
@@ -219,7 +220,7 @@ test("Issue 61: cases run through an active provider turn reach the classifier; 
 });
 
 test("Issue 61: a case with no verdict is excluded from the false-refusal denominator and counted as failed", async () => {
-  // One case returns invalid JSON (no verdict); another is refused. The rate is 1 of the 9 cases that returned a verdict.
+  // One case returns invalid JSON (no verdict); another is refused. The rate is 1 of the 12 cases that returned a verdict.
   const model: AssistantModelClient = {
     generate: async (request) => {
       if (request.structuredOutput?.name === "concierge_scope") {
@@ -233,9 +234,9 @@ test("Issue 61: a case with no verdict is excluded from the false-refusal denomi
     },
   };
   const report = await evaluateTerseFollowUps(model);
-  assert.equal(report.cases.length, 10);
+  assert.equal(report.cases.length, 13);
   assert.equal(report.failedCases, 1);
-  assert.equal(report.falseRefusalRate, 1 / 9, "the failed case is excluded from the denominator");
+  assert.equal(report.falseRefusalRate, 1 / 12, "the failed case is excluded from the denominator");
   const rendered = renderTerseFollowUpReport(report).join("\n");
   assert.match(rendered, /Failed cases: 1/);
   assert.match(rendered, /Valid for acceptance: no/);
@@ -332,26 +333,61 @@ test("Issue 61: a classifier response that never arrives is a closed no_response
   assert.equal(week.path, "classifier_failed");
   assert.equal(week.falseRefusal, false, "a stage timeout is not a model refusal");
   assert.equal(report.failedCases, 1);
+  assert.equal(report.timeouts, 1, "a missing classifier response is counted separately as a timeout");
   const rendered = renderTerseFollowUpReport(report).join("\n");
   assert.match(rendered, /nights:week/);
   assert.match(rendered, /no_response/);
   assert.match(rendered, /guard_failure/);
+  assert.match(rendered, /Classifier timeouts: 1 \(no_response; 5 s first attempt, 3 s retry, 8 s stage\)/);
   assert.doesNotMatch(rendered, /Valid for acceptance: yes/);
 });
 
-test("Issue 61: a case with no verdict is scored from the turn's closed outcome, and an answering path passes", () => {
+test("Issue 61: a no-verdict case passes only on a model answer that left the answered slot in task state", () => {
+  // The turn answered with the model and the slot is held: the only passing no-verdict path.
   assert.deepEqual(
-    scoreTerseCase({ expected: "nights", scope: "failed", openQuestionSent: "nights", controlOutcome: "successful_model_handling" }),
+    scoreTerseCase({ expected: "nights", scope: "failed", openQuestionSent: "nights", controlOutcome: "successful_model_handling", answeredSlotHeld: true }),
     { path: "answered_without_classifier", pass: true, falseRefusal: false },
   );
+  // A model answer that left no slot is a failure, not a pass.
   assert.deepEqual(
-    scoreTerseCase({ expected: "nights", scope: "failed", openQuestionSent: null, controlOutcome: "guard_failure" }),
+    scoreTerseCase({ expected: "nights", scope: "failed", openQuestionSent: "nights", controlOutcome: "successful_model_handling", answeredSlotHeld: false }),
     { path: "classifier_failed", pass: false, falseRefusal: false },
   );
+  // support_guidance is a FAIL even when a slot happens to be held.
   assert.deepEqual(
-    scoreTerseCase({ expected: "pick_result", scope: "unclear", openQuestionSent: "pick_result", controlOutcome: "guard_failure" }),
+    scoreTerseCase({ expected: "nights", scope: "failed", openQuestionSent: null, controlOutcome: "support_guidance", answeredSlotHeld: true }),
+    { path: "classifier_failed", pass: false, falseRefusal: false },
+  );
+  // A guard failure stays a failure.
+  assert.deepEqual(
+    scoreTerseCase({ expected: "nights", scope: "failed", openQuestionSent: null, controlOutcome: "guard_failure", answeredSlotHeld: false }),
+    { path: "classifier_failed", pass: false, falseRefusal: false },
+  );
+  // A verdict-bearing refusal is still a false refusal.
+  assert.deepEqual(
+    scoreTerseCase({ expected: "pick_result", scope: "unclear", openQuestionSent: "pick_result", controlOutcome: "guard_failure", answeredSlotHeld: false }),
     { path: "classifier", pass: false, falseRefusal: true },
   );
+});
+
+test("Issue 61: the answered-slot check reads closed task-state values", () => {
+  const state = createInitialTaskState();
+  assert.equal(holdsAnsweredSlot(state, "party_size", 0), false);
+  state.stayIntent.partySize = 2;
+  assert.equal(holdsAnsweredSlot(state, "party_size", 0), true);
+  assert.equal(holdsAnsweredSlot(state, "nights", 0), false);
+  state.stayIntent.nights = 7;
+  assert.equal(holdsAnsweredSlot(state, "nights", 0), true);
+  assert.equal(holdsAnsweredSlot(state, "pick_result", 2), false);
+  state.selectedStayRef = "stay-3";
+  assert.equal(holdsAnsweredSlot(state, "pick_result", 2), false, "a result outside the shown list is not held");
+  assert.equal(holdsAnsweredSlot(state, "pick_result", 3), true);
+  assert.equal(holdsAnsweredSlot(state, "where", 0), false);
+  state.stayIntent.location = "Abuja";
+  assert.equal(holdsAnsweredSlot(state, "where", 0), true);
+  assert.equal(holdsAnsweredSlot(state, "date_confirm", 0), false);
+  state.stayIntent.checkIn = "2026-11-12";
+  assert.equal(holdsAnsweredSlot(state, "date_confirm", 0), true);
 });
 
 test("Issue 61: the pick_result cases are evaluated against a shown result list, as a closed count only", async () => {
@@ -368,11 +404,10 @@ test("Issue 61: the pick_result cases are evaluated against a shown result list,
     },
   };
   const report = await evaluateTerseFollowUps(model);
-  const picks = sent.filter((entry) => entry.message === "the first one" || entry.message === "the second");
-  assert.equal(picks.length, 2, "both pick cases reach the classifier");
-  for (const pick of picks) {
-    assert.equal(pick.openQuestion, "pick_result");
-    assert.equal(pick.resultCount, 2, "the classifier is told two results are shown");
-  }
+  const picks = sent.filter((entry) => entry.message === "the first one" || entry.message === "the second" || entry.message === "the last one");
+  assert.equal(picks.length, 3, "all three pick cases reach the classifier");
+  const counts = Object.fromEntries(picks.map((pick) => [pick.message, pick.resultCount]));
+  assert.deepEqual(counts, { "the first one": 2, "the second": 2, "the last one": 3 });
+  for (const pick of picks) assert.equal(pick.openQuestion, "pick_result");
   assert.ok(report.cases.filter((entry) => entry.id.startsWith("pick_result:")).every((entry) => entry.pass));
 });

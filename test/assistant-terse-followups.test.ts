@@ -16,6 +16,7 @@ import {
   wireDatedApp,
 } from "./helpers/guest-date-fixtures.js";
 import { clientWith, completion, jsonResponse, type CapturedRequest } from "./helpers/openai-compatible-client.js";
+import { TERSE_FOLLOW_UP_CASES } from "../scripts/pilot-agent-smoke-terse.js";
 
 // Issue 61 (ADR 0106 amendment): terse follow-ups. Every offline test scripts the classifier verdict, so none catches a live model
 // reading "Just me" as unclear. These cases pin the wiring: the classifier request carries the open-question code, the scripted
@@ -258,7 +259,7 @@ test("the concierge_scope schema and instruction allow every scope and reason th
   assert.equal(schema.properties.slots.properties.nights.minimum, 1);
   assert.equal(schema.properties.slots.properties.guests.minimum, 1);
   assert.match(request.systemInstruction, /supported for in_scope, mixed for mixed, outside for out_of_scope, unclear for unclear/);
-  assert.match(request.systemInstruction, /openQuestion is pick_result .*'the first one'.*'the second'/);
+  assert.match(request.systemInstruction, /openQuestion is pick_result .*names a position among the shown results/);
   // The context envelope itself carries only closed codes and a count; no unit or listing text.
   const user = [...request.history].reverse().find((step) => step.role === "user");
   assert.ok(user && "text" in user);
@@ -266,5 +267,30 @@ test("the concierge_scope schema and instruction allow every scope and reason th
   assert.equal(envelope.context.openQuestion, "pick_result");
   assert.equal(envelope.context.resultCount, 2);
   assert.deepEqual(Object.keys(envelope.context).sort(), ["description", "domain", "hasOffer", "hasSelectedStay", "hasShortlist", "openQuestion", "resultCount"]);
+});
+
+// Issue 61 review: the eval must not teach to the test. The instruction states general rules, never a case's own words, so a live
+// pass is the model's reading and not a quoted phrase (ADR 0106: no deterministic in-scope fast path).
+test("the scope-classifier instruction quotes none of the live eval's case texts", async () => {
+  const instructions: string[] = [];
+  const client: AssistantModelClient = {
+    generate: async (request: AssistantModelRequest): Promise<AssistantModelResponse> => {
+      instructions.push(request.systemInstruction);
+      return { text: JSON.stringify(scopeVerdict()) };
+    },
+  };
+  const classifier = new ModelScopeClassifier(client, 1_000);
+  for (const testCase of TERSE_FOLLOW_UP_CASES) {
+    await classifier.assess(testCase.text, {
+      domain: "shortlet", description: "shortlet stays", hasShortlist: false, hasSelectedStay: false, hasOffer: false,
+      openQuestion: testCase.openQuestion, resultCount: testCase.seededResults ?? 0,
+    });
+  }
+  assert.equal(instructions.length, TERSE_FOLLOW_UP_CASES.length, "every case was classified");
+  const instruction = instructions[0]!;
+  assert.ok(instructions.every((entry) => entry === instruction), "one instruction for every case");
+  for (const testCase of TERSE_FOLLOW_UP_CASES) {
+    assert.ok(!instruction.toLowerCase().includes(testCase.text.toLowerCase()), `the instruction quotes eval case ${testCase.id}`);
+  }
 });
 

@@ -50,6 +50,13 @@ Every offline test scripts the classifier verdict (`scriptedPlanner` in `test/he
 
 ## Comments
 
+- 11 Nov 2026, review revision on `fix/terse-followups` (offline only; the issue stays claimed until a new live run passes).
+  - The classifier instruction no longer quotes eval inputs. It states general rules only (a party size in words or as a relationship; a stay length in days, weeks or months; a named position among the shown results). New test: the instruction must not contain any `TERSE_FOLLOW_UP_CASES` text, case-insensitive.
+  - Held-out cases added to the table, absent from the instruction and every other prompt: `party_size:held-out-partner`, `nights:held-out-fortnight`, `pick_result:held-out-last` (three results shown). Request budget is now 13 cases × 4 = 52, separate from the journey budget.
+  - No-verdict scoring tightened: it passes only on `successful_model_handling` AND the answered slot held in task state, read with closed values (party size, nights, a selected result within the shown count, a date, a city). `support_guidance` is a FAIL. `no_response` stays a FAIL and is counted separately as a timeout, with the classifier caps shown in the report (5 s first attempt, 3 s retry, 8 s stage).
+  - No fixtures re-recorded: the recordings store `toolNames`, `structuredOutputName` and `history`, not `systemInstruction`, so the instruction change does not diverge them.
+  - Commands (all with `env -u LLM_API_KEY`, `NODE_ENV=test`): `npm run check` clean; `npx tsx --test test/assistant-terse-followups.test.ts test/pilot-agent-smoke-report.test.ts` 34 of 34 pass; the 12-file list 127 of 127 pass.
+
 - 2026-11-11 20:17, owner live run (`npm run pilot:local:agent-smoke -- --request-limit 16`, OpenRouter `openai/gpt-6-luna`, f836c5d): journey PASS (4/4 tasks, 0 guard failures, 13 model calls). Terse suite: run, 18 of 40 requests used, false-refusal rate 0.250 (2 of 8 cases with a verdict), 2 failed cases, so not valid for acceptance.
   - `pick_result:first`, `pick_result:second`: scope `unclear`, reason `unclear`, code sent `pick_result`, FAIL (false refusals).
   - `party_size:couple`: scope failed, reason failed, code sent `party_size`, FAIL (no verdict read).
