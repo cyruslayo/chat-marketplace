@@ -84,3 +84,4 @@ Frontier: the first open, unblocked, unclaimed issue in number order.
 - 28 — Extended Stay collection line: later Billing Periods are paid separately and are not charged automatically (owner-approved structural line only; cancellation and Notice to End remain counsel text). Evidence: `test/extended-stay-counsel-copy.test.ts`.
 - 29 — task study protocol prepared (nine tasks, consent script, observation sheet); the owner runs the sessions. Evidence: `.scratch/ux-guidelines/study/protocol.md`.
 - 30 — funnel-signal proposal: every §13 signal mapped to existing telemetry plus three proposed closed-enum events; no code changed pending approval. Evidence: issue 30 Comments.
+- 05: matrix consolidated (96 rows); Amount Due Now decision applied.
