@@ -68,7 +68,9 @@ function threadSnapshot(thread: AssistantThreadState): string {
   return JSON.stringify({
     taskState: withNoticeKey(thread.taskState),
     activeTaskId: thread.activeTaskId,
-    tasks: thread.tasks.map((task) => ({ ...task, state: withNoticeKey(task.state) })),
+    // Issue 03d: a task's model history is not part of this snapshot. It was not compared before 03d (it lived on the thread). The
+    // rejected-call contract is about task state and surfaces; history is compared by its own test (see the history test below).
+    tasks: thread.tasks.map(({ conversationHistory: _history, ...task }) => ({ ...task, state: withNoticeKey(task.state) })),
     activeSurfaces: thread.activeSurfaces,
     supersededSurfaces: thread.supersededSurfaces,
     lastSurfaces: thread.lastSurfaces,
@@ -168,6 +170,33 @@ test("a rejected call leaves the thread's task state and surfaces unchanged and 
     assert.equal(response.ok, true);
     assert.equal(threadSnapshot(runtime.getThread("argument-validation-state")), snapshotBefore);
     assert.ok(diagnostics.some((event) => event.stage === "tool_execution" && event.succeeded === false && event.failureClass === "MODEL_SELECTION_FAILURE"));
+  } finally {
+    env.close();
+  }
+});
+
+test("a rejected call's steps land only in the active task's model history, which mirrors the thread's history (issue 03d)", async () => {
+  const env = LocalGuestEnvironment.openNode({ databasePath: ":memory:" });
+  try {
+    const model = scriptedToolModel({
+      "Find stays": { name: "search_stays", args: VALID_SEARCH },
+      Broken: { name: "search_stays", args: { city: "Lagos", nights: "four" } },
+    }, []);
+    const runtime = new ShortletAssistantRuntime(env, model, {});
+    await runtime.handleTurn("argument-validation-history", "Find stays in Old Ikoyi");
+    await runtime.handleTurn("argument-validation-history", "Broken search for Old Ikoyi");
+
+    const thread = runtime.getThread("argument-validation-history");
+    const active = thread.tasks.find((task) => task.taskId === thread.activeTaskId)!;
+    assert.equal(thread.conversationHistory, active.conversationHistory, "the thread's history is the active task's history");
+    // The commit rebuilds the history (a summary line first; assistant steps are not kept), so the turn's own steps are its last ones.
+    // ADR 0106: the rejected turn's text is not kept, and its rejected argument value does not re-enter history (args are empty).
+    const trailing = thread.conversationHistory.slice(-2);
+    assert.deepEqual(trailing.map((step) => step.role), ["tool_calls", "tool_results"], "the rejected turn's own steps are the last ones in the history");
+    const calls = trailing[0];
+    assert.equal(calls?.role === "tool_calls" && JSON.stringify(calls.calls).includes("four"), false, "the rejected argument value is not in the history");
+    const last = trailing[1];
+    assert.equal(last?.role === "tool_results" && last.results[0]?.isError, true, "the rejected call is recorded as an error result");
   } finally {
     env.close();
   }

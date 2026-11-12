@@ -9,7 +9,7 @@ import type {
   AssistantModelResponse,
 } from "./assistant-model.js";
 import { ModelRequestGuardError } from "./assistant-model.js";
-import type { ModePresentation } from "../../../web-agent/src/guest-content.js";
+import type { ModePresentation } from "./assistant-platform.js";
 import { AssistantTurnRun, type AssistantTurnRecord } from "./assistant-turn-record.js";
 import { findToolArgumentViolation, toolArgumentFailureMessage } from "./assistant-tool-arguments.js";
 import {

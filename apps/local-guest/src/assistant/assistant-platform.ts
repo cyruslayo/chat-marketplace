@@ -7,6 +7,7 @@ import type { LocalGuestEnvironment } from "../fixture.js";
 import type { CommandPrincipal } from "../../../../packages/platform-core/src/envelope.js";
 import { MAX_PLANNER_TOOL_ROUNDS } from "../turn-budget.js";
 import { validateModePresentation, type ModePresentation } from "../../../web-agent/src/guest-content.js";
+export type { ModePresentation } from "../../../web-agent/src/guest-content.js";
 
 /**
  * The platform half of the concierge agent (ADR 0099: the platform owns the Agent; a pack
