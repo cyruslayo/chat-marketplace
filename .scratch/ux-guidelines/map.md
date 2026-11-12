@@ -50,10 +50,11 @@ Frontier: the first open, unblocked, unclaimed issue in number order.
 
 ## Open owner decisions
 
-- **"Amount Due Now"** (guideline §9/§10) versus the current `GUEST_FACT_LABELS.amountDueNow` = "Total to complete booking". **Open, back with the owner (11 Nov 2026).** The glossary meaning (`domains/shortlet/CONTEXT.md`: All-In Stay Total plus any upfront deposit) is what the label already shows. Guest UI consistency issue 12 (c0db5d5, 2 Oct 2026) chose the plain wording on purpose: the stay and the deposit are collected as two payments, so "Amount Due Now ₦390,000" would misread when the first charge is ₦370,000. Do not change the label until the owner decides. 05 records the outcome.
+- **"Amount Due Now"** (guideline §9/§10) versus the current `GUEST_FACT_LABELS.amountDueNow` = "Total to complete booking". **Decided 12 Nov 2026: keep "Total to complete booking".** It is the guest label for the glossary term Amount Due Now; do not rename it from the guideline text. The glossary meaning (`domains/shortlet/CONTEXT.md`: All-In Stay Total plus any upfront deposit) is what the label already shows. Guest UI consistency issue 12 (c0db5d5, 2 Oct 2026) chose the plain wording on purpose: the stay and the deposit are collected as two payments, so "Amount Due Now ₦390,000" would misread when the first charge is ₦370,000. 05 records the decision.
 - **Server-computed total plus deposit** in `discovery-a2ui.ts:147`. **Decided in 10:** render the existing projected `amountDueNowKobo`; no presentation-level addition, no follow-up domain task.
 - **Whether the owner maintains `@cylayo/weaver-web`.** **Decided:** yes, but the published 0.2.1/0.3.1 ignore the A2UI accessibility labels and there is no newer release, so 13 (and 16, which found no guest Modal) use the owner-approved client fallback.
 - **Counsel-approved Extended Stay text.** 28 added only the owner-approved structural line; the cancellation and Notice to End terms still need counsel text (an open gate for 31).
+- **Release sign-off (31).** **Decided 12 Nov 2026:** 31 may sign off with the Extended Stay counsel text (28) and the user study (29) listed as open gates; it no longer waits for 29.
 - **Funnel events (30).** **Decided 11 Nov 2026:** all three approved; implemented in 32.
 
 ## Context pointers
