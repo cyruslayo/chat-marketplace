@@ -1617,6 +1617,8 @@ export class AssistantRuntime {
         code: "CONCIERGE_UNAVAILABLE",
         message: "The concierge is temporarily unavailable. Please try again.",
         stopReason,
+        // The closed outcome this turn was already counted under is reported too, so a failed turn is never a blank reading.
+        controlOutcome,
         ...((activeStage === "provider_request" || activeStage === "function_result_round_trip") && isProviderUnavailable(error)
           ? { providerUnavailable: true } : {}),
       };

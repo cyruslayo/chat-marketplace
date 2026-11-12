@@ -283,7 +283,7 @@ test("the scope-classifier instruction quotes none of the live eval's case texts
   for (const testCase of TERSE_FOLLOW_UP_CASES) {
     await classifier.assess(testCase.text, {
       domain: "shortlet", description: "shortlet stays", hasShortlist: false, hasSelectedStay: false, hasOffer: false,
-      openQuestion: testCase.openQuestion, resultCount: testCase.seededResults ?? 0,
+      openQuestion: testCase.openQuestion, resultCount: testCase.needsResults === true ? 2 : 0,
     });
   }
   assert.equal(instructions.length, TERSE_FOLLOW_UP_CASES.length, "every case was classified");

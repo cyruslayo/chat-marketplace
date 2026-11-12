@@ -98,9 +98,9 @@ npm run guest:local
 `
 Navigate to http://localhost:3001 and interact with the live assistant.
 
-## Terse follow-up cases (issue 61)
+## Terse follow-up cases (issues 61 and 63)
 
-Every offline test scripts the classifier verdict, so the live model's own reading of a terse answer is measured separately (ADR 0106: false refusals are evaluated separately). The offline cases in `test/assistant-terse-followups.test.ts` cover the first five rows, warm and cold; each asserts the classifier request's `openQuestion` code and the committed fact or next step. The three held-out rows live only in the live eval (`scripts/pilot-agent-smoke-terse.ts`), never in the classifier instruction or any other prompt, so a pass is the model's reading and not a quoted phrase.
+Every offline test scripts the classifier verdict, so the live model's own reading of a terse answer is measured separately (ADR 0106: false refusals are evaluated separately). The offline cases in `test/assistant-terse-followups.test.ts` cover the first five rows, warm and cold; each asserts the classifier request's `openQuestion` code and the committed fact or next step. `test/assistant-terse-slot-retention.test.ts` covers the answer being kept across a cold restore, including the fail-closed paths. The three held-out rows live only in the live eval (`scripts/pilot-agent-smoke-terse.ts`), never in the classifier instruction or any other prompt, so a pass is the model's reading and not a quoted phrase.
 
 | Open question | Guest text | Expected fact |
 |---|---|---|
@@ -108,14 +108,16 @@ Every offline test scripts the classifier verdict, so the live model's own readi
 | nights | "a week" / "3" | nights 7 / 3 |
 | pick_result | "the first one" / "the second" | opens result 1 / 2 |
 | date_confirm | "yes" | check-in confirmed |
-| where | "Wuse 2" | Abuja, Wuse 2 |
+| where | "Wuse 2" | Abuja |
 | party_size (held-out, live only) | "my partner and I" | partySize 2 |
 | nights (held-out, live only) | "two weeks" | nights 14 |
-| pick_result (held-out, live only) | "the last one" (three results shown) | opens result 3 |
+| pick_result (held-out, live only) | "the last one" | opens the last shown result |
 
 A case whose verdict comes back `unclear` falls back to the issue 59 re-ask (the fixed question plus its chips), never the generic `unavailable` copy.
 
-The suite's own request budget is four per case: 13 cases × 4 = 52 requests, separate from the journey budget.
+Each eval case runs the journey that asks the question, on the staging-like clock (27 Oct 2026): a real search that ends with the assistant asking for the missing fact, a real discovery surface before a pick, or a server-shown date before "yes". The set-up messages are answered by a closed scripted model; only the measured reply reaches the live model. A case passes only when the verdict is `in_scope` (or validly `mixed`), the classifier request carried the expected `openQuestion`, **and** the thread kept the answered slot after a cold restore (task state read with closed values: party size, nights or the stated stay, a selected result within the shown count, a guest-authored check-in, a city). A verdict with no answer is a FAIL, not a pass.
+
+The suite's own request budget is four per case: 13 cases × 4 = 52 requests, separate from the journey budget. Set-up turns spend none of it.
 
 ### Owner live run
 

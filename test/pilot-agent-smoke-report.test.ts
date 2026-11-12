@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+const handlesAt = (label: string) => process.stderr.write(`TRACE ${label}: handles=${(process as unknown as { _getActiveHandles(): { constructor: { name: string } }[] })._getActiveHandles().map((handle) => handle.constructor.name).join(",")} requests=${(process as unknown as { _getActiveRequests(): { constructor: { name: string } }[] })._getActiveRequests().map((request) => request.constructor.name).join(",")}\n`);
+setTimeout(() => handlesAt("at 6s"), 6000).unref();
 import { renderBenchmarkDocument, validateLiveBenchmarkResult, type SmokeResult } from "../scripts/pilot-agent-smoke-report.js";
 import { buildPerformanceReport } from "../scripts/pilot-agent-smoke-metrics.js";
 import { SMOKE_GRADING_PROFILE } from "../scripts/pilot-agent-smoke-grading.js";
 import { ASSISTANT_CONTROL_OUTCOMES } from "../apps/local-guest/src/assistant/assistant-runtime.js";
-import { evaluateTerseFollowUps, holdsAnsweredSlot, renderTerseFollowUpReport, scoreTerseCase } from "../scripts/pilot-agent-smoke-terse.js";
+import { evaluateTerseFollowUps, holdsAnsweredSlot, renderTerseFollowUpReport, scoreTerseCase, TERSE_FOLLOW_UP_CASES } from "../scripts/pilot-agent-smoke-terse.js";
+import { REFERENCE_TERSE_ACTIONS } from "../scripts/pilot-agent-smoke-reference.js";
 import { createInitialTaskState } from "../apps/local-guest/src/assistant/assistant-state.js";
 import type { AssistantModelClient, AssistantModelRequest, AssistantModelResponse } from "../apps/local-guest/src/assistant/assistant-model.js";
 
@@ -145,19 +148,45 @@ test("AC6: failed task selection does not become a false refusal without refusal
 // rate; a fake that answers every case gives 0; the rendered report carries closed codes only (no guest or model text).
 
 const EMPTY_SLOTS = { city: null, neighbourhood: null, bedrooms: null, nights: null, guests: null, checkIn: null, checkOut: null } as const;
+const FALLBACK_SEARCH = { id: "terse-search", name: "search_stays", args: { city: "Lagos" } } as const;
+
+/** The guest message a request carries: the classifier envelope's `message`, or the last user step's text. */
+function requestMessage(request: AssistantModelRequest): string {
+  const user = [...request.history].reverse().find((step) => step.role === "user");
+  if (!user || !("text" in user)) return "";
+  try {
+    const envelope = JSON.parse(user.text) as { readonly message?: unknown };
+    return typeof envelope.message === "string" ? envelope.message : user.text;
+  } catch {
+    return user.text;
+  }
+}
+
+/**
+ * Issue 63: what a correct planner does with each terse answer, on the journey the set-up reached. The scripted reference holds the
+ * same fixed actions; without them the fake leaves the slot empty and the honest pass rule fails the case, which is the behaviour
+ * under test.
+ */
+function tersePlan(message: string): AssistantModelResponse {
+  return { toolCalls: [...(REFERENCE_TERSE_ACTIONS[message] ?? [FALLBACK_SEARCH])] };
+}
+
+/** The three pick cases: their answer is a details request, which authorizes opening a shown result. */
+const PICK_MESSAGES = new Set(["the first one", "the second", "the last one"]);
 
 function fakeTerseModel(refuse: (message: string) => "unclear" | "out_of_scope" | null): AssistantModelClient {
   return {
     generate: async (request) => {
       if (request.structuredOutput?.name === "concierge_scope") {
-        const user = [...request.history].reverse().find((step) => step.role === "user");
-        const message = user && "text" in user ? (JSON.parse(user.text) as { readonly message: string }).message : "";
+        const message = requestMessage(request);
         const refused = refuse(message);
         const scope = refused ?? "in_scope";
-        return { text: JSON.stringify({ scope, risk: "ordinary", intents: scope === "in_scope" ? ["search"] : [], reasonCode: scope === "in_scope" ? "supported" : scope === "unclear" ? "unclear" : "outside", slots: EMPTY_SLOTS }) };
+        const intents = scope !== "in_scope" ? [] : PICK_MESSAGES.has(message) ? ["details"] : ["search"];
+        return { text: JSON.stringify({ scope, risk: "ordinary", intents, reasonCode: scope === "in_scope" ? "supported" : scope === "unclear" ? "unclear" : "outside", slots: EMPTY_SLOTS }) };
       }
-      // A planner reply: a benign discovery search so the turn completes.
-      return { toolCalls: [{ id: "terse-search", name: "search_stays", args: { city: "Lagos" } }] };
+      if (request.history.at(-1)?.role === "tool_results") return { text: JSON.stringify({ kind: "show_results", references: [] }) };
+      // The correct planner action for the case's terse answer, so the answered slot can land.
+      return tersePlan(requestMessage(request));
     },
   };
 }
@@ -386,28 +415,94 @@ test("Issue 61: the answered-slot check reads closed task-state values", () => {
   state.stayIntent.location = "Abuja";
   assert.equal(holdsAnsweredSlot(state, "where", 0), true);
   assert.equal(holdsAnsweredSlot(state, "date_confirm", 0), false);
+  // ADR 0092: a demo date is the server's, not the guest's, so it answers nothing.
   state.stayIntent.checkIn = "2026-11-12";
+  state.stayIntent.isDemoDate = true;
+  assert.equal(holdsAnsweredSlot(state, "date_confirm", 0), false, "a demo date is not a confirmed check-in");
+  state.stayIntent.isDemoDate = false;
   assert.equal(holdsAnsweredSlot(state, "date_confirm", 0), true);
 });
 
 test("Issue 61: the pick_result cases are evaluated against a shown result list, as a closed count only", async () => {
   const sent: { readonly message: string; readonly openQuestion: unknown; readonly resultCount: unknown }[] = [];
+  const picks = new Set(["the first one", "the second", "the last one"]);
   const model: AssistantModelClient = {
     generate: async (request) => {
       if (request.structuredOutput?.name === "concierge_scope") {
-        const user = [...request.history].reverse().find((step) => step.role === "user");
-        const envelope = user && "text" in user ? JSON.parse(user.text) as { readonly message: string; readonly context: Record<string, unknown> } : undefined;
-        if (envelope) sent.push({ message: envelope.message, openQuestion: envelope.context.openQuestion, resultCount: envelope.context.resultCount });
-        return { text: validVerdict };
+        const message = requestMessage(request);
+        const envelope = [...request.history].reverse().find((step) => step.role === "user");
+        if (envelope && "text" in envelope) {
+          const parsed = JSON.parse(envelope.text) as { readonly context: Record<string, unknown> };
+          sent.push({ message, openQuestion: parsed.context.openQuestion, resultCount: parsed.context.resultCount });
+        }
+        // A pick answers with the details intent, which authorizes opening a shown result.
+        return { text: JSON.stringify({ scope: "in_scope", risk: "ordinary", intents: picks.has(message) ? ["details"] : ["search"], reasonCode: "supported", slots: EMPTY_SLOTS }) };
+      }
+      if (request.history.at(-1)?.role === "tool_results") return { text: JSON.stringify({ kind: "show_details", references: [] }) };
+      return tersePlan(requestMessage(request));
+    },
+  };
+  const report = await evaluateTerseFollowUps(model);
+  const pickRequests = sent.filter((entry) => picks.has(entry.message));
+  assert.equal(pickRequests.length, 3, "all three pick cases reach the classifier");
+  const counts = Object.fromEntries(pickRequests.map((pick) => [pick.message, pick.resultCount]));
+  // The city-wide search shows two results, so the held-out "last" is the second of two — never a seeded count.
+  assert.deepEqual(counts, { "the first one": 2, "the second": 2, "the last one": 2 });
+  for (const pick of pickRequests) assert.equal(pick.openQuestion, "pick_result");
+  assert.ok(report.cases.filter((entry) => entry.id.startsWith("pick_result:")).every((entry) => entry.pass), "a pick that opens a shown result passes");
+});
+
+// Issue 63 AC7: the pass rule is the verdict AND the answer. A model that classifies every reply correctly but never acts leaves the
+// thread without the slot, so every case must FAIL even though every verdict and code is right.
+test("Issue 63: the terse eval's pass rule requires the answered slot, not only the classifier verdict", async () => {
+  const model: AssistantModelClient = {
+    generate: async (request) => {
+      if (request.structuredOutput?.name === "concierge_scope") {
+        return { text: JSON.stringify({ scope: "in_scope", risk: "ordinary", intents: ["search"], reasonCode: "supported", slots: EMPTY_SLOTS }) };
+      }
+      // A typed reply and no operation: the turn succeeds, the answer never lands.
+      return { text: JSON.stringify({ kind: "show_results", references: [] }) };
+    },
+  };
+  const report = await evaluateTerseFollowUps(model);
+  assert.equal(report.cases.length, 13);
+  assert.ok(report.cases.every((entry) => entry.scope === "in_scope"), "every verdict is in scope");
+  assert.ok(report.cases.every((entry) => entry.openQuestionSent === entry.openQuestion), "every request carried the right code");
+  assert.equal(report.falseRefusalRate, 0, "no case is a false refusal");
+  // Two answers land without a planner action, both as guest-authored state: the shown-back date the server settles from the yes,
+  // and a typed stay length ("a week", "two weeks"), which ADR 0106 (8 Nov 2026) records as the stated stay at every turn start.
+  const settled = report.cases.filter((entry) => entry.answeredSlotHeld).map((entry) => entry.id);
+  assert.deepEqual(settled, ["nights:week", "nights:held-out-fortnight", "date_confirm:affirm"], "only guest-authored answers land without a planner action");
+  assert.ok(report.cases.filter((entry) => !settled.includes(entry.id)).every((entry) => entry.pass === false), "a verdict with no answer is not a pass");
+  assert.ok(report.cases.filter((entry) => settled.includes(entry.id)).every((entry) => entry.pass === true), "the answers that did land pass");
+});
+
+// Issue 63 AC8: every case starts from the journey that asks the question, so the code on the classifier request comes from the thread
+// (a cold restore), not from a hand-set field. A pick also reaches a real discovery surface with a shown result count.
+test("Issue 63: every terse eval case runs from a realistic cold journey, not an empty thread", async () => {
+  const requests: { readonly message: string; readonly openQuestion: unknown; readonly resultCount: unknown }[] = [];
+  const model: AssistantModelClient = {
+    generate: async (request) => {
+      if (request.structuredOutput?.name === "concierge_scope") {
+        const envelope = [...request.history].reverse().find((step) => step.role === "user");
+        if (envelope && "text" in envelope) {
+          const parsed = JSON.parse(envelope.text) as { readonly message: string; readonly context: Record<string, unknown> };
+          requests.push({ message: parsed.message, openQuestion: parsed.context.openQuestion, resultCount: parsed.context.resultCount });
+        }
+        return { text: JSON.stringify({ scope: "in_scope", risk: "ordinary", intents: ["search"], reasonCode: "supported", slots: EMPTY_SLOTS }) };
       }
       return { toolCalls: [{ id: "terse-search", name: "search_stays", args: { city: "Lagos" } }] };
     },
   };
   const report = await evaluateTerseFollowUps(model);
-  const picks = sent.filter((entry) => entry.message === "the first one" || entry.message === "the second" || entry.message === "the last one");
-  assert.equal(picks.length, 3, "all three pick cases reach the classifier");
-  const counts = Object.fromEntries(picks.map((pick) => [pick.message, pick.resultCount]));
-  assert.deepEqual(counts, { "the first one": 2, "the second": 2, "the last one": 3 });
-  for (const pick of picks) assert.equal(pick.openQuestion, "pick_result");
-  assert.ok(report.cases.filter((entry) => entry.id.startsWith("pick_result:")).every((entry) => entry.pass));
+  assert.equal(report.cases.length, 13);
+  assert.equal(report.cases.filter((entry) => entry.scopeFailure === "setup_failed").length, 0, "every set-up journey reached the question");
+  const caseRequests = new Map(requests.map((entry) => [entry.message, entry]));
+  for (const testCase of TERSE_FOLLOW_UP_CASES) {
+    assert.ok(testCase.setup.length > 0, `${testCase.id}: the case starts from a guest journey`);
+    const request = caseRequests.get(testCase.text);
+    assert.ok(request, `${testCase.id}: the measured reply reached the classifier`);
+    assert.equal(request.openQuestion, testCase.openQuestion, `${testCase.id}: the code came from the journey's thread`);
+    if (testCase.needsResults === true) assert.ok(Number(request.resultCount) >= 2, `${testCase.id}: a real discovery surface is shown`);
+  }
 });
