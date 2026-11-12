@@ -1,0 +1,58 @@
+Payment choice 200 /payments/offers/offer-9218df47-528e-4cc8-8524-7b785ec3a8dd
+
+Payment required · Shortlet
+Skip to main content
+Shortlet
+Search
+ (completed)
+Stay
+ (completed)
+Request
+ (completed)
+Offer
+ (completed)
+Pay
+ (current step)
+Confirmed
+ (not started)
+Booking payment
+Payment required
+Secure checkout is available
+Pay by 
+11:20 am WAT, 3 Sept 2026
+ · 20 minutes left
+Your stay
+Luxury 2-Bedroom Apartment in Old Ikoyi
+Check-in
+10
+Thu, 10 Sept 2026
+→
+Check-out
+13
+Sun, 13 Sept 2026
+3 nights · 2 guests
+All-In Stay Total
+₦370,000
+Refundable Security Deposit (separate): 
+₦20,000
+Total to complete booking: 
+₦390,000
+Next payment: 
+stay payment · ₦370,000
+The Refundable Security Deposit is charged separately when one applies.
+How would you like to pay?
+Payment method
+Card
+Hosted card checkout. Do not start another payment while this attempt is pending.
+Bank transfer
+If you choose bank transfer, you can't switch to card until the transfer account expires.
+Manual bank transfer
+Pay our business account and upload your receipt. Your booking confirms only after we check the money has arrived. You can't switch until this attempt expires or is declined.
+Continue to stay payment · ₦370,000
+What happens next
+1
+If payment is verified before the deadline, you'll get your booking confirmation.
+2
+If the deadline passes, the Payment Window expires and the dates are released.
+3
+A late payment needs review and does not confirm your booking. Contact Shortlet if you sent money after the deadline.
