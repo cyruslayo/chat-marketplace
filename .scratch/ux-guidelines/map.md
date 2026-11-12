@@ -28,6 +28,7 @@ Every critical guest and Operator screen meets the screen contract (§5), vocabu
 | B | 2: hierarchy, controls, accessibility | 13 to 20 | 20 is blocked by 05. 14 and 19 change `client.ts`. |
 | C | 3: recovery, network, parity | 21 to 25 | 21 and 24 change `client.ts`. 22 is the regression suite. |
 | D | 4: Operator and Extended Stays | 26, 27, 28 | 28 is ready-for-human (counsel-approved text, ADR 0092). |
+| F | Phase 0 follow-ups | 12, 20, 33, 34, 35, 36, 37, 38 | Owner approved 12 Nov 2026. 20 carries the only P1 (standard unit page without Request to Book). 35, 36 and 37 may touch `client.ts` or the foundation CSS: run them one at a time. |
 | E | 5: user-observed gate | 29, 30, 31, 32 | 29 is ready-for-human. 30 is resolved (owner approved the events); 32 implements them. 31 is blocked by every open P0 and P1. |
 
 Frontier: the first open, unblocked, unclaimed issue in number order.
