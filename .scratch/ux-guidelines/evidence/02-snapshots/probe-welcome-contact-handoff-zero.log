@@ -1,0 +1,161 @@
+WELCOME 200 <title>Shortlet · Lagos and Abuja apartments, nights or months 
+
+Shortlet · Lagos and Abuja apartments, nights or months
+Skip to main content
+Shortlet
+How it works
+Your money
+Questions
+Light
+Dark
+Start a conversation
+Start
+Furnished apartments · by the night or month
+Your apartment in Lagos or Abuja, 
+settled
+ in one conversation.
+Say what you need, for a few nights or a few months. See only what you can book, at the full price. Your money stays yours until it’s confirmed.
+Describe your stay
+See what you can book
+Somewhere quiet in Abuja for a week
+Lekki, 3 nights from Friday, 4 of us
+Ikoyi, 2 months from 5 Jan, relocating
+Nothing is charged, and nothing is sent until you press send.
+Shortlet
+Search
+Stay
+Request
+Offer
+Pay
+Confirmed
+Concierge
+Hello. Tell me the area, your dates and how many guests.
+An apartment in Lagos from 10 Sept, 3 nights, 2 of us
+Lagos
+10–13 Sept
+2 guests
+Concierge
+2 apartments you can book for Thu 10 to Sun 13 Sept. Prices are all-in.
+Luxury 2-Bedroom Apartment in Old Ikoyi
+₦370,000 
+All-In Stay Total for 3 nights
++ ₦20,000 Refundable Security Deposit (separate)
+Serene 1-Bedroom Suite in Lekki Phase 1
+₦200,000 
+All-In Stay Total for 3 nights
++ ₦10,000 Refundable Security Deposit (separate)
+Ask about these stays…
+Example booking · real app screens
+The Operator confirms first
+A verified company manages each apartment.
+Priced all-in for your dates
+Any deposit sits on its own line.
+Dates held while they reply
+Up to 30 minutes in active hours.
+Pay only after the yes
+If they decline, nothing is due.
+How it works · one stay, five screens
+Five screens you’ll see. 
+Five hassles you won’t.
+Example booking · real app screens
+1 · Search
+CONTACT LINK /guest/contact?kind=phone&returnTo=%2Fbooking-requests%2Fdrafts%2Fdraft-f840449c-6d91-4064-85a4-3317af110330
+CONTACT 200 
+
+Guest contact
+Skip to main content
+Guest contact
+Used only to coordinate your booking and payment.
+Phone number 
+*
+Required before you send a Booking Request. Enter a Nigerian mobile number, such as 0801 234 5678 or +234 801 234 5678. This is for booking coordination, not identity verification.
+Save phone number
+
+CONTACT FORM [
+  '<form class="ui-panel" method="post" action="/guest/contact/phone">'
+] [
+  '<input id="phoneNumber" name="phoneNumber" type="tel" inputmode="tel" autocomplete="tel" enterkeyhint="done" maxlength="32" required aria-describedby="phoneNumber-help" value="+2348012345678">',
+  '<input type="hidden" name="returnTo" value="/booking-requests/drafts/draft-f840449c-6d91-4064-85a4-3317af110330">',
+  '<input type="hidden" name="expectedRevision" value="2">'
+]
+CONTACT LABEL? [
+  '<label class="ui-field__label" for="phoneNumber">Phone number <span aria-hidden="true">*</span></label>'
+]
+INVALID PHONE POST /guest/contact/phone 400 
+
+Guest contact
+Skip to main content
+Guest contact
+Used only to coordinate your booking and payment.
+Phone number 
+*
+Required before you send a Booking Request. Enter a Nigerian mobile number, such as 0801 234 5678 or +234 801 234 5678. This is for booking coordination, not identity verification.
+Enter a Nigerian mobile number, such as 0801 234 5678.
+Save phone number
+
+CARD POST 303 /payments/offers/offer-bfcd6573-0eb4-44cb-a5e9-8bb4c5110c54/continue
+CARD HANDOFF 200 
+
+Local demo payment
+Skip to main content
+Local pilot only
+Local demo payment
+This deterministic local provider verifies the authoritative amount without collecting card details.
+Complete local payment
+
+PAYMENT CHOICE AFTER CARD 200 
+
+Payment handoff ready · Payment not yet verified · Shortlet
+Skip to main content
+Shortlet
+Search
+ (completed)
+Stay
+ (completed)
+Request
+ (completed)
+Offer
+ (completed)
+Pay
+ (current step)
+Confirmed
+ (not started)
+Booking payment
+Payment status
+Payment handoff ready · Payment not yet verified
+Pay by 
+11:20 am WAT, 3 Sept 2026
+ · 20 minutes left
+Your stay
+Luxury 2-Bedroom Apartment in Old Ikoyi
+Check-in
+10
+Thu, 10 Sept 2026
+→
+Check-out
+13
+Sun, 13 Sept 2026
+3 nights · 2 guests
+All-In Stay Total
+₦370,000
+Refundable Security Deposit (separate): 
+₦20,000
+Total to complete booking: 
+₦390,000
+Next payment: 
+stay payment · ₦370,000
+Continue the current payment attempt. Payment has not succeeded and your booking is not confirmed. Your booking details will be retained when you return. Do not start another payment while this attempt is pending.
+What happens next
+1
+If payment is verified before the deadline, you'll get your booking confirmation.
+2
+If the deadline passes, the Payment Window expires and the dates are released.
+3
+A late payment needs review and does not confirm your booking. Contact Shortlet if you sent money after the deadline.
+Continue to local demo payment
+
+ZERO SURF thread-g-3f1c7d21-c81a-4cfb-a2ff-6d76a5ad3d0d:discovery:results /stays/search?location=Lagos&neighbourhood=Old+Ikoyi&checkIn=2026-09-10&checkOut=2026-09-13&partySize=12
+   result-summary : No stays match this search
+   search-context : Your search: Old Ikoyi · 12 guests · 10 Sept 2026 – 13 Sept 2026
+   zero-result-guidance : Try another neighbourhood, dates, or guest count in your message. Your search details are still here to refine.
+ZERO MESSAGES ["I found 0 eligible places in Lagos for your stay from Thu 10 Sept 2026 to Sun 13 Sept 2026. You can view the details below."]

@@ -2,13 +2,13 @@
 
 Status: needs-triage
 Type: task
-Blocked by: 29 and every open P0/P1 issue
+Blocked by: every open P0/P1 issue
 Phase: 5 (Batch E)
 Applicable ADRs: guideline §14; all ADRs cited by the resolved issues
 
 ## What to build
 
-- Re-run the critical study tasks with new participants after the P0 and P1 fixes.
+- If the user study (29) has run, re-run its critical tasks with new participants after the P0 and P1 fixes. If it has not, list it as an open gate (owner decision, 12 Nov 2026).
 - Run the pre-merge gates once.
 - Write `.scratch/ux-guidelines/sign-off.md`: the evidence, known P2 and P3 issues, and the business and legal gates still open (for example the ADR 0092 counsel text).
 
@@ -16,7 +16,7 @@ Applicable ADRs: guideline §14; all ADRs cited by the resolved issues
 
 1. No open P0 or P1 row remains in the matrix
 2. The pre-merge gates pass, apart from the known accepted failures in AGENTS.md
-3. The sign-off report lists the open gates and the owner's approval
+3. The sign-off report lists the open gates (at least the ADR 0092 counsel text from 28 and, unless it has run, the user study from 29) and the owner's approval
 
 ## Rules
 
@@ -26,3 +26,7 @@ Applicable ADRs: guideline §14; all ADRs cited by the resolved issues
 - Commit by explicit path only. Never stage `apps/local-guest/dist/*.js` (except a regenerated `client.js`), `apps/cloudflare/public/_headers` or generated screenshots. No stash, reset or clean.
 
 ## Comments
+
+### Owner decision (12 Nov 2026)
+
+Sign-off may go ahead with the Extended Stay cancellation and Notice to End counsel text (issue 28) and the user study (issue 29) listed as open gates. 31 no longer waits for 29.

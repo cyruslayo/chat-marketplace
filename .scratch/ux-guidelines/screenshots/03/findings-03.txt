@@ -1,0 +1,66 @@
+inbox light 320: height 1173 no horizontal overflow
+detail-awaiting light 320: height 1997 no horizontal overflow
+  UNDER 44px: input "attest" 24x24
+  UNDER 44px: input "reason" 24x24
+  UNDER 44px: input "reason" 24x24
+detail-confirmed light 320: height 1271 no horizontal overflow
+inbox light 390: height 1101 no horizontal overflow
+detail-awaiting light 390: height 1853 no horizontal overflow
+  UNDER 44px: input "attest" 24x24
+  UNDER 44px: input "reason" 24x24
+  UNDER 44px: input "reason" 24x24
+detail-confirmed light 390: height 1189 no horizontal overflow
+inbox light 768: height 900 no horizontal overflow
+detail-awaiting light 768: height 1469 no horizontal overflow
+  UNDER 44px: input "attest" 24x24
+  UNDER 44px: input "reason" 24x24
+  UNDER 44px: input "reason" 24x24
+detail-confirmed light 768: height 900 no horizontal overflow
+inbox light 1280: height 900 no horizontal overflow
+detail-awaiting light 1280: height 1397 no horizontal overflow
+  UNDER 44px: input "attest" 24x24
+  UNDER 44px: input "reason" 24x24
+  UNDER 44px: input "reason" 24x24
+detail-confirmed light 1280: height 900 no horizontal overflow
+inbox dark 320: height 1173 no horizontal overflow
+detail-awaiting dark 320: height 1997 no horizontal overflow
+  UNDER 44px: input "attest" 24x24
+  UNDER 44px: input "reason" 24x24
+  UNDER 44px: input "reason" 24x24
+detail-confirmed dark 320: height 1271 no horizontal overflow
+inbox dark 390: height 1101 no horizontal overflow
+detail-awaiting dark 390: height 1853 no horizontal overflow
+  UNDER 44px: input "attest" 24x24
+  UNDER 44px: input "reason" 24x24
+  UNDER 44px: input "reason" 24x24
+detail-confirmed dark 390: height 1189 no horizontal overflow
+inbox dark 768: height 900 no horizontal overflow
+detail-awaiting dark 768: height 1469 no horizontal overflow
+  UNDER 44px: input "attest" 24x24
+  UNDER 44px: input "reason" 24x24
+  UNDER 44px: input "reason" 24x24
+detail-confirmed dark 768: height 900 no horizontal overflow
+inbox dark 1280: height 900 no horizontal overflow
+detail-awaiting dark 1280: height 1397 no horizontal overflow
+  UNDER 44px: input "attest" 24x24
+  UNDER 44px: input "reason" 24x24
+  UNDER 44px: input "reason" 24x24
+detail-confirmed dark 1280: height 900 no horizontal overflow
+detail decline open light 320: height 2293 no horizontal overflow
+  UNDER 44px: input "attest" 24x24
+  UNDER 44px: input "reason" 24x24
+  UNDER 44px: input "reason" 24x24
+detail decline open light 390: height 2149 no horizontal overflow
+  UNDER 44px: input "attest" 24x24
+  UNDER 44px: input "reason" 24x24
+  UNDER 44px: input "reason" 24x24
+detail decline open light 768: height 1717 no horizontal overflow
+  UNDER 44px: input "attest" 24x24
+  UNDER 44px: input "reason" 24x24
+  UNDER 44px: input "reason" 24x24
+detail decline open light 1280: height 1645 no horizontal overflow
+  UNDER 44px: input "attest" 24x24
+  UNDER 44px: input "reason" 24x24
+  UNDER 44px: input "reason" 24x24
+client guard probe (confirm form, navigation stopped): {"disabledBefore":false,"disabledAfterSubmitEvent":true}
+server duplicate confirm at version 3: first 303, second 409

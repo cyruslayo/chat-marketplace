@@ -1,0 +1,52 @@
+Request sent 200 /booking-requests/req-b9542ae4-bb75-46d6-b0e4-af904002a032
+
+Request sent · Waiting for Operator response · Shortlet
+Skip to main content
+Shortlet
+Search
+ (completed)
+Stay
+ (completed)
+Request
+ (current step)
+Offer
+ (not started)
+Pay
+ (not started)
+Confirmed
+ (not started)
+Booking Request
+Booking Request
+Request sent · Waiting for Operator response
+Nothing is charged until you accept an offer and pay.
+Your stay
+Luxury 2-Bedroom Apartment in Old Ikoyi
+Check-in
+10
+Thu, 10 Sept 2026
+→
+Check-out
+13
+Sun, 13 Sept 2026
+3 nights · 2 guests
+If your request is accepted
+All-In Stay Total
+₦370,000
+Refundable Security Deposit (separate): 
+₦20,000
+Total to complete booking: 
+₦390,000
+Provided by Eko Prime Living Ltd (your accommodation provider)
+Request sent: 11:00 am WAT, 3 Sept 2026
+Response due by 11:30 am WAT, 3 Sept 2026
+What happens next
+1
+If Eko Prime Living Ltd confirms, you'll get a Conditional Booking Offer to review and accept.
+2
+If Eko Prime Living Ltd declines, no payment is due and you can search again.
+3
+If there's no response by the deadline, the request expires and the dates are released.
+This is a Booking Request, not yet a Reservation. It blocks the requested dates during the response window.
+If you change your mind, you can leave the offer unaccepted. When it expires, the dates are released.
+You can keep chatting here while you wait.
+Back to your conversation

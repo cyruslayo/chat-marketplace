@@ -28,6 +28,7 @@ Every critical guest and Operator screen meets the screen contract (§5), vocabu
 | B | 2: hierarchy, controls, accessibility | 13 to 20 | 20 is blocked by 05. 14 and 19 change `client.ts`. |
 | C | 3: recovery, network, parity | 21 to 25 | 21 and 24 change `client.ts`. 22 is the regression suite. |
 | D | 4: Operator and Extended Stays | 26, 27, 28 | 28 is ready-for-human (counsel-approved text, ADR 0092). |
+| F | Phase 0 follow-ups | 12, 20, 33, 34, 35, 36, 37, 38 | Owner approved 12 Nov 2026. 20 carries the only P1 (standard unit page without Request to Book). 35, 36 and 37 may touch `client.ts` or the foundation CSS: run them one at a time. |
 | E | 5: user-observed gate | 29, 30, 31, 32 | 29 is ready-for-human. 30 is resolved (owner approved the events); 32 implements them. 31 is blocked by every open P0 and P1. |
 
 Frontier: the first open, unblocked, unclaimed issue in number order.
@@ -50,10 +51,11 @@ Frontier: the first open, unblocked, unclaimed issue in number order.
 
 ## Open owner decisions
 
-- **"Amount Due Now"** (guideline §9/§10) versus the current `GUEST_FACT_LABELS.amountDueNow` = "Total to complete booking". **Open, back with the owner (11 Nov 2026).** The glossary meaning (`domains/shortlet/CONTEXT.md`: All-In Stay Total plus any upfront deposit) is what the label already shows. Guest UI consistency issue 12 (c0db5d5, 2 Oct 2026) chose the plain wording on purpose: the stay and the deposit are collected as two payments, so "Amount Due Now ₦390,000" would misread when the first charge is ₦370,000. Do not change the label until the owner decides. 05 records the outcome.
+- **"Amount Due Now"** (guideline §9/§10) versus the current `GUEST_FACT_LABELS.amountDueNow` = "Total to complete booking". **Decided 12 Nov 2026: keep "Total to complete booking".** It is the guest label for the glossary term Amount Due Now; do not rename it from the guideline text. The glossary meaning (`domains/shortlet/CONTEXT.md`: All-In Stay Total plus any upfront deposit) is what the label already shows. Guest UI consistency issue 12 (c0db5d5, 2 Oct 2026) chose the plain wording on purpose: the stay and the deposit are collected as two payments, so "Amount Due Now ₦390,000" would misread when the first charge is ₦370,000. 05 records the decision.
 - **Server-computed total plus deposit** in `discovery-a2ui.ts:147`. **Decided in 10:** render the existing projected `amountDueNowKobo`; no presentation-level addition, no follow-up domain task.
 - **Whether the owner maintains `@cylayo/weaver-web`.** **Decided:** yes, but the published 0.2.1/0.3.1 ignore the A2UI accessibility labels and there is no newer release, so 13 (and 16, which found no guest Modal) use the owner-approved client fallback.
 - **Counsel-approved Extended Stay text.** 28 added only the owner-approved structural line; the cancellation and Notice to End terms still need counsel text (an open gate for 31).
+- **Release sign-off (31).** **Decided 12 Nov 2026:** 31 may sign off with the Extended Stay counsel text (28) and the user study (29) listed as open gates; it no longer waits for 29.
 - **Funnel events (30).** **Decided 11 Nov 2026:** all three approved; implemented in 32.
 
 ## Context pointers
@@ -83,3 +85,4 @@ Frontier: the first open, unblocked, unclaimed issue in number order.
 - 28 — Extended Stay collection line: later Billing Periods are paid separately and are not charged automatically (owner-approved structural line only; cancellation and Notice to End remain counsel text). Evidence: `test/extended-stay-counsel-copy.test.ts`.
 - 29 — task study protocol prepared (nine tasks, consent script, observation sheet); the owner runs the sessions. Evidence: `.scratch/ux-guidelines/study/protocol.md`.
 - 30 — funnel-signal proposal: every §13 signal mapped to existing telemetry plus three proposed closed-enum events; no code changed pending approval. Evidence: issue 30 Comments.
+- 05: matrix consolidated (96 rows); Amount Due Now decision applied.

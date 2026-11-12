@@ -1,0 +1,43 @@
+(node:94572) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+== discovery thread-g-381c8716-5d52-4139-b3cc-d2fed5edaa1a:discovery:results route=/stays/search?location=Lagos&neighbourhood=Old+Ikoyi&checkIn=2026-09-10&checkOut=2026-09-13&partySize=2
+  result-summary (Text/h2): 1 stay to explore
+  search-context (Text/caption): Your search: Old Ikoyi · 2 guests · 10 Sept 2026 – 13 Sept 2026
+  unit-unit-lagos-ikoyi-001-title (Text/h3): Luxury 2-Bedroom Apartment in Old Ikoyi
+  unit-unit-lagos-ikoyi-001-location (Text/caption): Where: Old Ikoyi, Lagos
+  unit-unit-lagos-ikoyi-001-photo-unavailable (Text/caption): No property photos are available yet.
+  unit-unit-lagos-ikoyi-001-facts (Text): 2 bedrooms · 2 bathrooms · Sleeps 4
+  unit-unit-lagos-ikoyi-001-fit (Text/caption): Why it fits: Room for 2 (sleeps 4) · 24/7 backup power · Physically inspected 15 Jan 2026
+  unit-unit-lagos-ikoyi-001-amenities (Text/caption): Wi-Fi · 24/7 backup power · Secure parking
+  unit-unit-lagos-ikoyi-001-price-label (Text/caption): All-In Stay Total for 3 nights
+  unit-unit-lagos-ikoyi-001-price (Text/h3): ₦370,000
+  unit-unit-lagos-ikoyi-001-deposit (Text/caption): Refundable Security Deposit (separate): ₦20,000
+  unit-unit-lagos-ikoyi-001-view-button (Button/primary): [button shortlet.discovery.view-unit {"artifactId":"search-guest-demo-001","unitId":"unit-lagos-ikoyi-001"}]
+  unit-unit-lagos-ikoyi-001-view-label (Text): View apartment
+ACTION shortlet.discovery.view-unit {"artifactId":"search-guest-demo-001","unitId":"unit-lagos-ikoyi-001"}
+next ok true
+== after-action thread-g-381c8716-5d52-4139-b3cc-d2fed5edaa1a:unit:detail:1 route=/stays/unit-lagos-ikoyi-001?location=Lagos&neighbourhood=Old+Ikoyi&checkIn=2026-09-10&checkOut=2026-09-13&partySize=2&threadId=g-381c8716-5d52-4139-b3cc-d2fed5edaa1a
+  unit-detail-title (Text/h2): Luxury 2-Bedroom Apartment in Old Ikoyi
+  unit-detail-location (Text/caption): Old Ikoyi, Lagos · exact address after payment
+  unit-detail-bedrooms (Text): Bedrooms: 2 bedrooms
+  unit-detail-bathrooms (Text): Bathrooms: 2 bathrooms
+  unit-detail-sleeps (Text): Sleeps: Sleeps 4
+  unit-detail-price-label (Text/caption): All-In Stay Total · 10–13 Sept 2026 · 3 nights
+  unit-detail-price (Text/h2): ₦370,000
+  unit-detail-deposit (Text/caption): Refundable Security Deposit (separate): ₦20,000
+  unit-detail-about-heading (Text/h2): About this apartment
+  unit-detail-about (Text): A bright, quiet apartment with a spacious living room and reliable power.
+  unit-detail-amenities-heading (Text/h3): Amenities
+  unit-detail-amenity-0 (Text): Wi-Fi
+  unit-detail-amenity-1 (Text): 24/7 backup power
+  unit-detail-amenity-2 (Text): Secure parking
+  unit-detail-amenity-3 (Text): Air conditioning
+  unit-detail-amenity-4 (Text): On-site security
+  unit-detail-amenity-5 (Text): Swimming pool
+  unit-detail-photo-unavailable (Text/caption): No property photos are available yet.
+  unit-detail-inspection (Text/caption): Physical inspection completed on 15 Jan 2026. Scope: entire place possession, structure and sanitation, fire and emergency readiness, electrical and utilities, locks and privacy, access controls, cameras, listing accuracy, current media. Inspection expiry: 27 Oct 2027.
+  unit-detail-disclosure (Text/caption): Request to Book starts a request for Operator confirmation. Viewing this apartment does not reserve dates or create a Reservation.
+  unit-detail-request-button (Button/primary): [button shortlet.unit-detail.request-to-book {"artifactId":"unit-detail:unit-lagos-ikoyi-001:1","unitId":"unit-lagos-ikoyi-00]
+  unit-detail-request-label (Text): Request to Book
+  unit-detail-back-button (Button): [button shortlet.unit-detail.back-to-results {"artifactId":"search-guest-demo-001"}]
+  unit-detail-back-label (Text): Back to results
