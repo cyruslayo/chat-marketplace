@@ -15,6 +15,7 @@ import { createPlatformAccounts } from "../../../packages/platform-core/src/acco
 import type { GuestAccountAuthorityErrorCode } from "../../../packages/platform-core/src/accounts/authority.js";
 import { usableCodeHashingKey } from "../../../packages/platform-core/src/accounts/remote-port.js";
 import { SqliteGuestContactRepository } from "../../../packages/platform-core/src/accounts/contact.js";
+import { parseDurableLaneEvents, saveThreadRecord } from "../../../domains/shortlet/src/index.js";
 import { shortletDomainClient } from "./do-clients.js";
 import { SqliteModelRequestQuota } from "../../../packages/platform-core/src/model-request-quota.js";
 import { pilotLimits } from "../../pilot/src/pilot-config-core.js";
@@ -136,7 +137,10 @@ export class PlatformDO extends DurableObject<CloudflareEnv> {
     if (operation === "saveThread") {
       const threadId = text("threadId"), principalId = text("principalId"), threadJson = text("threadJson");
       if (!threadId || !principalId || !threadJson || input.tenantId !== tenantId) return new Response("Bad request", { status: 400 });
-      database.prepare("INSERT INTO guest_threads (thread_id, principal_id, tenant_id, thread_json) VALUES (?, ?, ?, ?) ON CONFLICT(thread_id) DO UPDATE SET principal_id=excluded.principal_id, tenant_id=excluded.tenant_id, thread_json=excluded.thread_json").run([threadId, principalId, tenantId, threadJson]);
+      // Issue 03e: the lane rows travel with the thread and are written in the same transaction; a malformed row fails the save.
+      const laneEvents = input.laneEvents === undefined ? [] : parseDurableLaneEvents(input.laneEvents);
+      if (laneEvents === null) return new Response("Bad request", { status: 400 });
+      saveThreadRecord(database, { threadId, principalId, tenantId, threadJson, laneEvents });
       return Response.json({ result: null });
     }
     if (operation === "findThread") {

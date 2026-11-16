@@ -1,6 +1,6 @@
 # Write one redacted row per lane event, exported with the platform tables
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 03d (lanes exist and carry a `taskId`). Open decisions O4 (thread store ownership, ADR 0101) must be answered before the placement in step 4 is final. Owner release as in 03a (ADR 0107 "Settled", 8 Nov 2026).
 Requested: 10 Nov 2026
@@ -72,8 +72,107 @@ Each is its own `test()`. Worker specs run through `npm run test:workers -- <spe
 
 ## Comments
 
-### Owner decision, 16 Nov 2026: O4, thread store ownership
+### Owner decision O4, 16 Nov 2026 (recorded by the implementing agent, word for word)
 
-- The thread store is platform-owned (ADR 0101; `PLATFORM_EXPORT_TABLES` in `apps/cloudflare/src/do-export.ts` already lists `guest_threads`; ADR 0107 decision 11 puts lanes in the platform Durable Object beside the thread header).
-- For this issue, the lane event table is created beside `guest_threads` in `domains/shortlet/src/guest-interaction-store.ts` and is listed in `PLATFORM_EXPORT_TABLES`. Step 4 is final on that basis.
-- Moving the `guest_threads` and lane DDL into a platform module is a separate follow-up issue (ADR 0101), not part of 03e. It touches migrations and the data-migration specs, so it is kept out of this change.
+"The thread store is platform-owned (ADR 0101; PLATFORM_EXPORT_TABLES in apps/cloudflare/src/do-export.ts already lists guest_threads; ADR 0107 decision 11 puts lanes in the platform Durable Object beside the thread header). For this issue, the lane event table is created beside guest_threads in domains/shortlet/src/guest-interaction-store.ts and is listed in PLATFORM_EXPORT_TABLES. Step 4 is final on that basis. Moving the guest_threads and lane DDL into a platform module is a separate follow-up issue (ADR 0101), not part of 03e."
+
+Other settled rules applied: O1 (model history is not restored), O2/O3 (reads still come from the `lanes` projection field; rows are write-only; the read-path split is 03h), O5 (New conversation is the client thread switch; no per-lane reset).
+
+### Implementing agent (Agent modes issue 03e): ADR table and plan (steps 1 and 2)
+
+Read in full: ADR 0107 (decision 11 and the corrections), ADR 0101, ADR 0075, ADR 0096 (conditions and the four-column exemption). Read in full: 0107, 0101, 0075, 0096, 0106, 0079, 0095. ADR 0093 was read in its projection, email and redaction clauses (its lines on interaction projections and on email addresses). The issue 03d Comments were read. `docs/agents/issue-tracker.md` and `docs/agents/coding-standards.md` read.
+
+| ADR | Constraint | Where it lands |
+| --- | --- | --- |
+| 0107 decision 11 (storage) | One row per lane event, with task id, domain and a sequence; covered by evidence and private exports. | `guest_thread_lane_events` (store DDL); one row per pushed timeline entry (`#pushLane` in shortlet-app.ts). |
+| 0107 decision 11 (isolation, restore) | Lanes are per task; no model text is stored; restore reads the lanes projection only. | Rows hold guest-visible timeline text only. Nothing reads the table (AC7). |
+| 0101 | Platform owns threads; each domain owns its tables. Placement per O4. | DDL beside `guest_threads` in `THREAD_SESSION_SCHEMA`, listed in `PLATFORM_EXPORT_TABLES` only. Mounted in the platform object by migration 5 (see deviation 3). |
+| 0096 | Export is plaintext only for the four named payment-reference columns. Timeline text is not exempt. | No payment reference is written to a lane row; the table is in no exemption list. |
+| 0075 | No secrets, tokens, prompts, model text or raw contact data in stored interaction data; redacted only. | Writer applies `redactSensitiveData` to every row text (chokepoint in the store) before insert. Model text and tool results are refused by role (AC6). |
+| 0093 | Minimal projection of guest state. | Row columns are ids, domain, sequence, role, redacted text, timestamp. No contact fields. |
+| 0079 | Observability carries no ids. The table is data, not a diagnostic. | No diagnostic is added. |
+| 0095 | Data-protection gates apply to every object; the export holds synthetic or staging data only until they clear. | Noted; no production data is written by this change. |
+
+### Implementing agent: design and deviations (to confirm)
+
+1. **Atomic write.** The thread upsert and its lane rows run in one transaction (`saveThreadRecord`, `database.transaction`), in both the local store and the Cloudflare platform object (`platform-do.ts` `saveThread`). This keeps the lane rows and the projection that names them together.
+2. **Upsert, not INSERT OR IGNORE.** A replayed `event_id` is ignored only when its content is the same; a different content makes the upsert assign NULL to the NOT NULL `event_id`, so the whole transaction fails and rolls back. A second event on the same (thread, task, seq) also fails the unique index. The store never reads the table to check (AC7).
+3. **Migration 5 for existing platform objects.** `THREAD_SESSION_SCHEMA` gains the table beside `guest_threads`, and platform migration 5 adds the same `IF NOT EXISTS` DDL so an already-deployed platform object (at version 4) gains it. `PLATFORM_SCHEMA_VERSION` becomes 5. This is an additive migration; no existing migration is edited.
+4. **Sequence counter.** A per-lane sequence cannot be read back from the capped timeline (the cap trims the oldest entries), and the table cannot be read by the app (AC7). The next sequence per task is therefore kept in the thread projection as `laneEventSeq` (an additive optional field, validated on parse: task-id keys, non-negative safe integers). It is assigned when the entry is pushed, so a retried save writes the same rows, which the upsert ignores. Sequence gaps are possible after a failed save and are harmless.
+5. **Domain of a row.** The lane's domain comes from the runtime's persisted task list. Without a runtime the lane is the initial stays lane, so the stays domain constant (`STAYS_DOMAIN`, already in assistant-runtime.ts, now exported) is used.
+6. **Pending rows survive a failed save.** Pending rows are cleared only after the save succeeds, so a retry writes them again.
+7. **Redaction is applied twice (shell and store).** The shell passes timeline text as the timeline holds it; the store applies `redactSensitiveData` before insert, so the store is the single fail-closed point. Note for owner: `redactSensitiveData` (packages/platform-core/src/redaction.ts) does not mask email addresses in free text (phone, bearer token and card shapes are masked). AC3 asks for email as well. See Open owner decisions.
+8. **Role refusal.** The closed role set (`user`, `assistant`, `receipt`) is enforced in the parser used by the platform object (a bad role is HTTP 400 and nothing is written) and in the store writer (a throw, rolled back), and the table has a CHECK on `role`.
+
+### Open owner decisions (not invented here)
+
+- **OD-1 (AC3, email).** Should lane rows mask email addresses in free text? The ADR 0075 redactor masks phone, bearer and card shapes but not email. Options: (a) add an email rule to the one redactor (changes every redacted store, including audit and telemetry, and needs a decision on which mask text to use), or (b) limit the lane-row rule to email only. Until the owner decides, the AC3 email assertion is not made; phone and token are tested. ADR 0093 (interaction projections and email addresses) says email addresses never appear in general interaction state, and the thread timeline already stores typed guest text unredacted for email. The owner should decide the rule for the thread projection and the lane rows together.
+- **Runbook line (step 7).** Added as the spec asks, in `docs/runbooks/cloudflare-restore.md` after the export-day paragraph. The wording can be changed by the owner in review; no decision is open on it.
+
+### Implementing agent: test-first record (steps 2 and 3)
+
+Red run before any implementation (`env -u LLM_API_KEY npx tsx --test test/guest-thread-lane-events.test.ts test/assistant-lane-events.test.ts`):
+- The store file did not load: `SyntaxError: The requested module '../domains/shortlet/src/guest-interaction-store.js' does not provide an export named 'parseDurableLaneEvents'`. Result: tests 2, pass 0, fail 2 (the file-level failure).
+- The shell file's AC1 failed at its first stays search: `stays search: expected success, saw INVALID_THREAD: Unknown conversation.` The thread id was not in the guest id format (`g-` plus hex). Corrected to `g-03e00001`.
+- After the id fix, AC1 failed at the row read: `no such table: guest_thread_lane_events`.
+
+Deviation from the red-first order: the Worker criterion (AC5, `apps/cloudflare/test/daily-export.spec.ts`, "3e AC5") was written after the implementation, not before. No red run was taken for it. It is green (see the verification entry).
+
+Commit 1 of this issue holds the tests only. The tests import the new store exports, so `npm run check` fails on that commit until commit 2 (the implementation) lands. This is the expected red state.
+
+### Implementing agent: verification and Definition of Done (steps 4 and 5)
+
+Commit 2 of this issue holds the implementation. Commit 1 holds the tests (see the test-first record above). All commands run in `C:\AI2026\chat-marketplace-03e`, each prefixed `env -u LLM_API_KEY`.
+
+**Commands and counts (final tree):**
+1. `npm run check`: exit 0.
+2. `npx tsx --test test/assistant-task-lanes.test.ts test/assistant-context-isolation.test.ts test/assistant-task-rail.test.ts test/assistant-task-persistence.test.ts test/assistant-thread-lock.test.ts test/assistant-cold-journey.test.ts test/agent-mode-shell.test.ts test/assistant-pack-contract.test.ts test/agent-mode-follows-task.test.ts test/assistant-persistent-continuity.test.ts test/assistant-pending-action-restore.test.ts test/assistant-lane-events.test.ts test/guest-thread-lane-events.test.ts`: tests 107, pass 106, fail 0, skipped 1 (the AC3 email part, OD-1).
+3. Other tests that cover the changed store and projection code, one command each group, all green:
+   - `npx tsx --test test/export-node-sqlite.test.ts test/guest-account-linking.test.ts test/demo-extended-cancellation-notice.test.ts test/guest-process-restart.test.ts test/sql-port-availability-interaction.test.ts test/sql-port-operator-stores.test.ts test/sql-port-store-imports.test.ts test/guest-account-sign-in.test.ts test/guest-offer-access.test.ts test/pilot-notifications.test.ts`: tests 201, pass 201.
+   - `npx tsx --test test/assistant-budget-chip.test.ts test/assistant-discovery-view.test.ts test/assistant-open-question.test.ts test/assistant-runtime-boundary.test.ts test/assistant-terse-followups.test.ts test/integrate-booking-request-application.test.ts test/pay-each-demo-billing-period.test.ts`: tests 65, pass 65.
+4. Worker specs, one per command with `npm run test:workers -- apps/cloudflare/test/<spec>.spec.ts`:
+   - `daily-export.spec.ts` (includes the new "3e AC5" test): tests 10, pass 10.
+   - `export-owner-sweep.spec.ts` (F9): tests 4, pass 4.
+   - `restore-from-export.spec.ts`: tests 4, pass 4.
+   - `data-migration.spec.ts` (platform migration 5 and the platform save path): tests 29, pass 29. The D2 5-second flake did not occur.
+   - `platform-do-split.spec.ts`: tests 1, pass 1.
+   - `legacy-single-do-migration.spec.ts`: tests 2, pass 2.
+   - `platform-account-runtime.spec.ts`: tests 2, pass 2.
+   - `production-composition.spec.ts`: tests 3, pass 3.
+5. Not run, per Test scope: full `npm test` and full `npm run test:workers` (the once-per-batch gate).
+
+**Definition of Done (`docs/agents/issue-tracker.md`):**
+1. Every criterion has a dedicated named test: partly met. AC1, AC2, AC4, AC5, AC6 and AC7 each have one test named after the criterion. AC3 has one test for the phone and token form. Its email form is a skipped test, pending OD-1. AC3 is not met in full.
+2. Failure paths asserted: met. AC2 asserts the rollback and the unchanged row for different content. AC6 asserts that refused roles are rejected by the parser and by the store, that no row is written, and that no thread is saved. AC7 is a scan.
+3. ADRs listed and cited: met for the ADR table above, with the ADR 0093 reading stated as partial (its projection, email and redaction clauses).
+4. No unused injected dependency: met. `saveThreadRecord` writes every field it is given. `laneEventSeq` is read on restore and written on every save. `STAYS_DOMAIN` names the stays lane's domain on a runtime-less thread.
+5. No invented policy string or constant: met, with two notes. The 120-character and 32-entry bounds in the parsers are the bounds the existing task list and lane parsers already use (sourced to guest-projection.ts). The guest-visible copy is none: the lane rows hold timeline text only.
+6. No bearer credential or identity material in logs or audit: met. The thrown messages are fixed strings with no ids. The table holds the redacted timeline text, thread and task ids, a domain, a sequence and a timestamp.
+7. `npm run check`: exit 0. The batch-gate `npm test` has not run.
+
+**Status.** Left at `ready-for-agent`, not `resolved`. Open:
+- OD-1: the email part of AC3 (owner decision).
+- The batch gate (`npm test` and the full `npm run test:workers`), once per batch, after this issue and the others in the batch are resolved.
+- No direct Worker test of the platform object's `saveThread` route with a malformed `laneEvents` (the 400 branch). The criteria do not name it, and the route is covered by the parser test and by the store tests. The owner may want a route test added in the batch.
+- The restore runbook line wording (owner review in the normal way).
+
+**Implementation files (commit 2).** `domains/shortlet/src/guest-interaction-store.ts`, `apps/cloudflare/src/do-export.ts`, `apps/cloudflare/src/schema.ts`, `apps/cloudflare/src/platform-do.ts`, `apps/local-guest/src/guest-projection.ts`, `apps/local-guest/src/assistant/assistant-runtime.ts`, `apps/local-guest/src/shortlet-app.ts`, `docs/runbooks/cloudflare-restore.md`, this issue file. No `apps/local-guest/dist/*.js`, `_headers`, screenshots or CSS were touched. No formatter was run.
+
+### Owner resolution of OD-1, 16 Nov 2026
+
+Mask email addresses in **lane event rows only**, not globally in `redactSensitiveData`; do not change the existing timeline. The restore runbook wording is approved. This supersedes the pending OD-1 and runbook review notes above. ADR 0075 and 0093 govern the row's contact-data minimization; ADR 0096 provides no exemption for lane text. ADR 0107 and 0101 keep the row beside the platform thread, and ADR 0106 excludes model history. ADR 0079 replay and ADR 0095 synthetic-export gates remain in effect. No diagnostic or extra read path is introduced.
+
+**Test-first AC3:** `node node_modules/tsx/dist/cli.mjs --test --test-name-pattern 'AC3:' test/guest-thread-lane-events.test.ts`: tests 1, pass 0, fail 1; failed on the new assertion that the synthetic email is absent. An initial `npx tsx` invocation could not start because this machine's `npx` resolved through an unavailable WSL installation; the equivalent local `tsx` CLI was used thereafter. Each successful command below was run in this worktree with `C:\Program Files\Git\usr\bin\env.exe -u LLM_API_KEY` prefixed.
+
+**Final per-issue verification:**
+
+- `npm.cmd run check`: exit 0 (zero type errors; worker bundle guard passed).
+- `node node_modules/tsx/dist/cli.mjs --test test/guest-thread-lane-events.test.ts test/assistant-lane-events.test.ts test/assistant-task-lanes.test.ts test/assistant-cold-journey.test.ts`: tests 18, pass 18, fail 0, skipped 0.
+- `node node_modules/tsx/dist/cli.mjs --test test/export-node-sqlite.test.ts`: tests 20, pass 20, fail 0, skipped 0.
+- `git diff --check`: exit 0.
+
+**Definition of Done review:** (1) AC1–AC7 have dedicated named tests, including the formerly skipped email case consolidated into AC3; (2) replay conflict, invalid roles, sensitive text and no-read failures are asserted; (3) ADR 0075, 0079, 0093, 0095, 0096, 0101, 0106 and 0107 were listed/read and mapped above and rechecked against the narrow row-only write; (4) no new dependency was injected; (5) the existing `[REDACTED]` marker and email shape add no domain policy; (6) no logs or audits were changed and no credential or contact text is logged; (7) `npm run check` and the own/affected tests pass. The full `npm test` and full Worker suite are the once-per-batch pre-merge gate under AGENTS.md, delegated to the parent after the batch resolves. The previous 03e verification already passed the export-owner, daily-export and restore Worker specs; this resolution changes only the row text sent into their existing writer.
+
+## Answer
+
+Each active-lane timeline event is written as one redacted platform-owned row and included in the platform daily export. Duplicate/conflict and role checks remain fail closed; rows are write-only to the app. Under the owner's OD-1 decision, the row writer masks emails in addition to the existing phone and token redaction, without changing the shared redactor or thread timeline. The restore runbook documents the export-only restore path. AC1–AC7 are covered by passing tests. Implementation: `71ca639`, email completion: `0aa1c11`.

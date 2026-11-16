@@ -5,6 +5,7 @@ import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit
 import { DurableObjectSqlDatabase } from "../src/do-sql-database.js";
 import { runAlarmTasks } from "../src/do-alarm.js";
 import { ORIGIN, isolatedPlatformStub, isolatedTenantName, provisionTenant } from "./ops-test-helpers.js";
+import { saveThreadRecord } from "../../../domains/shortlet/src/guest-interaction-store.js";
 import { SHORTLET_EXPORT_TABLES, PLATFORM_EXPORT_TABLES, deleteExpiredExports, exportObjectKey, exportTable, lagosDate, runDailyExport, type DailyExportDependencies } from "../src/do-export.js";
 
 const stubFor = (name: string) => env.SHORTLET.get(env.SHORTLET.idFromName(`${name}-${crypto.randomUUID()}`));
@@ -233,4 +234,33 @@ test("12a AC6 (F1): with notifications unset, a provisioned object schedules its
   await runInDurableObject(stub, async (instance) => { await instance.alarm(); });
   const keys = await listKeys(env.EXPORTS);
   expect(keys).toContain(exportObjectKey(lagosDate(new Date()), "units"));
+});
+
+test("3e AC5: the daily export writes the lane table to the key for the date", async () => {
+  // Issue 03e (ADR 0107 decision 11, owner decision O4): the lane rows sit beside guest_threads in the platform object, so the
+  // platform alarm exports them under the same key rule as the thread table. The probe copy carries a phone number that the writer redacts.
+  const tenant = isolatedTenantName("lane-export");
+  const platform = isolatedPlatformStub(tenant);
+  const threadId = `g-03e-${crypto.randomUUID()}`;
+  const probe = `lane-export-probe-${crypto.randomUUID()}`;
+  await runInDurableObject(platform, (_instance, ctx) => {
+    saveThreadRecord(new DurableObjectSqlDatabase(ctx.storage), {
+      threadId,
+      principalId: "guest-lane-export",
+      tenantId: tenant,
+      threadJson: "{\"version\":1}",
+      laneEvents: [{ taskId: "task-1", domain: "shortlet", seq: 1, role: "user", text: `${probe} call +234 801 234 5678`, createdAt: "2026-10-27T10:00:00.000Z" }],
+    });
+  });
+  await runInDurableObject(platform, async (instance) => { await instance.alarm(); });
+
+  const date = lagosDate(new Date());
+  const keys = await listKeys(env.EXPORTS);
+  expect(keys).toContain(exportObjectKey(date, "guest_thread_lane_events"));
+  expect(PLATFORM_EXPORT_TABLES).toContain("guest_thread_lane_events");
+  const exported = await env.EXPORTS.get(exportObjectKey(date, "guest_thread_lane_events"));
+  expect(exported).not.toBeNull();
+  const body = await exported!.text();
+  expect(body).toContain(probe);
+  expect(body).not.toContain("801 234 5678");
 });
