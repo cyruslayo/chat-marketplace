@@ -2650,7 +2650,8 @@ function renderQuickReplies(replies: readonly GuestQuickReply[] | undefined): vo
     button.className = "ui-chip quick-reply";
     button.textContent = reply.label;
     button.addEventListener("click", () => {
-      if (isLoading) return;
+      // ADR 0074: a concurrent task event would be ignored by sendTaskEvent. Do not consume this guest choice first.
+      if (isLoading || (reply.domain !== undefined && taskEventInFlight)) return;
       clearQuickReplies();
       addTurn("user", reply.label);
       if (reply.domain !== undefined) {
@@ -2756,6 +2757,7 @@ async function refreshServerState(preserveConversation = shellState.activeSurfac
       renderTaskRail(response.tasks);
       renderVerticalStarters(response.verticals);
       applyResponseMode(response);
+      if (response.modeChange?.reason === "suggested") renderQuickReplies(response.quickReplies);
     }
     if (response.ok && response.surfaces && response.surfaces.length > 0) {
       renderSurfaces(response.surfaces, preserveConversation);
@@ -3026,20 +3028,17 @@ async function restoreServerState(): Promise<boolean> {
   try {
     const response = await postJson(`/api/state?threadId=${encodeURIComponent(threadId)}`) as GuestStateResponse;
     if (!response.ok) return false;
-    // Slice 26: assistant conversations keep their task rail and workspace in memory (no timeline yet).
-    if (response.tasks && response.tasks.length > 1) {
-      renderTaskRail(response.tasks);
-      renderVerticalStarters(response.verticals);
-      applyResponseMode(response);
-      renderSurfaces(response.surfaces ?? []);
-      announce("Your conversation has been restored.");
-      return true;
-    }
-    if (!response.timeline || response.timeline.length === 0) return false;
-    for (const entry of response.timeline) addTimelineEntry(entry);
+    // ADR 0107: every task has its own lane; restore that lane's timeline even when the thread has multiple tasks.
+    if ((!response.timeline || response.timeline.length === 0) && !(response.tasks && response.tasks.length > 1)) return false;
+    for (const entry of response.timeline ?? []) addTimelineEntry(entry);
+    renderTaskRail(response.tasks);
+    renderVerticalStarters(response.verticals);
+    applyResponseMode(response);
     renderJourney(response.journey);
     renderCriteria(response.criteria);
     renderSurfaces(response.surfaces ?? []);
+    renderQuickReplies(response.quickReplies);
+    if (response.modeChange?.reason === "suggested") setAgentMark({ type: "mode-suggested" });
     announce("Your conversation has been restored.");
     return true;
   } catch { return false; }

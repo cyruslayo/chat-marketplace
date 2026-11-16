@@ -414,6 +414,9 @@ export interface GuestStateSnapshot {
   readonly verticals?: readonly GuestVertical[];
   /** ADR 0107: the active Agent Mode's presentation; every guest response carries it. Not the same as GuestSurfacePayload.mode (a surface placement). */
   readonly mode?: ModePresentation;
+  /** Restored from the active lane's final server-authored suggestion, only while its target remains registered. */
+  readonly quickReplies?: readonly GuestQuickReply[];
+  readonly modeChange?: GuestTurnSuccess["modeChange"];
 }
 
 export interface GuestTurnSuccess {
@@ -2176,6 +2179,9 @@ export class LocalGuestApp {
     const criteria = this.#criteriaFor(thread);
     // Issue 03d: the response carries the active lane only.
     this.#alignTimelineLane(threadId, thread);
+    const last = thread.timeline.at(-1);
+    const suggestion = last?.role === "assistant"
+      ? this.#assistantRuntime?.restoredModeSuggestion(threadId, last.text) : undefined;
     return {
       ok: true,
       threadId,
@@ -2184,6 +2190,7 @@ export class LocalGuestApp {
       ...(journey === undefined ? {} : { journey }),
       ...(criteria === undefined ? {} : { criteria }),
       mode: this.#modeFor(threadId),
+      ...(suggestion ?? {}),
       ...(this.#assistantRuntime?.hasThread(threadId) ? { tasks: this.#assistantRuntime.getTaskRail(threadId), verticals: this.#verticals() } : {}),
     };
   }

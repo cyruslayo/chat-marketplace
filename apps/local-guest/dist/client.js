@@ -12601,7 +12601,7 @@ Known schemas:
       button.className = "ui-chip quick-reply";
       button.textContent = reply.label;
       button.addEventListener("click", () => {
-        if (isLoading) return;
+        if (isLoading || reply.domain !== void 0 && taskEventInFlight) return;
         clearQuickReplies();
         addTurn("user", reply.label);
         if (reply.domain !== void 0) {
@@ -12692,6 +12692,7 @@ Known schemas:
         renderTaskRail(response.tasks);
         renderVerticalStarters(response.verticals);
         applyResponseMode(response);
+        if (response.modeChange?.reason === "suggested") renderQuickReplies(response.quickReplies);
       }
       if (response.ok && response.surfaces && response.surfaces.length > 0) {
         renderSurfaces(response.surfaces, preserveConversation);
@@ -12944,19 +12945,16 @@ Known schemas:
     try {
       const response = await postJson(`/api/state?threadId=${encodeURIComponent(threadId)}`);
       if (!response.ok) return false;
-      if (response.tasks && response.tasks.length > 1) {
-        renderTaskRail(response.tasks);
-        renderVerticalStarters(response.verticals);
-        applyResponseMode(response);
-        renderSurfaces(response.surfaces ?? []);
-        announce("Your conversation has been restored.");
-        return true;
-      }
-      if (!response.timeline || response.timeline.length === 0) return false;
-      for (const entry of response.timeline) addTimelineEntry(entry);
+      if ((!response.timeline || response.timeline.length === 0) && !(response.tasks && response.tasks.length > 1)) return false;
+      for (const entry of response.timeline ?? []) addTimelineEntry(entry);
+      renderTaskRail(response.tasks);
+      renderVerticalStarters(response.verticals);
+      applyResponseMode(response);
       renderJourney(response.journey);
       renderCriteria(response.criteria);
       renderSurfaces(response.surfaces ?? []);
+      renderQuickReplies(response.quickReplies);
+      if (response.modeChange?.reason === "suggested") setAgentMark({ type: "mode-suggested" });
       announce("Your conversation has been restored.");
       return true;
     } catch {

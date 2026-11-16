@@ -32,6 +32,13 @@ test("AC1: A verdict whose target is not a registered pack id becomes null and g
   assert.deepEqual(reply.messages, [ASSISTANT_CONTROL_COPY.redirect]);
   assert.equal(reply.modeChange, undefined);
   environment.close();
+  const duplicateEnvironment = LocalGuestEnvironment.openNode({ databasePath: ":memory:", clock: LIVE_LIKE_CLOCK });
+  const duplicate = new ShortletAssistantRuntime(duplicateEnvironment, new ScriptedAssistantModel([]),
+    { additionalPacks: [createFakeShopPack(), { ...createFakeShopPack(), id: "another-registered-pack" }] });
+  duplicate.getThread("fresh-ac1-ambiguous");
+  assert.equal(duplicate.restoredModeSuggestion("fresh-ac1-ambiguous", GUEST_MODE_SUGGESTION.message("Shop")), undefined,
+    "identical registered labels cannot be disambiguated by persisted copy");
+  duplicateEnvironment.close();
 });
 
 test("AC2: An in-scope turn containing another pack's keyword gets no suggestion and no keyword match", async () => {
@@ -150,10 +157,17 @@ test("AC10: Accepting the chip starts the target task; only the event changes th
     const classifierCall = model.requests.find((request) => isScopeRequest(request));
     const format = classifierCall?.body.response_format as { json_schema?: { schema?: { properties?: { targetPack?: { enum?: unknown[] } } } } } | undefined;
     assert.deepEqual(format?.json_schema?.schema?.properties?.targetPack?.enum, ["shortlet", "shop", null], "the schema enumerates only registered pack ids");
+    const withoutTargetPack = restartedDatedApp(fixture, model.client).app.getState(threadId);
+    assert.equal(withoutTargetPack?.quickReplies?.length ?? 0, 0, "a pack removed from the registry cannot be restored as a suggestion");
     const second = restartedDatedApp(fixture, model.client, undefined, [createFakeShopPack()]).app;
-    second.getState(threadId);
+    const restored = second.getState(threadId);
+    assert.equal(restored?.mode?.id, "stays");
+    assert.deepEqual(restored?.quickReplies, [{ label: GUEST_MODE_SUGGESTION.chip("Shop"), domain: "shop" }], "the chip survives a cold restore after the suggestion");
+    assert.deepEqual(restored?.modeChange, suggested.modeChange, "the restored suggestion remains advisory");
     const switched = await second.handleEventAsync(threadId, { name: TASK_START_EVENT, surfaceId: `thread-${threadId}:tasks`, sourceComponentId: "task-rail", timestamp: LIVE_LIKE_CLOCK().toISOString(), context: { domain: "shop" } });
     assert.equal(switched.ok, true, JSON.stringify(switched));
     if (switched.ok) assert.equal(switched.mode?.id, "shop");
+    const after = restartedDatedApp(fixture, model.client, undefined, [createFakeShopPack()]).app.getState(threadId);
+    assert.equal(after?.quickReplies?.length ?? 0, 0, "the accepted suggestion is not resurrected in another lane");
   } finally { fixture.close(); }
 });

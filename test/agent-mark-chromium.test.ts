@@ -60,6 +60,55 @@ test("AC9 tier C: suggestion chip and suggesting mark reflow at 320, 390, 768 an
   } finally { await browser.close(); await server.close(); }
 });
 
+test("AC10 tier C: a busy task event leaves a restored suggestion chip and transcript untouched", async () => {
+  const server = startLocalGuestServer({ conciergeMode: "assistant-offline", port: 0, additionalPacks: [createFakeShopPack()],
+    modelClient: { generate: async () => ({ text: JSON.stringify({ scope: "out_of_scope", targetPack: "shop", risk: "ordinary", intents: [], reasonCode: "outside",
+      slots: { city: null, neighbourhood: null, bedrooms: null, nights: null, guests: null, checkIn: null, checkOut: null } }) }) } });
+  const base = `http://127.0.0.1:${await server.listen()}`;
+  const browser = await launchRealBrowser();
+  try {
+    const tab = await browser.createTab();
+    await tab.navigate(`${base}/`);
+    await tab.waitForSelector("#composer-input");
+    await sendMessage(tab, "buy a kettle");
+    await tab.waitForText("Switch to Concierge · Shop", 15_000);
+    // Create a second task and return to stays before a fresh suggestion, so the restored active lane ends with that suggestion.
+    const seeded = await tab.evaluate<boolean>(`(async () => {
+      const id = sessionStorage.getItem('shortlet-concierge-thread');
+      for (const domain of ['shop', 'shortlet']) {
+        const response = await fetch('/api/event', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({
+          threadId:id, name:'platform.task.start', surfaceId:'thread-'+id+':tasks', sourceComponentId:'task-rail', timestamp:new Date().toISOString(), context:{domain}
+        }) });
+        if (!(await response.json()).ok) return false;
+      }
+      return true;
+    })()`);
+    assert.equal(seeded, true);
+    await tab.navigate(`${base}/`);
+    await tab.waitForSelector("#composer-input");
+    await sendMessage(tab, "buy a kettle again");
+    await tab.waitForText("Switch to Concierge · Shop", 15_000);
+    await tab.navigate(`${base}/`);
+    await tab.waitForSelector('.quick-reply');
+    const before = await tab.evaluate<number>(`document.querySelectorAll('.turn.user').length`);
+    await tab.evaluate(`(() => {
+      const original = window.fetch.bind(window);
+      window.fetch = (...args) => {
+        if (args[0] === '/api/event') return new Promise((resolve) => { window.__releaseTaskEvent = () => resolve(original(...args)); });
+        return original(...args);
+      };
+      document.querySelector('.ui-task-rail__item[data-domain="shop"]').click();
+    })()`);
+    await tab.waitForFunction("typeof window.__releaseTaskEvent === 'function'");
+    await tab.evaluate(`document.querySelector('.quick-reply').click()`);
+    assert.equal(await tab.evaluate<number>(`document.querySelectorAll('.turn.user').length`), before, "no optimistic user turn during another task event");
+    assert.equal(await tab.evaluate<boolean>(`!!document.querySelector('.quick-reply')`), true, "the suggestion stays actionable after the busy event");
+    await tab.evaluate(`window.__releaseTaskEvent()`);
+    await tab.waitForFunction("document.querySelector('.ui-task-rail__item[data-domain=\"shop\"]')?.disabled === true");
+    await tab.close();
+  } finally { await browser.close(); await server.close(); }
+});
+
 async function sendMessage(tab: RealBrowserTab, text: string): Promise<void> {
   await tab.focus("#composer-input");
   await tab.insertText(text);

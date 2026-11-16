@@ -39,8 +39,13 @@ export interface RecordedGuestStep {
   readonly planner?: PlannerAnswer;
   readonly cancel?: true;
   readonly button?: { readonly ofTurn: number; readonly expect?: string };
-  /** ADR 0074: a confirmation after a search change or task switch that removed the proposal. Nothing is sent. */
+  /** ADR 0074: a confirmation after a search change that removed the proposal in the same lane. The replaced notice is returned. */
   readonly replaced?: true;
+  /**
+   * ADR 0074 after a task switch: the proposal was removed on the task the guest left, and the typed confirmation is in another
+   * lane, so the replaced notice is not visible. The turn must be ok with no request and no pending-action surface.
+   */
+  readonly nothingSent?: true;
 }
 
 export interface RecordedJourneyDefinition {
@@ -103,7 +108,7 @@ export const RECORDED_JOURNEYS: readonly RecordedJourneyDefinition[] = [
       { text: "I need a place in Ikoyi for 4 nights for 2 guests from 14 December 2026", planner: { tool: "search_stays", args: SEARCH_IKOYI } },
       { text: "Request the first one.", planner: PROPOSE_REQUEST },
       { text: "Start a new task in shop", planner: { tool: "start_task", args: { domain: "shop" } } },
-      { text: "Yes", replaced: true },
+      { text: "Yes", nothingSent: true },
       { text: "Confirm the Booking Request from the earlier card", button: { ofTurn: 1, expect: "STALE_SURFACE" } },
     ],
   },
@@ -181,6 +186,9 @@ export function openJourneyEnvironment(databasePath: string = ":memory:"): Local
 /** Typed reply plan for a finished tool round (ADR 0106): the kind follows the tool that succeeded. */
 function replyAfter(results: readonly { readonly name: string }[]): AssistantModelResponse {
   const name = results[0]?.name ?? "";
+  // A finished task switch. The runtime accepts only a structured reply plan (ADR 0106): plain text is rejected as `not_json`, and a
+  // task-tool result is never a reply reference. A `redirect` with no references is the form it accepts for a task start.
+  if (name === "start_task") return { text: JSON.stringify({ kind: "redirect", references: [] }) };
   const kind = name === "search_stays" ? "show_results"
     : name === "get_unit_details" ? "show_details"
       : "propose_action";
@@ -295,6 +303,7 @@ export function normaliseGeneratedIds(outputs: readonly JourneyTurnOutput[]): Jo
     ...output,
     messages: output.messages.map(replace),
     surfaces: output.surfaces.map((surface) => ({ ...surface, surfaceId: replace(surface.surfaceId) })),
+    tasks: output.tasks.map((task) => ({ ...task, taskId: replace(task.taskId) })),
   }));
 }
 
@@ -324,6 +333,10 @@ export function intendedOutcomeViolations(definition: RecordedJourneyDefinition,
     }
     if (step.replaced) {
       if (!turn.ok || JSON.stringify(turn.messages) !== JSON.stringify([PROPOSAL_REPLACED_COPY])) violations.push(`${definition.name}: turn ${index + 1} is not the replaced-proposal copy`);
+      if (turn.surfaces.some((surface) => PENDING_SURFACE.test(surface.surfaceId) || REQUEST_SURFACE.test(surface.surfaceId))) violations.push(`${definition.name}: turn ${index + 1} keeps a proposal or opens a request`);
+    }
+    if (step.nothingSent) {
+      if (!turn.ok) violations.push(`${definition.name}: turn ${index + 1} was refused, not settled`);
       if (turn.surfaces.some((surface) => PENDING_SURFACE.test(surface.surfaceId) || REQUEST_SURFACE.test(surface.surfaceId))) violations.push(`${definition.name}: turn ${index + 1} keeps a proposal or opens a request`);
     }
     if (step.button?.expect !== undefined) {

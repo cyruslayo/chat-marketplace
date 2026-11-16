@@ -12,7 +12,7 @@
         "history": [
           {
             "role": "user",
-            "text": "{\"message\":\"I need a place in Ikoyi for 4 nights for 2 guests from 14 December 2026\",\"context\":{\"domain\":\"shortlet\",\"description\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\",\"hasShortlist\":false,\"hasSelectedStay\":false,\"hasOffer\":false,\"resultCount\":0}}"
+            "text": "{\"message\":\"I need a place in Ikoyi for 4 nights for 2 guests from 14 December 2026\",\"context\":{\"domain\":\"shortlet\",\"description\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\",\"hasShortlist\":false,\"hasSelectedStay\":false,\"hasOffer\":false,\"registeredPacks\":[{\"id\":\"shortlet\",\"scopeDescription\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\"},{\"id\":\"shop\",\"scopeDescription\":\"Shop\"}],\"resultCount\":0}}"
           }
         ]
       },
@@ -137,7 +137,7 @@
         "history": [
           {
             "role": "user",
-            "text": "{\"message\":\"Request the first one.\",\"context\":{\"domain\":\"shortlet\",\"description\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\",\"hasShortlist\":true,\"hasSelectedStay\":false,\"hasOffer\":false,\"resultCount\":1}}"
+            "text": "{\"message\":\"Request the first one.\",\"context\":{\"domain\":\"shortlet\",\"description\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\",\"hasShortlist\":true,\"hasSelectedStay\":false,\"hasOffer\":false,\"registeredPacks\":[{\"id\":\"shortlet\",\"scopeDescription\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\"},{\"id\":\"shop\",\"scopeDescription\":\"Shop\"}],\"resultCount\":1}}"
           }
         ]
       },
@@ -236,6 +236,144 @@
       "response": {
         "text": "{\"kind\":\"propose_action\",\"references\":[\"propose_request_to_book\"]}"
       }
+    },
+    {
+      "request": {
+        "toolNames": [],
+        "structuredOutputName": "concierge_scope",
+        "history": [
+          {
+            "role": "user",
+            "text": "{\"message\":\"Start a new task in shop\",\"context\":{\"domain\":\"shortlet\",\"description\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\",\"hasShortlist\":true,\"hasSelectedStay\":true,\"hasOffer\":false,\"registeredPacks\":[{\"id\":\"shortlet\",\"scopeDescription\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\"},{\"id\":\"shop\",\"scopeDescription\":\"Shop\"}],\"resultCount\":1}}"
+          }
+        ]
+      },
+      "response": {
+        "text": "{\"scope\":\"in_scope\",\"risk\":\"ordinary\",\"intents\":[\"search\",\"details\",\"compare\",\"price\",\"status\",\"offer\",\"draft\",\"request\",\"accept\",\"payment\",\"support\",\"clarify\",\"greet\",\"task_switch\",\"end_booking\",\"extend_booking\"],\"slots\":{\"city\":null,\"neighbourhood\":null,\"bedrooms\":null,\"nights\":null,\"guests\":null,\"checkIn\":null,\"checkOut\":null},\"reasonCode\":\"supported\"}"
+      }
+    },
+    {
+      "request": {
+        "toolNames": [
+          "start_task",
+          "switch_task",
+          "search_stays",
+          "get_unit_details",
+          "compare_stays",
+          "explain_stay_price",
+          "get_booking_status",
+          "get_offer_status",
+          "propose_request_to_book",
+          "prepare_request_draft"
+        ],
+        "structuredOutputName": "assistant_reply_plan",
+        "history": [
+          {
+            "role": "assistant",
+            "text": "Canonical task facts: {\"city\":\"Lagos\",\"hasShortlist\":true,\"shortlistRefs\":[\"stay-1\"],\"selectedStayRef\":\"stay-1\",\"checkIn\":\"2026-12-14\",\"checkOut\":\"2026-12-18\",\"nights\":4,\"partySize\":2,\"hasSelectedStay\":true,\"hasPendingAction\":true,\"openQuestion\":null}"
+          },
+          {
+            "role": "user",
+            "text": "Start a new task in shop"
+          }
+        ]
+      },
+      "response": {
+        "toolCalls": [
+          {
+            "id": "call-2",
+            "name": "start_task",
+            "args": {
+              "domain": "shop"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "request": {
+        "toolNames": [
+          "start_task",
+          "switch_task"
+        ],
+        "structuredOutputName": "assistant_reply_plan",
+        "history": [
+          {
+            "role": "assistant",
+            "text": "Canonical task facts: {\"domain\":\"shop\"}"
+          },
+          {
+            "role": "user",
+            "text": "Start a new task in shop"
+          },
+          {
+            "role": "tool_calls",
+            "calls": [
+              {
+                "id": "call-2",
+                "name": "start_task",
+                "args": {
+                  "domain": "shop"
+                }
+              }
+            ]
+          },
+          {
+            "role": "tool_results",
+            "results": [
+              {
+                "callId": "call-2",
+                "name": "start_task",
+                "isError": false,
+                "result": {
+                  "started": "shop"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "response": {
+        "text": "{\"kind\":\"redirect\",\"references\":[]}"
+      }
+    },
+    {
+      "request": {
+        "toolNames": [],
+        "structuredOutputName": "concierge_scope",
+        "history": [
+          {
+            "role": "user",
+            "text": "{\"message\":\"Yes\",\"context\":{\"domain\":\"shop\",\"description\":\"Shop\",\"hasShortlist\":false,\"hasSelectedStay\":false,\"hasOffer\":false,\"registeredPacks\":[{\"id\":\"shortlet\",\"scopeDescription\":\"Accommodation discovery, comparison, pricing, request drafts, booking status, payment guidance, account guidance, and stay/access support in Lagos and Abuja.\"},{\"id\":\"shop\",\"scopeDescription\":\"Shop\"}],\"resultCount\":0,\"hasCart\":false}}"
+          }
+        ]
+      },
+      "response": {
+        "text": "{\"scope\":\"in_scope\",\"risk\":\"ordinary\",\"intents\":[\"search\",\"details\",\"compare\",\"price\",\"status\",\"offer\",\"draft\",\"request\",\"accept\",\"payment\",\"support\",\"clarify\",\"greet\",\"task_switch\",\"end_booking\",\"extend_booking\"],\"slots\":{\"city\":null,\"neighbourhood\":null,\"bedrooms\":null,\"nights\":null,\"guests\":null,\"checkIn\":null,\"checkOut\":null},\"reasonCode\":\"supported\"}"
+      }
+    },
+    {
+      "request": {
+        "toolNames": [
+          "start_task",
+          "switch_task",
+          "shop_search"
+        ],
+        "structuredOutputName": "assistant_reply_plan",
+        "history": [
+          {
+            "role": "assistant",
+            "text": "Canonical task facts: {\"domain\":\"shop\"}"
+          },
+          {
+            "role": "user",
+            "text": "Yes"
+          }
+        ]
+      },
+      "response": {
+        "text": "I can help you find accommodation in Lagos or Abuja. Where would you like to stay, for how many nights, and for how many guests?"
+      }
     }
   ],
   "turns": [
@@ -299,17 +437,9 @@
     {
       "guestText": "Start a new task in shop",
       "ok": true,
+      "controlOutcome": "successful_model_handling",
       "messages": [
-        "Start a Shop search? Your shortlet search is saved."
-      ],
-      "surfaces": [],
-      "tasks": []
-    },
-    {
-      "guestText": "Yes",
-      "ok": true,
-      "messages": [
-        "That Booking Request was replaced when you changed your search or switched task, so nothing was sent. Ask me again if you still want this stay."
+        "I can help with your current request. Please review the information shown and tell me what you need next."
       ],
       "surfaces": [],
       "tasks": [
@@ -317,6 +447,35 @@
           "taskId": "task-1",
           "domain": "shortlet",
           "status": "Stay",
+          "active": false
+        },
+        {
+          "taskId": "task-generated-id-2",
+          "domain": "shop",
+          "status": "Browse",
+          "active": true
+        }
+      ]
+    },
+    {
+      "guestText": "Yes",
+      "ok": true,
+      "controlOutcome": "rejected_plan_fallback",
+      "messages": [
+        "I can help with your current request. Please review the information shown and tell me what you need next."
+      ],
+      "surfaces": [],
+      "tasks": [
+        {
+          "taskId": "task-1",
+          "domain": "shortlet",
+          "status": "Stay",
+          "active": false
+        },
+        {
+          "taskId": "task-generated-id-2",
+          "domain": "shop",
+          "status": "Browse",
           "active": true
         }
       ]

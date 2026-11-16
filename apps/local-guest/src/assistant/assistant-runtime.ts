@@ -544,6 +544,30 @@ export class AssistantRuntime {
     return this.#packForThread(threadId)?.presentation;
   }
 
+  /** ADR 0106/0107: reconstruct only the last, server-authored suggestion in the active lane, against the current registry.
+   * A stored message grants no switching authority: the guest must still send the validated task event (ADR 0074). */
+  restoredModeSuggestion(threadId: string, lastAssistantMessage: string | undefined): Pick<AssistantTurnOutput, "modeChange" | "quickReplies"> | undefined {
+    if (lastAssistantMessage === undefined || !this.#threads.has(threadId)) return undefined;
+    const active = this.#packForThread(threadId);
+    if (!active) return undefined;
+    const matches = this.#packs.ids().filter((id) => id !== active.id).map((id) => this.#packs.packFor(id))
+      .filter((pack): pack is AssistantDomainPack => pack !== undefined
+        && lastAssistantMessage === GUEST_MODE_SUGGESTION.message(pack.presentation?.label ?? pack.label));
+    // Copy alone is not a unique authority if two registered packs have the same label; fail closed rather than guess a target.
+    if (matches.length !== 1) return undefined;
+    const { modeChange, quickReplies } = this.#modeSuggestion(threadId, active.id, matches[0]!);
+    return { modeChange, quickReplies };
+  }
+
+  #modeSuggestion(threadId: string, from: string, target: AssistantDomainPack): Required<Pick<AssistantTurnOutput, "modeChange" | "quickReplies">> {
+    const existing = this.getThread(threadId).tasks.find((task) => task.domain === target.id);
+    return {
+      modeChange: { from, to: target.id, reason: "suggested", undoable: false },
+      quickReplies: [{ label: GUEST_MODE_SUGGESTION.chip(target.presentation?.label ?? target.label), domain: target.id,
+        ...(existing === undefined ? {} : { taskId: existing.taskId }) }],
+    };
+  }
+
   /** The active task's domain when no pack is registered for it, otherwise undefined. */
   #unregisteredActiveDomain(thread: AssistantThreadState): string | undefined {
     const task = thread.tasks.find((entry) => entry.taskId === thread.activeTaskId);
@@ -1249,8 +1273,7 @@ export class AssistantRuntime {
         this.#recordModeSuggestion(packForScope.id, target.id);
         return { ok: true, messages: [GUEST_MODE_SUGGESTION.message(target.presentation?.label ?? target.label)], surfaces: [],
           modelHandled: false, discardUserInput: true, controlOutcome, tasks: this.getTaskRail(threadId),
-          modeChange: { from: packForScope.id, to: target.id, reason: "suggested", undoable: false },
-          quickReplies: [{ label: GUEST_MODE_SUGGESTION.chip(target.presentation?.label ?? target.label), domain: target.id }] };
+          ...this.#modeSuggestion(threadId, packForScope.id, target) };
       }
       // Issue 59 (ADR 0106 amendment): a scope redirect and a risk verdict keep the fixed copy with no re-ask. An unclear or failed
       // verdict (ordinary risk) is no dead end: re-ask the closed question the assistant last asked, with its chips, or offer the pack's
