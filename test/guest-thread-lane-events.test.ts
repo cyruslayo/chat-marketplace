@@ -69,24 +69,22 @@ test("AC6: Only user, assistant and receipt timeline entries are written; a mode
   }
 });
 
-test("AC3: A timeline entry containing a synthetic phone number and a token-shaped string is stored in its redacted form", () => {
+test("AC3: A timeline entry containing a synthetic phone number, email and token-shaped string is stored in its redacted form", () => {
   const path = temporaryDatabasePath("lane-events-ac3.sqlite");
   const { store, close } = openStore(path);
   try {
-    const text = "Call +234 801 234 5678 about the flat, token Bearer abc123.def456-tokenvalue";
+    const text = "Call +234 801 234 5678 or write guest@example.test about the flat, token Bearer abc123.def456-tokenvalue";
     store.saveThread(laneThreadRecord("g-lane-ac3", [laneEventFor({ text })]));
     const [row] = readLaneRows(path, "g-lane-ac3");
     assert.ok(row, "the row is stored");
     assert.equal(row.textRedacted.includes("801 234 5678"), false, "the phone number is not stored");
+    assert.equal(row.textRedacted.includes("guest@example.test"), false, "the email address is not stored");
     assert.equal(row.textRedacted.includes("abc123.def456"), false, "the token is not stored");
     assert.ok(row.textRedacted.includes("[REDACTED]"), "the redaction marker is stored");
+    assert.equal(store.findThread("g-lane-ac3")?.threadJson, "{\"version\":1}", "the thread projection is not rewritten by lane-row masking");
   } finally {
     close();
   }
-});
-
-test("AC3 (email): A synthetic email address in a timeline entry is stored in its redacted form", { skip: "Open owner decision OD-1 (issue 03e Comments): redactSensitiveData does not mask email addresses in free text, and no ADR gives the rule." }, () => {
-  // Intentionally empty until OD-1 is answered. The phone and token form is tested above.
 });
 
 test("AC7: No code path in apps/ or domains/ reads the table (a grep-based test)", () => {

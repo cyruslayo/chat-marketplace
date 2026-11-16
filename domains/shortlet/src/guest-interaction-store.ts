@@ -711,6 +711,10 @@ const INSERT_LANE_EVENT_SQL = `
         THEN event_id ELSE NULL END
     `;
 
+// ADR 0075 and ADR 0093: lane rows are exported interaction data, so mask email text here only.
+// The shared redactor and existing thread timeline retain their current behaviour (owner decision, issue 03e).
+const LANE_ROW_EMAIL = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+
 /**
  * Saves a thread and its lane rows in one transaction (ADR 0107 decision 11). Shared by the shortlet store and the platform object,
  * so both write the same rows. Each row text is redacted before insert (ADR 0075).
@@ -735,7 +739,7 @@ export function saveThreadRecord(database: SqlDatabase, thread: DurableGuestThre
           $domain: event.domain,
           $seq: event.seq,
           $role: event.role,
-          $textRedacted: redactSensitiveData(event.text) as string,
+          $textRedacted: (redactSensitiveData(event.text) as string).replace(LANE_ROW_EMAIL, "[REDACTED]"),
           $createdAt: event.createdAt,
         });
       } catch {

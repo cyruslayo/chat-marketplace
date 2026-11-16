@@ -157,3 +157,18 @@ Commit 2 of this issue holds the implementation. Commit 1 holds the tests (see t
 - The restore runbook line wording (owner review in the normal way).
 
 **Implementation files (commit 2).** `domains/shortlet/src/guest-interaction-store.ts`, `apps/cloudflare/src/do-export.ts`, `apps/cloudflare/src/schema.ts`, `apps/cloudflare/src/platform-do.ts`, `apps/local-guest/src/guest-projection.ts`, `apps/local-guest/src/assistant/assistant-runtime.ts`, `apps/local-guest/src/shortlet-app.ts`, `docs/runbooks/cloudflare-restore.md`, this issue file. No `apps/local-guest/dist/*.js`, `_headers`, screenshots or CSS were touched. No formatter was run.
+
+### Owner resolution of OD-1, 16 Nov 2026
+
+Mask email addresses in **lane event rows only**, not globally in `redactSensitiveData`; do not change the existing timeline. The restore runbook wording is approved. This supersedes the pending OD-1 and runbook review notes above. ADR 0075 and 0093 govern the row's contact-data minimization; ADR 0096 provides no exemption for lane text. ADR 0107 and 0101 keep the row beside the platform thread, and ADR 0106 excludes model history. ADR 0079 replay and ADR 0095 synthetic-export gates remain in effect. No diagnostic or extra read path is introduced.
+
+**Test-first AC3:** `node node_modules/tsx/dist/cli.mjs --test --test-name-pattern 'AC3:' test/guest-thread-lane-events.test.ts`: tests 1, pass 0, fail 1; failed on the new assertion that the synthetic email is absent. An initial `npx tsx` invocation could not start because this machine's `npx` resolved through an unavailable WSL installation; the equivalent local `tsx` CLI was used thereafter. Each successful command below was run in this worktree with `C:\Program Files\Git\usr\bin\env.exe -u LLM_API_KEY` prefixed.
+
+**Final per-issue verification:**
+
+- `npm.cmd run check`: exit 0 (zero type errors; worker bundle guard passed).
+- `node node_modules/tsx/dist/cli.mjs --test test/guest-thread-lane-events.test.ts test/assistant-lane-events.test.ts test/assistant-task-lanes.test.ts test/assistant-cold-journey.test.ts`: tests 18, pass 18, fail 0, skipped 0.
+- `node node_modules/tsx/dist/cli.mjs --test test/export-node-sqlite.test.ts`: tests 20, pass 20, fail 0, skipped 0.
+- `git diff --check`: exit 0.
+
+**Definition of Done review:** (1) AC1–AC7 have dedicated named tests, including the formerly skipped email case consolidated into AC3; (2) replay conflict, invalid roles, sensitive text and no-read failures are asserted; (3) ADR 0075, 0079, 0093, 0095, 0096, 0101, 0106 and 0107 were listed/read and mapped above and rechecked against the narrow row-only write; (4) no new dependency was injected; (5) the existing `[REDACTED]` marker and email shape add no domain policy; (6) no logs or audits were changed and no credential or contact text is logged; (7) `npm run check` and the own/affected tests pass. The full `npm test` and full Worker suite are the once-per-batch pre-merge gate under AGENTS.md, delegated to the parent after the batch resolves. The previous 03e verification already passed the export-owner, daily-export and restore Worker specs; this resolution changes only the row text sent into their existing writer.
