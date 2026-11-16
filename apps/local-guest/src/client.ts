@@ -16,6 +16,7 @@ import {
   GUEST_COMPARE_LABELS,
   GUEST_FACT_LABELS,
   GUEST_GLOSSARY,
+  GUEST_MODE_CHOOSER,
   GUEST_MODES,
   GUEST_NEW_CONVERSATION,
   GUEST_TASK_RAIL,
@@ -37,6 +38,7 @@ import { combinedAbortSignal } from "./turn-cancel.js";
 import { applyImageLayout } from "./image-layout.js";
 import { turnEntriesSince } from "./guest-turn-recovery.js";
 import { applyResponseModeTo, assertValidResponseMode, readResponseMode } from "./response-mode.js";
+import { chooseModes, markIsControl, showsModeChooser, startBeforeTurn, type ModeChoice } from "./mode-choice.js";
 import { nextAgentMarkState, type AgentMarkEvent, type AgentMarkState } from "./agent-mark-state.js";
 import {
   breakdownHtml,
@@ -146,12 +148,15 @@ interface GuestTask {
   readonly tone?: "info" | "success" | "warning" | "danger";
   readonly active: boolean;
   readonly badge?: number;
+  readonly proposalOpen?: true;
 }
 
 interface GuestVertical {
   readonly domain: string;
   readonly label: string;
   readonly description?: string;
+  /** Issue 03g: validated again by chooseModes before any radio is rendered. */
+  readonly presentation?: unknown;
 }
 
 interface GuestResponse {
@@ -1551,6 +1556,10 @@ function applyResponseMode(response: GuestResponse): void {
   appliedMode = readResponseMode(response.mode) ?? appliedMode;
   // Issue 03c (ADR 0107 decision 6): the document's data-mode follows the validated response, never a user action or the DOM.
   applyResponseModeTo(document.documentElement, response.mode);
+  // Issue 03g: with no preview pending, the empty copy and the strip follow the committed mode.
+  if (previewDomain === undefined) renderEmptyCopy(appliedMode);
+  syncModeMark();
+  renderModeStrip();
 }
 
 // Issue 01b (ADR 0107 decision 9): the Agent Mark follows signals the shell already has. The state is never persisted (ADR 0106), so
@@ -1670,6 +1679,8 @@ function deferOlderTurns(): void {
 
 function addTurn(role: "assistant" | "user", text: string): void {
   emptyState.hidden = true;
+  // Issue 03g: the strip belongs to the empty conversation; the sheet opens from the mark during a conversation.
+  verticalStarters.hidden = true;
   const turn = document.createElement("article");
   turn.className = `turn ${role}`;
   turn.setAttribute(
@@ -2243,6 +2254,7 @@ function taskRailSurfaceId(): string {
 
 /** Slice 26: the task rail mirrors the server projection; the browser never switches on its own. */
 function renderTaskRail(tasks: readonly GuestTask[] | undefined): void {
+  lastTasks = tasks ?? [];
   if (!tasks || tasks.length <= 1) {
     taskRail.replaceChildren();
     taskRail.hidden = true;
@@ -2312,47 +2324,217 @@ function renderTaskStepHeader(tasks: readonly GuestTask[] | undefined): void {
   taskStepHeader.hidden = false;
 }
 
-/** Slice 26: vertical starter cards choose a domain; hidden with only one vertical. */
-function renderVerticalStarters(verticals: readonly GuestVertical[] | undefined): void {
+/**
+ * Issue 03g (ADR 0107 decision 9): the mode strip and the mode sheet. Both offer the same radio group. The strip previews a mode in
+ * an empty conversation and makes no request; a first message or a starter commits it (startTurn). The sheet commits at once.
+ */
+let modeChoices: readonly ModeChoice[] = [];
+/** The domain previewed on the strip; undefined when the preview is the committed mode. Never sent to the server. */
+let previewDomain: string | undefined;
+let lastTasks: readonly GuestTask[] = [];
+let modeSheet: HTMLDialogElement | undefined;
+let modeMark: HTMLButtonElement | undefined;
+
+function committedChoice(): ModeChoice | undefined {
+  return modeChoices.find((choice) => choice.presentation.id === appliedMode.id);
+}
+
+function activeProposalOpen(): boolean {
+  return lastTasks.some((task) => task.active && task.proposalOpen === true);
+}
+
+/** One choice: a visually hidden native radio whose label is the 44px target (the kit pattern for hidden radios). */
+function modeChoiceLabel(choice: ModeChoice, group: string, checked: boolean, onChoose: () => void): HTMLLabelElement {
+  const label = document.createElement("label");
+  label.className = "ui-vertical-starter mode-choice";
+  label.dataset.domain = choice.domain;
+  const input = document.createElement("input");
+  input.type = "radio";
+  input.name = group;
+  input.value = choice.domain;
+  input.className = "ui-sr-only";
+  input.checked = checked;
+  input.addEventListener("change", onChoose);
+  const mark = document.createElement("span");
+  mark.className = "agent-mark";
+  mark.setAttribute("aria-hidden", "true");
+  // The choice mark is the strip's own size (the app-bar and dock sizes belong to their data-agent-mark placements).
+  mark.style.inlineSize = "2rem";
+  mark.style.blockSize = "2rem";
+  mark.innerHTML = icon(choice.presentation.persona.icon);
+  const title = document.createElement("span");
+  title.className = "ui-vertical-starter__title";
+  title.textContent = choice.presentation.persona.name;
+  const description = document.createElement("p");
+  description.className = "ui-vertical-starter__description";
+  description.textContent = choice.presentation.tagline;
+  label.append(input, mark, title, description);
+  return label;
+}
+
+/** Fills the empty state, the route heading and the composer placeholder from one presentation (the preview and the commit). */
+function renderEmptyCopy(mode: ModePresentation): void {
+  routeHeading.textContent = mode.emptyState.heading;
+  const heading = emptyState.querySelector<HTMLElement>("#empty-state-heading");
+  if (heading) heading.textContent = mode.emptyState.heading;
+  const body = emptyState.querySelector<HTMLElement>("p");
+  if (body) body.textContent = mode.emptyState.body;
+  const starters = emptyState.querySelector<HTMLElement>(".prompt-suggestions");
+  if (starters) {
+    starters.replaceChildren(...mode.emptyState.starters.map((starter) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "prompt-suggestion ui-chip";
+      button.dataset.prompt = starter.prompt;
+      button.textContent = starter.label;
+      return button;
+    }));
+  }
+  composerInput.placeholder = mode.composer.placeholder;
+}
+
+function previewChoose(choice: ModeChoice): void {
+  const committed = committedChoice();
+  previewDomain = committed?.domain === choice.domain ? undefined : choice.domain;
+  renderEmptyCopy(choice.presentation);
+  renderModeStrip();
+}
+
+/** The strip: shown in an empty conversation with two or more modes, hidden otherwise. */
+function renderModeStrip(): void {
   verticalStarters.replaceChildren();
-  if (!verticals || verticals.length <= 1) {
+  if (!showsModeChooser(modeChoices) || emptyState.hidden) {
     verticalStarters.hidden = true;
+    delete verticalStarters.dataset.previewMode;
     return;
   }
-  const heading = document.createElement("h2");
-  heading.textContent = GUEST_VERTICALS.heading;
-  verticalStarters.appendChild(heading);
-  const list = document.createElement("ul");
-  for (const vertical of verticals) {
-    const item = document.createElement("li");
+  const committed = committedChoice();
+  const shown = modeChoices.find((choice) => choice.domain === previewDomain) ?? committed;
+  const fieldset = document.createElement("fieldset");
+  fieldset.className = "mode-choices";
+  const legend = document.createElement("legend");
+  legend.textContent = GUEST_MODE_CHOOSER.heading;
+  fieldset.appendChild(legend);
+  for (const choice of modeChoices) {
+    fieldset.appendChild(modeChoiceLabel(choice, "mode-preview", choice.domain === shown?.domain, () => previewChoose(choice)));
+  }
+  verticalStarters.appendChild(fieldset);
+  if (shown && committed && shown.domain !== committed.domain) verticalStarters.dataset.previewMode = shown.presentation.id;
+  else delete verticalStarters.dataset.previewMode;
+  verticalStarters.hidden = false;
+}
+
+/** The mark becomes a labelled control only with two or more modes (ADR 0107, 10 Nov amendment; ADR 0076 human state is unwired). */
+function syncModeMark(): void {
+  if (!markIsControl(modeChoices, false)) return;
+  if (modeMark === undefined) {
+    const mark = document.querySelector<HTMLElement>('.ui-appbar > .agent-mark[data-agent-mark="appbar"]');
+    if (!mark) return;
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "ui-vertical-starter";
-    button.dataset.domain = vertical.domain;
-    const title = document.createElement("span");
-    title.className = "ui-vertical-starter__title";
-    title.textContent = vertical.label;
-    button.appendChild(title);
-    if (vertical.description) {
-      const description = document.createElement("p");
-      description.className = "ui-vertical-starter__description";
-      description.textContent = vertical.description;
-      button.appendChild(description);
-    }
-    button.addEventListener("click", () => {
-      void sendTaskEvent(TASK_START_EVENT, { domain: vertical.domain });
-    });
-    item.appendChild(button);
-    list.appendChild(item);
+    button.className = "ui-button ui-button--quiet mode-mark";
+    button.setAttribute("aria-haspopup", "dialog");
+    button.addEventListener("click", openModeSheet);
+    mark.before(button);
+    button.appendChild(mark);
+    modeMark = button;
   }
-  verticalStarters.appendChild(list);
-  verticalStarters.hidden = false;
-  emptyState.hidden = true;
+  modeMark.setAttribute("aria-label", `${GUEST_MODE_CHOOSER.conciergeLabel(appliedMode.label)}. ${GUEST_MODE_CHOOSER.changeConcierge}`);
+}
+
+function ensureModeSheet(): HTMLDialogElement {
+  if (modeSheet) return modeSheet;
+  const sheet = document.createElement("dialog");
+  sheet.className = "mode-sheet";
+  sheet.setAttribute("aria-labelledby", "mode-sheet-heading");
+  const heading = document.createElement("h2");
+  heading.id = "mode-sheet-heading";
+  const warning = document.createElement("p");
+  warning.className = "mode-sheet__warning";
+  warning.setAttribute("role", "note");
+  warning.textContent = GUEST_MODE_CHOOSER.openProposalWarning;
+  const list = document.createElement("div");
+  list.className = "mode-sheet__choices";
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "ui-button ui-button--quiet mode-sheet__close";
+  close.textContent = GUEST_MODE_CHOOSER.close;
+  close.addEventListener("click", () => sheet.close());
+  sheet.addEventListener("close", () => modeMark?.focus({ preventScroll: true }));
+  sheet.append(heading, warning, list, close);
+  document.body.appendChild(sheet);
+  modeSheet = sheet;
+  return sheet;
+}
+
+/** Opens the sheet from the mark: a modal dialog, which adds no history entry. */
+function openModeSheet(): void {
+  const sheet = ensureModeSheet();
+  const heading = sheet.querySelector<HTMLElement>("#mode-sheet-heading");
+  if (heading) heading.textContent = GUEST_MODE_CHOOSER.conciergeLabel(appliedMode.label);
+  const warning = sheet.querySelector<HTMLElement>(".mode-sheet__warning");
+  if (warning) warning.hidden = !activeProposalOpen();
+  const list = sheet.querySelector<HTMLElement>(".mode-sheet__choices");
+  const committed = committedChoice();
+  list?.replaceChildren(...modeChoices.map((choice) =>
+    modeChoiceLabel(choice, "mode-sheet", choice.domain === committed?.domain, () => void chooseInSheet(choice))));
+  if (!sheet.open) sheet.showModal();
+}
+
+/** The sheet commits at once: switch when the mode's task exists, otherwise start it. */
+async function chooseInSheet(choice: ModeChoice): Promise<void> {
+  if (choice.domain === committedChoice()?.domain) return;
+  const task = lastTasks.find((entry) => entry.domain === choice.domain);
+  const ok = task === undefined
+    ? await sendTaskEvent(TASK_START_EVENT, { domain: choice.domain })
+    : await sendTaskEvent(TASK_SWITCH_EVENT, { taskId: task.taskId });
+  previewDomain = undefined;
+  if (ok) modeSheet?.close();
+  renderModeStrip();
+}
+
+/** Issue 03g (ADR 0107 decision 9): renders the strip and keeps the mark and the sheet in step with the validated choices. */
+function renderVerticalStarters(verticals: readonly GuestVertical[] | undefined): void {
+  modeChoices = chooseModes(verticals);
+  syncModeMark();
+  renderModeStrip();
+}
+
+/**
+ * Issue 03g step 3: a first message or a starter sends `platform.task.start` for the previewed mode before the turn, when it differs
+ * from the committed mode. A refused start keeps the server's mode and leaves the text in the composer.
+ */
+function startTurn(text: string): void {
+  const start = startBeforeTurn(modeChoices, previewDomain, appliedMode.id);
+  if (start === undefined) {
+    previewDomain = undefined;
+    withAgentMarkTransition(() => {
+      addTurn("user", text);
+      void sendTurn(text);
+    });
+    return;
+  }
+  void commitPreviewThenSend(start, text);
+}
+
+async function commitPreviewThenSend(start: ModeChoice, text: string): Promise<void> {
+  const ok = await sendTaskEvent(TASK_START_EVENT, { domain: start.domain });
+  previewDomain = undefined;
+  if (!ok || appliedMode.id !== start.presentation.id) {
+    renderEmptyCopy(appliedMode);
+    renderModeStrip();
+    return;
+  }
+  withAgentMarkTransition(() => {
+    addTurn("user", text);
+    void sendTurn(text);
+  });
 }
 
 /** Sends a task-rail event; unlike surface actions, it needs no active surface. */
-async function sendTaskEvent(name: string, context: Readonly<Record<string, unknown>>): Promise<void> {
-  if (taskEventInFlight || isLoading) return;
+/** Returns whether the server accepted the event (issue 03g: a refused start keeps the server's mode). */
+async function sendTaskEvent(name: string, context: Readonly<Record<string, unknown>>): Promise<boolean> {
+  if (taskEventInFlight || isLoading) return false;
   taskEventInFlight = true;
   taskRail.setAttribute("aria-busy", "true");
   try {
@@ -2367,12 +2549,13 @@ async function sendTaskEvent(name: string, context: Readonly<Record<string, unkn
     if (!response.ok) {
       addTurn("assistant", response.message ?? "That task could not be opened.");
       announce(response.message ?? "That task could not be opened.", true);
-      return;
+      return false;
     }
-    renderResponse(response);
+    return renderResponse(response);
   } catch {
     addTurn("assistant", "That task could not be opened. Please try again.");
     announce("That task could not be opened. Please try again.", true);
+    return false;
   } finally {
     taskEventInFlight = false;
     taskRail.removeAttribute("aria-busy");
@@ -2990,25 +3173,21 @@ window.addEventListener("popstate", () => {
 
 sheetQuery.addEventListener("change", syncSheetHistory);
 
-for (const suggestion of document.querySelectorAll<HTMLButtonElement>(".prompt-suggestion[data-prompt]")) {
-  suggestion.addEventListener("click", () => {
-    const text = suggestion.dataset.prompt?.trim();
-    if (!text || isLoading) return;
-    withAgentMarkTransition(() => {
-      addTurn("user", text);
-      void sendTurn(text);
-    });
-  });
-}
+// Issue 03g: starters are delegated, because a preview re-renders them (the rendered buttons are created after load).
+document.addEventListener("click", (event) => {
+  if (!(event.target instanceof Element)) return;
+  const suggestion = event.target.closest<HTMLButtonElement>(".prompt-suggestion[data-prompt]");
+  if (!suggestion || !emptyState.contains(suggestion)) return;
+  const text = suggestion.dataset.prompt?.trim();
+  if (!text || isLoading) return;
+  startTurn(text);
+});
 composerForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const text = composerInput.value.trim();
   if (text === "" || isLoading) return;
   clearQuickReplies();
-  withAgentMarkTransition(() => {
-    addTurn("user", text);
-    void sendTurn(text);
-  });
+  startTurn(text);
 });
 
 async function restoreServerState(): Promise<boolean> {
@@ -3024,6 +3203,9 @@ async function restoreServerState(): Promise<boolean> {
       announce("Your conversation has been restored.");
       return true;
     }
+    // Issue 03g: an empty conversation still shows the mode strip and the presentation's copy.
+    renderVerticalStarters(response.verticals);
+    if (response.mode !== undefined) applyResponseMode(response);
     if (!response.timeline || response.timeline.length === 0) return false;
     for (const entry of response.timeline) addTimelineEntry(entry);
     renderJourney(response.journey);

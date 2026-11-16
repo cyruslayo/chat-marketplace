@@ -5675,6 +5675,7 @@ export function createGuestRequestHandler(
           threadId,
           timeline: [],
           surfaces: [],
+          ...app.presentationFor(threadId),
         });
         return;
       }
@@ -5683,6 +5684,7 @@ export function createGuestRequestHandler(
         sendJson(res, 200, {
           ok: true,
           threadId,
+          ...app.presentationFor(threadId),
           timeline: [],
           surfaces: [],
         });

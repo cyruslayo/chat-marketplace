@@ -9686,6 +9686,14 @@ Known schemas:
     staysDescription: "Find an inspected apartment in Lagos or Abuja and book it.",
     shopDescription: "Browse products from verified merchants."
   });
+  var GUEST_MODE_CHOOSER = Object.freeze({
+    conciergeLabel: (modeLabel) => `Concierge \xB7 ${modeLabel}`,
+    changeConcierge: "Change concierge",
+    close: "Close",
+    heading: "Choose your concierge",
+    // Owner-approved on 16 Nov 2026 (issue 03g step 5). Shown when the current task has an open proposal, before a switch.
+    openProposalWarning: "Changing concierge now cancels the step waiting for your answer."
+  });
   var COMMITTED_WORK_NAMES = {
     request: GUEST_GLOSSARY.bookingRequest,
     offer: GUEST_GLOSSARY.conditionalBookingOffer,
@@ -10384,6 +10392,32 @@ Known schemas:
     const mode = readResponseMode(value);
     if (mode === void 0 || root.dataset.mode === mode.id) return;
     root.dataset.mode = mode.id;
+  }
+
+  // apps/local-guest/src/mode-choice.ts
+  function chooseModes(verticals) {
+    if (verticals === void 0) return [];
+    const counts = /* @__PURE__ */ new Map();
+    const validated = [];
+    for (const vertical of verticals) {
+      const presentation = validateModePresentation(vertical.presentation);
+      if (presentation === void 0) continue;
+      counts.set(presentation.id, (counts.get(presentation.id) ?? 0) + 1);
+      validated.push({ domain: vertical.domain, presentation });
+    }
+    return validated.filter((choice) => counts.get(choice.presentation.id) === 1);
+  }
+  function showsModeChooser(choices) {
+    return choices.length >= 2;
+  }
+  function markIsControl(choices, humanState) {
+    return showsModeChooser(choices) && !humanState;
+  }
+  function startBeforeTurn(choices, previewDomain2, committedModeId) {
+    if (previewDomain2 === void 0) return void 0;
+    const preview = choices.find((choice) => choice.domain === previewDomain2);
+    if (preview === void 0 || preview.presentation.id === committedModeId) return void 0;
+    return preview;
   }
 
   // apps/local-guest/src/agent-mark-state.ts
@@ -11687,6 +11721,9 @@ Known schemas:
   function applyResponseMode(response) {
     appliedMode = readResponseMode(response.mode) ?? appliedMode;
     applyResponseModeTo(document.documentElement, response.mode);
+    if (previewDomain === void 0) renderEmptyCopy(appliedMode);
+    syncModeMark();
+    renderModeStrip();
   }
   var AGENT_MARK_POP_MS = 400;
   var agentMarkState = "idle";
@@ -11760,6 +11797,7 @@ Known schemas:
   }
   function addTurn(role, text) {
     emptyState.hidden = true;
+    verticalStarters.hidden = true;
     const turn = document.createElement("article");
     turn.className = `turn ${role}`;
     turn.setAttribute(
@@ -12213,6 +12251,7 @@ Known schemas:
     return `thread-${threadId}:tasks`;
   }
   function renderTaskRail(tasks) {
+    lastTasks = tasks ?? [];
     if (!tasks || tasks.length <= 1) {
       taskRail.replaceChildren();
       taskRail.hidden = true;
@@ -12279,44 +12318,181 @@ Known schemas:
     taskStepHeader.append(chip, status);
     taskStepHeader.hidden = false;
   }
-  function renderVerticalStarters(verticals) {
+  var modeChoices = [];
+  var previewDomain;
+  var lastTasks = [];
+  var modeSheet;
+  var modeMark;
+  function committedChoice() {
+    return modeChoices.find((choice) => choice.presentation.id === appliedMode.id);
+  }
+  function activeProposalOpen() {
+    return lastTasks.some((task) => task.active && task.proposalOpen === true);
+  }
+  function modeChoiceLabel(choice, group, checked, onChoose) {
+    const label = document.createElement("label");
+    label.className = "ui-vertical-starter mode-choice";
+    label.dataset.domain = choice.domain;
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = group;
+    input.value = choice.domain;
+    input.className = "ui-sr-only";
+    input.checked = checked;
+    input.addEventListener("change", onChoose);
+    const mark = document.createElement("span");
+    mark.className = "agent-mark";
+    mark.setAttribute("aria-hidden", "true");
+    mark.style.inlineSize = "2rem";
+    mark.style.blockSize = "2rem";
+    mark.innerHTML = icon(choice.presentation.persona.icon);
+    const title = document.createElement("span");
+    title.className = "ui-vertical-starter__title";
+    title.textContent = choice.presentation.persona.name;
+    const description = document.createElement("p");
+    description.className = "ui-vertical-starter__description";
+    description.textContent = choice.presentation.tagline;
+    label.append(input, mark, title, description);
+    return label;
+  }
+  function renderEmptyCopy(mode) {
+    routeHeading.textContent = mode.emptyState.heading;
+    const heading = emptyState.querySelector("#empty-state-heading");
+    if (heading) heading.textContent = mode.emptyState.heading;
+    const body = emptyState.querySelector("p");
+    if (body) body.textContent = mode.emptyState.body;
+    const starters = emptyState.querySelector(".prompt-suggestions");
+    if (starters) {
+      starters.replaceChildren(...mode.emptyState.starters.map((starter) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "prompt-suggestion ui-chip";
+        button.dataset.prompt = starter.prompt;
+        button.textContent = starter.label;
+        return button;
+      }));
+    }
+    composerInput.placeholder = mode.composer.placeholder;
+  }
+  function previewChoose(choice) {
+    const committed = committedChoice();
+    previewDomain = committed?.domain === choice.domain ? void 0 : choice.domain;
+    renderEmptyCopy(choice.presentation);
+    renderModeStrip();
+  }
+  function renderModeStrip() {
     verticalStarters.replaceChildren();
-    if (!verticals || verticals.length <= 1) {
+    if (!showsModeChooser(modeChoices) || emptyState.hidden) {
       verticalStarters.hidden = true;
+      delete verticalStarters.dataset.previewMode;
       return;
     }
-    const heading = document.createElement("h2");
-    heading.textContent = GUEST_VERTICALS.heading;
-    verticalStarters.appendChild(heading);
-    const list = document.createElement("ul");
-    for (const vertical of verticals) {
-      const item = document.createElement("li");
+    const committed = committedChoice();
+    const shown = modeChoices.find((choice) => choice.domain === previewDomain) ?? committed;
+    const fieldset = document.createElement("fieldset");
+    fieldset.className = "mode-choices";
+    const legend = document.createElement("legend");
+    legend.textContent = GUEST_MODE_CHOOSER.heading;
+    fieldset.appendChild(legend);
+    for (const choice of modeChoices) {
+      fieldset.appendChild(modeChoiceLabel(choice, "mode-preview", choice.domain === shown?.domain, () => previewChoose(choice)));
+    }
+    verticalStarters.appendChild(fieldset);
+    if (shown && committed && shown.domain !== committed.domain) verticalStarters.dataset.previewMode = shown.presentation.id;
+    else delete verticalStarters.dataset.previewMode;
+    verticalStarters.hidden = false;
+  }
+  function syncModeMark() {
+    if (!markIsControl(modeChoices, false)) return;
+    if (modeMark === void 0) {
+      const mark = document.querySelector('.ui-appbar > .agent-mark[data-agent-mark="appbar"]');
+      if (!mark) return;
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "ui-vertical-starter";
-      button.dataset.domain = vertical.domain;
-      const title = document.createElement("span");
-      title.className = "ui-vertical-starter__title";
-      title.textContent = vertical.label;
-      button.appendChild(title);
-      if (vertical.description) {
-        const description = document.createElement("p");
-        description.className = "ui-vertical-starter__description";
-        description.textContent = vertical.description;
-        button.appendChild(description);
-      }
-      button.addEventListener("click", () => {
-        void sendTaskEvent(TASK_START_EVENT, { domain: vertical.domain });
-      });
-      item.appendChild(button);
-      list.appendChild(item);
+      button.className = "ui-button ui-button--quiet mode-mark";
+      button.setAttribute("aria-haspopup", "dialog");
+      button.addEventListener("click", openModeSheet);
+      mark.before(button);
+      button.appendChild(mark);
+      modeMark = button;
     }
-    verticalStarters.appendChild(list);
-    verticalStarters.hidden = false;
-    emptyState.hidden = true;
+    modeMark.setAttribute("aria-label", `${GUEST_MODE_CHOOSER.conciergeLabel(appliedMode.label)}. ${GUEST_MODE_CHOOSER.changeConcierge}`);
+  }
+  function ensureModeSheet() {
+    if (modeSheet) return modeSheet;
+    const sheet = document.createElement("dialog");
+    sheet.className = "mode-sheet";
+    sheet.setAttribute("aria-labelledby", "mode-sheet-heading");
+    const heading = document.createElement("h2");
+    heading.id = "mode-sheet-heading";
+    const warning = document.createElement("p");
+    warning.className = "mode-sheet__warning";
+    warning.setAttribute("role", "note");
+    warning.textContent = GUEST_MODE_CHOOSER.openProposalWarning;
+    const list = document.createElement("div");
+    list.className = "mode-sheet__choices";
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "ui-button ui-button--quiet mode-sheet__close";
+    close.textContent = GUEST_MODE_CHOOSER.close;
+    close.addEventListener("click", () => sheet.close());
+    sheet.addEventListener("close", () => modeMark?.focus({ preventScroll: true }));
+    sheet.append(heading, warning, list, close);
+    document.body.appendChild(sheet);
+    modeSheet = sheet;
+    return sheet;
+  }
+  function openModeSheet() {
+    const sheet = ensureModeSheet();
+    const heading = sheet.querySelector("#mode-sheet-heading");
+    if (heading) heading.textContent = GUEST_MODE_CHOOSER.conciergeLabel(appliedMode.label);
+    const warning = sheet.querySelector(".mode-sheet__warning");
+    if (warning) warning.hidden = !activeProposalOpen();
+    const list = sheet.querySelector(".mode-sheet__choices");
+    const committed = committedChoice();
+    list?.replaceChildren(...modeChoices.map((choice) => modeChoiceLabel(choice, "mode-sheet", choice.domain === committed?.domain, () => void chooseInSheet(choice))));
+    if (!sheet.open) sheet.showModal();
+  }
+  async function chooseInSheet(choice) {
+    if (choice.domain === committedChoice()?.domain) return;
+    const task = lastTasks.find((entry) => entry.domain === choice.domain);
+    const ok = task === void 0 ? await sendTaskEvent(TASK_START_EVENT, { domain: choice.domain }) : await sendTaskEvent(TASK_SWITCH_EVENT, { taskId: task.taskId });
+    previewDomain = void 0;
+    if (ok) modeSheet?.close();
+    renderModeStrip();
+  }
+  function renderVerticalStarters(verticals) {
+    modeChoices = chooseModes(verticals);
+    syncModeMark();
+    renderModeStrip();
+  }
+  function startTurn(text) {
+    const start = startBeforeTurn(modeChoices, previewDomain, appliedMode.id);
+    if (start === void 0) {
+      previewDomain = void 0;
+      withAgentMarkTransition(() => {
+        addTurn("user", text);
+        void sendTurn(text);
+      });
+      return;
+    }
+    void commitPreviewThenSend(start, text);
+  }
+  async function commitPreviewThenSend(start, text) {
+    const ok = await sendTaskEvent(TASK_START_EVENT, { domain: start.domain });
+    previewDomain = void 0;
+    if (!ok || appliedMode.id !== start.presentation.id) {
+      renderEmptyCopy(appliedMode);
+      renderModeStrip();
+      return;
+    }
+    withAgentMarkTransition(() => {
+      addTurn("user", text);
+      void sendTurn(text);
+    });
   }
   async function sendTaskEvent(name, context) {
-    if (taskEventInFlight || isLoading) return;
+    if (taskEventInFlight || isLoading) return false;
     taskEventInFlight = true;
     taskRail.setAttribute("aria-busy", "true");
     try {
@@ -12331,12 +12507,13 @@ Known schemas:
       if (!response.ok) {
         addTurn("assistant", response.message ?? "That task could not be opened.");
         announce(response.message ?? "That task could not be opened.", true);
-        return;
+        return false;
       }
-      renderResponse(response);
+      return renderResponse(response);
     } catch {
       addTurn("assistant", "That task could not be opened. Please try again.");
       announce("That task could not be opened. Please try again.", true);
+      return false;
     } finally {
       taskEventInFlight = false;
       taskRail.removeAttribute("aria-busy");
@@ -12901,25 +13078,20 @@ Known schemas:
     closeWorkspace(workspaceReopen);
   });
   sheetQuery.addEventListener("change", syncSheetHistory);
-  for (const suggestion of document.querySelectorAll(".prompt-suggestion[data-prompt]")) {
-    suggestion.addEventListener("click", () => {
-      const text = suggestion.dataset.prompt?.trim();
-      if (!text || isLoading) return;
-      withAgentMarkTransition(() => {
-        addTurn("user", text);
-        void sendTurn(text);
-      });
-    });
-  }
+  document.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element)) return;
+    const suggestion = event.target.closest(".prompt-suggestion[data-prompt]");
+    if (!suggestion || !emptyState.contains(suggestion)) return;
+    const text = suggestion.dataset.prompt?.trim();
+    if (!text || isLoading) return;
+    startTurn(text);
+  });
   composerForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const text = composerInput.value.trim();
     if (text === "" || isLoading) return;
     clearQuickReplies();
-    withAgentMarkTransition(() => {
-      addTurn("user", text);
-      void sendTurn(text);
-    });
+    startTurn(text);
   });
   async function restoreServerState() {
     try {
@@ -12933,6 +13105,8 @@ Known schemas:
         announce("Your conversation has been restored.");
         return true;
       }
+      renderVerticalStarters(response.verticals);
+      if (response.mode !== void 0) applyResponseMode(response);
       if (!response.timeline || response.timeline.length === 0) return false;
       for (const entry of response.timeline) addTimelineEntry(entry);
       renderJourney(response.journey);

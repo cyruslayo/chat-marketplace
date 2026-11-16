@@ -250,6 +250,19 @@ export const GUEST_VERTICALS = Object.freeze({
   shopDescription: "Browse products from verified merchants.",
 });
 
+/**
+ * Issue 03g (ADR 0107 decisions 9 and 1; owner, 10 Nov 2026): the persona wording for more than one mode. It is shown only when two
+ * or more modes are registered. `conciergeLabel` builds "Concierge · <mode label>" (for example "Concierge · Stays").
+ */
+export const GUEST_MODE_CHOOSER = Object.freeze({
+  conciergeLabel: (modeLabel: string): string => `Concierge · ${modeLabel}`,
+  changeConcierge: "Change concierge",
+  close: "Close",
+  heading: "Choose your concierge",
+  // Owner-approved on 16 Nov 2026 (issue 03g step 5). Shown when the current task has an open proposal, before a switch.
+  openProposalWarning: "Changing concierge now cancels the step waiting for your answer.",
+});
+
 /** Issue 13a: committed work a new conversation leaves untouched (ADR-0079). */
 export type GuestCommittedWorkKind = "request" | "offer" | "reservation";
 

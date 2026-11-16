@@ -136,13 +136,23 @@ export interface AssistantTaskRailEntry {
   readonly tone?: AssistantTaskSummary["tone"];
   readonly active: boolean;
   readonly badge?: number;
+  /** Issue 03g (ADR 0074): true on the active task while an open proposal would be replaced by a mode switch. */
+  readonly proposalOpen?: true;
 }
 
-/** A registered vertical offered by a starter card. */
+/** A registered vertical offered by a starter card, and as a mode choice (issue 03g). */
 export interface AssistantVertical {
   readonly domain: string;
   readonly label: string;
   readonly description?: string;
+  /** Issue 03g (ADR 0107 decision 9): the pack's presentation when it declares one. The client validates it again. */
+  readonly presentation?: ModePresentation;
+}
+
+/** Issue 03g (ADR 0074): an open proposal is an unexecuted pending action on the thread's task state. */
+function hasOpenProposal(thread: AssistantThreadState): boolean {
+  const action = thread.taskState.pendingAction;
+  return action !== null && action !== undefined && !action.executed;
 }
 
 export type AssistantDiagnosticStage =
@@ -1953,11 +1963,12 @@ export class AssistantRuntime {
         ...(summary?.tone === undefined ? {} : { tone: summary.tone }),
         active: task.taskId === thread.activeTaskId,
         ...(task.badge > 0 ? { badge: task.badge } : {}),
+        ...(task.taskId === thread.activeTaskId && hasOpenProposal(thread) ? { proposalOpen: true as const } : {}),
       };
     });
   }
 
-  /** Registered verticals for starter cards (only meaningful with more than one domain). */
+  /** Registered verticals for starter cards and mode choices (only meaningful with more than one domain). */
   registeredVerticals(): readonly AssistantVertical[] {
     return this.#packs.ids().map((id) => {
       const pack = this.#packs.packFor(id);
@@ -1965,6 +1976,7 @@ export class AssistantRuntime {
         domain: id,
         label: pack?.label ?? id,
         ...(pack?.starterDescription === undefined ? {} : { description: pack.starterDescription }),
+        ...(pack?.presentation === undefined ? {} : { presentation: pack.presentation }),
       };
     });
   }

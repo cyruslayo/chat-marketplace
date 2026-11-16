@@ -2140,6 +2140,14 @@ export class LocalGuestApp {
     };
   }
 
+  /**
+   * Issue 03g (ADR 0107 decision 6): the presentation a thread presents before it has stored state, so a fresh conversation still
+   * carries its mode and the registered modes. The mode is derived as for a read (decision 2); the client never sets it.
+   */
+  presentationFor(threadId: string): { readonly mode: ModePresentation; readonly verticals?: readonly GuestVertical[] } {
+    return { mode: this.#modeFor(threadId), ...(this.#assistantRuntime ? { verticals: this.#verticals() } : {}) };
+  }
+
   getState(threadId: string): GuestStateSnapshot | undefined {
     const thread = this.#threads.get(threadId) ?? (this.#environment.guestDataIsRemote ? null : this.#loadThread(threadId));
     if (!thread) return undefined;
@@ -2181,7 +2189,9 @@ export class LocalGuestApp {
       ...(journey === undefined ? {} : { journey }),
       ...(criteria === undefined ? {} : { criteria }),
       mode: this.#modeFor(threadId),
-      ...(this.#assistantRuntime?.hasThread(threadId) ? { tasks: this.#assistantRuntime.getTaskRail(threadId), verticals: this.#verticals() } : {}),
+      ...(this.#assistantRuntime?.hasThread(threadId) ? { tasks: this.#assistantRuntime.getTaskRail(threadId) } : {}),
+      // Issue 03g: the registered modes are offered on a fresh thread too, so the strip exists before the first message.
+      ...(this.#assistantRuntime ? { verticals: this.#verticals() } : {}),
     };
   }
 
