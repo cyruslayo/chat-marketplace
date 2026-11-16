@@ -26,6 +26,12 @@ export const GUEST_GLOSSARY = Object.freeze({
   operatorFallback: "the Operator",
 });
 
+/** ADR 0077 / 0107: server-authored, single-source tier-C suggestion copy. */
+export const GUEST_MODE_SUGGESTION = Object.freeze({
+  message: (label: string) => `I can help with that as Concierge · ${label}. Your stay details are saved.`,
+  chip: (label: string) => `Switch to Concierge · ${label}`,
+});
+
 /**
  * Issue 60 (ADR 0075, ADR 0077): the closed refusal map. Every `ok:false` code the app can return maps to one class, and the class
  * decides the guest copy and the client's behaviour. A code that is not listed fails closed to the generic `unavailable` copy.

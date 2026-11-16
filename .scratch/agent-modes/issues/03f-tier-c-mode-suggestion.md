@@ -80,3 +80,29 @@ Each is its own `test()` in `test/mode-suggestion-tier-c.test.ts`.
 - Removing the `intentKeywords` field.
 
 ## Comments
+
+16 Nov 2026 — implementation on `feat/agent-modes-03f` (baseline `81367ed`). O6 copy is `I can help with that as Concierge · {label}. Your stay details are saved.` and `Switch to Concierge · {label}`, sourced only from `guest-content.ts`. O8: the commerce-off negative regex adds this suggestion text; the commerce-on test explicitly proves classifier invocation, and the router AC2 now asserts no suggestion for an in-scope turn. No commerce production code or recorded fixture was changed.
+
+| ADR read | Constraint verified in the implementation | AC / path |
+| --- | --- | --- |
+| 0073, 0074, 0080 | Existing platform task event is the only switching authority; suggestion leaves pending action and surfaces intact | AC4, AC10; `assistant-runtime.ts`, `client.ts` |
+| 0075, 0079 | Diagnostic contains only registry-closed domain ids, closed reason/tier and boolean, never guest text or credentials | AC7; `#recordModeSuggestion` |
+| 0076, 0107 | Suggested response drives `suggesting`; human state remains absorbing; A/B remain disabled | AC5, AC8–9; `agent-mark-state.ts`, `mode-switch-tier.ts` |
+| 0077, 0078 | Single guest-content copy source; native kit chip and 44×44 CSS target at 320px through desktop | AC3, AC9; `guest-content.ts`, `client.ts` |
+| 0092, 0093 | Existing guest stay context and anonymous guest authority persist, including cold restores | AC3–4, AC8, AC10; no new identity/booking authority |
+| 0099, 0101, 0104 | Platform registry provides the closed target list; a parked pack cannot be targeted | AC1–3; `scope-classifier.ts`, `assistant-runtime.ts` |
+| 0106 | Advisory classifier sees ids and scope descriptions only, schema enum per call; no keyword router or rejected message history | AC1–3, AC6; `scope-classifier.ts`, `assistant-runtime.ts` |
+
+Verification (commands below were executed with the mandated `env -u LLM_API_KEY` prefix, using local `tsx`):
+
+- `npm run check` — passed, zero type errors and Worker bundle guard passed.
+- `node node_modules/tsx/dist/cli.mjs --test --test-reporter=dot test/mode-suggestion-tier-c.test.ts test/conversation-router.test.ts test/agent-mark-shell.test.ts test/agent-mode-shell.test.ts test/scope-classifier-malformed-shapes.test.ts test/assistant-cold-journey.test.ts` — 57 passed, zero failed (before final AC8 cold-restore test adjustment; own file rerun below).
+- `node node_modules/tsx/dist/cli.mjs --test --test-reporter=dot test/mode-suggestion-tier-c.test.ts` — 10 passed, zero failed after AC8 adjustment.
+- `node node_modules/tsx/dist/cli.mjs --test --test-reporter=dot test/commerce-agent-tools.test.ts test/pilot-commerce-off.test.ts` — 19 passed, zero failed.
+- `node node_modules/tsx/dist/cli.mjs --test --test-reporter=dot test/assistant-scope-controls.test.ts test/assistant-clarification-chips.test.ts test/assistant-persistent-continuity.test.ts test/agent-mode-follows-task.test.ts` — 65 passed, zero failed.
+- `npm run build` — passed; rebuilt `dist/client.js` for the real browser.
+- `node node_modules/tsx/dist/cli.mjs --test --test-reporter=dot test/agent-mark-chromium.test.ts` — 5 passed, zero failed, one browser file at a time. Captures saved locally in `screenshots/03f/` for 320, 390, 768 and 1280; no horizontal overflow and target at least 44×44 at each viewport.
+- `node node_modules/tsx/dist/cli.mjs --test --test-reporter=dot test/assistant-recorded-journeys.test.ts test/assistant-task-lanes.test.ts` — 11 passed, 2 failed: replay diverges on the first classifier request because the immutable recorded fixture carries the old request schema/context. Issue Verification requires owner approval before re-recording; none was provided. Fixture untouched. This blocks the issue's affected-test and DoD gate.
+- `git diff --check` — passed (Windows LF/CRLF notices only).
+
+Definition of Done review: (1) ten dedicated tests named AC1–AC10: yes; (2) named fail-closed paths covered, including unknown target, unclear/failure, in-scope keyword, unchanged task and guest event: yes; (3) relevant ADRs listed, read and checked above: yes; (4) no new unused dependency injection: yes; (5) copy and tier setting sourced from O6 and ADR 0107: yes; (6) no identity, text or credential in diagnostic: yes; (7) `npm run check` clean, but affected recorded-replay tests blocked on explicit fixture approval; full `npm test` / Workers are the parent's once-per-batch gate. **Keep open until the owner authorizes a fixture re-record and the affected replay tests pass.**

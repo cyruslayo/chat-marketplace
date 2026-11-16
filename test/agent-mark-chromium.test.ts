@@ -3,6 +3,10 @@ import test from "node:test";
 import { launchRealBrowser, type RealBrowserTab } from "./helpers/chrome-devtools.js";
 import { HELD_TURN_MS, startHeldTurnServer } from "./helpers/agent-mark-fixture.js";
 import { AGENT_MARK_STATES } from "../apps/local-guest/src/agent-mark-state.js";
+import { startLocalGuestServer } from "../apps/local-guest/src/guest-server.js";
+import { createFakeShopPack } from "./helpers/fake-domain-pack.js";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 /*
  * Issue 01b of the agent-modes effort (ADR 0107 decision 9, WCAG 2.2.2, ADR 0078). Real Chrome, one file at a time.
@@ -25,6 +29,36 @@ function setAllMarksTo(state: string): string {
     if (dock) dock.hidden = false;
   })()`;
 }
+
+test("AC9 tier C: suggestion chip and suggesting mark reflow at 320, 390, 768 and 1280", async () => {
+  const server = startLocalGuestServer({ conciergeMode: "assistant-offline", port: 0, additionalPacks: [createFakeShopPack()],
+    modelClient: { generate: async () => ({ text: JSON.stringify({ scope: "out_of_scope", targetPack: "shop", risk: "ordinary", intents: [], reasonCode: "outside",
+      slots: { city: null, neighbourhood: null, bedrooms: null, nights: null, guests: null, checkIn: null, checkOut: null } }) }) } });
+  const base = `http://127.0.0.1:${await server.listen()}`;
+  const browser = await launchRealBrowser();
+  try {
+    const tab = await browser.createTab();
+    for (const width of [320, 390, 768, 1280]) {
+      await tab.setViewport(width, 850);
+      await tab.navigate(`${base}/`);
+      await tab.waitForSelector("#composer-input");
+      await sendMessage(tab, "buy a kettle");
+      await tab.waitForText("Switch to Concierge · Shop", 15_000);
+      const size = await tab.evaluate<{ width: number; height: number; overflows: boolean; mark: string }>(`(() => {
+        const chip = [...document.querySelectorAll('.quick-reply')].find((node) => node.textContent === 'Switch to Concierge · Shop');
+        const rect = chip.getBoundingClientRect();
+        return { width: rect.width, height: rect.height, overflows: document.documentElement.scrollWidth > innerWidth,
+          mark: document.querySelector('[data-agent-mark="appbar"]')?.getAttribute('data-agent-state') ?? '' };
+      })()`);
+      assert.ok(size.width >= 44 && size.height >= 44, `${width}px: target is at least 44×44`);
+      assert.equal(size.overflows, false, `${width}px: no horizontal overflow`);
+      assert.equal(size.mark, "suggesting", `${width}px: suggested response drives the mark`);
+      mkdirSync(join("screenshots", "03f"), { recursive: true });
+      writeFileSync(join("screenshots", "03f", `suggestion-${width}.png`), await tab.captureScreenshot());
+    }
+    await tab.close();
+  } finally { await browser.close(); await server.close(); }
+});
 
 async function sendMessage(tab: RealBrowserTab, text: string): Promise<void> {
   await tab.focus("#composer-input");

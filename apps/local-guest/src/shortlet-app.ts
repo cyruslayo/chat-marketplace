@@ -430,6 +430,7 @@ export interface GuestTurnSuccess {
   readonly criteria?: GuestCriteria;
   /** Issue 11 AC3 / issue 58: one-tap answers. A chip with an `edit` is a structured criteria event, not typed text. */
   readonly quickReplies?: readonly GuestQuickReply[];
+  readonly modeChange?: { readonly from: string; readonly to: string; readonly reason: "suggested"; readonly undoable: false };
   /** Slice 26: the shell task rail, present only when the assistant runtime has tasks. */
   readonly tasks?: readonly GuestTask[];
   readonly verticals?: readonly GuestVertical[];
@@ -933,6 +934,7 @@ export class LocalGuestApp {
     readonly tasks?: readonly AssistantTaskRailEntry[];
     readonly controlOutcome?: AssistantControlOutcome;
     readonly quickReplies?: readonly GuestQuickReply[];
+    readonly modeChange?: GuestTurnSuccess["modeChange"];
   }): GuestTurnResult {
     return {
       ok: true,
@@ -944,6 +946,7 @@ export class LocalGuestApp {
       surfaces: this.#assistantSurfaces(output.surfaces ?? []),
       // Issue 10: one-tap replies for the clarification (the runtime gives them only for clarify_stay and stay/area clarifications).
       ...(output.quickReplies === undefined ? {} : { quickReplies: output.quickReplies }),
+      ...(output.modeChange === undefined ? {} : { modeChange: output.modeChange }),
       ...(output.tasks === undefined || output.tasks.length === 0
         ? {}
         : { tasks: output.tasks, verticals: this.#verticals() }),
@@ -3803,7 +3806,7 @@ export class LocalGuestApp {
 
   #assistantTimelineMessage(result: GuestTurnSuccess, thread: GuestThreadState): string {
     switch (result.assistantControlOutcome) {
-      case "scope_redirect": return ASSISTANT_CONTROL_COPY.redirect;
+      case "scope_redirect": return result.modeChange ? result.messages[0] ?? ASSISTANT_CONTROL_COPY.redirect : ASSISTANT_CONTROL_COPY.redirect;
       case "scope_unavailable":
       case "quota_refusal":
       case "model_handling_failure":

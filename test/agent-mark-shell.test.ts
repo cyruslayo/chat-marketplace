@@ -37,8 +37,8 @@ async function loadMarkState(): Promise<MarkModule> {
 
 /** Every state the type may name, in the order the ADR lists them. */
 const ALL_STATES: readonly AgentMarkState[] = ["idle", "listening", "thinking", "working", "responding", "suggesting", "switching", "resting", "human"];
-/** States that no event produces in this slice: `human` waits for a takeover signal (ADR 0076), `working` has no signal yet, and `suggesting` and `switching` wait for slice 4b. */
-const NEVER_PRODUCED: readonly AgentMarkState[] = ["human", "working", "suggesting", "switching"];
+/** `suggesting` is reachable only from a suggested response; these states still have no guest signal. */
+const NEVER_PRODUCED: readonly AgentMarkState[] = ["human", "working", "switching"];
 
 const EVENTS: readonly AgentMarkEvent[] = [
   { type: "turn-started" },
@@ -98,7 +98,7 @@ test("AC2: Each mark state comes from an existing signal", async () => {
   assert.equal(next("listening", { type: "composer-changed", focusedWithText: false }), "idle", "an emptied composer returns to idle");
 });
 
-test("AC2: No event sequence yields human, working, suggesting or switching", async () => {
+test("AC2: Suggesting is reached only by a suggested response; human, working and switching stay unproduced", async () => {
   const mark = await loadMarkState();
   assert.deepEqual([...mark.AGENT_MARK_STATES].sort(), [...ALL_STATES].sort(), "the type names the nine closed states");
 
@@ -119,6 +119,8 @@ test("AC2: No event sequence yields human, working, suggesting or switching", as
   for (const state of NEVER_PRODUCED) {
     assert.equal(reached.has(state), false, `no event sequence yields ${state}`);
   }
+  assert.equal(reached.has("suggesting"), false, "ordinary responses do not suggest");
+  assert.equal(mark.nextAgentMarkState("thinking", { type: "mode-suggested" }), "suggesting");
 
   const source = readFileSync(new URL("../apps/local-guest/src/agent-mark-state.ts", import.meta.url), "utf8");
   assert.match(source, /ADR 0076/, "the state map cites ADR 0076 where a takeover signal must set human");

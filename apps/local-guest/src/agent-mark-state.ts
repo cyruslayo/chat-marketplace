@@ -4,7 +4,7 @@
  * is derived from the current request and never persisted (ADR 0106: a cold restore starts again from `idle`).
  *
  * Only `idle`, `listening`, `thinking`, `responding` and `resting` are produced in this slice. `working` maps to `thinking` because no
- * tool-step signal exists today. `suggesting` and `switching` wait for the mode strip (slice 4b).
+ * tool-step signal exists today. `suggesting` follows a validated tier-C response; `switching` waits for automatic switching.
  *
  * ADR 0076 (human takeover): no takeover signal reaches the guest app today, so `human` is never produced. Any future takeover signal on
  * guest responses must set `human` and block `thinking`, `working` and `responding`. This map keeps `human` absorbing, so no later event
@@ -22,6 +22,7 @@ export type AgentMarkRefusalCode = "quota_refusal" | "CONCIERGE_UNAVAILABLE";
 export type AgentMarkEvent =
   | { readonly type: "turn-started" }
   | { readonly type: "reply-landed" }
+  | { readonly type: "mode-suggested" }
   | { readonly type: "response-settled" }
   | { readonly type: "turn-ended" }
   | { readonly type: "turn-refused"; readonly code: AgentMarkRefusalCode }
@@ -38,6 +39,8 @@ export function nextAgentMarkState(current: AgentMarkState, event: AgentMarkEven
       return "thinking";
     case "reply-landed":
       return "responding";
+    case "mode-suggested":
+      return "suggesting";
     case "response-settled":
       return current === "responding" ? "idle" : current;
     case "turn-ended":

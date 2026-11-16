@@ -9519,6 +9519,10 @@ Known schemas:
     revalidation: "We re-check price and availability when you send",
     operatorFallback: "the Operator"
   });
+  var GUEST_MODE_SUGGESTION = Object.freeze({
+    message: (label) => `I can help with that as Concierge \xB7 ${label}. Your stay details are saved.`,
+    chip: (label) => `Switch to Concierge \xB7 ${label}`
+  });
   var GUEST_REFUSAL_DEFAULT = Object.freeze({
     stale: "These options have changed. Here are the current ones.",
     forbidden: "That action isn't available here. Please use the options shown.",
@@ -10237,11 +10241,15 @@ Known schemas:
     const replies = [];
     for (const item of value) {
       if (!isRecord3(item) || typeof item.label !== "string" || item.label === "") continue;
-      if (item.edit === void 0) {
+      if (typeof item.domain === "string" && item.domain.length > 0 && item.domain.length <= 120 && item.edit === void 0 && (item.taskId === void 0 || typeof item.taskId === "string") && exactKeys(item, item.taskId === void 0 ? ["label", "domain"] : ["label", "domain", "taskId"])) {
+        replies.push({ label: item.label, domain: item.domain, ...item.taskId === void 0 ? {} : { taskId: item.taskId } });
+        continue;
+      }
+      if (exactKeys(item, ["label"])) {
         replies.push({ label: item.label });
         continue;
       }
-      if (isQuickReplyEdit(item.edit)) replies.push({ label: item.label, edit: item.edit });
+      if (isQuickReplyEdit(item.edit) && exactKeys(item, ["label", "edit"])) replies.push({ label: item.label, edit: item.edit });
     }
     return replies;
   }
@@ -10395,6 +10403,8 @@ Known schemas:
         return "thinking";
       case "reply-landed":
         return "responding";
+      case "mode-suggested":
+        return "suggesting";
       case "response-settled":
         return current === "responding" ? "idle" : current;
       case "turn-ended":
@@ -11676,6 +11686,7 @@ Known schemas:
       throw new Error("Invalid response criteria");
     if (value.quickReplies !== void 0 && !Array.isArray(value.quickReplies))
       throw new Error("Invalid response quick replies");
+    if (value.modeChange !== void 0 && (!isRecord5(value.modeChange) || value.modeChange.reason !== "suggested" || typeof value.modeChange.from !== "string" || typeof value.modeChange.to !== "string" || value.modeChange.undoable !== false || Object.keys(value.modeChange).length !== 4)) throw new Error("Invalid response mode change");
     if (value.tasks !== void 0 && (!Array.isArray(value.tasks) || value.tasks.some((task) => !isGuestTask(task))))
       throw new Error("Invalid response tasks");
     if (value.verticals !== void 0 && (!Array.isArray(value.verticals) || value.verticals.some((vertical) => !isGuestVertical(vertical))))
@@ -12593,6 +12604,13 @@ Known schemas:
         if (isLoading) return;
         clearQuickReplies();
         addTurn("user", reply.label);
+        if (reply.domain !== void 0) {
+          void sendTaskEvent(
+            reply.taskId === void 0 ? TASK_START_EVENT : TASK_SWITCH_EVENT,
+            reply.taskId === void 0 ? { domain: reply.domain } : { taskId: reply.taskId }
+          );
+          return;
+        }
         if (reply.edit !== void 0) {
           const basedOn = currentCriteria?.key;
           if (basedOn === void 0) {
@@ -12659,7 +12677,8 @@ Known schemas:
     renderSurfaces(surfaces);
     transcriptAnnouncesTurn = false;
     for (const receipt of response.receipts ?? []) addReceipt(receipt);
-    landAgentReply();
+    if (response.modeChange?.reason === "suggested") setAgentMark({ type: "mode-suggested" });
+    else landAgentReply();
     return true;
   }
   async function refreshServerState(preserveConversation = shellState.activeSurface?.mode === "focused-surface" && !shellState.focusedSurfaceOpen) {

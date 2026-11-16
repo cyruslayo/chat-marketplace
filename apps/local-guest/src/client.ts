@@ -164,6 +164,7 @@ interface GuestResponse {
   readonly journey?: GuestJourney;
   readonly criteria?: GuestCriteria;
   readonly quickReplies?: readonly GuestQuickReply[];
+  readonly modeChange?: { readonly from: string; readonly to: string; readonly reason: "suggested"; readonly undoable: false };
   readonly tasks?: readonly GuestTask[];
   readonly verticals?: readonly GuestVertical[];
   readonly mode?: ModePresentation;
@@ -1528,6 +1529,9 @@ function readGuestResponse(value: unknown): GuestResponse {
   // Issue 58: a malformed chip is dropped by isQuickReplyList at render, so only a non-array is refused whole here.
   if (value.quickReplies !== undefined && !Array.isArray(value.quickReplies))
     throw new Error("Invalid response quick replies");
+  if (value.modeChange !== undefined && (!isRecord(value.modeChange) || value.modeChange.reason !== "suggested"
+    || typeof value.modeChange.from !== "string" || typeof value.modeChange.to !== "string" || value.modeChange.undoable !== false
+    || Object.keys(value.modeChange).length !== 4)) throw new Error("Invalid response mode change");
   if (
     value.tasks !== undefined &&
     (!Array.isArray(value.tasks) || value.tasks.some((task) => !isGuestTask(task)))
@@ -2649,6 +2653,12 @@ function renderQuickReplies(replies: readonly GuestQuickReply[] | undefined): vo
       if (isLoading) return;
       clearQuickReplies();
       addTurn("user", reply.label);
+      if (reply.domain !== undefined) {
+        // ADR 0107: the chip is guest consent, not classifier authority. The server checks the registered target.
+        void sendTaskEvent(reply.taskId === undefined ? TASK_START_EVENT : TASK_SWITCH_EVENT,
+          reply.taskId === undefined ? { domain: reply.domain } : { taskId: reply.taskId });
+        return;
+      }
       if (reply.edit !== undefined) {
         const basedOn = currentCriteria?.key;
         if (basedOn === undefined) { void sendTurn(reply.label); return; }
@@ -2730,7 +2740,8 @@ function renderResponse(response: GuestResponse): boolean {
   transcriptAnnouncesTurn = false;
   // Receipts follow the markers for the steps they complete.
   for (const receipt of response.receipts ?? []) addReceipt(receipt);
-  landAgentReply();
+  if (response.modeChange?.reason === "suggested") setAgentMark({ type: "mode-suggested" });
+  else landAgentReply();
   return true;
 }
 
