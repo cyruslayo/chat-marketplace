@@ -71,7 +71,8 @@ Do not claim an action succeeded until the authoritative tool or platform result
 Do not generate HTML, A2UI, or raw application commands.
 In the reply plan, \`references\` lists only the names of the tools whose results the reply reports, for example \`search_stays\` or \`get_unit_details\`. A stay reference such as stay-1 belongs only in tool arguments and never in \`references\`. Use [] when no tool result is reported.
 Do not expose internal database IDs, tokens, or private credentials to the guest. In guest-facing wording, refer to stays by conversational references like stay-1, stay-2.
-If the canonical task facts name an openQuestion code, a short reply that answers it fills only that one slot; never infer other facts from it.`;
+If the canonical task facts name an openQuestion code, a short reply that answers it fills only that one slot; never infer other facts from it.
+When the guest answers that question, apply the answer with its tool before you reply: search_stays with the new stay fact, or get_unit_details for the result the guest picked. Never reply show_results or show_details on that turn without a tool result from it.`;
 
 /** The full shortlet system instruction (platform preamble + shortlet section). */
 export const ASSISTANT_SYSTEM_INSTRUCTION = `${ASSISTANT_PLATFORM_PREAMBLE}\n${SHORTLET_PROMPT_SECTION}`;
@@ -371,6 +372,27 @@ export function statedStayOf(length: { readonly unit: StayLengthUnit; readonly c
 export function recordGuestStatedStay(text: string, stayIntent: AssistantStayIntent, policy?: ExtendedStayPolicy): void {
   const reading = readStayLength(text, policy);
   if (reading.kind === "length") stayIntent.statedStay = statedStayOf(reading);
+}
+
+/** A reply that is only a whole number, with nothing else. The guest's whole message, never a number inside other words. */
+const BARE_NUMBER = /^\s*(\d{1,3})\s*$/;
+
+/**
+ * Issue 63 (ADR 0106 amendment of 16 Nov 2026): when the server asked for the party size or the nights (the closed `openQuestion`
+ * code), a reply that is only a whole number is the guest's own answer to that one question. It is read by the same readers as a
+ * typed "N guests" or "N nights", so their rules apply unchanged (a party size of at least one; the stay-length rules for nights), and
+ * nothing else is inferred. It runs on an in-scope turn before the planner, so the model still handles the turn. Any other code, or
+ * any other text, records nothing here.
+ */
+export function recordOpenQuestionNumber(text: string, state: AssistantTaskState, policy?: ExtendedStayPolicy): void {
+  const digits = BARE_NUMBER.exec(text)?.[1];
+  if (digits === undefined) return;
+  if (state.openQuestion === "party_size") {
+    const partySize = extractStayRequestFacts(`${digits} guests`).partySize;
+    if (partySize !== undefined) state.stayIntent.partySize = partySize;
+  } else if (state.openQuestion === "nights" || state.openQuestion === "stay_length") {
+    recordGuestStatedStay(`${digits} nights`, state.stayIntent, policy);
+  }
 }
 
 /**
@@ -1922,6 +1944,8 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     settlePendingGuestFacts: (text, state, now) => {
       settlePendingStayDate(text, state, now, environment.extendedStayPolicy);
       recordGuestStatedStay(text, state.stayIntent, environment.extendedStayPolicy);
+      // Issue 63 (ADR 0106, 16 Nov 2026): a bare number answering the server's party-size or nights question.
+      recordOpenQuestionNumber(text, state, environment.extendedStayPolicy);
     },
     recordGuestFacts: (text, state, now) => recordGuestAuthoredFacts(text, state.stayIntent, now, environment.extendedStayPolicy),
     projectToolResult: (_name, result, limits) => {

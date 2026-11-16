@@ -196,7 +196,15 @@ export interface AssistantDiagnosticEvent {
 }
 
 export type ReplyPlanRejectionReason = "empty_text" | "unexpected_tool_calls" | "not_json" | "not_object" | "invalid_shape"
-  | "unknown_kind" | "invalid_references" | "reference_not_in_results";
+  | "unknown_kind" | "invalid_references" | "reference_not_in_results" | "unapplied_answer";
+
+/**
+ * Issue 63 (ADR 0106 amendment of 16 Nov 2026): the open questions whose answer only lands through a tool (a search with the new fact,
+ * or opening the picked result). On a turn that answers one, a `show_results` or `show_details` plan with no successful tool result
+ * this turn claims an effect that never happened. Confirmations (`date_confirm`, `location_confirm`) are settled by the server from the
+ * guest's reply, so they are not listed.
+ */
+const ANSWER_NEEDS_TOOL: ReadonlySet<string> = new Set(["where", "party_size", "check_in", "nights", "stay_length", "pick_result"]);
 
 export interface AssistantRuntimeOptions {
   readonly onDiagnostic?: (event: AssistantDiagnosticEvent) => void;
@@ -1042,6 +1050,8 @@ export class AssistantRuntime {
     };
     let validatedDomainId: string | undefined;
     let validatedTurnIntents: readonly ConciergeIntent[] = [];
+    // Issue 63: the server's open question this in-scope turn answers (read before the turn changes it), or undefined.
+    let answeredOpenQuestion: string | undefined;
     let validatedTurnToolNames: ReadonlySet<string> = new Set();
     let taskSwitchPermitted = false;
     // ADR 0099/0106: intersect the active pack, its current-state tools, and this turn's validated intents.
@@ -1192,6 +1202,7 @@ export class AssistantRuntime {
       return { ok: true, messages: [ASSISTANT_CONTROL_COPY.unavailable], surfaces: [], modelHandled: false,
         discardUserInput: true, controlOutcome: "scope_unavailable", tasks: this.getTaskRail(threadId) };
     }
+    answeredOpenQuestion = assessment.scope === "in_scope" ? tx.taskState.openQuestion : undefined;
     // Issue 59: the verdict is in scope (or validly mixed), so this turn settles any pending date show-back on the candidate state.
     candidatePack().settlePendingGuestFacts?.(text, tx.taskState, this.#environment.clock());
     if (discardUserInput) text = scopedMixedInput(assessment);
@@ -1218,6 +1229,10 @@ export class AssistantRuntime {
     let activeStage: AssistantDiagnosticStage = "provider_request";
     let activeToolName: string | undefined;
     let hasSuccessfulApplicationOperation = false;
+    // Issue 63: whether this turn already repeated the planner request once after an unapplied answer, and whether the planner
+    // called any tool this turn (an executed or a denied call both count: only a turn with no call at all is an unapplied answer).
+    let unappliedAnswerRetried = false;
+    let plannerCalledTool = false;
     // The renderer uses the latest round; reference validation accepts every successful result of this turn (ADR 0106).
     let latestRawResults: AssistantToolResult[] = [];
     let turnRawResults: AssistantToolResult[] = [];
@@ -1280,10 +1295,21 @@ export class AssistantRuntime {
         if (!modelResponse.toolCalls || modelResponse.toolCalls.length === 0) {
           // ADR 0106: accept a validated typed plan; discard legacy prose and opaque steps.
           const latestResults = latestRawResults;
-          const parsedPlan = parseReplyPlan(modelResponse, turnRawResults);
+          const validatedPlan = parseReplyPlan(modelResponse, turnRawResults);
+          // Issue 63 (ADR 0106, 16 Nov 2026): a results or details reply on a turn that answers the server's open question, when the
+          // planner called no tool at all this turn, claims an effect that never happened. The same planner request is repeated once (no
+          // history, prompt or data is added); a second such reply is rejected. A tool call the runtime denied keeps its `tool_denial`
+          // handling unchanged. Keyed on the closed code and plan kind, never guest text.
+          const unappliedAnswer = typeof validatedPlan !== "string" && answeredOpenQuestion !== undefined && ANSWER_NEEDS_TOOL.has(answeredOpenQuestion)
+            && (validatedPlan.kind === "show_results" || validatedPlan.kind === "show_details") && !plannerCalledTool;
+          const parsedPlan: AssistantReplyPlan | ReplyPlanRejectionReason = unappliedAnswer ? "unapplied_answer" : validatedPlan;
           const plan = typeof parsedPlan === "string" ? undefined : parsedPlan;
           if (typeof parsedPlan === "string") {
             run.diagnose({ stage: "provider_response", round, succeeded: false, failureClass: "MODEL_SELECTION_FAILURE", replyPlanRejectionReason: parsedPlan });
+          }
+          if (unappliedAnswer && !unappliedAnswerRetried) {
+            unappliedAnswerRetried = true;
+            continue;
           }
           if (!plan) {
             controlOutcome = "rejected_plan_fallback";
@@ -1301,6 +1327,7 @@ export class AssistantRuntime {
           break;
         }
 
+        plannerCalledTool = true;
         const toolResults: AssistantToolResult[] = [];
         const acceptedCalls: AssistantToolCall[] = [];
         const roundRawResults: AssistantToolResult[] = [];

@@ -469,10 +469,11 @@ test("Issue 63: the terse eval's pass rule requires the answered slot, not only 
   assert.ok(report.cases.every((entry) => entry.scope === "in_scope"), "every verdict is in scope");
   assert.ok(report.cases.every((entry) => entry.openQuestionSent === entry.openQuestion), "every request carried the right code");
   assert.equal(report.falseRefusalRate, 0, "no case is a false refusal");
-  // Two answers land without a planner action, both as guest-authored state: the shown-back date the server settles from the yes,
-  // and a typed stay length ("a week", "two weeks"), which ADR 0106 (8 Nov 2026) records as the stated stay at every turn start.
+  // Some answers land without a planner action, all as guest-authored state: the shown-back date the server settles from the yes,
+  // a typed stay length ("a week", "two weeks"), which ADR 0106 (8 Nov 2026) records as the stated stay at every turn start, and a
+  // bare number answering the server's party-size or nights question (ADR 0106, 16 Nov 2026).
   const settled = report.cases.filter((entry) => entry.answeredSlotHeld).map((entry) => entry.id);
-  assert.deepEqual(settled, ["nights:week", "nights:held-out-fortnight", "date_confirm:affirm"], "only guest-authored answers land without a planner action");
+  assert.deepEqual(settled, ["party_size:numeral", "nights:week", "nights:numeral", "nights:held-out-fortnight", "date_confirm:affirm"], "only guest-authored answers land without a planner action");
   assert.ok(report.cases.filter((entry) => !settled.includes(entry.id)).every((entry) => entry.pass === false), "a verdict with no answer is not a pass");
   assert.ok(report.cases.filter((entry) => settled.includes(entry.id)).every((entry) => entry.pass === true), "the answers that did land pass");
 });

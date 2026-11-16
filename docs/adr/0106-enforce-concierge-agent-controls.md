@@ -135,6 +135,13 @@ Owner decision of 9 Nov 2026 on the chat hardening batch (`.scratch/shortlet-con
 - Lifecycle. The code is overwritten when a turn asks a different question, and cleared when a turn commits an answer or runs a new search.
 - No keyword fast path. The classifier and planner read the code; the server does not branch on guest keywords to answer a question.
 
+### Amendment (16 Nov 2026): an answer to the open question must land
+
+Owner decision of 16 Nov 2026 on issue 63 (`.scratch/shortlet-concierge-launch/issues/63-terse-answer-retention.md`). The three-run live eval of 16 Nov 2026 on `openai/gpt-6-luna` classified every terse reply in scope, but the planner sometimes replied without applying it: it asked again after a bare "2" in every run, and sometimes replied with results or details it never fetched.
+
+- A bare number answers a number question. When the open-question code is `party_size`, `nights` or `stay_length` and the guest's whole reply is a whole number, the server records it as that one fact, read by the same readers as a typed "N guests" or "N nights", so their rules apply unchanged. It runs on an in-scope turn before the planner, alongside the other guest-authored facts (the 8 Nov amendment), and the model still handles the turn. Any other code or any other text records nothing. This is a guest-authored fact for one server-asked question, not an answer the server composes, so the 9 Nov "no keyword fast path" rule is unchanged.
+- No unapplied answer. On an in-scope turn that answers the code `where`, `party_size`, `check_in`, `nights`, `stay_length` or `pick_result`, a `show_results` or `show_details` plan when the planner called no tool at all that turn claims an effect that never happened. The same planner request is repeated once, with no history, prompt or data added; a second such plan is rejected (`rejected_plan_fallback`, rejection reason `unapplied_answer`) and never counted as a successful model turn. A tool call the runtime denied keeps its `tool_denial` handling. Confirmations (`date_confirm`, `location_confirm`) are settled by the server and are not affected. The planner instruction says to apply the answer with its tool before replying.
+
 ## Constraints retained
 
 ADRs 0015, 0068–0080, 0089, 0099, 0101, 0102, and 0105 remain in force.

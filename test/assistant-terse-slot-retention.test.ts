@@ -216,3 +216,149 @@ test("a yes with no shown-back date commits no check-in", async () => {
     assert.ok(state.stayIntent.checkIn === undefined || state.stayIntent.isDemoDate !== false, "a bare yes commits no guest-authored check-in");
   } finally { environment.close(); }
 });
+
+// Issue 63, fix A (ADR 0106 amendment of 16 Nov 2026): the 16 Nov three-run live eval showed the planner asking again after a bare "2"
+// in every run. When the server asked for the party size or the nights, a reply that is only a positive whole number is the guest's own
+// answer to that question, read by the same readers as a typed party size or length. The model still runs the turn.
+test("a bare number that answers the server's party-size question is kept even when the planner asks again", async () => {
+  const environment = stagingGuest();
+  try {
+    const harness = recorder({
+      [PARTY_SEARCH]: { slots: { ...LAGOS, checkIn: "2026-12-14", nights: 3 }, intents: ["search"], search: { ...LAGOS, checkIn: "2026-12-14", nights: 3 } },
+      "2": { slots: { guests: 2 }, intents: ["search"], reply: "clarify_stay" },
+    });
+    const driver = openChipDriver(environment, harness.client, { cold: true, threadId: THREAD });
+    assertOk(await driver.typed(PARTY_SEARCH), "the search that asks for a party size");
+    assert.equal(restoredState(driver).openQuestion, "party_size");
+    assertOk(await driver.typed("2"), "the bare party size");
+    assert.equal(restoredState(driver).stayIntent.partySize, 2, "the party size is kept after a cold restore");
+    assert.notEqual(restoredState(driver).openQuestion, "party_size", "the party-size question is not asked again");
+  } finally { environment.close(); }
+});
+
+test("a bare number that answers the server's nights question is kept even when the planner asks again", async () => {
+  const environment = stagingGuest();
+  try {
+    const harness = recorder({
+      [NIGHTS_SEARCH]: { slots: { ...LAGOS, checkIn: "2026-12-14", guests: 2 }, intents: ["search"], search: { ...LAGOS, checkIn: "2026-12-14", guests: 2 } },
+      "3": { slots: { nights: 3 }, intents: ["search"], reply: "clarify_stay" },
+    });
+    const driver = openChipDriver(environment, harness.client, { cold: true, threadId: THREAD });
+    assertOk(await driver.typed(NIGHTS_SEARCH), "the search that asks for nights");
+    assert.equal(restoredState(driver).openQuestion, "nights");
+    assertOk(await driver.typed("3"), "the bare nights");
+    assert.equal(restoredState(driver).stayIntent.statedStay?.nights, 3, "the stated length is kept after a cold restore");
+  } finally { environment.close(); }
+});
+
+test("a bare number is read exactly as the typed reader reads it, and not at all when it is zero or the open question is not party size or nights", async () => {
+  // Zero is no party size. A long length is read as the typed reader reads it, so no rule changes.
+  for (const text of ["0", "400"]) {
+    const environment = stagingGuest();
+    try {
+      const harness = recorder({
+        [PARTY_SEARCH]: { slots: { ...LAGOS, checkIn: "2026-12-14", nights: 3 }, intents: ["search"], search: { ...LAGOS, checkIn: "2026-12-14", nights: 3 } },
+        [NIGHTS_SEARCH]: { slots: { ...LAGOS, checkIn: "2026-12-14", guests: 2 }, intents: ["search"], search: { ...LAGOS, checkIn: "2026-12-14", guests: 2 } },
+        [text]: { slots: {}, intents: ["search"], reply: "clarify_stay" },
+      });
+      const driver = openChipDriver(environment, harness.client, { cold: true, threadId: THREAD });
+      const setup = text === "0" ? PARTY_SEARCH : NIGHTS_SEARCH;
+      assertOk(await driver.typed(setup), `${text}: the question`);
+      assertOk(await driver.typed(text), text);
+      if (text === "0") assert.equal(restoredState(driver).stayIntent.partySize, undefined, "zero is not a party size");
+      // The same reader as a typed "400 nights": it records the stated length exactly as typed text would, and the stay rules refuse
+      // it where they refuse a typed length (at search). No bound is added or relaxed here.
+      else assert.deepEqual(restoredState(driver).stayIntent.statedStay, { unit: "night", count: 400, nights: 400 }, "read exactly as a typed length");
+    } finally { environment.close(); }
+  }
+  // A bare number to a `where` question is neither a party size nor a length.
+  const environment = stagingGuest();
+  try {
+    const harness = recorder({
+      "I need a place for 3 nights from 14 December 2026": { slots: { nights: 3, checkIn: "2026-12-14" }, intents: ["search"], reply: "clarify_stay" },
+      "2": { slots: {}, intents: ["search"], reply: "clarify_stay" },
+    });
+    const driver = openChipDriver(environment, harness.client, { cold: true, threadId: THREAD });
+    assertOk(await driver.typed("I need a place for 3 nights from 14 December 2026"), "the clarification that asks where");
+    assert.equal(restoredState(driver).openQuestion, "where");
+    assertOk(await driver.typed("2"), "a bare number to a where question");
+    assert.equal(restoredState(driver).stayIntent.partySize, undefined, "no party size is read from it");
+  } finally { environment.close(); }
+});
+
+/** A planner whose first reply on `text` is a typed plan with no tool call, then (if `then` is given) the tool on the retry. */
+function claimingPlanner(turns: Readonly<Record<string, Turn>>, text: string, claimed: "show_results" | "show_details", then?: Turn["tool"]) {
+  let plannerCalls = 0;
+  const harness = clientWith((request: CapturedRequest) => {
+    if (isScopeRequest(request)) {
+      const message = classifiedMessage(request);
+      const turn = message === text ? { slots: {}, intents: [claimed === "show_details" ? "details" : "search"] } : turns[message];
+      return completion({ content: JSON.stringify(scopeVerdict(turn?.slots ?? {}, turn?.intents ?? ["search"])) });
+    }
+    const latest = latestUserText(request);
+    if (latest === text) {
+      if (lastRoleIsTool(request)) return completion({ content: JSON.stringify({ kind: claimed, references: [] }) });
+      plannerCalls++;
+      if (plannerCalls === 1 || then === undefined) return completion({ content: JSON.stringify({ kind: claimed, references: [] }) });
+      return completion({ tool_calls: [{ id: "retry-tool", type: "function", function: { name: then.name, arguments: JSON.stringify(then.args) } }] });
+    }
+    const turn = latest === undefined ? undefined : turns[latest];
+    if (turn?.providerDown) return jsonResponse(503, { error: { message: "down" } });
+    if (lastRoleIsTool(request)) return completion({ content: JSON.stringify({ kind: "show_results", references: [] }) });
+    if (turn?.search) return searchToolCall(`search-${latest?.length ?? 0}`, turn.search);
+    throw new Error(`Unexpected offline fixture turn: ${latest ?? "<none>"}`);
+  }, OPENROUTER);
+  return { ...harness, plannerCalls: () => plannerCalls };
+}
+
+// Issue 63, fix B (ADR 0106 amendment of 16 Nov 2026): the live planner sometimes answered an open question with a results or details
+// reply without running the tool that applies the answer. On a turn that answers the server's open question, such a plan is not
+// accepted: the same planner request is repeated once (no new history or prompt), and a second such plan is rejected, never counted
+// as a success.
+test("a planner reply that claims results without applying the open-question answer is retried once, and the answer lands", async () => {
+  const environment = stagingGuest();
+  try {
+    const harness = claimingPlanner({
+      [PARTY_SEARCH]: { slots: { ...LAGOS, checkIn: "2026-12-14", nights: 3 }, intents: ["search"], search: { ...LAGOS, checkIn: "2026-12-14", nights: 3 } },
+    }, "me and my wife", "show_results", { name: "search_stays", args: { ...LAGOS, checkIn: "2026-12-14", nights: 3, guests: 2 } });
+    const driver = openChipDriver(environment, harness.client, { cold: true, threadId: THREAD });
+    assertOk(await driver.typed(PARTY_SEARCH), "the search that asks for a party size");
+    const turn = await driver.typed("me and my wife");
+    assertOk(turn, "the worded party size");
+    assert.equal(harness.plannerCalls(), 2, "the planner request is repeated once");
+    assert.equal(turn.ok ? turn.assistantControlOutcome : undefined, "successful_model_handling");
+    assert.equal(restoredState(driver).stayIntent.partySize, 2, "the answer lands through the retried search");
+  } finally { environment.close(); }
+});
+
+test("a pick the planner claims to show without opening it is retried once, then rejected and never counted as a success", async () => {
+  const environment = stagingGuest();
+  try {
+    const harness = claimingPlanner({
+      [FULL_SEARCH]: fullSearchTurn(),
+      [VIEW]: { slots: {}, intents: ["details"], providerDown: true },
+    }, "the second", "show_details");
+    const driver = openChipDriver(environment, harness.client, { cold: true, threadId: THREAD });
+    assertOk(await driver.typed(FULL_SEARCH), "the search that shows results");
+    assertOk(await driver.typed(VIEW), "the question that asks which result");
+    assert.equal(restoredState(driver).openQuestion, "pick_result");
+    const turn = await driver.typed("the second");
+    assert.equal(harness.plannerCalls(), 2, "one retry, no more");
+    assert.equal(turn.ok ? turn.assistantControlOutcome : undefined, "rejected_plan_fallback", "a claim without an applied answer is not a success");
+    assert.equal(restoredState(driver).selectedStayRef, undefined, "no result is selected");
+  } finally { environment.close(); }
+});
+
+test("a results reply with no open question is accepted as before, with no retry", async () => {
+  const environment = stagingGuest();
+  try {
+    const harness = claimingPlanner({ [FULL_SEARCH]: fullSearchTurn() }, "Show me those again", "show_results");
+    const driver = openChipDriver(environment, harness.client, { cold: true, threadId: THREAD });
+    assertOk(await driver.typed(FULL_SEARCH), "the search that shows results");
+    assert.equal(restoredState(driver).openQuestion, undefined, "no question is open after a search");
+    const turn = await driver.typed("Show me those again");
+    assertOk(turn, "the follow-up");
+    assert.equal(harness.plannerCalls(), 1, "no retry without an open question");
+    assert.equal(turn.ok ? turn.assistantControlOutcome : undefined, "successful_model_handling");
+  } finally { environment.close(); }
+});
