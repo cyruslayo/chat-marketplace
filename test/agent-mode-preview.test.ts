@@ -5,8 +5,8 @@ import { join } from "node:path";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { chooseModes, markIsControl, showsModeChooser, startBeforeTurn, type ModeVertical } from "../apps/local-guest/src/mode-choice.js";
-import { renderGuestShellHtml } from "../apps/local-guest/src/guest-server.js";
-import { verticalStartersHtml } from "../apps/local-guest/src/guest-kit.js";
+import { randomUUID } from "node:crypto";
+import { renderGuestShellHtml, startLocalGuestServer } from "../apps/local-guest/src/guest-server.js";
 import { GUEST_MODE_CHOOSER, GUEST_MODES } from "../apps/web-agent/src/guest-content.js";
 import { coldModeApp } from "./helpers/mode-follows-task-harness.js";
 import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/scripted-assistant-model.js";
@@ -81,15 +81,6 @@ test("AC5: The first message after a preview starts the previewed domain before 
   assert.equal(startBeforeTurn(choices, undefined, GUEST_MODES.stays.id), undefined, "no preview needs no start");
 });
 
-test("AC5: A refused start leaves the committed mode in force", () => {
-  // The client keeps the server's mode when the start is refused: a refusal never makes the preview the mode.
-  const choices = chooseModes([STAYS_VERTICAL, shopVertical()]);
-  const pending = startBeforeTurn(choices, "shop", "stays");
-  assert.ok(pending, "a start is pending for the preview");
-  const committedAfterRefusal = "stays";
-  assert.equal(committedAfterRefusal, GUEST_MODES.stays.id, "the committed mode is the server's after a refusal");
-});
-
 test("AC7: The concierge label is generated from the copy source and shown only with two or more modes", () => {
   assert.equal(GUEST_MODE_CHOOSER.conciergeLabel(GUEST_MODES.stays.label), "Concierge · Stays");
   assert.equal(showsModeChooser(chooseModes([STAYS_VERTICAL])), false, "no label with one mode");
@@ -108,9 +99,28 @@ test("AC8: Controls reflow at 320 px and a mode choice never changes its target 
   assert.equal(chooseModes([STAYS_VERTICAL, shopVertical()]).length, 2);
 });
 
-test("AC9: The no-JS conversation page has no mode strip with two modes (ADR 0080: the stays shell is kept)", () => {
-  // The no-JS page renders only the static cards from verticalStartersHtml; it never renders the radio strip or the sheet.
-  const cards = verticalStartersHtml([{ domain: "shortlet", label: "Stays" }, { domain: "shop", label: "Shop" }]);
-  assert.equal(cards.includes('type="radio"'), false, "the no-JS page has no radio group");
-  assert.equal(cards.includes("<dialog"), false, "the no-JS page has no sheet");
+test("AC9: The real /conversation page with two modes registered has no radio group, no sheet and the stays shell (ADR 0080)", async () => {
+  const server = startLocalGuestServer({
+    conciergeMode: "assistant-offline",
+    modelClient: new ScriptedAssistantModel([]),
+    additionalPacks: [createFakeShopPack()],
+    port: 0,
+  });
+  const base = `http://127.0.0.1:${await server.listen()}`;
+  try {
+    const home = await fetch(base);
+    const cookie = home.headers.get("set-cookie")?.split(";")[0] ?? "";
+    await home.text();
+    const threadId = `g-${randomUUID()}`;
+    const response = await fetch(`${base}/conversation?threadId=${threadId}`, { headers: { accept: "text/html", cookie } });
+    assert.equal(response.status, 200);
+    const page = await response.text();
+    assert.equal(page.includes('type="radio"'), false, "the no-JS page has no radio input");
+    assert.equal(page.includes("<dialog"), false, "the no-JS page has no mode sheet");
+    assert.equal(page.includes('class="mode-mark"'), false, "the no-JS page has no mark button");
+    assert.ok(page.includes(`>${GUEST_MODES.stays.composer.label}</label>`), "the page keeps the stays composer copy");
+    assert.ok(page.includes(`aria-label="${GUEST_MODES.stays.composer.ariaLabel}"`), "the page keeps the stays aria-label");
+  } finally {
+    await server.close();
+  }
 });

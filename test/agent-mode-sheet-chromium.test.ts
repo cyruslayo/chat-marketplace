@@ -82,3 +82,107 @@ test("AC8: Every chooser control is at least 44 by 44 CSS pixels and nothing ove
     await fixture.close();
   }
 });
+
+/*
+ * Issue 03g follow-up (orchestrator): preview, refused start and visible state, in real Chrome. Each test records the page's own
+ * /api requests with a fetch wrapper installed after the first load, so the count covers only what the guest's action sent.
+ */
+
+/** Records /api requests from now on. With `window.__refuseStart` set, a platform.task.start is answered with a refusal (ok false). */
+const RECORD_API = `(() => {
+  window.__api = [];
+  window.__refuseStart = false;
+  const original = window.fetch.bind(window);
+  window.fetch = (input, init) => {
+    const url = String(input instanceof Request ? input.url : input);
+    const body = typeof init?.body === 'string' ? init.body : '';
+    if (url.includes('/api/')) window.__api.push({ url, body });
+    if (window.__refuseStart && url.includes('/api/event') && body.includes('platform.task.start')) {
+      return Promise.resolve(new Response(JSON.stringify({ ok: false, code: 'ACTION_NOT_AUTHORIZED', message: 'That task could not be opened.' }), { status: 200, headers: { 'content-type': 'application/json' } }));
+    }
+    return original(input, init);
+  };
+})()`;
+
+test("AC3: A preview of the shop mode makes no request, changes the heading, starters and placeholder, and leaves data-mode on stays", async () => {
+  const fixture = await startTwoModeServer();
+  const browser = await launchRealBrowser();
+  try {
+    const tab = await browser.createTab();
+    await tab.setViewport(1280, 900);
+    await tab.navigate(`${fixture.base}/`);
+    await tab.waitForSelector('.mode-choice input[value="shop"]');
+    await tab.evaluate(RECORD_API);
+
+    await tab.evaluate("document.querySelector('.mode-choice input[value=\"shop\"]').click()");
+    await new Promise((resolve) => { setTimeout(resolve, 400); });
+
+    assert.equal(await tab.evaluate<number>("window.__api.length"), 0, "a preview sends no /api request");
+    assert.equal(await tab.evaluate<string>("document.getElementById('route-heading').textContent"), "Shop for products", "the heading follows the preview");
+    assert.equal(await tab.evaluate<string>("document.querySelector('.prompt-suggestions .prompt-suggestion')?.textContent ?? ''"), "Browse products", "the starters follow the preview");
+    assert.equal(await tab.evaluate<string>("document.getElementById('composer-input').placeholder"), "Ask about a product", "the placeholder follows the preview");
+    assert.equal(await tab.evaluate<string>("document.documentElement.dataset.mode"), "stays", "data-mode on html stays on the committed mode");
+    assert.equal(await tab.evaluate<string>("document.getElementById('vertical-starters').dataset.previewMode"), "shop", "the strip carries data-preview-mode");
+    await tab.close();
+  } finally {
+    await browser.close();
+    await fixture.close();
+  }
+});
+
+test("AC5: A refused platform.task.start sends no turn, keeps stays, drops the preview and keeps the composer text", async () => {
+  const fixture = await startTwoModeServer();
+  const browser = await launchRealBrowser();
+  try {
+    const tab = await browser.createTab();
+    await tab.setViewport(1280, 900);
+    await tab.navigate(`${fixture.base}/`);
+    await tab.waitForSelector('.mode-choice input[value="shop"]');
+    await tab.evaluate(RECORD_API);
+    await tab.evaluate("window.__refuseStart = true");
+
+    await tab.evaluate("document.querySelector('.mode-choice input[value=\"shop\"]').click()");
+    await tab.focus("#composer-input");
+    await tab.insertText("Show me products");
+    await tab.pressKey("Enter");
+    await tab.waitForFunction("window.__api.some((call) => call.url.includes('/api/event'))", 5_000);
+    await new Promise((resolve) => { setTimeout(resolve, 600); });
+
+    assert.equal(await tab.evaluate<boolean>("window.__api.some((call) => call.url.includes('/api/turn'))"), false, "no turn is sent after a refused start");
+    assert.equal(await tab.evaluate<string>("document.documentElement.dataset.mode"), "stays", "data-mode stays on the server's mode");
+    assert.equal(await tab.evaluate<string | undefined>("document.getElementById('vertical-starters').dataset.previewMode"), undefined, "the preview is dropped");
+    assert.equal(await tab.evaluate<string>("document.getElementById('composer-input').value"), "Show me products", "the composer keeps the guest's text");
+    await tab.close();
+  } finally {
+    await browser.close();
+    await fixture.close();
+  }
+});
+
+test("ADR 0078 (WCAG 1.4.11, 2.4.7): the checked choice looks different from an unchecked one, and a focused radio draws a visible outline", async () => {
+  const fixture = await startTwoModeServer();
+  const browser = await launchRealBrowser();
+  try {
+    const tab = await browser.createTab();
+    await tab.setViewport(1280, 900);
+    await tab.navigate(`${fixture.base}/`);
+    await tab.waitForSelector('.mode-choice input[value="shop"]');
+
+    const look = (domain: string) => `(() => { const s = getComputedStyle(document.querySelector('.mode-choice[data-domain="${domain}"]')); return { border: s.borderColor, background: s.backgroundColor }; })()`;
+    const checked = await tab.evaluate<{ border: string; background: string }>(look("shortlet"));
+    const unchecked = await tab.evaluate<{ border: string; background: string }>(look("shop"));
+    assert.ok(checked.border !== unchecked.border || checked.background !== unchecked.background, `the checked choice differs (${JSON.stringify(checked)} vs ${JSON.stringify(unchecked)})`);
+
+    const focus = await tab.evaluate<{ visible: boolean; outlineStyle: string }>(`(() => {
+      const input = document.querySelector('.mode-choice input[value="shop"]');
+      input.focus();
+      return { visible: input.matches(':focus-visible'), outlineStyle: getComputedStyle(document.querySelector('.mode-choice[data-domain="shop"]')).outlineStyle };
+    })()`);
+    assert.equal(focus.visible, true, "the focused radio matches :focus-visible");
+    assert.notEqual(focus.outlineStyle, "none", "the focused radio's label draws an outline");
+    await tab.close();
+  } finally {
+    await browser.close();
+    await fixture.close();
+  }
+});

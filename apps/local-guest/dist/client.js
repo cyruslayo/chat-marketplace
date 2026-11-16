@@ -12343,8 +12343,6 @@ Known schemas:
     const mark = document.createElement("span");
     mark.className = "agent-mark";
     mark.setAttribute("aria-hidden", "true");
-    mark.style.inlineSize = "2rem";
-    mark.style.blockSize = "2rem";
     mark.innerHTML = icon(choice.presentation.persona.icon);
     const title = document.createElement("span");
     title.className = "ui-vertical-starter__title";

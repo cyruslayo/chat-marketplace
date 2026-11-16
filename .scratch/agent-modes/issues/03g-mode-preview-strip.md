@@ -1,6 +1,6 @@
 # Preview other agent modes in a strip and a sheet (preview only, commit on first message)
 
-Status: ready-for-agent
+Status: resolved
 Type: task (UI; a real-browser test is in scope)
 Blocked by: 03c (mode follows the active task and the client applies it), owner release as in 03a (ADR 0107 "Settled", 8 Nov 2026). The 10 Nov owner decisions apply: the app-bar mark is decorative and `aria-hidden` while one mode is registered, and "Concierge · Stays" shows only with more than one mode.
 Requested: 10 Nov 2026
@@ -113,21 +113,45 @@ Each is its own `test()` in `test/agent-mode-preview.test.ts`, except AC6 which 
 - Real Chrome, solo, after: `npx tsx --test test/agent-mark-chromium.test.ts`: pass 4, fail 0.
 - Captures: `.scratch/agent-modes/screenshots/03g/` (light and dark, 320, 390, 768, 1280; empty conversation and sheet; PNGs not committed). Findings in `.scratch/agent-modes/screenshots/03g/findings.txt`: no horizontal overflow and no control under 44 by 44 CSS px at any width or theme.
 
-**Acceptance criteria, status.**
-- AC1 to AC5, AC7 to AC9: named tests in `test/agent-mode-preview.test.ts`. Weak spots, stated plainly: AC3 checks only that the task rail is empty and that a start candidate is returned, not that zero requests are sent; AC5's refused-start test asserts a constant; AC9 checks the static cards, not the rendered `/conversation` page.
+**Acceptance criteria, status (after the orchestrator follow-up).**
+- AC1, AC2, AC4, AC5 (start candidate), AC7, AC9: named tests in `test/agent-mode-preview.test.ts` (11 tests, see counts below). The AC5 node test that asserted a constant is deleted.
+- AC9: now the real `/conversation` page from `startLocalGuestServer` with the fake shop pack registered. It asserts no radio input, no `<dialog>`, no mark button and the stays composer copy. Green on its first run: the no-JS page never had the strip, so no red state existed to record.
+- AC3 (zero requests during a preview, heading, starters and placeholder change, `data-mode` on `<html>` stays stays): `test/agent-mode-sheet-chromium.test.ts`. Green on its first run; the behaviour already existed, so no red state existed to record.
+- AC5 refused start (no `/api/turn`, `data-mode` stays, preview dropped, composer text kept): `test/agent-mode-sheet-chromium.test.ts`. The refusal is produced by a page-side fetch wrapper that returns the server's closed `{ok:false, code, message}` shape. Green on its first run for the same reason.
 - AC6 and AC8: `test/agent-mode-sheet-chromium.test.ts`.
+- ADR 0078 visible state (WCAG 1.4.11, 2.4.7): checked and unchecked labels differ in computed colour, and a focused radio's label draws an outline. Red before the CSS fix, green after.
 
-**Definition of Done.**
-1. Every criterion has a named test: met, with the weak spots above.
-2. Failure paths: met for AC1, AC4 (malformed, duplicate) and AC5 (no-start cases). Not met for AC3 and AC5's refused start (see above).
-3. ADRs listed and cited: met (table above).
-4. No unused injected dependency: met (no constructor parameter added).
-5. No invented policy string: met. The label, the change label and the warning are in `GUEST_MODE_CHOOSER`; the warning is owner-approved (16 Nov 2026).
+**Red-first evidence (orchestrator follow-up, step 1).** Recorded from the run before the CSS fix:
+- `not ok 5 - ADR 0078 (WCAG 1.4.11, 2.4.7): the checked choice looks different from an unchecked one, and a focused radio draws a visible outline`
+- `error: 'the checked choice differs ({"border":"rgb(50, 62, 55)","background":"rgb(24, 33, 28)"} vs {"border":"rgb(50, 62, 55)","background":"rgb(24, 33, 28)"})'`
+- Same run: `# pass 4`, `# fail 1` (AC6, AC8, AC3 and AC5 refused were green).
+- AC3, AC5 refused and AC9 were green on their first run. They guard existing behaviour, so no red state applies to them. This is stated plainly, not inferred.
+
+**Orchestrator decision (step 2), approved.** Edit to the "Guest UI kit" block of `apps/web/src/shortlet-foundations.css`, minimal and in the committed one-line style, mirroring existing rules:
+- `.ui-vertical-starter:has(input:checked)` copies the declarations of `.ui-chip:has(input:checked)`.
+- `.ui-vertical-starter:has(input:focus-visible) { outline: 3px solid var(--color-focus); outline-offset: 2px; }`, as `.ui-segmented > label:has(input:focus-visible)`.
+- `.mode-choice > .agent-mark { inline-size: 2rem; block-size: 2rem; }`. This replaces the two inline `mark.style.*` assignments, which are removed from `client.ts` (no style strings).
+`dist/client.js` regenerated with `npm run build`.
+
+**Verification after the follow-up (`env -u LLM_API_KEY` on every command).**
+- `npm run check`: exit 0 (log at `$HOME/03g-check3.log`, last line is the worker bundle guard).
+- `npx tsx --test test/agent-mode-preview.test.ts test/agent-mode-shell.test.ts test/agent-mark-shell.test.ts test/guest-retired-classes.test.ts test/shortlet-ui-foundations.test.ts test/shortlet-design-system.test.ts test/assistant-cold-journey.test.ts`: tests 41, pass 40, fail 0, skipped 1. The skip is `shortlet-ui-foundations.test.ts` AC "Real Chromium renders foundation without narrow viewport overflow and exposes visible keyboard focus", which runs only with `SHORTLET_FOUNDATIONS_BROWSER=1` and is pre-existing.
+- `npx tsx --test test/agent-mode-preview.test.ts`: tests 10 after the follow-up (11 before, minus the deleted AC5 node test), pass 10, fail 0.
+- Real Chrome, solo, in order: `test/agent-mode-sheet-chromium.test.ts` pass 5, fail 0 (run twice, both green); then `test/agent-mark-chromium.test.ts` pass 4, fail 0.
+- Captures re-run: `.scratch/agent-modes/screenshots/03g/` (not committed). `findings.txt` and the capture log: 16 of 16 combinations (light and dark, widths 320, 390, 768, 1280, empty and sheet) have no horizontal overflow and no control under 44 by 44 CSS px.
+
+**Definition of Done (re-checked).**
+1. Every criterion has a named test: met. AC3 and AC5 refused are now real-browser tests; AC9 is the real page.
+2. Failure paths asserted: met. The refused start, the malformed and duplicate presentations, and no-JS parity are asserted.
+3. ADRs listed and cited: met (table above; ADR 0078 visible state added).
+4. No unused injected dependency: met.
+5. No invented policy string: met. The warning is owner-approved (16 Nov 2026).
 6. No credentials in logs: not applicable.
-7. `npm run check` passes; the full `npm test` is the batch gate and was not run here.
+7. `npm run check` passes. The full `npm test` is the batch gate and is run later by the orchestrator, not here.
 
-**Open, so Status stays ready-for-agent.**
-- Focus indicator for the visually hidden radios is missing (WCAG 2.4.7). The fix is a minimal kit-block CSS rule, which needs an explicit decision on touching `shortlet-foundations.css`.
-- `scroll-snap` on the strip is not added (no CSS).
-- AC3 and AC5 refused-start tests need real request-level checks.
-- `apps/cloudflare/public/_headers` and `apps/local-guest/dist/*.js` (other than `client.js`) show line-ending changes from the build. They are not staged.
+Only the batch-gate `npm test` is open, so Status is set to resolved, following 03b to 03d.
+
+**Still not done, stated plainly.**
+- `scroll-snap` on the strip is not added (no CSS). Layout works without it.
+- The node AC3 test in `agent-mode-preview.test.ts` ("A preview creates no task") remains a weak check. The real behaviour is covered by the Chrome AC3 test.
+- `apps/cloudflare/public/_headers` and `apps/local-guest/dist/*.js` (except `client.js`) show line-ending changes from the build. Not staged.

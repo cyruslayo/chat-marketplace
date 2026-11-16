@@ -2358,9 +2358,6 @@ function modeChoiceLabel(choice: ModeChoice, group: string, checked: boolean, on
   const mark = document.createElement("span");
   mark.className = "agent-mark";
   mark.setAttribute("aria-hidden", "true");
-  // The choice mark is the strip's own size (the app-bar and dock sizes belong to their data-agent-mark placements).
-  mark.style.inlineSize = "2rem";
-  mark.style.blockSize = "2rem";
   mark.innerHTML = icon(choice.presentation.persona.icon);
   const title = document.createElement("span");
   title.className = "ui-vertical-starter__title";
