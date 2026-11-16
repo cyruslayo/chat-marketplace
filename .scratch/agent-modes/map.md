@@ -27,3 +27,13 @@ Goal: switching Domain Packs changes the agent and the guest UI together (ADR 01
 | 5-motion | Mode switch View Transition, feature-detected and typed `mode-switch` (ADR 0107 decision 7, analysis 5.5) | [03j](issues/03j-mode-switch-view-transition.md) | needs-triage |
 | 4-theme | Browser theme colour updated from the mode tokens on a switch (analysis 5.4) | [03k](issues/03k-mode-theme-color-switch.md) | needs-triage |
 | 4-announce | Mode switch announced through the existing polite announcer (ADR 0107 decision 7) | [03l](issues/03l-mode-switch-announcement.md) | needs-triage |
+
+## Batch gate, 17 Nov 2026 (gate worktree `chat-marketplace-gate-03`, branch `gate/agent-modes-03-batch`)
+
+Serial merges in the seams.md order: docs/agent-modes-map-status (f016de4), 03g (696d9f8), 03e (ff500a3), 03f at 218ee00 (587f47b), map rows resolved (1bb97ab), the 03g presentation-contract test updates (276e894), and the 03f 03a-seam fix d94efc3 (merged after). Result on the final tree:
+
+- `npm run check` — clean. `npm run build` — clean.
+- `npm run test:workers` — 30 files, 195 tests, all pass.
+- Full `npm test` — phase 1 exit 0, zero failing tests; phase 2: 46 of 48 files pass; the only failures are the two known accepted commerce real-browser files, while commerce is not shipping. `mobile-guest-journey-chromium` AC28 (complete phone-only journey) passes — the 01b condition is met.
+- `capture-11-all.sh` — all 21 screen groups clean (no horizontal overflow, no control under 44px, light and dark).
+- Run-1 triage: `assistant-pack-registry` AC1 was a real seam regression (03f runtime importing web-agent copy) — fixed by injecting the copy from the composition roots (03f d94efc3, tier-c AC11 fail-closed); three tests asserting the bare pre-03g `/api/state` payload (`guest-conventional-search` AC4, `guest-new-conversation` AC1, `local-guest-shell` unknown-thread) were deliberate contract updates, recorded in the 03g issue. Back-office trio and `model-quota-host-recovery` were load flakes, green this run and solo.
