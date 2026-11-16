@@ -117,7 +117,19 @@ Verification (commands below were executed with the mandated `env -u LLM_API_KEY
 - `node node_modules/tsx/dist/cli.mjs --test --test-reporter=dot test/assistant-recorded-journeys.test.ts test/assistant-task-lanes.test.ts` — 11 passed, 2 failed: replay diverges on the first classifier request because the immutable recorded fixture carries the old request schema/context. Issue Verification requires owner approval before re-recording; none was provided. Fixture untouched. This blocks the issue's affected-test and DoD gate.
 - `git diff --check` — passed (Windows LF/CRLF notices only).
 
-Definition of Done review: (1) ten dedicated tests named AC1–AC10: yes; (2) named fail-closed paths covered, including unknown target, unclear/failure, in-scope keyword, unchanged task and guest event: yes; (3) relevant ADRs listed, read and checked above: yes; (4) no new unused dependency injection: yes; (5) copy and tier setting sourced from O6 and ADR 0107: yes; (6) no identity, text or credential in diagnostic: yes; (7) `npm run check` clean, but affected recorded-replay tests blocked on explicit fixture approval; full `npm test` / Workers are the parent's once-per-batch gate. **Keep open until the owner authorizes a fixture re-record and the affected replay tests pass.**
+17 Nov 2026 (orchestrator) — batch-gate fix, on top of 218ee00:
+
+- **Batch-gate defect:** the runtime imported `GUEST_MODE_SUGGESTION` from `apps/web-agent/src/guest-content.js`, violating the 03a domain-neutrality seam (`test/assistant-pack-registry.test.ts` AC1 failed in the batch gate while passing at 81367ed). Fix: the copy is injected by the composition roots (`guest-server.ts` ×3, `test/helpers/assistant-runtime-host.ts`), single-sourced in `guest-content.ts` (ADR 0077 / O6); without it tier C fails closed to the scope redirect and records no `assistant.mode.change.v1` (new tier-c AC11, seen red first). No runtime import of web-agent or domains/shortlet remains.
+- Note: commit 218ee00 (review defects, fixture re-records, journey redesign) was authored by the resumed agent of the stopped session in this worktree, concurrently with the orchestrator's verification; the orchestrator's runs below are on the resulting tree.
+
+Verification (all commands with `env -u LLM_API_KEY`, local tsx, in the 03f worktree, after 218ee00 plus this fix):
+
+- `node node_modules/tsx/dist/cli.mjs --test test/assistant-pack-registry.test.ts test/mode-suggestion-tier-c.test.ts test/conversation-router.test.ts test/agent-mark-shell.test.ts test/assistant-cold-journey.test.ts test/assistant-recorded-journeys.test.ts test/assistant-host-composition.test.ts test/assistant-unregistered-domain.test.ts test/commerce-agent-tools.test.ts test/pilot-commerce-off.test.ts` — 66 passed, zero failed (tier-c AC1–AC11; recorded journeys 13 of 13).
+- `npm run check` — passed, zero type errors. `npm run build` — passed.
+- `node node_modules/tsx/dist/cli.mjs --test test/agent-mark-chromium.test.ts` — 6 passed, zero failed, run alone.
+- Keyword `#route` gone and commerce pack unedited: confirmed. Full `npm test`, `npm run test:workers` and `capture-11-all.sh` are the once-per-batch gate in the dedicated gate worktree.
+
+Definition of Done re-review: all items met; resolved apart from the batch gate.
 
 17 Nov 2026 — orchestrator (review-defect fixes, fixture re-record, resolution). Two defects found by the independent review were fixed tests-first, on top of commit 07122c7:
 

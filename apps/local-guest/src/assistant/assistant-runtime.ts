@@ -40,7 +40,6 @@ import { ModelScopeClassifier, ScopeClassificationError, assessScopeSafely, scop
 import { RetryingScopeClassifier, ScopeClassifierRetryError, SCOPE_TOTAL_BUDGET_MS, type ScopeClassifierRetryEvent, type ScopeClassifierRetryResult } from "./scope-classifier-retry.js";
 import { ASSISTANT_CONTROL_COPY } from "./control-copy.js";
 import { MODE_SWITCH_TIERS_ENABLED, modeSwitchTier } from "./mode-switch-tier.js";
-import { GUEST_MODE_SUGGESTION } from "../../../web-agent/src/guest-content.js";
 import { isProviderUnavailable } from "./fallback-model-client.js";
 import { searchAreaFor, type GuestQuickReply } from "../concierge.js";
 import {
@@ -241,6 +240,12 @@ export interface AssistantRuntimeOptions {
   readonly onTurnRecord?: (record: AssistantTurnRecord) => void;
   /** Issue 05: the configured primary model id, written as `gen_ai.request.model`. The host supplies it. */
   readonly modelName?: string;
+  /**
+   * ADR 0077 / O6 (issue 03f): the tier-C suggestion copy, single-sourced in `guest-content.ts` and injected by the composition root.
+   * The runtime is domain-neutral (03a seam) and never imports the guest-content module; without the copy, tier C fails closed to the
+   * scope redirect and no mode-change diagnostic is recorded.
+   */
+  readonly modeSuggestion?: { readonly message: (label: string) => string; readonly chip: (label: string) => string };
 }
 
 /** ADR 0106: the references the shell owns for the guest's thread (the draft, request, offer, reservation and contract it holds). */
@@ -390,6 +395,8 @@ export class AssistantRuntime {
   readonly #onDiagnostic?: (event: AssistantDiagnosticEvent) => void;
   readonly #onTurnRecord?: (record: AssistantTurnRecord) => void;
   readonly #modelName?: string;
+  /** ADR 0077 / O6 (issue 03f): host-injected tier-C suggestion copy; absent means tier C fails closed (03a seam). */
+  readonly #modeSuggestionCopy: AssistantRuntimeOptions["modeSuggestion"];
   #turnRecordDrops = 0;
   /** Issue 06: mutating runs in progress on this runtime (turns and shell runs). The host never evicts a runtime with one. */
   #runsInFlight = 0;
@@ -413,6 +420,7 @@ export class AssistantRuntime {
     this.#modelClient = modelClient;
     this.#onDiagnostic = options.onDiagnostic;
     this.#onTurnRecord = options.onTurnRecord;
+    this.#modeSuggestionCopy = options.modeSuggestion;
     if (options.modelName !== undefined && options.modelName.trim() !== "") this.#modelName = options.modelName.trim();
     const maxReplyOutputTokens = options.maxReplyOutputTokens ?? DEFAULT_ASSISTANT_REPLY_MAX_OUTPUT_TOKENS;
     if (!Number.isSafeInteger(maxReplyOutputTokens) || maxReplyOutputTokens < 1 || maxReplyOutputTokens > MAX_ASSISTANT_REPLY_OUTPUT_TOKENS) {
@@ -558,23 +566,25 @@ export class AssistantRuntime {
   /** ADR 0106/0107: reconstruct only the last, server-authored suggestion in the active lane, against the current registry.
    * A stored message grants no switching authority: the guest must still send the validated task event (ADR 0074). */
   restoredModeSuggestion(threadId: string, lastAssistantMessage: string | undefined): Pick<AssistantTurnOutput, "modeChange" | "quickReplies"> | undefined {
-    if (lastAssistantMessage === undefined || !this.#threads.has(threadId)) return undefined;
+    const copy = this.#modeSuggestionCopy;
+    if (copy === undefined || lastAssistantMessage === undefined || !this.#threads.has(threadId)) return undefined;
     const active = this.#packForThread(threadId);
     if (!active) return undefined;
     const matches = this.#packs.ids().filter((id) => id !== active.id).map((id) => this.#packs.packFor(id))
       .filter((pack): pack is AssistantDomainPack => pack !== undefined
-        && lastAssistantMessage === GUEST_MODE_SUGGESTION.message(pack.presentation?.label ?? pack.label));
+        && lastAssistantMessage === copy.message(pack.presentation?.label ?? pack.label));
     // Copy alone is not a unique authority if two registered packs have the same label; fail closed rather than guess a target.
     if (matches.length !== 1) return undefined;
-    const { modeChange, quickReplies } = this.#modeSuggestion(threadId, active.id, matches[0]!);
+    const { modeChange, quickReplies } = this.#modeSuggestion(copy, threadId, active.id, matches[0]!);
     return { modeChange, quickReplies };
   }
 
-  #modeSuggestion(threadId: string, from: string, target: AssistantDomainPack): Required<Pick<AssistantTurnOutput, "modeChange" | "quickReplies">> {
+  #modeSuggestion(copy: NonNullable<AssistantRuntimeOptions["modeSuggestion"]>, threadId: string, from: string,
+    target: AssistantDomainPack): Required<Pick<AssistantTurnOutput, "modeChange" | "quickReplies">> {
     const existing = this.getThread(threadId).tasks.find((task) => task.domain === target.id);
     return {
       modeChange: { from, to: target.id, reason: "suggested", undoable: false },
-      quickReplies: [{ label: GUEST_MODE_SUGGESTION.chip(target.presentation?.label ?? target.label), domain: target.id,
+      quickReplies: [{ label: copy.chip(target.presentation?.label ?? target.label), domain: target.id,
         ...(existing === undefined ? {} : { taskId: existing.taskId }) }],
     };
   }
@@ -1279,12 +1289,15 @@ export class AssistantRuntime {
       // only a later guest event may switch tasks, through the existing command boundary.
       const target = assessment?.scope === "out_of_scope" && assessment.risk === "ordinary" && assessment.targetPack !== packForScope.id
         ? this.#packs.packFor(assessment.targetPack ?? "") : undefined;
-      if (target && modeSwitchTier({ scope: assessment!.scope, targetPack: target.id,
-        packAtRisk: packAtRisk(packForScope, tx.taskState), tiersEnabled: MODE_SWITCH_TIERS_ENABLED }) === "C") {
+      // ADR 0077 / O6: the copy is host-injected (03a seam). Without it tier C fails closed to the redirect below, and no
+      // mode-change diagnostic is recorded: the suggestion never happened.
+      if (target && this.#modeSuggestionCopy !== undefined
+        && modeSwitchTier({ scope: assessment!.scope, targetPack: target.id,
+          packAtRisk: packAtRisk(packForScope, tx.taskState), tiersEnabled: MODE_SWITCH_TIERS_ENABLED }) === "C") {
         this.#recordModeSuggestion(packForScope.id, target.id);
-        return { ok: true, messages: [GUEST_MODE_SUGGESTION.message(target.presentation?.label ?? target.label)], surfaces: [],
+        return { ok: true, messages: [this.#modeSuggestionCopy.message(target.presentation?.label ?? target.label)], surfaces: [],
           modelHandled: false, discardUserInput: true, controlOutcome, tasks: this.getTaskRail(threadId),
-          ...this.#modeSuggestion(threadId, packForScope.id, target) };
+          ...this.#modeSuggestion(this.#modeSuggestionCopy, threadId, packForScope.id, target) };
       }
       // Issue 59 (ADR 0106 amendment): a scope redirect and a risk verdict keep the fixed copy with no re-ask. An unclear or failed
       // verdict (ordinary risk) is no dead end: re-ask the closed question the assistant last asked, with its chips, or offer the pack's

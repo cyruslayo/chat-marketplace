@@ -1,4 +1,4 @@
-import { GUEST_PHONE_COPY, GUEST_PAYMENT_COPY, GUEST_NOTICE_COPY, GUEST_PAYMENT_CALLBACK_COPY } from "../../web-agent/src/guest-content.js";
+import { GUEST_PHONE_COPY, GUEST_PAYMENT_COPY, GUEST_NOTICE_COPY, GUEST_PAYMENT_CALLBACK_COPY, GUEST_MODE_SUGGESTION } from "../../web-agent/src/guest-content.js";
 import { generatePlatformId } from "../../../packages/platform-core/src/index.js";
 import {
   createServer,
@@ -2524,6 +2524,8 @@ export function createGuestRequestHandler(
       onDiagnostic: options.onAssistantDiagnostic,
       onTurnRecord: options.onAssistantTurn,
       modelName: assistantModelName,
+      // ADR 0077 / O6: the tier-C suggestion copy, injected here so the runtime stays domain-neutral.
+      modeSuggestion: GUEST_MODE_SUGGESTION,
     });
   } else if (mode === "gemini" || mode === "openai-compatible") {
     // The production pilot passes a validated client; development commands read the same settings from the environment.
@@ -2548,6 +2550,8 @@ export function createGuestRequestHandler(
       onDiagnostic: options.onAssistantDiagnostic,
       onTurnRecord: options.onAssistantTurn,
       modelName: assistantModelName,
+      // ADR 0077 / O6: the tier-C suggestion copy, injected here so the runtime stays domain-neutral.
+      modeSuggestion: GUEST_MODE_SUGGESTION,
     });
   }
   const modelCallBudget = options.modelCallBudget
@@ -2676,7 +2680,7 @@ export function createGuestRequestHandler(
               assistantRuntime: new AssistantRuntime(
                 runtimeEnvironment,
                 quotaGuard(assistantModelClient, runtimeEnvironment),
-                { packs: [createShortletAssistantPack(runtimeEnvironment)], additionalPacks: options.additionalPacks, onDiagnostic: options.onAssistantDiagnostic, onTurnRecord: options.onAssistantTurn, modelName: assistantModelName },
+                { packs: [createShortletAssistantPack(runtimeEnvironment)], additionalPacks: options.additionalPacks, onDiagnostic: options.onAssistantDiagnostic, onTurnRecord: options.onAssistantTurn, modelName: assistantModelName, modeSuggestion: GUEST_MODE_SUGGESTION },
               ),
             }
           : {}),
