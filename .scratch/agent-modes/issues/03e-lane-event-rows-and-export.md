@@ -1,6 +1,6 @@
 # Write one redacted row per lane event, exported with the platform tables
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 03d (lanes exist and carry a `taskId`). Open decisions O4 (thread store ownership, ADR 0101) must be answered before the placement in step 4 is final. Owner release as in 03a (ADR 0107 "Settled", 8 Nov 2026).
 Requested: 10 Nov 2026
@@ -172,3 +172,7 @@ Mask email addresses in **lane event rows only**, not globally in `redactSensiti
 - `git diff --check`: exit 0.
 
 **Definition of Done review:** (1) AC1–AC7 have dedicated named tests, including the formerly skipped email case consolidated into AC3; (2) replay conflict, invalid roles, sensitive text and no-read failures are asserted; (3) ADR 0075, 0079, 0093, 0095, 0096, 0101, 0106 and 0107 were listed/read and mapped above and rechecked against the narrow row-only write; (4) no new dependency was injected; (5) the existing `[REDACTED]` marker and email shape add no domain policy; (6) no logs or audits were changed and no credential or contact text is logged; (7) `npm run check` and the own/affected tests pass. The full `npm test` and full Worker suite are the once-per-batch pre-merge gate under AGENTS.md, delegated to the parent after the batch resolves. The previous 03e verification already passed the export-owner, daily-export and restore Worker specs; this resolution changes only the row text sent into their existing writer.
+
+## Answer
+
+Each active-lane timeline event is written as one redacted platform-owned row and included in the platform daily export. Duplicate/conflict and role checks remain fail closed; rows are write-only to the app. Under the owner's OD-1 decision, the row writer masks emails in addition to the existing phone and token redaction, without changing the shared redactor or thread timeline. The restore runbook documents the export-only restore path. AC1–AC7 are covered by passing tests. Implementation: `71ca639`, email completion: `0aa1c11`.
