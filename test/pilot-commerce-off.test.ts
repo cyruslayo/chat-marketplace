@@ -169,7 +169,7 @@ test("AC3 — A guest message about buying a product on either pilot host gets t
       assert.match(JSON.stringify(turn.body), /where you want to stay/);
       assert.doesNotMatch(
         JSON.stringify(turn.body),
-        /Start a Commerce search|Started a Shop task|"domain(?:Id)?":"commerce"/,
+        /Start a Commerce search|I can help with that as Concierge · Shop\. Your stay details are saved\.|Switch to Concierge · Shop|Started a Shop task|"domain(?:Id)?":"commerce"/,
       );
       const state = await fetch(`${host.base}/api/state?threadId=${threadId}`, {
         headers: { cookie: host.cookie },

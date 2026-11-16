@@ -21,6 +21,7 @@ import { COMMERCE_CHECKOUT_CONFIRM_ACTION } from "../apps/web-agent/src/commerce
 import { assertSurfaceReferencesResolve, checkoutConfirmContext } from "./helpers/a2ui-surface-integrity.js";
 import { approvedTestScope } from "./helpers/assistant-scope.js";
 import { temporaryDatabasePath } from "./helpers/temporary-database.js";
+import { GUEST_MODE_SUGGESTION } from "../apps/web-agent/src/guest-content.js";
 import type { AssistantModelClient } from "../apps/local-guest/src/assistant/assistant-model.js";
 
 const clock = () => new Date("2026-10-16T00:00:00.000Z");
@@ -100,9 +101,13 @@ test("AC6: development commerce search works only after task selection and expos
   commerce.directory.createStore({ id: "scripted-store", merchantId: "scripted-merchant", slug: "soap-store", name: "Soap Store", status: "active" });
   commerce.catalogue.createProduct({ id: "scripted-product", name: "Soap", category: "Care" });
   commerce.catalogue.createOffer({ id: "scripted-offer", productId: "scripted-product", storeId: "scripted-store", priceKobo: 500, stock: 2 });
-  const runtime = new ShortletAssistantRuntime(environment, model, { additionalPacks: [createCommerceAssistantPack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database: environment.database, clock: environment.clock })] });
+  let classified = 0;
+  const runtime = new ShortletAssistantRuntime(environment, model, { additionalPacks: [createCommerceAssistantPack({ paymentReferenceKeys: COMMERCE_TEST_REFERENCE_KEYS, database: environment.database, clock: environment.clock })],
+    scopeClassifier: { assess: async (_text, context) => { classified++; assert.ok(context.registeredPacks?.some((pack) => pack.id === "commerce")); return { scope: context.domain === "commerce" ? "in_scope" : "out_of_scope", targetPack: context.domain === "commerce" ? null : "commerce", risk: "ordinary", intents: context.domain === "commerce" ? ["search", "details", "price", "draft", "payment", "status"] : [], reasonCode: context.domain === "commerce" ? "supported" : "outside", slots: { city: null, neighbourhood: null, bedrooms: null, nights: null, guests: null, checkIn: null, checkOut: null } }; } } });
   const intent = await runtime.handleTurn("scripted-commerce", "I want to shop");
-  assert.match(intent.messages?.[0] ?? "", /Start a Commerce search/);
+  assert.equal(classified, 1, "the classifier, not a keyword router, decides the suggestion");
+  assert.equal(intent.messages?.[0], GUEST_MODE_SUGGESTION.message("Shop"));
+  assert.equal(intent.modeChange?.reason, "suggested");
   const started = runtime.handleAssistantEvent("scripted-commerce", TASK_START_EVENT, { domain: "commerce" });
   assert.equal(started.ok, true);
   const shopping = await runtime.handleTurn("scripted-commerce", "Search for soap");

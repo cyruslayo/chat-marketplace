@@ -24,6 +24,8 @@ import { LIVE_LIKE_CLOCK, wireDatedApp } from "./helpers/guest-date-fixtures.js"
 // path, because the proposal is removed before any confirm. A confirmation that wrongly got through would throw the missing-
 // phone error (finding 9) and fail the test. Scenario steps use a planner answer per text, as the recorded journeys do.
 
+/** The runtime's generic reply: the shop task has no reply pack, and a typed yes after the switch has no reply plan it accepts. */
+const SHOP_TASK_REPLY_COPY = "I can help with your current request. Please review the information shown and tell me what you need next.";
 const THREAD = "g-d1a0000601";
 const SEARCH_TEXT = "I need a place in Ikoyi for 4 nights for 2 guests from 14 December 2026";
 
@@ -119,7 +121,12 @@ for (const warm of [false, true]) {
   test(`(c, ${mode}) A task switch after a proposal replaces it: the typed yes and the old card's button send nothing.`, async () => {
     const { outputs, pendingAfter } = await play(SWITCHED_TASK, warm);
     const yes = outputs[3]!;
-    assert.deepEqual(yes.messages, [PROPOSAL_REPLACED_COPY]);
+    // The task switch is a real lane change, so the typed yes lands in the shop lane and never sees the stays lane's notice.
+    // Nothing is sent: the turn is ok with the runtime's generic copy and no request or pending surface.
+    assert.equal(yes.ok, true);
+    assert.deepEqual(yes.messages, [SHOP_TASK_REPLY_COPY]);
+    assert.equal(yes.controlOutcome, "rejected_plan_fallback");
+    assert.equal(surfacesOf(yes).some((id) => /:request:|:pending-action:/.test(id)), false, "no request or pending card is opened");
     assert.equal(pendingAfter, null, "the switch leaves no pending action on the shortlet task");
     const button = outputs[4]!;
     assert.equal(button.ok, false);

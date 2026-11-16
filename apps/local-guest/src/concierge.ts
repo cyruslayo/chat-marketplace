@@ -152,7 +152,7 @@ export interface QuickReplyGuestsEdit { readonly field: "guests"; readonly party
 export interface QuickReplyWhereEdit { readonly field: "where"; readonly area: string; }
 export interface QuickReplyWhenEdit { readonly field: "when"; readonly checkIn: string; readonly nights: number; }
 export type QuickReplyEdit = QuickReplyGuestsEdit | QuickReplyWhereEdit | QuickReplyWhenEdit;
-export interface GuestQuickReply { readonly label: string; readonly edit?: QuickReplyEdit; }
+export interface GuestQuickReply { readonly label: string; readonly edit?: QuickReplyEdit; readonly domain?: string; readonly taskId?: string; }
 
 /**
  * Issue 11 AC3 / issue 58: one-tap answers to the criterion just asked for. Where and who chips carry a structured edit; date and

@@ -23,6 +23,7 @@ import {
   toolsForValidatedIntents,
   toolNamesForValidatedIntents,
   pendingProposalAuthorised,
+  packAtRisk,
   renderPackSurface,
   scopeContextFor,
   type AssistantClarificationKind,
@@ -38,6 +39,8 @@ import { PLANNER_REQUEST_TIMEOUT_MS, SERVER_TURN_MAX_MS } from "../turn-budget.j
 import { ModelScopeClassifier, ScopeClassificationError, assessScopeSafely, scopedMixedInput, type ScopeClassifier, type ScopeAssessment, type ConciergeIntent } from "./scope-classifier.js";
 import { RetryingScopeClassifier, ScopeClassifierRetryError, SCOPE_TOTAL_BUDGET_MS, type ScopeClassifierRetryEvent, type ScopeClassifierRetryResult } from "./scope-classifier-retry.js";
 import { ASSISTANT_CONTROL_COPY } from "./control-copy.js";
+import { MODE_SWITCH_TIERS_ENABLED, modeSwitchTier } from "./mode-switch-tier.js";
+import { GUEST_MODE_SUGGESTION } from "../../../web-agent/src/guest-content.js";
 import { isProviderUnavailable } from "./fallback-model-client.js";
 import { searchAreaFor, type GuestQuickReply } from "../concierge.js";
 import {
@@ -125,6 +128,7 @@ export interface AssistantTurnOutput {
   readonly stopReason?: AssistantStopReason;
   /** Issue 10: one-tap replies for a clarification (never on scope, support or redirect replies). */
   readonly quickReplies?: readonly GuestQuickReply[];
+  readonly modeChange?: { readonly from: string; readonly to: string; readonly reason: "suggested"; readonly undoable: false };
 }
 
 /** A task's entry in the shell rail, derived from the active pack's `taskSummary`. */
@@ -551,6 +555,30 @@ export class AssistantRuntime {
     return this.#packForThread(threadId)?.presentation;
   }
 
+  /** ADR 0106/0107: reconstruct only the last, server-authored suggestion in the active lane, against the current registry.
+   * A stored message grants no switching authority: the guest must still send the validated task event (ADR 0074). */
+  restoredModeSuggestion(threadId: string, lastAssistantMessage: string | undefined): Pick<AssistantTurnOutput, "modeChange" | "quickReplies"> | undefined {
+    if (lastAssistantMessage === undefined || !this.#threads.has(threadId)) return undefined;
+    const active = this.#packForThread(threadId);
+    if (!active) return undefined;
+    const matches = this.#packs.ids().filter((id) => id !== active.id).map((id) => this.#packs.packFor(id))
+      .filter((pack): pack is AssistantDomainPack => pack !== undefined
+        && lastAssistantMessage === GUEST_MODE_SUGGESTION.message(pack.presentation?.label ?? pack.label));
+    // Copy alone is not a unique authority if two registered packs have the same label; fail closed rather than guess a target.
+    if (matches.length !== 1) return undefined;
+    const { modeChange, quickReplies } = this.#modeSuggestion(threadId, active.id, matches[0]!);
+    return { modeChange, quickReplies };
+  }
+
+  #modeSuggestion(threadId: string, from: string, target: AssistantDomainPack): Required<Pick<AssistantTurnOutput, "modeChange" | "quickReplies">> {
+    const existing = this.getThread(threadId).tasks.find((task) => task.domain === target.id);
+    return {
+      modeChange: { from, to: target.id, reason: "suggested", undoable: false },
+      quickReplies: [{ label: GUEST_MODE_SUGGESTION.chip(target.presentation?.label ?? target.label), domain: target.id,
+        ...(existing === undefined ? {} : { taskId: existing.taskId }) }],
+    };
+  }
+
   /** The active task's domain when no pack is registered for it, otherwise undefined. */
   #unregisteredActiveDomain(thread: AssistantThreadState): string | undefined {
     const task = thread.tasks.find((entry) => entry.taskId === thread.activeTaskId);
@@ -668,30 +696,6 @@ export class AssistantRuntime {
     }
     syncActiveTask(thread);
     return true;
-  }
-
-  /** ADR 0074: removes an open proposal from the committed thread and its surface. Used where no candidate state is committed. */
-  #dropPendingProposal(threadId: string, reason: "task_switched"): void {
-    const thread = this.getThread(threadId);
-    if (!replacePendingProposal(thread.taskState, reason)) return;
-    thread.activeSurfaces.delete(PENDING_ACTION_STAGE);
-    syncActiveTask(thread);
-  }
-
-  /** With more than one domain registered, a cross-domain intent asks for confirmation rather than switching. */
-  #route(text: string, activeDomain: string): AssistantTurnOutput | undefined {
-    const lower = text.toLowerCase();
-    const active = this.#packs.packFor(activeDomain) ?? this.#activePack;
-    if (active.intentKeywords.some((keyword) => lower.includes(keyword))) return undefined;
-    for (const id of this.#packs.ids()) {
-      if (id === active.id) continue;
-      const pack = this.#packs.packFor(id);
-      if (pack?.intentKeywords.some((keyword) => lower.includes(keyword))) {
-        const label = `${id.charAt(0).toUpperCase()}${id.slice(1)}`;
-        return { ok: true, messages: [`Start a ${label} search? Your ${active.id} search is saved.`], surfaces: [] };
-      }
-    }
-    return undefined;
   }
 
   get environment(): LocalGuestEnvironment {
@@ -1238,17 +1242,6 @@ export class AssistantRuntime {
       }
     }
 
-    // 2b. Router: with more than one domain registered, a cross-domain intent asks for confirmation
-    // before any switch (never a silent task switch).
-    if (this.#packs.size > 1) {
-      const routed = this.#route(text, candidateDomain());
-      if (routed) {
-        // ADR 0074: a cross-domain switch after a proposal removes the proposal's authority.
-        this.#dropPendingProposal(threadId, "task_switched");
-        return routed;
-      }
-    }
-
     // 3. User message turn
     const originalUserText = text;
     // Issue 59 (ADR 0106 amendment, 9 Nov 2026): a pending date show-back is settled only after an in-scope or mixed verdict, so a
@@ -1259,6 +1252,7 @@ export class AssistantRuntime {
     let scopeFailureOutcome: "quota_refusal" | "guard_failure" | undefined;
     const assessment = text.length > this.#maxInputCharacters ? undefined : await assessScopeSafely(this.#scopeClassifier, safeUserText, {
       ...scopeContextFor(packForScope, tx.taskState),
+      registeredPacks: this.#packs.ids().map((id) => ({ id, scopeDescription: this.#packs.packFor(id)?.scopeDescription ?? this.#packs.packFor(id)?.label ?? id })),
       resultCount: tx.taskState.shortlist.length,
       ...(tx.taskState.openQuestion === undefined ? {} : { openQuestion: tx.taskState.openQuestion }),
       turnContext: this.#turnContext(packForScope),
@@ -1281,6 +1275,17 @@ export class AssistantRuntime {
       const controlOutcome = scopeFailureOutcome ?? scopeOutcome;
       // One count per turn: the outcome this turn returns (ADR 0106 telemetry, closed codes only).
       recordOutcome(controlOutcome);
+      // ADR 0107 decision 8 / ADR 0074: a suggestion is advisory. The current task and its proposal remain untouched;
+      // only a later guest event may switch tasks, through the existing command boundary.
+      const target = assessment?.scope === "out_of_scope" && assessment.risk === "ordinary" && assessment.targetPack !== packForScope.id
+        ? this.#packs.packFor(assessment.targetPack ?? "") : undefined;
+      if (target && modeSwitchTier({ scope: assessment!.scope, targetPack: target.id,
+        packAtRisk: packAtRisk(packForScope, tx.taskState), tiersEnabled: MODE_SWITCH_TIERS_ENABLED }) === "C") {
+        this.#recordModeSuggestion(packForScope.id, target.id);
+        return { ok: true, messages: [GUEST_MODE_SUGGESTION.message(target.presentation?.label ?? target.label)], surfaces: [],
+          modelHandled: false, discardUserInput: true, controlOutcome, tasks: this.getTaskRail(threadId),
+          ...this.#modeSuggestion(threadId, packForScope.id, target) };
+      }
       // Issue 59 (ADR 0106 amendment): a scope redirect and a risk verdict keep the fixed copy with no re-ask. An unclear or failed
       // verdict (ordinary risk) is no dead end: re-ask the closed question the assistant last asked, with its chips, or offer the pack's
       // stage recovery chips when no question is open. No model output is used and no task state is committed.
@@ -1766,6 +1771,13 @@ export class AssistantRuntime {
     } catch {
       // Telemetry must never affect the authoritative workflow.
     }
+  }
+
+  #recordModeSuggestion(from: string, to: string): void {
+    try {
+      // ADR 0075 / 0079: from and to are registry-validated pack ids; no task id, text, token or guest identity.
+      this.#environment.telemetry.track({ type: "assistant.mode.change.v1", from, to, reason: "suggested", tier: "C", undone: false });
+    } catch { /* Observability cannot change a guest turn. */ }
   }
 
   /** Issue 18: true when a registered pack declares this button event (a pack's own card opener), so the shell forwards it by name. */

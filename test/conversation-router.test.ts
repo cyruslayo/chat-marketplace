@@ -17,17 +17,19 @@ function createTestRuntime(model: ScriptedAssistantModel, scopeClassifier?: type
   return { env, runtime };
 }
 
-test("AC2: an intent for another registered domain produces a confirmation, never a silent task switch", async () => {
+test("AC2: an in-scope turn with another pack's keyword does not suggest or silently switch", async () => {
   const runtime = new ShortletAssistantRuntime(
     LocalGuestEnvironment.openNode({ databasePath: temporaryDatabasePath(`router_confirm_${Date.now()}.sqlite`) }),
     new ScriptedAssistantModel([]),
-    { additionalPacks: [createFakeShopPack()] },
+    { additionalPacks: [createFakeShopPack()], scopeClassifier: { assess: async () => ({ scope: "in_scope", targetPack: "shop", risk: "ordinary", intents: ["greet"], reasonCode: "supported", slots: { city: null, neighbourhood: null, bedrooms: null, nights: null, guests: null, checkIn: null, checkOut: null } }) } },
   );
 
   const response = await runtime.handleTurn("g-router", "I want to buy a product in a store");
 
   assert.equal(response.ok, true);
-  assert.match(response.messages?.[0] ?? "", /Start a Shop search\? Your shortlet search is saved\./);
+  assert.equal(response.modeChange, undefined);
+  assert.equal(response.quickReplies?.some((reply) => reply.domain === "shop") ?? false, false);
+  assert.doesNotMatch(response.messages?.[0] ?? "", /Switch to Concierge/);
   assert.equal(response.surfaces?.length, 0);
   const thread = runtime.getThread("g-router");
   assert.equal(thread.tasks.find((task) => task.taskId === thread.activeTaskId)?.domain, "shortlet");

@@ -169,6 +169,7 @@ interface GuestResponse {
   readonly journey?: GuestJourney;
   readonly criteria?: GuestCriteria;
   readonly quickReplies?: readonly GuestQuickReply[];
+  readonly modeChange?: { readonly from: string; readonly to: string; readonly reason: "suggested"; readonly undoable: false };
   readonly tasks?: readonly GuestTask[];
   readonly verticals?: readonly GuestVertical[];
   readonly mode?: ModePresentation;
@@ -1533,6 +1534,9 @@ function readGuestResponse(value: unknown): GuestResponse {
   // Issue 58: a malformed chip is dropped by isQuickReplyList at render, so only a non-array is refused whole here.
   if (value.quickReplies !== undefined && !Array.isArray(value.quickReplies))
     throw new Error("Invalid response quick replies");
+  if (value.modeChange !== undefined && (!isRecord(value.modeChange) || value.modeChange.reason !== "suggested"
+    || typeof value.modeChange.from !== "string" || typeof value.modeChange.to !== "string" || value.modeChange.undoable !== false
+    || Object.keys(value.modeChange).length !== 4)) throw new Error("Invalid response mode change");
   if (
     value.tasks !== undefined &&
     (!Array.isArray(value.tasks) || value.tasks.some((task) => !isGuestTask(task)))
@@ -2826,9 +2830,16 @@ function renderQuickReplies(replies: readonly GuestQuickReply[] | undefined): vo
     button.className = "ui-chip quick-reply";
     button.textContent = reply.label;
     button.addEventListener("click", () => {
-      if (isLoading) return;
+      // ADR 0074: a concurrent task event would be ignored by sendTaskEvent. Do not consume this guest choice first.
+      if (isLoading || (reply.domain !== undefined && taskEventInFlight)) return;
       clearQuickReplies();
       addTurn("user", reply.label);
+      if (reply.domain !== undefined) {
+        // ADR 0107: the chip is guest consent, not classifier authority. The server checks the registered target.
+        void sendTaskEvent(reply.taskId === undefined ? TASK_START_EVENT : TASK_SWITCH_EVENT,
+          reply.taskId === undefined ? { domain: reply.domain } : { taskId: reply.taskId });
+        return;
+      }
       if (reply.edit !== undefined) {
         const basedOn = currentCriteria?.key;
         if (basedOn === undefined) { void sendTurn(reply.label); return; }
@@ -2910,7 +2921,8 @@ function renderResponse(response: GuestResponse): boolean {
   transcriptAnnouncesTurn = false;
   // Receipts follow the markers for the steps they complete.
   for (const receipt of response.receipts ?? []) addReceipt(receipt);
-  landAgentReply();
+  if (response.modeChange?.reason === "suggested") setAgentMark({ type: "mode-suggested" });
+  else landAgentReply();
   return true;
 }
 
@@ -2925,6 +2937,7 @@ async function refreshServerState(preserveConversation = shellState.activeSurfac
       renderTaskRail(response.tasks);
       renderVerticalStarters(response.verticals);
       applyResponseMode(response);
+      if (response.modeChange?.reason === "suggested") renderQuickReplies(response.quickReplies);
     }
     if (response.ok && response.surfaces && response.surfaces.length > 0) {
       renderSurfaces(response.surfaces, preserveConversation);
@@ -3191,23 +3204,18 @@ async function restoreServerState(): Promise<boolean> {
   try {
     const response = await postJson(`/api/state?threadId=${encodeURIComponent(threadId)}`) as GuestStateResponse;
     if (!response.ok) return false;
-    // Slice 26: assistant conversations keep their task rail and workspace in memory (no timeline yet).
-    if (response.tasks && response.tasks.length > 1) {
-      renderTaskRail(response.tasks);
-      renderVerticalStarters(response.verticals);
-      applyResponseMode(response);
-      renderSurfaces(response.surfaces ?? []);
-      announce("Your conversation has been restored.");
-      return true;
-    }
+    // ADR 0107: every task has its own lane; restore that lane's timeline even when the thread has multiple tasks.
     // Issue 03g: an empty conversation still shows the mode strip and the presentation's copy.
     renderVerticalStarters(response.verticals);
     if (response.mode !== undefined) applyResponseMode(response);
-    if (!response.timeline || response.timeline.length === 0) return false;
-    for (const entry of response.timeline) addTimelineEntry(entry);
+    if ((!response.timeline || response.timeline.length === 0) && !(response.tasks && response.tasks.length > 1)) return false;
+    for (const entry of response.timeline ?? []) addTimelineEntry(entry);
+    renderTaskRail(response.tasks);
     renderJourney(response.journey);
     renderCriteria(response.criteria);
     renderSurfaces(response.surfaces ?? []);
+    renderQuickReplies(response.quickReplies);
+    if (response.modeChange?.reason === "suggested") setAgentMark({ type: "mode-suggested" });
     announce("Your conversation has been restored.");
     return true;
   } catch { return false; }

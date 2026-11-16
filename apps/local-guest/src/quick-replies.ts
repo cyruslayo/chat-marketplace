@@ -38,8 +38,13 @@ export function isQuickReplyList(value: unknown): readonly GuestQuickReply[] | u
   const replies: GuestQuickReply[] = [];
   for (const item of value) {
     if (!isRecord(item) || typeof item.label !== "string" || item.label === "") continue;
-    if (item.edit === undefined) { replies.push({ label: item.label }); continue; }
-    if (isQuickReplyEdit(item.edit)) replies.push({ label: item.label, edit: item.edit });
+    if (typeof item.domain === "string" && item.domain.length > 0 && item.domain.length <= 120 && item.edit === undefined
+      && (item.taskId === undefined || typeof item.taskId === "string") && exactKeys(item, item.taskId === undefined ? ["label", "domain"] : ["label", "domain", "taskId"])) {
+      replies.push({ label: item.label, domain: item.domain, ...(item.taskId === undefined ? {} : { taskId: item.taskId }) });
+      continue;
+    }
+    if (exactKeys(item, ["label"])) { replies.push({ label: item.label }); continue; }
+    if (isQuickReplyEdit(item.edit) && exactKeys(item, ["label", "edit"])) replies.push({ label: item.label, edit: item.edit });
   }
   return replies;
 }

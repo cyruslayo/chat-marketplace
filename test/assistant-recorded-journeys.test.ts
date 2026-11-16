@@ -17,6 +17,9 @@ import {
 // Recorded assistant conversations replayed as regression evals (issue 03). Each recording is a cold-restored journey on the
 // staging-like clock (27 Oct 2026), with the assistant runtime enabled and a new runtime before every guest step.
 
+// The runtime's generic reply, used when a turn has no reply plan it accepts (the shop task has no reply pack of its own).
+const SHOP_TASK_START_COPY = "I can help with your current request. Please review the information shown and tell me what you need next.";
+
 const NAMED_JOURNEYS = [
   "search-refinement-request-draft",
   "missing-information-clarification",
@@ -91,11 +94,18 @@ test("The four named journeys are committed as recordings and pass.", async () =
   assert.deepEqual(cancelled[2]!.messages, [CANCEL_COPY]);
   assert.equal(cancelled[2]!.surfaces.length, 0, "no pending surface or request survives the cancel");
 
-  // ADR 0074 (owner decision): a task switch removes the open proposal, so the typed yes gets the replaced reply and the old
-  // card's button is refused as stale. Nothing is sent.
+  // ADR 0074 (owner decision): a task switch removes the open proposal. The switch is a real task change (start_task), so the
+  // typed yes is sent in the shop lane, where the stays lane's replaced notice is not visible. Nothing is sent: the turn is ok,
+  // with the runtime's generic fallback copy, and no request or pending-action surface. The old card's button is refused as stale.
   const afterSwitch = byName("confirm-after-task-switch");
   assert.match(afterSwitch[1]!.surfaces[0]!.surfaceId, /:pending-action:/);
-  assert.deepEqual(afterSwitch[3]!.messages, [PROPOSAL_REPLACED_COPY]);
+  assert.equal(afterSwitch[2]!.controlOutcome, "successful_model_handling", "the task start is a successful model turn");
+  assert.deepEqual(afterSwitch[2]!.messages, [SHOP_TASK_START_COPY], "turn 3 carries the runtime's generic reply copy (no shop reply pack)");
+  assert.deepEqual(afterSwitch[2]!.tasks.map((task) => [task.domain, task.active]), [["shortlet", false], ["shop", true]], "the shop lane is active after the switch");
+  assert.equal(afterSwitch[3]!.ok, true);
+  assert.deepEqual(afterSwitch[3]!.messages, [SHOP_TASK_START_COPY], "the typed yes gets the generic copy, not the replaced notice");
+  assert.equal(afterSwitch[3]!.controlOutcome, "rejected_plan_fallback");
+  assert.deepEqual(afterSwitch[3]!.surfaces, [], "no request or pending-action surface after the typed yes");
   assert.equal(afterSwitch[4]!.code, "STALE_SURFACE");
   // A search change removes the proposal the same way.
   const afterSearch = byName("confirm-after-search-change");
