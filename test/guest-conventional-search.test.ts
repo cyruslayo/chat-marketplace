@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { restartFixture } from "./helpers/guest-restart.js";
 import { renderConventionalSearchHtml } from "../apps/local-guest/src/guest-server.js";
 import { formatNgnKobo } from "../apps/web-agent/src/index.js";
+import { GUEST_MODES } from "../apps/web-agent/src/guest-content.js";
 
 async function get(url: string, cookie?: string): Promise<{ status: number; body: string }> {
   const response = await fetch(url, { headers: { accept: "text/html", ...(cookie ? { cookie } : {}) } });
@@ -173,7 +174,8 @@ test("AC4: Back from Unit detail returns to the current search results and keeps
     const unknownThreadId = "g-00000000-0000-4000-8000-000000000000";
     const forged = await get(`${fixture.base}/api/state?threadId=${unknownThreadId}`, fixture.cookie);
     assert.equal(forged.status, 200);
-    assert.deepEqual(JSON.parse(forged.body), { ok: true, threadId: unknownThreadId, timeline: [], surfaces: [] });
+    // Issue 03g (ADR 0107 decision 6): an unreadable thread still carries the default mode presentation, nothing else.
+    assert.deepEqual(JSON.parse(forged.body), { ok: true, threadId: unknownThreadId, timeline: [], surfaces: [], mode: GUEST_MODES.stays });
   } finally { await fixture.close(); }
 });
 

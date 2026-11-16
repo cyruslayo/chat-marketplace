@@ -4,6 +4,7 @@ import { LocalGuestApp, renderGuestShellHtml, startLocalGuestServer } from "../a
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { formatGuestHistorySummary, guestSurfaceStatusMessage } from "../apps/local-guest/src/conversational-shell.js";
 import { SEE_ALL_DISCOVERY_EVENT } from "../apps/web-agent/src/discovery-a2ui.js";
+import { GUEST_MODES } from "../apps/web-agent/src/guest-content.js";
 import type { A2UIServerMessage } from "@cylayo/weaver-core";
 
 test("mobile conversation shell keeps one timeline, one workspace slot, and a text composer", () => {
@@ -149,7 +150,8 @@ test("HTTP refresh state requires the server-issued browser session and cannot e
 
     const guessed = await fetch(`${base}/api/state?threadId=g-abcdefabcdef`, { headers: { Cookie: cookie!.split(";")[0]! } });
     assert.equal(guessed.status, 200);
-    assert.deepEqual(await guessed.json(), { ok: true, threadId: "g-abcdefabcdef", timeline: [], surfaces: [] });
+    // Issue 03g (ADR 0107 decision 6): an unknown thread still carries the default mode presentation, and nothing of any other thread.
+    assert.deepEqual(await guessed.json(), { ok: true, threadId: "g-abcdefabcdef", timeline: [], surfaces: [], mode: GUEST_MODES.stays });
 
     const unauthenticated = await fetch(`${base}/api/state?threadId=${threadId}`);
     assert.equal(unauthenticated.status, 401);

@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { guestNewConversationCopy } from "../apps/web-agent/src/index.js";
+import { GUEST_MODES } from "../apps/web-agent/src/guest-content.js";
 import { renderGuestShellHtml, type GuestCommittedWork, type GuestStateSnapshot } from "../apps/local-guest/src/guest-server.js";
 import { restartFixture } from "./helpers/guest-restart.js";
 
@@ -28,7 +29,8 @@ test("AC1: Starting a new conversation doesn't withdraw or cancel an existing Bo
     // The new conversation is only a new thread id: a turn on it runs discovery.
     const newThreadId = `g-${crypto.randomUUID()}`;
     const fresh = await fetch(`${fixture.base}/api/state?threadId=${newThreadId}`, { headers: { cookie: fixture.cookie } });
-    assert.deepEqual(await fresh.json(), { ok: true, threadId: newThreadId, timeline: [], surfaces: [] });
+    // Issue 03g (ADR 0107 decision 6): a fresh thread carries the default mode presentation alongside its empty state.
+    assert.deepEqual(await fresh.json(), { ok: true, threadId: newThreadId, timeline: [], surfaces: [], mode: GUEST_MODES.stays });
     const turn = await fetch(`${fixture.base}/api/turn`, { method: "POST", headers: { "content-type": "application/json", cookie: fixture.cookie }, body: JSON.stringify({ threadId: newThreadId, text: "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people" }) });
     assert.equal((await turn.json() as { ok: boolean }).ok, true);
 
