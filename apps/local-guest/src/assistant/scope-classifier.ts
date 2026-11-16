@@ -126,7 +126,7 @@ export function scopeVerdictCodes(response: Pick<AssistantModelResponse, "text" 
 }
 
 /** Names the parse-failure class only. The text is inspected locally and never returned, stored or logged. */
-function invalidJsonReason(text: string, finishReason: AssistantFinishReason | undefined): "invalid_json_prose" | "invalid_json_multiple_values" | "invalid_json_trailing_text" | "invalid_json_unterminated" | "invalid_json_syntax" | "invalid_json_truncated" | "invalid_json_fenced" | "invalid_json_wrapped" {
+export function invalidJsonReason(text: string, finishReason: AssistantFinishReason | undefined): "invalid_json_prose" | "invalid_json_multiple_values" | "invalid_json_trailing_text" | "invalid_json_unterminated" | "invalid_json_syntax" | "invalid_json_truncated" | "invalid_json_fenced" | "invalid_json_wrapped" {
   if (/^\s*```/.test(text)) return "invalid_json_fenced";
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");

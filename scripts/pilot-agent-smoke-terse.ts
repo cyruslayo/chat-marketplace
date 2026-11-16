@@ -5,7 +5,7 @@ import { createShortletAssistantPack } from "../apps/local-guest/src/assistant/s
 import type { AssistantModelClient, AssistantModelRequest, AssistantModelResponse } from "../apps/local-guest/src/assistant/assistant-model.js";
 import type { AssistantControlOutcome } from "../apps/local-guest/src/assistant/assistant-platform.js";
 import { isOpenQuestion, type AssistantTaskState, type OpenQuestion } from "../apps/local-guest/src/assistant/assistant-state.js";
-import type { ConciergeIntent } from "../apps/local-guest/src/assistant/scope-classifier.js";
+import { invalidJsonReason, type ConciergeIntent, type ScopeFailureReason } from "../apps/local-guest/src/assistant/scope-classifier.js";
 import { SCOPE_FIRST_ATTEMPT_TIMEOUT_MS, SCOPE_RETRY_TIMEOUT_MS, SCOPE_TOTAL_BUDGET_MS } from "../apps/local-guest/src/assistant/scope-classifier-retry.js";
 import { providerStopReason } from "./pilot-agent-smoke-budget.js";
 
@@ -85,10 +85,14 @@ export const TERSE_FOLLOW_UP_CASES: readonly TerseFollowUpCase[] = [
 export type TerseScopeCode = "in_scope" | "mixed" | "out_of_scope" | "unclear" | "failed";
 export type TerseReasonCode = "supported" | "mixed" | "outside" | "unclear" | "failed";
 
+/** The classifier's own closed JSON-parse defect codes, so a no-verdict row names whether the provider truncated, fenced, wrapped or wrote prose (ADR 0106, 26 Oct 2026). */
+export type TerseJsonParseFailureCode = Extract<ScopeFailureReason, `invalid_json_${string}`>;
+
 /**
- * Closed reason the harness could not read a verdict. `setup_failed` names a journey that never reached the question (so the case
+ * The closed reason no verdict was read. `setup_failed` names a journey that never reached the question (so the case
  * was not measured), `no_request` names a turn that never reached the classifier, `no_response` a classifier request whose response
- * never arrived before the stage gave up, and the rest name the response defect. Every value is metadata only (ADR 0075).
+ * never arrived before the stage gave up, and the rest name the response defect. Every value is metadata only (ADR 0075); the
+ * parse defects reuse the runtime classifier's own codes, never a new vocabulary.
  */
 export type TerseScopeFailureCode =
   | "setup_failed"
@@ -96,7 +100,7 @@ export type TerseScopeFailureCode =
   | "no_response"
   | "tool_calls"
   | "text_missing"
-  | "not_json"
+  | TerseJsonParseFailureCode
   | "scope_missing"
   | "scope_invalid"
   | "reason_missing"
@@ -239,7 +243,8 @@ function readVerdict(response: AssistantModelResponse): { readonly scope: TerseS
   try {
     parsed = JSON.parse(response.text);
   } catch {
-    return { failure: "not_json" };
+    // The runtime classifier's own closed code names the parse defect (truncation vs prose vs fenced), never the text.
+    return { failure: invalidJsonReason(response.text, response.finishReason) };
   }
   const value = parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
   if (!("scope" in value)) return { failure: "scope_missing" };
@@ -442,7 +447,8 @@ export function scoreTerseCase(input: {
 /** The closed reason no verdict was read from what the observer saw. */
 function scopeFailureOf(observed: ObserverVerdict): TerseScopeFailureCode | null {
   if (observed.scope !== null) return null;
-  if (observed.responded) return observed.failure ?? "not_json";
+  // A response that produced no verdict always carries its closed defect from readVerdict; the fallback is unreachable by construction.
+  if (observed.responded) return observed.failure ?? "text_missing";
   return observed.requested ? "no_response" : "no_request";
 }
 

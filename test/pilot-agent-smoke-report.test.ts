@@ -325,7 +325,7 @@ test("Issue 61: every unreadable classifier response is reported with a closed p
   };
   const report = await evaluateTerseFollowUps(model);
   const failureOf = (id: string) => report.cases.find((entry) => entry.id === id)?.scopeFailure;
-  assert.equal(failureOf("party_size:solo"), "not_json");
+  assert.equal(failureOf("party_size:solo"), "invalid_json_prose");
   assert.equal(failureOf("party_size:numeral"), "scope_missing");
   assert.equal(failureOf("party_size:pair"), "reason_missing");
   assert.equal(failureOf("party_size:couple"), "scope_invalid");
@@ -336,9 +336,41 @@ test("Issue 61: every unreadable classifier response is reported with a closed p
   assert.equal(report.falseRefusalRate, 0);
   assert.equal(report.failedCases, 7);
   const rendered = renderTerseFollowUpReport(report).join("\n");
-  assert.match(rendered, /not_json/);
+  assert.match(rendered, /invalid_json_prose/);
   assert.match(rendered, /scope_invalid/);
   assert.doesNotMatch(rendered, /not json|maybe|perhaps/i, "no model text");
+});
+
+// Issue 63 (the 12:15 and 13:39 live runs): a no-verdict row must name the classifier's own closed parse defect, so a format flake
+// says what to fix. A truncation points at the classifier's output-token cap (an engineering setting); fenced, wrapped or prose output
+// points at the model. The codes are the runtime classifier's own (ADR 0106, 26 Oct 2026), never a new vocabulary, and no model text
+// is reported (ADR 0075).
+test("Issue 63: a terse no-verdict row names the classifier's own closed parse defect", async () => {
+  const byMessage: Readonly<Record<string, AssistantModelResponse>> = {
+    // Fenced output is one of the retried codes, so the stage asks once more and the same defect stands.
+    "go ahead": { text: "```json\n" + validVerdict + "\n```" },
+    // The provider stopped at the output-token cap: truncation is not retried (ADR 0106, 26 Oct 2026).
+    "the last one": { text: '{"scope":"in_scope","risk":"ordinary"', finishReason: "length" },
+    // Text that opens like JSON but breaks the grammar is the retried syntax code.
+    "my partner and I": { text: "{not json}" },
+  };
+  const model: AssistantModelClient = {
+    generate: async (request) => {
+      if (request.structuredOutput?.name === "concierge_scope") return byMessage[scopeMessage(request)] ?? { text: validVerdict };
+      return { toolCalls: [{ id: "terse-search", name: "search_stays", args: { city: "Lagos" } }] };
+    },
+  };
+  const report = await evaluateTerseFollowUps(model);
+  const failureOf = (id: string) => report.cases.find((entry) => entry.id === id)?.scopeFailure;
+  assert.equal(failureOf("date_confirm:held-out-accept"), "invalid_json_fenced");
+  assert.equal(failureOf("pick_result:held-out-last"), "invalid_json_truncated");
+  assert.equal(failureOf("party_size:held-out-partner"), "invalid_json_syntax");
+  assert.equal(report.cases.filter((entry) => (entry.scopeFailure ?? "").startsWith("invalid_json_")).length, 3, "only these rows carry a parse defect");
+  assert.equal(report.failedCases, 3);
+  assert.equal(report.falseRefusalRate, 0, "a format failure is never a false refusal");
+  const rendered = renderTerseFollowUpReport(report).join("\n");
+  assert.match(rendered, /invalid_json_truncated/);
+  assert.doesNotMatch(rendered, /not json/i, "no model text");
 });
 
 test("Issue 61: a classifier response that never arrives is a closed no_response, scored from the turn outcome", async () => {
