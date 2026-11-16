@@ -241,7 +241,9 @@ import {
   type AssistantVertical,
   type PersistedAssistantTask,
   type TaskRestoreRefusal,
+  STAYS_DOMAIN,
 } from "./assistant/assistant-runtime.js";
+import type { DurableLaneEvent } from "../../../domains/shortlet/src/index.js";
 import { DEFAULT_LANE_TIMELINE_CAP, capLaneTimeline, validateLaneTimelineCap } from "./assistant/task-lanes.js";
 import { ASSISTANT_CONTROL_COPY } from "./assistant/control-copy.js";
 import { createInitialTaskState, isAssistantBudgetPer, type AssistantStayReference, type AssistantTaskState } from "./assistant/assistant-state.js";
@@ -747,6 +749,10 @@ interface GuestThreadState {
   timelineTaskId: string;
   /** Issue 03d: the transcripts of the other lanes, keyed by task id. Model history is never kept here. */
   laneTimelines: Map<string, GuestTimelineEntry[]>;
+  /** Issue 03e (ADR 0107 decision 11): the next lane row sequence per task id. Persisted in the projection (`laneEventSeq`). */
+  laneEventSeq: Map<string, number>;
+  /** Issue 03e: lane rows queued by this thread's timeline writes, cleared only after a save commits, so a failed save is retried. */
+  pendingLaneEvents: DurableLaneEvent[];
   lastSurfaces: GuestSurfacePayload[];
   /** Issue 03a: the criteria of each executed search, oldest first (for "Undo last change"). */
   searchHistory: DiscoverySearchContext[];
@@ -2660,8 +2666,11 @@ export class LocalGuestApp {
       saved &&
       (saved.principalId !== environment.guestPrincipal().id ||
         saved.tenantId !== environment.config.tenantId)
-    )
+    ) {
+      // Issue 03e: a conversation this runtime does not own writes no lane rows either.
+      thread.pendingLaneEvents = [];
       return;
+    }
     const current = thread.lastSurfaces.at(-1);
     const activeStage =
       this.#stageForSurfaceId(current?.surfaceId ?? "") ??
@@ -2671,7 +2680,24 @@ export class LocalGuestApp {
       principalId: environment.guestPrincipal().id,
       tenantId: environment.config.tenantId,
       threadJson: JSON.stringify(this.#projectionFor(thread, activeStage)),
+      laneEvents: [...thread.pendingLaneEvents],
     });
+    // Issue 03e: cleared only after the save commits, so a failed save writes the same rows again.
+    thread.pendingLaneEvents = [];
+  }
+
+  /**
+   * Issue 03e (ADR 0107 decision 11): appends one entry to the active lane and queues its lane row. The sequence is per task and is
+   * assigned now, so a retried save writes the same rows (the store ignores a replay). The domain is the task's domain, or the
+   * stays domain on a thread without a runtime task list.
+   */
+  #pushLaneEntry(thread: GuestThreadState, entry: GuestTimelineEntry): void {
+    thread.timeline.push(entry);
+    const taskId = thread.timelineTaskId;
+    const seq = (thread.laneEventSeq.get(taskId) ?? 0) + 1;
+    thread.laneEventSeq.set(taskId, seq);
+    const domain = this.#assistantRuntime?.persistedTasksFor(thread.threadId)?.tasks.find((task) => task.taskId === taskId)?.domain ?? STAYS_DOMAIN;
+    thread.pendingLaneEvents.push({ taskId, domain, seq, role: entry.role, text: entry.text, createdAt: this.#environment.clock().toISOString() });
   }
 
   #projectionFor(
@@ -2712,6 +2738,8 @@ export class LocalGuestApp {
       ...(this.#assistantRuntime?.persistedTasksFor(thread.threadId) ?? {}),
       // Issue 03d (owner decision O2): each task's guest-visible lane, with the active lane's transcript in `timeline` above.
       ...this.#persistedLanes(thread),
+      // Issue 03e (ADR 0107 decision 11): the next lane row sequence per task, so a cold restore continues it.
+      laneEventSeq: Object.fromEntries(thread.laneEventSeq),
       pendingAction: thread.pendingAction,
       pendingActionSurfaceId: thread.pendingActionSurfaceId,
       replacedPendingAction: thread.replacedPendingAction,
@@ -2817,13 +2845,20 @@ export class LocalGuestApp {
     const environment = this.#environment;
     const principalId = environment.guestPrincipal().id;
     const existing = await environment.guestData.findThread(threadId);
-    if (existing && (existing.principalId !== principalId || existing.tenantId !== environment.config.tenantId)) return;
+    if (existing && (existing.principalId !== principalId || existing.tenantId !== environment.config.tenantId)) {
+      // Issue 03e: a conversation this runtime does not own writes no lane rows either.
+      thread.pendingLaneEvents = [];
+      return;
+    }
     const current = thread.lastSurfaces.at(-1);
     const activeStage = this.#stageForSurfaceId(current?.surfaceId ?? "") ?? this.#inferActiveStage(thread);
     await environment.guestData.saveThread({
       threadId, principalId, tenantId: environment.config.tenantId,
       threadJson: JSON.stringify(this.#projectionFor(thread, activeStage)),
+      laneEvents: [...thread.pendingLaneEvents],
     });
+    // Issue 03e: cleared only after the save commits, so a failed save writes the same rows again.
+    thread.pendingLaneEvents = [];
   }
 
   #hydrateThreadRecord(
@@ -2874,6 +2909,9 @@ export class LocalGuestApp {
       timeline: lanes.timeline,
       timelineTaskId: lanes.timelineTaskId,
       laneTimelines: lanes.laneTimelines,
+      // Issue 03e: the sequence counters continue from the projection; no lane row is re-minted after a cold restore.
+      laneEventSeq: new Map(Object.entries(projection.laneEventSeq ?? {})),
+      pendingLaneEvents: [],
       lastSurfaces: [],
       searchHistory: projection.searchHistory.map((context) => ({
         ...context,
@@ -3266,6 +3304,8 @@ export class LocalGuestApp {
       timeline: [],
       timelineTaskId: INITIAL_TASK_ID,
       laneTimelines: new Map(),
+      laneEventSeq: new Map(),
+      pendingLaneEvents: [],
       lastSurfaces: [],
       searchHistory: [],
       assistantContext: null,
@@ -3744,7 +3784,7 @@ export class LocalGuestApp {
     // Issue 03d: the turn's own text and replies go to the lane the turn leaves the guest in (a switch turn's text crosses with it).
     this.#alignTimelineLane(threadId, thread);
     if (userText !== undefined)
-      thread.timeline.push({ role: "user", text: redactSensitiveData(userText) as string });
+      this.#pushLaneEntry(thread, { role: "user", text: redactSensitiveData(userText) as string });
     if (result.surfaces.length > 0) thread.lastSurfaces = [...result.surfaces];
     if (result.assistantManaged) this.#syncAssistantPersistence(threadId, thread);
     this.#syncPendingAction(threadId, thread);
@@ -3771,10 +3811,10 @@ export class LocalGuestApp {
       // avoid duplicating an identical assistant message at the tail.
       const tail = thread.timeline.at(-1);
       if (tail?.role === "assistant" && tail.text === message) continue;
-      thread.timeline.push({ role: "assistant", text: message });
+      this.#pushLaneEntry(thread, { role: "assistant", text: message });
     }
     for (const receipt of result.receipts ?? [])
-      thread.timeline.push({ role: "receipt", text: receipt });
+      this.#pushLaneEntry(thread, { role: "receipt", text: receipt });
     // A text-only turn changes the transcript but does not supersede the
     // current server-backed workspace (ADR-0074).
     try {

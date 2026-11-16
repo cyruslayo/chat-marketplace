@@ -279,7 +279,8 @@ export interface PersistedAssistantTask {
 export type TaskRestoreRefusal = "INVALID_TASK_LIST" | "UNKNOWN_DOMAIN" | "UNPARSEABLE_STATE";
 
 /** The stays pack's domain id, the only domain whose state the restore takes from the thread (ADR 0107). */
-const STAYS_DOMAIN = "shortlet";
+/** The stays domain id. Issue 03e: exported so the shell can name the stays lane's domain on a lane row. */
+export const STAYS_DOMAIN = "shortlet";
 /** The id the first task of a thread gets (a legacy projection restores this task). */
 export const INITIAL_TASK_ID = "task-1";
 

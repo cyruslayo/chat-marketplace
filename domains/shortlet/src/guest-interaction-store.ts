@@ -1,6 +1,7 @@
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 import { createHash } from "node:crypto";
 import { normalizeContactEmail } from "../../../packages/platform-core/src/accounts/contact.js";
+import { redactSensitiveData } from "../../../packages/platform-core/src/redaction.js";
 
 /**
  * Durable Guest booking interaction store (ADR-0070/0071/0074/0075/0079).
@@ -35,6 +36,21 @@ export interface DurableGuestSessionBinding {
   readonly tenantId: string;
 }
 
+/** Issue 03e (ADR 0107 decision 11): the roles a lane row may hold. Model text and tool results are not timeline roles and are refused. */
+export const LANE_EVENT_ROLES = ["user", "assistant", "receipt"] as const;
+export type DurableLaneEventRole = (typeof LANE_EVENT_ROLES)[number];
+
+/** Issue 03e: one guest-visible timeline entry of one task's lane, as the thread writes it (ADR 0107 decision 11). */
+export interface DurableLaneEvent {
+  readonly taskId: string;
+  readonly domain: string;
+  /** The entry's position in its lane, per task, from 1. It is durable: it continues across a cold restore. */
+  readonly seq: number;
+  readonly role: DurableLaneEventRole;
+  readonly text: string;
+  readonly createdAt: string;
+}
+
 export interface DurableGuestThreadRecord {
   readonly threadId: string;
   readonly principalId: string;
@@ -45,6 +61,11 @@ export interface DurableGuestThreadRecord {
    * the draft quote facts. A2UI messages and model history are never stored.
    */
   readonly threadJson: string;
+  /**
+   * Issue 03e (ADR 0107 decision 11, owner decision O4): the lane event rows to write in the same transaction as the thread.
+   * Absent means no rows. Each row's `text` is redacted by the writer before it is stored.
+   */
+  readonly laneEvents?: readonly DurableLaneEvent[];
 }
 
 export interface DurableBookingRequestDraft {
@@ -358,6 +379,25 @@ export const GUEST_REQUEST_CONTACT_SCHEMA = `
         ON guest_booking_request_contacts (tenant_id, contact_email);
     `;
 
+/**
+ * Issue 03e (ADR 0107 decision 11, owner decision O4): one row per lane event, beside guest_threads. Only the write path and the
+ * export touch it; no application code selects from it (AC7). Platform migration 5 applies the same DDL to existing objects.
+ */
+export const LANE_EVENT_SCHEMA = `
+      CREATE TABLE IF NOT EXISTS guest_thread_lane_events (
+        event_id TEXT PRIMARY KEY NOT NULL,
+        thread_id TEXT NOT NULL,
+        tenant_id TEXT NOT NULL,
+        task_id TEXT NOT NULL,
+        domain TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'receipt')),
+        text_redacted TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE (thread_id, task_id, seq)
+      );
+    `;
+
 /** Table DDL, applied by the schema migrations (apps/cloudflare/src/schema.ts) and by this store's constructor. */
 export const THREAD_SESSION_SCHEMA = `
       CREATE TABLE IF NOT EXISTS guest_session_bindings (
@@ -377,6 +417,7 @@ export const THREAD_SESSION_SCHEMA = `
       );
       CREATE INDEX IF NOT EXISTS idx_guest_threads_principal
         ON guest_threads (principal_id, tenant_id);
+      ${LANE_EVENT_SCHEMA}
     `;
 
 export const GUEST_INTERACTION_SCHEMA = `
@@ -622,6 +663,88 @@ function periodSessionFromRow(row: PeriodSessionRow): DurablePeriodPaymentSessio
   });
 }
 
+function isLaneEventRole(value: unknown): value is DurableLaneEventRole {
+  return typeof value === "string" && (LANE_EVENT_ROLES as readonly string[]).includes(value);
+}
+
+/**
+ * Issue 03e: the lane events a save carries, checked by shape before anything is written (fail closed). A role outside the timeline
+ * roles, a sequence below 1 or a non-text field returns null. The platform object refuses the save with a 400 when this returns null.
+ */
+export function parseDurableLaneEvents(value: unknown): readonly DurableLaneEvent[] | null {
+  if (!Array.isArray(value)) return null;
+  const parsed: DurableLaneEvent[] = [];
+  for (const entry of value as readonly unknown[]) {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) return null;
+    const { taskId, domain, seq, role, text, createdAt } = entry as Record<string, unknown>;
+    if (typeof taskId !== "string" || taskId === "" || taskId.length > 120) return null;
+    if (typeof domain !== "string" || domain === "" || domain.length > 120) return null;
+    if (typeof seq !== "number" || !Number.isSafeInteger(seq) || seq < 1) return null;
+    if (!isLaneEventRole(role)) return null;
+    if (typeof text !== "string" || typeof createdAt !== "string" || createdAt === "") return null;
+    parsed.push(Object.freeze({ taskId, domain, seq, role, text, createdAt }));
+  }
+  return Object.freeze(parsed);
+}
+
+const UPSERT_THREAD_SQL = `
+      INSERT INTO guest_threads (thread_id, principal_id, tenant_id, thread_json)
+      VALUES ($threadId, $principalId, $tenantId, $threadJson)
+      ON CONFLICT(thread_id) DO UPDATE SET
+        principal_id = excluded.principal_id,
+        tenant_id = excluded.tenant_id,
+        thread_json = excluded.thread_json
+    `;
+
+/**
+ * Issue 03e (ADR 0107 decision 11, owner decision O4): an upsert keyed on event_id. A replay with the same content changes nothing.
+ * The same event_id with other content sets the NOT NULL key to NULL, so the statement fails and the save's transaction rolls back
+ * with it. The writer never reads the table to decide this (AC7).
+ */
+const INSERT_LANE_EVENT_SQL = `
+      INSERT INTO guest_thread_lane_events (event_id, thread_id, tenant_id, task_id, domain, seq, role, text_redacted, created_at)
+      VALUES ($eventId, $threadId, $tenantId, $taskId, $domain, $seq, $role, $textRedacted, $createdAt)
+      ON CONFLICT(event_id) DO UPDATE SET event_id = CASE WHEN
+        thread_id = excluded.thread_id AND tenant_id = excluded.tenant_id AND task_id = excluded.task_id
+        AND domain = excluded.domain AND seq = excluded.seq AND role = excluded.role
+        AND text_redacted = excluded.text_redacted
+        THEN event_id ELSE NULL END
+    `;
+
+/**
+ * Saves a thread and its lane rows in one transaction (ADR 0107 decision 11). Shared by the shortlet store and the platform object,
+ * so both write the same rows. Each row text is redacted before insert (ADR 0075).
+ */
+export function saveThreadRecord(database: SqlDatabase, thread: DurableGuestThreadRecord): void {
+  database.transaction(() => {
+    database.prepare(UPSERT_THREAD_SQL).run({
+      $threadId: thread.threadId,
+      $principalId: thread.principalId,
+      $tenantId: thread.tenantId,
+      $threadJson: thread.threadJson,
+    });
+    for (const event of thread.laneEvents ?? []) {
+      if (!isLaneEventRole(event.role) || !Number.isSafeInteger(event.seq) || event.seq < 1)
+        throw new Error("Lane event refused: the role or sequence is outside the stored shape");
+      try {
+        database.prepare(INSERT_LANE_EVENT_SQL).run({
+          $eventId: `${thread.threadId}:${event.taskId}:${event.seq}`,
+          $threadId: thread.threadId,
+          $tenantId: thread.tenantId,
+          $taskId: event.taskId,
+          $domain: event.domain,
+          $seq: event.seq,
+          $role: event.role,
+          $textRedacted: redactSensitiveData(event.text) as string,
+          $createdAt: event.createdAt,
+        });
+      } catch {
+        throw new Error("Lane event write refused: it conflicts with a stored row");
+      }
+    }
+  });
+}
+
 export class SqliteGuestInteractionStore {
   readonly #database: SqlDatabase;
 
@@ -733,21 +856,7 @@ export class SqliteGuestInteractionStore {
   // --- Threads ---
 
   saveThread(thread: DurableGuestThreadRecord): void {
-    this.#database
-      .prepare(`
-      INSERT INTO guest_threads (thread_id, principal_id, tenant_id, thread_json)
-      VALUES ($threadId, $principalId, $tenantId, $threadJson)
-      ON CONFLICT(thread_id) DO UPDATE SET
-        principal_id = excluded.principal_id,
-        tenant_id = excluded.tenant_id,
-        thread_json = excluded.thread_json
-    `)
-      .run({
-        $threadId: thread.threadId,
-        $principalId: thread.principalId,
-        $tenantId: thread.tenantId,
-        $threadJson: thread.threadJson,
-      });
+    saveThreadRecord(this.#database, thread);
   }
 
   findThread(threadId: string): DurableGuestThreadRecord | null {

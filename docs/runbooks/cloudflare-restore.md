@@ -74,6 +74,8 @@ whose set is complete. Loading every day oldest first is wrong. The import upser
 row deleted after the older day would survive the rebuild, and the object would hold rows the source no longer has.
 `apps/cloudflare/test/restore-from-export.spec.ts` demonstrates this.
 
+**Lane event rows (issue 03e).** The `guest_thread_lane_events` table is restored from the export like any platform table. The app never reads it; it keeps each task lane's guest-visible timeline entries as a record (ADR 0107 decision 11).
+
 **Procedure.**
 
 **Legacy pre-split export transform (only when the source schema lacks revision columns).** Preserve the original export

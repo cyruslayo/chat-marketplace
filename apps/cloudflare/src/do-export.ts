@@ -76,6 +76,7 @@ export const PLATFORM_EXPORT_TABLES = [
   "guest_account_principals",
   "guest_account_request_claims",
   "guest_contacts",
+  "guest_thread_lane_events",
   "guest_threads",
   "telemetry_events",
 ] as const;

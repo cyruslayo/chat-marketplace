@@ -73,6 +73,11 @@ export interface GuestPersistentProjection {
    * task. `timeline` above is the active lane. Model history is never stored here. Absent in legacy blobs.
    */
   readonly lanes?: readonly PersistedLane[];
+  /**
+   * Issue 03e (ADR 0107 decision 11): the next lane row sequence per task id. It is kept here because the capped timeline cannot
+   * give it back, and the app never reads the lane table. Absent in projections written before issue 03e (every task starts at 0).
+   */
+  readonly laneEventSeq?: Readonly<Record<string, number>>;
 }
 
 /** Issue 03d: one task's lane as the projection stores it. The id and domain name the task; the timeline is guest-visible copy only. */
@@ -412,6 +417,25 @@ function parsePersistedLanes(value: Record<string, unknown>): readonly Persisted
   return Object.freeze(parsed);
 }
 
+/**
+ * Issue 03e: the per-task lane row sequence, closed by shape. Keys are task ids (the bounds of the persisted task list: 32 tasks,
+ * ids up to 120 characters) and values are non-negative safe integers. Undefined reads as no counters; a malformed value rejects the
+ * projection (fail closed).
+ */
+function parseLaneEventSeq(value: unknown): Readonly<Record<string, number>> | null | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) return null;
+  const entries = Object.entries(value);
+  if (entries.length > 32) return null;
+  const counters: Record<string, number> = {};
+  for (const [taskId, seq] of entries) {
+    if (taskId === "" || taskId.length > 120) return null;
+    if (typeof seq !== "number" || !Number.isSafeInteger(seq) || seq < 0) return null;
+    counters[taskId] = seq;
+  }
+  return Object.freeze(counters);
+}
+
 export function parseGuestProjection(value: unknown): GuestPersistentProjection | null {
   if (!isRecord(value) || value.version !== 1) return null;
   if (!Array.isArray(value.timeline) || !value.timeline.every(isPersistentTimelineEntry)) return null;
@@ -448,9 +472,12 @@ export function parseGuestProjection(value: unknown): GuestPersistentProjection 
   if (persistedTasks === null) return null;
   const persistedLanes = parsePersistedLanes(value);
   if (persistedLanes === null) return null;
+  const laneEventSeq = parseLaneEventSeq(value.laneEventSeq);
+  if (laneEventSeq === null) return null;
   return Object.freeze({
     ...(persistedTasks === undefined ? {} : persistedTasks),
     ...(persistedLanes === undefined ? {} : { lanes: persistedLanes }),
+    ...(laneEventSeq === undefined ? {} : { laneEventSeq }),
     activeContact,
     pendingAction,
     pendingActionSurfaceId,
