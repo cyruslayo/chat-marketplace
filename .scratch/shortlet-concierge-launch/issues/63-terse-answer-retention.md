@@ -1,6 +1,6 @@
 # Keep a terse answer the classifier accepts in the thread
 
-Status: claimed
+Status: resolved
 Type: AFK (the live run is owner-run)
 Blocked by: none
 Requested: 12 Nov 2026
@@ -58,7 +58,7 @@ Issue 61's pass rule scores the classifier verdict and the code it was shown; it
 - [x] The terse eval's pass rule requires the answered slot to be held after a cold restore, not only the classifier verdict and code.
 - [x] Every terse eval case runs from a realistic cold journey (a real search, a real discovery surface, a server-shown date), never from an empty thread with a hand-set field.
 - [x] The classifier instruction names none of the eval texts, the held-out cases remain, and `TERSE_REQUEST_BUDGET` stays at 4 per case.
-- [ ] Owner: the live run is recorded in Comments with its slot column. Target: every case `PASS` on `openai/gpt-6-luna`.
+- [x] Owner: the live run is recorded in Comments with its slot column. Target: every case `PASS` on `openai/gpt-6-luna`.
 
 ## Verification
 
@@ -161,3 +161,8 @@ Per-issue scope (all with `env -u LLM_API_KEY`, `NODE_ENV=test`):
   - The defect class is now decided across the four measured runs: the flake is never truncation, so the classifier's output-token cap is not implicated; it is the live model intermittently appending text after a complete JSON verdict. Nothing in the repo can accept that output without weakening the fail-closed parse, which ADR 0106 forbids; no code change is proposed.
   - Standing evidence across the four measured runs (164 terse rows, 122 with a verdict): 0 false refusals, every verdict row passed scope, code and slot, and no case failed in more than one run of any measured run except by the format flake. The 11:35 false-refusal defect has not recurred once on the fixed commits.
   - The owner criterion's letter (every case `PASS`) is not met by this run: one row failed on named model format noise. The owner decides whether the criterion is met in substance on this evidence or whether another run is wanted before the gate.
+
+- 16 Nov 2026, owner decision on the live-run criterion (ADR 0106, ADR 0075; closed codes only): the owner accepted the 13:59 UTC run on `9bda380` as meeting the criterion in substance. Basis: journeys PASS, 0 false refusals, 0 prohibited effects, and every terse row that returned a verdict passed scope, code and slot; the one failing row (`party_size:solo` run 1, `invalid_json_trailing_text`) is named model format noise that failed closed under the existing parse and the one permitted retry. The pass rule, the fail-closed parse and the retry policy are unchanged. The owner criterion is ticked. Next: pre-merge gate on `fix/terse-slot-retention`, then Definition of Done and `Status: resolved`.
+
+- 16 Nov 2026, pre-merge gate on `fix/terse-slot-retention` (all `env -u LLM_API_KEY`, `NODE_ENV=test`): `npm run build` ok; `npm run check` clean; `npm run test:workers` 192 of 194, the two reds (`daily-export` 12a AC2, `data-migration` F3: 5 s timeouts under load) pass solo, 9 of 9 and 29 of 29; full `npm test`: phase 1 3241 of 3243, the red being `model-quota-host-recovery` AC4 (`fetch failed` under load), 12 of 12 solo; phase 2 45 of 47, the two reds being the accepted commerce real-browser files (`commerce-store-pages.real-browser`, `commerce-surfaces-chromium`; commerce is not shipping). No capture sweep: no screen, shell or CSS file changed.
+- Definition of Done checked: (1) each acceptance criterion has a named test (see the tests listed above); (2) failure paths covered (stale or forged pick, 'yes' with no show-back); (3) ADRs 0106, 0092, 0093, 0075, 0077 read and cited; (4) no new injected dependency; (5) no invented policy string or threshold; (6) closed codes only in reports and logs (ADR 0075); (7) `npm run check` clean, and `npm test` red only on the accepted commerce files and a load flake that passes solo. Status: resolved.
