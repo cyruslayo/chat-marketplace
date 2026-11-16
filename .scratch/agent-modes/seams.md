@@ -38,7 +38,7 @@ These files are touched by more than one issue. Merge them one issue at a time, 
 - `apps/local-guest/src/response-mode.ts`: 03c, 03k.
 - `apps/local-guest/src/guest-server.ts`: 03k (theme colour meta in the shell head). Check 03g's shell markup before merging 03k.
 - `apps/web-agent/src/guest-content.ts`: 03f (suggestion copy), 03g (persona label and warning copy), 03l (switch announcement copy).
-- `apps/web/src/shortlet-foundations.css`: 03c only; 03g may add none; 03j may add the mode-switch rules (its owner decision 4). Do not run a formatter on it.
+- `apps/web/src/shortlet-foundations.css`: 03c; 03g adds three kit rules (checked and focus state of the mode choice, mark size; orchestrator decision 16 Nov 2026, see 03g Comments); 03j may add the mode-switch rules (its owner decision 4). Do not run a formatter on it.
 
 ## Owner decisions
 
