@@ -452,15 +452,15 @@ test("Issue 61: the pick_result cases are evaluated against a shown result list,
   assert.ok(report.cases.filter((entry) => entry.id.startsWith("pick_result:")).every((entry) => entry.pass), "a pick that opens a shown result passes");
 });
 
-// Issue 63 AC7: the pass rule is the verdict AND the answer. A model that classifies every reply correctly but never acts leaves the
-// thread without the slot, so every case must FAIL even though every verdict and code is right.
+// Issue 63 AC7: the pass rule is the verdict AND the answer. A model that classifies every reply correctly but never acts leaves
+// tool-dependent answers unheld, so those cases must FAIL even though every verdict and code is right.
 test("Issue 63: the terse eval's pass rule requires the answered slot, not only the classifier verdict", async () => {
   const model: AssistantModelClient = {
     generate: async (request) => {
       if (request.structuredOutput?.name === "concierge_scope") {
         return { text: JSON.stringify({ scope: "in_scope", risk: "ordinary", intents: ["search"], reasonCode: "supported", slots: EMPTY_SLOTS }) };
       }
-      // A typed reply and no operation: the turn succeeds, the answer never lands.
+      // A typed reply and no operation: only facts read from the guest's own answer can land.
       return { text: JSON.stringify({ kind: "show_results", references: [] }) };
     },
   };
@@ -471,9 +471,9 @@ test("Issue 63: the terse eval's pass rule requires the answered slot, not only 
   assert.equal(report.falseRefusalRate, 0, "no case is a false refusal");
   // Some answers land without a planner action, all as guest-authored state: the shown-back date the server settles from the yes,
   // a typed stay length ("a week", "two weeks"), which ADR 0106 (8 Nov 2026) records as the stated stay at every turn start, and a
-  // bare number answering the server's party-size or nights question (ADR 0106, 16 Nov 2026).
+  // bare number or worded party-size answer to the open question (ADR 0106, 16 Nov 2026).
   const settled = report.cases.filter((entry) => entry.answeredSlotHeld).map((entry) => entry.id);
-  assert.deepEqual(settled, ["party_size:numeral", "nights:week", "nights:numeral", "nights:held-out-fortnight", "date_confirm:affirm"], "only guest-authored answers land without a planner action");
+  assert.deepEqual(settled, ["party_size:solo", "party_size:numeral", "party_size:pair", "party_size:couple", "party_size:held-out-partner", "nights:week", "nights:numeral", "nights:held-out-fortnight", "date_confirm:affirm"], "only guest-authored answers land without a planner action");
   assert.ok(report.cases.filter((entry) => !settled.includes(entry.id)).every((entry) => entry.pass === false), "a verdict with no answer is not a pass");
   assert.ok(report.cases.filter((entry) => settled.includes(entry.id)).every((entry) => entry.pass === true), "the answers that did land pass");
 });

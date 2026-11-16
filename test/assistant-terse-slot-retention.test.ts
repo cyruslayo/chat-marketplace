@@ -26,7 +26,7 @@ interface Turn {
   readonly search?: Record<string, unknown>;
   readonly tool?: { readonly name: string; readonly args: Record<string, unknown> };
   /** A typed reply plan with no tool call (a stay clarification that asks for the missing fact). */
-  readonly reply?: "clarify_stay";
+  readonly reply?: "clarify_stay" | "redirect";
   /** A typed reply plan for the round after the tool result (the runtime rejects untyped prose). */
   readonly replyAfterTool?: { readonly kind: string; readonly references: readonly string[] };
   /** The planner provider fails, so the shell's deterministic path takes the turn. */
@@ -328,6 +328,39 @@ test("a planner reply that claims results without applying the open-question ans
     assert.equal(harness.plannerCalls(), 2, "the planner request is repeated once");
     assert.equal(turn.ok ? turn.assistantControlOutcome : undefined, "successful_model_handling");
     assert.equal(restoredState(driver).stayIntent.partySize, 2, "the answer lands through the retried search");
+  } finally { environment.close(); }
+});
+
+test("an in-scope solo answer survives a rejected results claim after a cold restore", async () => {
+  const environment = stagingGuest();
+  try {
+    const harness = claimingPlanner({
+      [PARTY_SEARCH]: { slots: { ...LAGOS, checkIn: "2026-12-14", nights: 3 }, intents: ["search"], search: { ...LAGOS, checkIn: "2026-12-14", nights: 3 } },
+    }, "just me", "show_results");
+    const driver = openChipDriver(environment, harness.client, { cold: true, threadId: THREAD });
+    assertOk(await driver.typed(PARTY_SEARCH), "the search that asks for party size");
+    assert.equal(restoredState(driver).openQuestion, "party_size");
+    const turn = await driver.typed("just me");
+    assert.equal(harness.plannerCalls(), 2, "the unapplied claim is retried once");
+    assert.equal(turn.ok ? turn.assistantControlOutcome : undefined, "rejected_plan_fallback");
+    assert.equal(restoredState(driver).stayIntent.partySize, 1, "the guest's answer survives the cold restore");
+    assert.equal(restoredState(driver).shortlist.length, 0, "no results were fabricated");
+  } finally { environment.close(); }
+});
+
+test("an in-scope couple answer survives a planner redirect after a cold restore", async () => {
+  const environment = stagingGuest();
+  try {
+    const harness = recorder({
+      [PARTY_SEARCH]: { slots: { ...LAGOS, checkIn: "2026-12-14", nights: 3 }, intents: ["search"], search: { ...LAGOS, checkIn: "2026-12-14", nights: 3 } },
+      "a couple": { slots: { guests: 2 }, intents: ["search"], reply: "redirect" },
+    });
+    const driver = openChipDriver(environment, harness.client, { cold: true, threadId: THREAD });
+    assertOk(await driver.typed(PARTY_SEARCH), "the search that asks for party size");
+    assert.equal(restoredState(driver).openQuestion, "party_size");
+    assertOk(await driver.typed("a couple"), "the in-scope answer");
+    assert.equal(restoredState(driver).stayIntent.partySize, 2, "the guest's answer survives the cold restore");
+    assert.equal(restoredState(driver).shortlist.length, 0, "a redirect does not fabricate results");
   } finally { environment.close(); }
 });
 

@@ -1946,6 +1946,12 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
       recordGuestStatedStay(text, state.stayIntent, environment.extendedStayPolicy);
       // Issue 63 (ADR 0106, 16 Nov 2026): a bare number answering the server's party-size or nights question.
       recordOpenQuestionNumber(text, state, environment.extendedStayPolicy);
+      // ADR 0106 (8 and 16 Nov amendments): a worded answer to the open party-size question is also guest-authored.
+      // Read only the existing party-size fact, on the in-scope candidate; a rejected planner reply must not discard it.
+      if (state.openQuestion === "party_size") {
+        const partySize = extractStayRequestFacts(text).partySize;
+        if (partySize !== undefined) state.stayIntent.partySize = partySize;
+      }
     },
     recordGuestFacts: (text, state, now) => recordGuestAuthoredFacts(text, state.stayIntent, now, environment.extendedStayPolicy),
     projectToolResult: (_name, result, limits) => {
