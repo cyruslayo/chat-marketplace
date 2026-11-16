@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
+import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
+import { createShortletAssistantPack } from "../apps/local-guest/src/assistant/shortlet-assistant-pack.js";
 import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
 import { ScriptedAssistantModel } from "../apps/local-guest/src/assistant/scripted-assistant-model.js";
 import { createFakeShopPack } from "./helpers/fake-domain-pack.js";
@@ -170,4 +172,19 @@ test("AC10: Accepting the chip starts the target task; only the event changes th
     const after = restartedDatedApp(fixture, model.client, undefined, [createFakeShopPack()]).app.getState(threadId);
     assert.equal(after?.quickReplies?.length ?? 0, 0, "the accepted suggestion is not resurrected in another lane");
   } finally { fixture.close(); }
+});
+
+test("AC11: A runtime wired without the host's mode-suggestion copy produces no suggestion (fail closed)", async () => {
+  const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:", clock: LIVE_LIKE_CLOCK, initialGuestPhoneNumber: null, initialGuestContactEmail: null });
+  const assistant = new AssistantRuntime(environment, new ScriptedAssistantModel([]),
+    { packs: [createShortletAssistantPack(environment), createFakeShopPack()], scopeClassifier: { assess: async () => verdict("out_of_scope", "shop") } });
+  const reply = await assistant.handleTurn("fresh-ac11", "buy a kettle");
+  assert.deepEqual(reply.messages, [ASSISTANT_CONTROL_COPY.redirect], "the turn keeps the fixed scope redirect");
+  assert.equal(reply.modeChange, undefined);
+  assert.equal(reply.quickReplies?.some((chip) => "domain" in chip) ?? false, false);
+  const event = (environment.telemetry as SqliteTelemetry).events().find((item) => item.type === "assistant.mode.change.v1");
+  assert.equal(event, undefined, "no mode-change diagnostic is recorded without the host copy");
+  assert.equal(assistant.restoredModeSuggestion("fresh-ac11", GUEST_MODE_SUGGESTION.message("Shop")), undefined,
+    "no suggestion is restored without the host copy");
+  environment.close();
 });
