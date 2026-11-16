@@ -71,3 +71,9 @@ Each is its own `test()`. Worker specs run through `npm run test:workers -- <spe
 - Any change to the four payment-reference exemption.
 
 ## Comments
+
+### Owner decision, 16 Nov 2026: O4, thread store ownership
+
+- The thread store is platform-owned (ADR 0101; `PLATFORM_EXPORT_TABLES` in `apps/cloudflare/src/do-export.ts` already lists `guest_threads`; ADR 0107 decision 11 puts lanes in the platform Durable Object beside the thread header).
+- For this issue, the lane event table is created beside `guest_threads` in `domains/shortlet/src/guest-interaction-store.ts` and is listed in `PLATFORM_EXPORT_TABLES`. Step 4 is final on that basis.
+- Moving the `guest_threads` and lane DDL into a platform module is a separate follow-up issue (ADR 0101), not part of 03e. It touches migrations and the data-migration specs, so it is kept out of this change.

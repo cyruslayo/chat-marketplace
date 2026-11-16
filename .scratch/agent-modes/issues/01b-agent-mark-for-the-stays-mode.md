@@ -1,6 +1,6 @@
 # Show the Agent Mark for the single stays mode
 
-Status: ready-for-human
+Status: resolved
 Type: task
 Blocked by: 01 (needs `ModePresentation`, `data-mode` and the shell helpers)
 Requested: 8 Nov 2026
@@ -198,3 +198,10 @@ Status at this entry: **ready-for-human**. Code is complete and the evidence is 
 - The dock stays hidden while a workspace is open, at every width. The phone question in (l) is answered: keep it hidden.
 
 **Still open:** item (k), the duplicate working copy in the dock; DoD item 7 as above.
+
+### Owner decision, 16 Nov 2026: known-failure set accepted (closes DoD item 7)
+
+- The owner accepts the red files of the 9fb6519 batch gate as the known set: the two commerce real-Chrome files (`commerce-store-pages.real-browser`, `commerce-surfaces-chromium`, already accepted in AGENTS.md while commerce is off), `model-quota-host-recovery` AC4 (12 of 12 solo) and `landing-page-chromium` (fails on the base in 2 of 5 runs). The one `mobile-guest-journey-chromium` AC28 failure (passes solo) is accepted as a load flake.
+- Condition: the next batch gate (the one that carries 03g) must pass `mobile-guest-journey-chromium` AC28. If it fails again in a full run, a new issue is opened instead of calling it a flake.
+- Item (k), the dock chip reusing `workspace.workingStatus`, stays a recorded deviation: no step signal exists yet, so no 01b change can close it.
+- Status set to `resolved`.

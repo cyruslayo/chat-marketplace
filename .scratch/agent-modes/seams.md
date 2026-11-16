@@ -39,11 +39,11 @@ These files are touched by more than one issue. Merge them one issue at a time, 
 | O1 | Model history on a cold restore: empty (as today, 03d) or rebuilt from the lane's canonical facts and guest-authored text (ADR 0107 correction 2, proposed). | 03d | Empty first; rebuild later, once confirmed. |
 | O2 | Where lane timelines persist across a cold restore. 03d persists them in the thread projection as an optional `lanes` field. The analysis planned a read-path table split (`guest_thread_tasks`, analysis 11.4). No issue owns that split. | 03d | Keep the blob version for the first slice; open a new issue for the split if lane count grows. |
 | O3 | Per-lane timeline cap (a named constant). | 03d | Owner to set the number. |
-| O4 | Thread store ownership. The `guest_threads` DDL is in `domains/shortlet/src/guest-interaction-store.ts:372`, but ADR 0101 and `PLATFORM_EXPORT_TABLES` (`apps/cloudflare/src/do-export.ts:70`) say platform. Decide before 03e step 4 is final. | 03e | Follow-up ADR 0101 issue; 03e lists the lane table with `guest_threads`. |
+| O4 | Thread store ownership. The `guest_threads` DDL is in `domains/shortlet/src/guest-interaction-store.ts:372`, but ADR 0101 and `PLATFORM_EXPORT_TABLES` (`apps/cloudflare/src/do-export.ts:70`) say platform. Decide before 03e step 4 is final. | 03e | Closed 16 Nov 2026 by owner decision: platform-owned. 03e puts the lane table beside `guest_threads` and in `PLATFORM_EXPORT_TABLES`; the DDL move to a platform module is a follow-up ADR 0101 issue. See 03e Comments. |
 | O5 | "New conversation" starts a fresh thread (client thread switch, ADR 0079) and carries no lanes over. No per-lane reset. Closed 12 Nov 2026 by owner decision. A lane reset is raised as its own issue only if a real second domain needs it. | 03d | Closed. |
-| O6 | Suggestion copy for tier C, and whether tiers A and B stay disabled. ADR 0107 decision 8 and the correction say tier C only. | 03f | Tiers A and B disabled. Owner to approve the chip copy. |
+| O6 | Suggestion copy for tier C, and whether tiers A and B stay disabled. ADR 0107 decision 8 and the correction say tier C only. | 03f | Closed 16 Nov 2026 by owner decision: tiers A and B disabled; message "I can help with that as Concierge · {label}. Your stay details are saved.", chip "Switch to Concierge · {label}". See 03f Comments. |
 | O7 | Test-only fixture CSS for the fake shop tokens (03c step 5): a file under `test/fixtures/`, never in the shipped stylesheet. | 03c | Approve this approach. |
-| O8 | Commerce text assertions change (03f step 10) while commerce is parked (ADR 0104). | 03f | Approve the expected-text change. |
+| O8 | Commerce text assertions change (03f step 10) while commerce is parked (ADR 0104). | 03f | Closed 16 Nov 2026 by owner decision: approved, smallest change per file. See 03f Comments. |
 
 ## Unassigned slice 4 and 5 items
 

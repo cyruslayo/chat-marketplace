@@ -80,3 +80,15 @@ Each is its own `test()` in `test/mode-suggestion-tier-c.test.ts`.
 - Removing the `intentKeywords` field.
 
 ## Comments
+
+### Owner decisions, 16 Nov 2026: O6 (suggestion copy) and O8 (old-behaviour tests)
+
+**O6.** Tiers A and B stay disabled. The tier C copy, in `guest-content.ts`, with `{label}` from the target mode's presentation:
+- Message: "I can help with that as Concierge · {label}. Your stay details are saved."
+- Chip: "Switch to Concierge · {label}"
+
+**O8.** Approved, smallest change per file, each recorded here with its reason when made:
+- `test/pilot-commerce-off.test.ts:172` is a negative assertion. Only add the new suggestion text to the `doesNotMatch` pattern, so it still proves commerce shows nothing while off.
+- `test/commerce-agent-tools.test.ts:105`: replace the keyword assertion (`I want to shop` matching `Start a Commerce search`) with an assertion that no keyword route fires. The rest of the test already starts the task through `platform.task.start`.
+- `test/conversation-router.test.ts` AC2: from the old keyword message to "no suggestion on an in-scope turn".
+- No commerce source changes; commerce stays off (ADR 0104).
