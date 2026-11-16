@@ -27,25 +27,6 @@ export function applyResponseModeTo(root: { readonly dataset: Record<string, str
   return true;
 }
 
-/*
- * Issue 03k (ADR 0107 decisions 2 and 4): the browser theme colour follows the mode's --mode-tint token. The client reads the
- * resolved token at runtime, so no colour is written here for a mode. The only literal colours are the stays values below, used
- * for the first paint before any response: they must equal --color-accent-subtle in shortlet-foundations.css (the stays
- * --mode-tint). test/agent-mode-theme-color.test.ts checks each value against the light and dark blocks.
- */
-export const MODE_THEME_COLOUR_INITIAL: Readonly<Record<"light" | "dark", string>> = Object.freeze({
-  light: "#F7E6D8",
-  dark: "#3A2518",
-});
-
-export type ShellTheme = "light" | "dark";
-
-/** The theme the page resolves to: a forced data-theme wins; only "system" follows the operating system's preference (issue 03k). */
-export function resolveShellTheme(dataTheme: string | undefined, systemPrefersDark: boolean): ShellTheme {
-  if (dataTheme === "light" || dataTheme === "dark") return dataTheme;
-  return systemPrefersDark ? "dark" : "light";
-}
-
 const COLOUR_PATTERN = /^(?:#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|(?:rgb|rgba|hsl|hsla)\([0-9.,%\s/+-]+\))$/;
 
 /** A computed colour string that a browser accepts for theme-color, or null. Empty, unparseable or non-string values fail closed. */
@@ -53,16 +34,6 @@ export function validateThemeColour(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const colour = value.trim();
   return COLOUR_PATTERN.test(colour) ? colour : null;
-}
-
-/**
- * The two static theme-color tags for the first paint (issue 03k, owner decisions 3 and 4): one without a media condition and one
- * with (prefers-color-scheme: dark). Each carries the colour its resolved theme gets, so a forced theme gives both tags its value.
- */
-export function themeColourMetaHtml(dataTheme: string = "system"): string {
-  const plain = MODE_THEME_COLOUR_INITIAL[resolveShellTheme(dataTheme, false)];
-  const dark = MODE_THEME_COLOUR_INITIAL[resolveShellTheme(dataTheme, true)];
-  return `<meta name="theme-color" content="${plain}"><meta name="theme-color" media="(prefers-color-scheme: dark)" content="${dark}">`;
 }
 
 /** The theme-color metas the client writes to. A DOM meta element satisfies this shape. */

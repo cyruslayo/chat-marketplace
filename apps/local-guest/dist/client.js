@@ -10402,10 +10402,6 @@ Known schemas:
     root.dataset.mode = mode.id;
     return true;
   }
-  var MODE_THEME_COLOUR_INITIAL = Object.freeze({
-    light: "#F7E6D8",
-    dark: "#3A2518"
-  });
   var COLOUR_PATTERN = /^(?:#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|(?:rgb|rgba|hsl|hsla)\([0-9.,%\s/+-]+\))$/;
   function validateThemeColour(value) {
     if (typeof value !== "string") return null;

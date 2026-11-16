@@ -29,7 +29,7 @@ import { billingPeriodStatusText, extendedStayUnitFacts, scheduleLeadText } from
 import { formatBookingMoney } from "../../web-agent/src/booking-presentation.js";
 import { formatGuestDate } from "../../web-agent/src/guest-content.js";
 import { GUEST_MODES, guestRefusalFor, type ModePresentation } from "../../web-agent/src/guest-content.js";
-import { themeColourMetaHtml } from "./response-mode.js";
+import { themeColourMetaHtml } from "./shell-theme-colour.js";
 import type { BillingPeriodProjection } from "../../../domains/shortlet/src/index.js";
 import { createGuestShell, type RouteModule, type StaticAsset } from "./guest-shell.js";
 import type { GuestCommerceModule, PaymentReferenceKeys } from "./commerce-port.js";

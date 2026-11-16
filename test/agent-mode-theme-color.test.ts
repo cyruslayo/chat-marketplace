@@ -5,14 +5,12 @@ import { renderGuestShellHtml, renderNoScriptConversationHtml } from "../apps/lo
 import { GUEST_MODES, type ModePresentation } from "../apps/web-agent/src/guest-content.js";
 import {
   applyResponseModeAndThemeColour,
-  MODE_THEME_COLOUR_INITIAL,
   refreshThemeColourOnSchemeChange,
-  resolveShellTheme,
-  themeColourMetaHtml,
   validateThemeColour,
   writeThemeColour,
   type ThemeColourMeta,
 } from "../apps/local-guest/src/response-mode.js";
+import { MODE_THEME_COLOUR_INITIAL, resolveShellTheme, themeColourMetaHtml } from "../apps/local-guest/src/shell-theme-colour.js";
 import { createFakeShopPack } from "./helpers/fake-domain-pack.js";
 import { modeTokens, themeColors, type ModeTheme } from "./helpers/mode-tokens.js";
 

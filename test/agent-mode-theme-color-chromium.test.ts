@@ -39,6 +39,9 @@ async function switchToShop(tab: RealBrowserTab) {
   await tab.evaluate(`(() => { const style = document.createElement('style'); style.textContent = ${JSON.stringify(SHOP_TOKEN_CSS)}; document.head.append(style); })()`);
   await tab.waitForFunction(`document.querySelector('.mode-choice input[value="shop"]') !== null`, 5_000);
   await tab.evaluate("document.querySelector('.mode-choice input[value=\"shop\"]').click()");
+  // A preview is a user action: it never writes the theme colour (ADR 0107 decision 2), so the metas still hold the stays values.
+  const preview = await tab.evaluate<{ media: string | null; content: string | null }[]>(READ_METAS);
+  assert.deepEqual(preview.map((meta) => meta.content), ["#F7E6D8", "#3A2518"], "a preview leaves the theme colour unchanged");
   await tab.focus("#composer-input");
   await tab.insertText("Show me products");
   await tab.pressKey("Enter");
