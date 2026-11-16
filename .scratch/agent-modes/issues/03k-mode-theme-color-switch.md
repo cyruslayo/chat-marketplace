@@ -1,6 +1,6 @@
 # Update the browser theme colour from the mode tokens on a switch
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 03c (resolved: the client applies the server's mode and sets `data-mode`). Owner release before any build (ADR 0107 "Settled", 8 Nov 2026).
 Requested: 16 Nov 2026
@@ -72,3 +72,48 @@ Each is its own `test()` in `test/agent-mode-theme-color.test.ts` (new).
 - Browsers that ignore `theme-color` (no fallback is needed; the page is unchanged).
 
 ## Comments
+
+### Agent, implementation (Agent modes issue 03k)
+
+Status at this entry: resolved. The pre-merge batch gate (`npm test`, `npm run test:workers`, once per batch after every issue is resolved) has not run here; per Test scope it is not run per issue.
+
+**Owner decisions (17 Nov 2026), applied as settled.**
+
+1. Token: `--mode-tint` (`var(--color-accent-subtle)`: `#F7E6D8` light, `#3A2518` dark).
+2. Mechanism: runtime read. The client reads the resolved `--mode-tint` with `getComputedStyle` after it applies `data-mode`, and writes it to both theme-color metas. No new hex in the client or in components.
+3. Initial colour: the stays values, in one exported constant `MODE_THEME_COLOUR_INITIAL` (`apps/local-guest/src/response-mode.ts`). The shell's two tags follow the resolved `data-theme` (`system`: light on the plain tag, dark on the media tag).
+4. No-JS: `/conversation` carries the same two static tags (ADR 0080 parity).
+
+**ADR table (steps 1 and 2).** Read in full: 0107. Read the consequences and decisions 2, 4, 6 in full; 0080 (parity for critical workflows) and 0078 (contrast and reflow) read before code.
+
+| ADR | Constraint | Where it lands |
+| --- | --- | --- |
+| 0107 decision 2 | The client changes the mode only from the validated response; chips, the strip and the sheet never write the meta. | `applyResponseMode` (`client.ts`) is the only call site of `applyResponseModeAndThemeColour`; AC6. |
+| 0107 decision 4 | Colours through `--mode-*` tokens only; no hex in components; pairs tested. | The colour is read from `--mode-tint`; the only literals are the stays values in `MODE_THEME_COLOUR_INITIAL`, checked against `shortlet-foundations.css` (design test). Token values unchanged. |
+| 0107 decision 6 | The response mode is validated before it is applied. | `applyResponseModeTo` returns false before the tint is read for an absent or malformed mode; AC5. |
+| 0080 | No-JS parity for critical workflows. | `renderNoScriptConversationHtml` passes the static tags through the new `head` option of `pageShell`; design (ADR 0080 parity) test. |
+| 0078 | No layout, type or target change; contrast. | No CSS change; no new colour pair; the shell DOM only gains two `<meta>` tags. |
+
+**Implementation notes and deviations.**
+
+- `test/fixtures/guest-shell-pre-agent-modes.html` gained the two theme-color tags (the first paint now carries them, which is the point of AC1). The byte-identity tests (`agent-mode-shell` AC4, `agent-mode-follows-task` AC4) compare against it and pass.
+- `applyResponseModeTo` now returns `true` only when the id changed (its callers ignore the result, so they are unaffected).
+- `pageShell` (`apps/web/src/ui-kit.ts`) gained an optional `head` string, empty by default, so every other page renders byte-identically.
+- Accepted computed colour formats: `#RGB`, `#RRGGBB`, `#RRGGBBAA`, and `rgb()`, `rgba()`, `hsl()`, `hsla()`. Anything else (empty, whitespace, `var()`, `url()`, a non-string) fails closed and the previous content stays. This is a validation rule, not domain policy.
+- The write also runs on `prefers-color-scheme` change, only while `data-theme` is `system`.
+- `npm run build` was run to regenerate `apps/local-guest/dist/client.js`. It also rewrote line endings in `apps/cloudflare/public/_headers` and `dist/{gallery,landing,offer,payment}.js`; those five differed only by CRLF (checked with `--ignore-cr-at-eol`) and were restored. Only `client.js` is committed from dist.
+- The issue's "`/conversation` the no-JS page" parity test is an added test beyond AC1 to AC8.
+
+**Commands and counts** (worktree `C:\AI2026\chat-marketplace-03k`, every command prefixed `env -u LLM_API_KEY`):
+
+1. `env -u LLM_API_KEY npm run check`: exit 0 (root `tsc`, cloudflare, test and tooling tsconfigs, worker bundle guard).
+2. `env -u LLM_API_KEY npx tsx --test test/agent-mode-theme-color.test.ts`: 12 tests, 12 pass, 0 fail.
+3. `env -u LLM_API_KEY npx tsx --test test/agent-mode-theme-color.test.ts test/agent-mode-shell.test.ts test/local-guest-shell.test.ts test/agent-mode-follows-task.test.ts test/agent-mark-shell.test.ts test/guest-journey-rail.test.ts test/guest-new-conversation.test.ts`: 59 tests, 59 pass, 0 fail, exit 0 (the three required files plus the suites that render the shell, the no-JS page or `pageShell`).
+4. Solo, after the rebuild: `env -u LLM_API_KEY npx tsx --test test/agent-mode-theme-color-chromium.test.ts` (real Chrome, runtime read after a switch to shop, forced light and forced dark): 2 tests, 2 pass, 0 fail.
+5. Solo, because the client bundle changed: `env -u LLM_API_KEY npx tsx --test test/agent-mode-sheet-chromium.test.ts`: 5 tests, 5 pass, 0 fail.
+
+Not run here: the full `npm test` and `npm run test:workers` (batch gate, Test scope).
+
+**Definition of Done.** (1) Each AC has its own named test in `test/agent-mode-theme-color.test.ts`; AC2 and AC3 are also proven in real Chrome. (2) Failure paths: absent, null, string, unknown key, unknown icon (AC5); empty, whitespace, unparseable, `var()`, `url()`, invalid hex length (AC7); a repeat of the same mode reads nothing (AC6); forced light on a dark system (AC4). (3) ADRs listed above and cited in the commit message. (4) No injected dependency added. (5) No policy string invented: the colours trace to owner decision 1 and `--color-accent-subtle`. (6) No credential or identity material in any log or record. (7) `npm run check` passes; `npm test` is deferred to the batch gate, as Test scope requires.
+
+**Manual owner check (not done here).** The mobile address-bar colour on the reference low-end Android Chrome (a real device) is an owner check. The automated checks above prove the meta content, not the device's chrome.

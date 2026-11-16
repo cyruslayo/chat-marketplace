@@ -37,7 +37,13 @@ import { contactFieldAttributes } from "./contact-field.js";
 import { combinedAbortSignal } from "./turn-cancel.js";
 import { applyImageLayout } from "./image-layout.js";
 import { turnEntriesSince } from "./guest-turn-recovery.js";
-import { applyResponseModeTo, assertValidResponseMode, readResponseMode } from "./response-mode.js";
+import {
+  applyResponseModeAndThemeColour,
+  assertValidResponseMode,
+  readResponseMode,
+  refreshThemeColourOnSchemeChange,
+  type ThemeColourMeta,
+} from "./response-mode.js";
 import { chooseModes, markIsControl, showsModeChooser, startBeforeTurn, type ModeChoice } from "./mode-choice.js";
 import { nextAgentMarkState, type AgentMarkEvent, type AgentMarkState } from "./agent-mark-state.js";
 import {
@@ -1556,10 +1562,26 @@ function readGuestResponse(value: unknown): GuestResponse {
 // validated copy, so a raw response object never reaches the copy. Stays is the default before the first response.
 let appliedMode: ModePresentation = GUEST_MODES.stays;
 
+/** Issue 03k: the theme-color tags the shell renders. Read at the time of each write, so a re-render never leaves a stale list. */
+function themeColourMetas(): ThemeColourMeta[] {
+  return Array.from(document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]'));
+}
+
+/** Issue 03k (ADR 0107 decision 4): the resolved --mode-tint for the current theme, as the browser computes it. */
+function readModeTint(): string {
+  return getComputedStyle(document.documentElement).getPropertyValue("--mode-tint");
+}
+
+// Issue 03k: a page that follows the system re-reads the tint when the operating system's colour scheme changes.
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  refreshThemeColourOnSchemeChange(document.documentElement, themeColourMetas(), readModeTint);
+});
+
 function applyResponseMode(response: GuestResponse): void {
   appliedMode = readResponseMode(response.mode) ?? appliedMode;
   // Issue 03c (ADR 0107 decision 6): the document's data-mode follows the validated response, never a user action or the DOM.
-  applyResponseModeTo(document.documentElement, response.mode);
+  // Issue 03k (ADR 0107 decision 2): the browser theme colour follows the same validated response, and only when the id changed.
+  applyResponseModeAndThemeColour(document.documentElement, themeColourMetas(), readModeTint, response.mode);
   // Issue 03g: with no preview pending, the empty copy and the strip follow the committed mode.
   if (previewDomain === undefined) renderEmptyCopy(appliedMode);
   syncModeMark();

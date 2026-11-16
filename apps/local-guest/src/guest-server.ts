@@ -29,6 +29,7 @@ import { billingPeriodStatusText, extendedStayUnitFacts, scheduleLeadText } from
 import { formatBookingMoney } from "../../web-agent/src/booking-presentation.js";
 import { formatGuestDate } from "../../web-agent/src/guest-content.js";
 import { GUEST_MODES, guestRefusalFor, type ModePresentation } from "../../web-agent/src/guest-content.js";
+import { themeColourMetaHtml } from "./response-mode.js";
 import type { BillingPeriodProjection } from "../../../domains/shortlet/src/index.js";
 import { createGuestShell, type RouteModule, type StaticAsset } from "./guest-shell.js";
 import type { GuestCommerceModule, PaymentReferenceKeys } from "./commerce-port.js";
@@ -332,12 +333,16 @@ import {
 /**
  * The chat shell (ADR 0107): rendered from the Agent Mode presentation, stays by default. Hosts pass nothing and get stays.
  */
+/** The shell's data-theme. The shell always follows the system (issue 03k reads it for the initial theme-color tags). */
+const SHELL_DATA_THEME = "system";
+
 export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays, notice?: string): string {
   return `<!DOCTYPE html>
-<html lang="en-NG" data-theme="system" data-mode="${escapeHtml(mode.id)}">
+<html lang="en-NG" data-theme="${SHELL_DATA_THEME}" data-mode="${escapeHtml(mode.id)}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  ${themeColourMetaHtml(SHELL_DATA_THEME)}
   <title>Shortlet Concierge</title>
   <link rel="stylesheet" href="/shortlet-foundations.css">
   <style>
@@ -795,6 +800,8 @@ export function renderNoScriptConversationHtml(input: {
   return pageShell({
     title: "Conversation · Shortlet",
     width: "narrow",
+    // Issue 03k (ADR 0080 parity): the no-JS page carries the same two static theme-color tags as the shell.
+    head: themeColourMetaHtml(SHELL_DATA_THEME),
     frame: `${appBarHtml({ backHref: "/", backLabel: "Back to your conversation", action: { href: "/conversation", label: GUEST_NEW_CONVERSATION.control, icon: "message-plus" } })}${renderJourneyRailHtml(input.journey)}${taskRailHtml(input.tasks ?? [])}`,
     body: `<div class="guest-editorial no-js-conversation" data-page="conversation"><h1 class="ui-sr-only">Conversation</h1>${verticalStartersHtml(input.verticals ?? [])}${committed}${turns ? `<ol class="no-js-transcript" aria-label="Conversation">${turns}</ol>` : ""}${surfaces}${composerHtml(mode, "page", { threadId: input.threadId, draft: input.draft, error })}</div>`,
   });

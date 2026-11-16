@@ -10398,8 +10398,32 @@ Known schemas:
   }
   function applyResponseModeTo(root, value) {
     const mode = readResponseMode(value);
-    if (mode === void 0 || root.dataset.mode === mode.id) return;
+    if (mode === void 0 || root.dataset.mode === mode.id) return false;
     root.dataset.mode = mode.id;
+    return true;
+  }
+  var MODE_THEME_COLOUR_INITIAL = Object.freeze({
+    light: "#F7E6D8",
+    dark: "#3A2518"
+  });
+  var COLOUR_PATTERN = /^(?:#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|(?:rgb|rgba|hsl|hsla)\([0-9.,%\s/+-]+\))$/;
+  function validateThemeColour(value) {
+    if (typeof value !== "string") return null;
+    const colour = value.trim();
+    return COLOUR_PATTERN.test(colour) ? colour : null;
+  }
+  function writeThemeColour(metas, readTint) {
+    const colour = validateThemeColour(readTint());
+    if (colour === null) return;
+    for (const meta of metas) meta.content = colour;
+  }
+  function applyResponseModeAndThemeColour(root, metas, readTint, value) {
+    if (!applyResponseModeTo(root, value)) return;
+    writeThemeColour(metas, readTint);
+  }
+  function refreshThemeColourOnSchemeChange(root, metas, readTint) {
+    if (root.dataset.theme !== "system") return;
+    writeThemeColour(metas, readTint);
   }
 
   // apps/local-guest/src/mode-choice.ts
@@ -11729,9 +11753,18 @@ Known schemas:
     return value;
   }
   var appliedMode = GUEST_MODES.stays;
+  function themeColourMetas() {
+    return Array.from(document.querySelectorAll('meta[name="theme-color"]'));
+  }
+  function readModeTint() {
+    return getComputedStyle(document.documentElement).getPropertyValue("--mode-tint");
+  }
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+    refreshThemeColourOnSchemeChange(document.documentElement, themeColourMetas(), readModeTint);
+  });
   function applyResponseMode(response) {
     appliedMode = readResponseMode(response.mode) ?? appliedMode;
-    applyResponseModeTo(document.documentElement, response.mode);
+    applyResponseModeAndThemeColour(document.documentElement, themeColourMetas(), readModeTint, response.mode);
     if (previewDomain === void 0) renderEmptyCopy(appliedMode);
     syncModeMark();
     renderModeStrip();
