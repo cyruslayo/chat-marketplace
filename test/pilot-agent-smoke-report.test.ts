@@ -193,7 +193,7 @@ function fakeTerseModel(refuse: (message: string) => "unclear" | "out_of_scope" 
 
 test("Issue 61: a fake client that answers every case gives a false-refusal rate of 0", async () => {
   const report = await evaluateTerseFollowUps(fakeTerseModel(() => null));
-  assert.equal(report.cases.length, 13);
+  assert.equal(report.cases.length, TERSE_FOLLOW_UP_CASES.length);
   assert.equal(report.failedCases, 0);
   assert.equal(report.falseRefusalRate, 0);
   assert.ok(report.cases.every((entry) => entry.pass && !entry.falseRefusal));
@@ -201,9 +201,9 @@ test("Issue 61: a fake client that answers every case gives a false-refusal rate
 
 test("Issue 61: a fake client that refuses one case gives the expected false-refusal rate", async () => {
   const report = await evaluateTerseFollowUps(fakeTerseModel((message) => message === "just me" ? "unclear" : null));
-  assert.equal(report.cases.length, 13);
+  assert.equal(report.cases.length, TERSE_FOLLOW_UP_CASES.length);
   assert.equal(report.failedCases, 0);
-  assert.equal(report.falseRefusalRate, 1 / 13);
+  assert.equal(report.falseRefusalRate, 1 / TERSE_FOLLOW_UP_CASES.length);
   const refused = report.cases.filter((entry) => entry.falseRefusal);
   assert.equal(refused.length, 1);
   assert.equal(refused[0]!.id, "party_size:solo");
@@ -238,7 +238,7 @@ test("Issue 61: cases run through an active provider turn reach the classifier; 
     skipReason: () => undefined,
   });
   assert.equal(run.status, "run");
-  assert.equal(run.cases.length, 13);
+  assert.equal(run.cases.length, TERSE_FOLLOW_UP_CASES.length);
   assert.ok(run.cases.every((entry) => entry.scope !== "failed"), "every case reaches the classifier through the guard");
   assert.ok(run.requestsUsed > 0, "the guarded requests are counted");
 
@@ -249,7 +249,7 @@ test("Issue 61: cases run through an active provider turn reach the classifier; 
 });
 
 test("Issue 61: a case with no verdict is excluded from the false-refusal denominator and counted as failed", async () => {
-  // One case returns invalid JSON (no verdict); another is refused. The rate is 1 of the 12 cases that returned a verdict.
+  // One case returns invalid JSON (no verdict); another is refused. The rate is 1 of the cases that returned a verdict.
   const model: AssistantModelClient = {
     generate: async (request) => {
       if (request.structuredOutput?.name === "concierge_scope") {
@@ -263,9 +263,9 @@ test("Issue 61: a case with no verdict is excluded from the false-refusal denomi
     },
   };
   const report = await evaluateTerseFollowUps(model);
-  assert.equal(report.cases.length, 13);
+  assert.equal(report.cases.length, TERSE_FOLLOW_UP_CASES.length);
   assert.equal(report.failedCases, 1);
-  assert.equal(report.falseRefusalRate, 1 / 12, "the failed case is excluded from the denominator");
+  assert.equal(report.falseRefusalRate, 1 / (TERSE_FOLLOW_UP_CASES.length - 1), "the failed case is excluded from the denominator");
   const rendered = renderTerseFollowUpReport(report).join("\n");
   assert.match(rendered, /Failed cases: 1/);
   assert.match(rendered, /Valid for acceptance: no/);
@@ -465,7 +465,7 @@ test("Issue 63: the terse eval's pass rule requires the answered slot, not only 
     },
   };
   const report = await evaluateTerseFollowUps(model);
-  assert.equal(report.cases.length, 13);
+  assert.equal(report.cases.length, TERSE_FOLLOW_UP_CASES.length);
   assert.ok(report.cases.every((entry) => entry.scope === "in_scope"), "every verdict is in scope");
   assert.ok(report.cases.every((entry) => entry.openQuestionSent === entry.openQuestion), "every request carried the right code");
   assert.equal(report.falseRefusalRate, 0, "no case is a false refusal");
@@ -473,7 +473,7 @@ test("Issue 63: the terse eval's pass rule requires the answered slot, not only 
   // a typed stay length ("a week", "two weeks"), which ADR 0106 (8 Nov 2026) records as the stated stay at every turn start, and a
   // bare number or worded party-size answer to the open question (ADR 0106, 16 Nov 2026).
   const settled = report.cases.filter((entry) => entry.answeredSlotHeld).map((entry) => entry.id);
-  assert.deepEqual(settled, ["party_size:solo", "party_size:numeral", "party_size:pair", "party_size:couple", "party_size:held-out-partner", "nights:week", "nights:numeral", "nights:held-out-fortnight", "date_confirm:affirm"], "only guest-authored answers land without a planner action");
+  assert.deepEqual(settled, ["party_size:solo", "party_size:numeral", "party_size:pair", "party_size:couple", "party_size:held-out-partner", "nights:week", "nights:numeral", "nights:held-out-fortnight", "date_confirm:affirm", "date_confirm:held-out-accept"], "only guest-authored answers land without a planner action");
   assert.ok(report.cases.filter((entry) => !settled.includes(entry.id)).every((entry) => entry.pass === false), "a verdict with no answer is not a pass");
   assert.ok(report.cases.filter((entry) => settled.includes(entry.id)).every((entry) => entry.pass === true), "the answers that did land pass");
 });
@@ -496,7 +496,7 @@ test("Issue 63: every terse eval case runs from a realistic cold journey, not an
     },
   };
   const report = await evaluateTerseFollowUps(model);
-  assert.equal(report.cases.length, 13);
+  assert.equal(report.cases.length, TERSE_FOLLOW_UP_CASES.length);
   assert.equal(report.cases.filter((entry) => entry.scopeFailure === "setup_failed").length, 0, "every set-up journey reached the question");
   const caseRequests = new Map(requests.map((entry) => [entry.message, entry]));
   for (const testCase of TERSE_FOLLOW_UP_CASES) {

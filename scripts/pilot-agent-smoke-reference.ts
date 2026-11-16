@@ -20,6 +20,7 @@ export const REFERENCE_TERSE_ACTIONS: Readonly<Record<string, readonly Assistant
   "the second": [{ id: "reference-pick-second", name: "get_unit_details", args: { stayRef: "stay-2" } }],
   "the last one": [{ id: "reference-pick-last", name: "get_unit_details", args: { stayRef: "stay-2" } }],
   yes: [{ id: "reference-date-yes", name: "search_stays", args: { city: "Lagos", neighbourhood: "Lekki Phase 1", nights: 3, guests: 2 } }],
+  "go ahead": [{ id: "reference-date-accept", name: "search_stays", args: { city: "Lagos", neighbourhood: "Lekki Phase 1", nights: 3, guests: 2 } }],
   "Wuse 2": [{ id: "reference-area", name: "search_stays", args: { city: "Abuja", neighbourhood: "Wuse 2", checkIn: "2026-12-14", nights: 3, guests: 2 } }],
 };
 

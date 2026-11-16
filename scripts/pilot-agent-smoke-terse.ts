@@ -58,9 +58,11 @@ export interface TerseFollowUpCase {
  * The issue 61 case table. Each `id` is a neutral label (never the guest's words), so the report can name the case without carrying
  * guest text (ADR 0075); `text` is the guest message the eval sends and is never reported.
  *
- * The first ten cases are the original table. The three `held-out` cases are deliberately absent from the classifier instruction and
+ * The first ten cases are the original table. The four `held-out` cases are deliberately absent from the classifier instruction and
  * every other prompt: they check that a pass is the model's reading, not wording it was shown. The instruction only states general
- * rules (a party size in words or as a relationship, a stay length in days/weeks/months, a named position among the shown results).
+ * rules (a party size in words or as a relationship, a stay length in days/weeks/months, a named position among the shown results,
+ * an acceptance or refusal of a value shown back). The held-out confirmation is a wording the closed confirmation set already accepts,
+ * so its answer can settle the shown-back date as the original case's does.
  */
 export const TERSE_FOLLOW_UP_CASES: readonly TerseFollowUpCase[] = [
   { id: "party_size:solo", openQuestion: "party_size", text: "just me", setup: [PARTY_MISSING] },
@@ -75,6 +77,7 @@ export const TERSE_FOLLOW_UP_CASES: readonly TerseFollowUpCase[] = [
   { id: "pick_result:second", openQuestion: "pick_result", text: "the second", setup: [PICK_SEARCH, VAGUE_VIEW], needsResults: true },
   { id: "pick_result:held-out-last", openQuestion: "pick_result", text: "the last one", setup: [PICK_SEARCH, VAGUE_VIEW], needsResults: true },
   { id: "date_confirm:affirm", openQuestion: "date_confirm", text: "yes", setup: [DATE_SHOW_BACK] },
+  { id: "date_confirm:held-out-accept", openQuestion: "date_confirm", text: "go ahead", setup: [DATE_SHOW_BACK] },
   { id: "where:area", openQuestion: "where", text: "Wuse 2", setup: [AREA_QUESTION] },
 ];
 

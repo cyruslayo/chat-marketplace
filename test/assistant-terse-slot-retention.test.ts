@@ -136,6 +136,25 @@ test("a terse yes confirms only a date the server showed back, and that check-in
   } finally { environment.close(); }
 });
 
+// Issue 63: the acceptance rule may not rest on one wording. A different affirmative that the closed confirmation set already accepts
+// settles the same server show-back, so the eval's held-out confirmation case has an answer that can land (ADR 0092: the show-back is
+// the only authority; nothing here reads the guest's words for a date).
+test("a held-out acceptance wording confirms the shown-back date and is kept after a cold restore", async () => {
+  const environment = stagingGuest();
+  try {
+    const harness = recorder({
+      [DATE_SEARCH]: { slots: { ...LAGOS, nights: 3, guests: 2 }, intents: ["search"], search: { ...LAGOS, checkInPhrase: "tomorrow", nights: 3, guests: 2 } },
+      "go ahead": { slots: {}, intents: ["search"], search: { ...LAGOS, nights: 3, guests: 2 } },
+    });
+    const driver = openChipDriver(environment, harness.client, { cold: true, threadId: THREAD });
+    assertOk(await driver.typed(DATE_SEARCH), "the date show-back");
+    assert.equal(restoredState(driver).stayIntent.pendingDate?.candidates[0], "2026-10-28", "the server showed one date back");
+    assertOk(await driver.typed("go ahead"), "the held-out acceptance");
+    assert.equal(restoredState(driver).stayIntent.checkIn, "2026-10-28", "the shown-back date is kept after a cold restore");
+    assert.equal(restoredState(driver).stayIntent.isDemoDate, false, "the confirmed date is guest-authored, not a demo date");
+  } finally { environment.close(); }
+});
+
 // ADR 0106 (9 Nov 2026 amendment) and the projection rule of its 8 Nov 2026 amendment: the closed code rides on a partial context
 // (no area yet), so a `where` question survives the cold restore and its terse answer is read against it.
 test("a terse where answer the classifier accepts is kept in the thread after a cold restore", async () => {
