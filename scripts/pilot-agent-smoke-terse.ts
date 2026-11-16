@@ -104,6 +104,8 @@ export type TerseCasePath = "classifier" | "classifier_failed" | "answered_witho
 
 export interface TerseFollowUpResult {
   readonly id: string;
+  /** Which run of the case this is (1-based); a case runs once per configured run. */
+  readonly run: number;
   readonly openQuestion: OpenQuestion;
   readonly scope: TerseScopeCode;
   readonly reasonCode: TerseReasonCode;
@@ -116,6 +118,12 @@ export interface TerseFollowUpResult {
   readonly controlOutcome: AssistantControlOutcome | "threw" | null;
   /** True when the thread held the answered slot after a cold restore, read from task state with closed values. */
   readonly answeredSlotHeld: boolean;
+  /**
+   * Issue 63: what the planner did on the measured turn, in order, as closed codes only: `tool(slotKeys)` for a tool call (the
+   * schema argument names it filled, sorted, never their values), `denied:tool[:CODE]` for a tool result the runtime refused,
+   * `reply:kind` for a typed reply plan (a kind from the reply schema), `text` for an untyped reply. Never guest or model text.
+   */
+  readonly plannerActions: readonly string[];
   readonly path: TerseCasePath;
   readonly pass: boolean;
   readonly falseRefusal: boolean;
@@ -137,6 +145,8 @@ export interface TerseFollowUpReport {
   /** The suite's own request budget and how much of it was used. */
   readonly requestBudget: number;
   readonly requestsUsed: number;
+  /** How many times each case ran (issue 63: one live sample cannot tell a flaky model from a broken path). */
+  readonly runs: number;
   readonly cases: readonly TerseFollowUpResult[];
   /** Cases whose classifier verdict never arrived and whose turn did not answer: they block acceptance and are not false refusals. */
   readonly failedCases: number;
@@ -154,7 +164,12 @@ export interface TerseFollowUpOptions {
   readonly skipReason?: () => TerseSkipReason | undefined;
   /** Wraps one case's turn in the host's active provider turn, so provider reservation and transport accounting see it. */
   readonly runCase?: (caseId: string, run: () => Promise<void>) => Promise<void>;
+  /** How many times to run each case, 1 to MAX_TERSE_RUNS (the smoke's `--runs`). Every run of every case must pass for acceptance. */
+  readonly runs?: number;
 }
+
+/** The most runs per case the suite accepts; it matches the smoke's journey run limit (MAX_PILOT_AGENT_SMOKE_RUNS). */
+export const MAX_TERSE_RUNS = 3;
 
 const SCOPES: readonly TerseScopeCode[] = ["in_scope", "mixed", "out_of_scope", "unclear"];
 const REASONS: readonly TerseReasonCode[] = ["supported", "mixed", "outside", "unclear"];
@@ -171,6 +186,46 @@ interface ObserverVerdict {
   resultCountSent: number | null;
   /** Set when a provider call threw; the suite stops rather than spend more of its budget on a failing provider. */
   provider?: { readonly status?: number; readonly errorClass?: string };
+  /** Issue 63: the planner's closed actions on the measured turn, in order (see TerseFollowUpResult.plannerActions). */
+  plannerActions: string[];
+}
+
+/** A closed code shape: the reply kinds, tool names and denial codes the report may carry are all of this form. */
+const CLOSED_TOKEN = /^[A-Za-z_][A-Za-z0-9_]{0,47}$/;
+
+/** `tool(keys)`: the tool name the request offered and the schema argument names the call filled (non-null), sorted. No values. */
+function plannerToolAction(request: AssistantModelRequest, call: { readonly name: string; readonly args: Record<string, unknown> }): string {
+  const tool = request.tools.find((definition) => definition.name === call.name);
+  if (tool === undefined) return "unknown_tool";
+  const schemaKeys = new Set(Object.keys(tool.parametersSchema.properties));
+  const filled = Object.entries(call.args)
+    .filter(([key, value]) => schemaKeys.has(key) && value !== null && value !== undefined)
+    .map(([key]) => key)
+    .sort();
+  return `${tool.name}(${filled.join(",")})`;
+}
+
+/** `reply:kind` when the typed reply names a kind the reply schema allows; `reply:unreadable` otherwise; `text` for an untyped reply. */
+function plannerReplyAction(request: AssistantModelRequest, response: AssistantModelResponse): string {
+  if (request.structuredOutput === undefined) return "text";
+  const kindSchema = (request.structuredOutput.schema as { readonly properties?: { readonly kind?: { readonly enum?: readonly unknown[] } } }).properties?.kind;
+  try {
+    const parsed = JSON.parse(response.text ?? "") as { readonly kind?: unknown };
+    const allowed = kindSchema?.enum;
+    if (typeof parsed.kind === "string" && CLOSED_TOKEN.test(parsed.kind) && (allowed === undefined || allowed.includes(parsed.kind))) return `reply:${parsed.kind}`;
+  } catch { /* The text is discarded either way. */ }
+  return "reply:unreadable";
+}
+
+/** `denied:tool[:CODE]` for each refused tool result the request carries back to the planner; the code only when it is a closed token. */
+function plannerDenials(request: AssistantModelRequest): string[] {
+  const last = request.history.at(-1);
+  if (last?.role !== "tool_results") return [];
+  return last.results.filter((result) => result.isError === true).map((result) => {
+    const code = (result.result as { readonly code?: unknown }).code;
+    const name = CLOSED_TOKEN.test(result.name) ? result.name : "unknown_tool";
+    return typeof code === "string" && /^[A-Z][A-Z0-9_]{0,47}$/.test(code) ? `denied:${name}:${code}` : `denied:${name}`;
+  });
 }
 
 /** Reads a closed verdict or the closed defect from one classifier response. The response text is never kept (ADR 0075). */
@@ -223,13 +278,16 @@ function observeClassifier(model: AssistantModelClient): {
   readonly client: AssistantModelClient;
   readonly takeLast: () => ObserverVerdict;
 } {
-  let last: ObserverVerdict = { requested: false, responded: false, scope: null, reasonCode: null, failure: null, openQuestionSent: null, resultCountSent: null };
+  let last: ObserverVerdict = { requested: false, responded: false, scope: null, reasonCode: null, failure: null, openQuestionSent: null, resultCountSent: null, plannerActions: [] };
   const client: AssistantModelClient = {
     generate: async (request: AssistantModelRequest): Promise<AssistantModelResponse> => {
       const isScope = request.structuredOutput?.name === "concierge_scope";
       if (isScope) {
         const sent = readRequestContext(request);
         last = { ...last, requested: true, responded: false, openQuestionSent: sent.openQuestion, resultCountSent: sent.resultCount };
+      } else {
+        // Issue 63: a tool result the runtime refused comes back to the planner on its next request; record it by closed code only.
+        last.plannerActions.push(...plannerDenials(request));
       }
       let response: AssistantModelResponse;
       try {
@@ -246,6 +304,10 @@ function observeClassifier(model: AssistantModelClient): {
         last = "failure" in verdict
           ? { ...last, responded: true, scope: null, reasonCode: null, failure: verdict.failure }
           : { ...last, responded: true, scope: verdict.scope, reasonCode: verdict.reasonCode, failure: null };
+      } else if (response.toolCalls !== undefined && response.toolCalls.length > 0) {
+        last.plannerActions.push(...response.toolCalls.map((call) => plannerToolAction(request, call)));
+      } else {
+        last.plannerActions.push(plannerReplyAction(request, response));
       }
       return response;
     },
@@ -393,14 +455,16 @@ function shownResults(state: AssistantTaskState): number {
  * and its answer is in the thread. Nothing is asserted about model text (there is none in the result).
  */
 export async function evaluateTerseFollowUps(model: AssistantModelClient, options: TerseFollowUpOptions = {}): Promise<TerseFollowUpReport> {
-  const requestBudget = options.requestBudget ?? TERSE_REQUEST_BUDGET;
+  const runs = options.runs ?? 1;
+  if (!Number.isSafeInteger(runs) || runs < 1 || runs > MAX_TERSE_RUNS) throw new Error(`Terse follow-up runs must be between 1 and ${MAX_TERSE_RUNS}.`);
+  const requestBudget = options.requestBudget ?? TERSE_REQUEST_BUDGET * runs;
   const clock = options.now ?? TERSE_CLOCK;
   const results: TerseFollowUpResult[] = [];
   let skipReason = options.skipReason?.();
   if (skipReason === undefined) {
-    for (const [index, testCase] of TERSE_FOLLOW_UP_CASES.entries()) {
+    runLoop: for (let run = 1; run <= runs; run++) for (const [index, testCase] of TERSE_FOLLOW_UP_CASES.entries()) {
       skipReason = options.skipReason?.();
-      if (skipReason !== undefined) break;
+      if (skipReason !== undefined) break runLoop;
       const environment = LocalGuestEnvironment.openNode({ databasePath: ":memory:", clock });
       try {
         const observer = observeClassifier(model);
@@ -417,8 +481,8 @@ export async function evaluateTerseFollowUps(model: AssistantModelClient, option
         if (setupFailure || (testCase.needsResults === true && setupResults < 2)) {
           // The journey never reached the question, so the case was not measured. A closed code only; it blocks acceptance.
           results.push({
-            id: testCase.id, openQuestion: testCase.openQuestion, scope: "failed", reasonCode: "failed", openQuestionSent: null,
-            resultCountSent: null, scopeFailure: "setup_failed", controlOutcome: null, answeredSlotHeld: false,
+            id: testCase.id, run, openQuestion: testCase.openQuestion, scope: "failed", reasonCode: "failed", openQuestionSent: null,
+            resultCountSent: null, scopeFailure: "setup_failed", controlOutcome: null, answeredSlotHeld: false, plannerActions: [],
             path: "classifier_failed", pass: false, falseRefusal: false,
           });
           continue;
@@ -439,10 +503,10 @@ export async function evaluateTerseFollowUps(model: AssistantModelClient, option
         if (observed.provider !== undefined) {
           // A provider rate limit or failure stops the suite; it must not keep spending its budget on a failing provider.
           const known = options.skipReason?.();
-          if (known !== undefined) { skipReason = known; break; }
+          if (known !== undefined) { skipReason = known; break runLoop; }
           const stop = providerStopReason({ providerStatusCode: observed.provider.status, providerErrorClass: observed.provider.errorClass, budgetExceeded: false });
           skipReason = stop === "PROVIDER_RATE_LIMITED" ? "rate_limited" : "provider_failure";
-          break;
+          break runLoop;
         }
         // The cold restore after the turn: a NEW application over the same store, as the next Worker request would build.
         const restored = openCaseApp(environment, routed, threadId).runtime.getThread(threadId).taskState;
@@ -454,6 +518,7 @@ export async function evaluateTerseFollowUps(model: AssistantModelClient, option
         const scored = scoreTerseCase({ expected: testCase.openQuestion, scope, openQuestionSent: observed.openQuestionSent, controlOutcome: outcome, answeredSlotHeld });
         results.push({
           id: testCase.id,
+          run,
           openQuestion: testCase.openQuestion,
           scope,
           reasonCode,
@@ -462,6 +527,7 @@ export async function evaluateTerseFollowUps(model: AssistantModelClient, option
           scopeFailure: scopeFailureOf(observed),
           controlOutcome: outcome,
           answeredSlotHeld,
+          plannerActions: [...observed.plannerActions],
           ...scored,
         });
       } finally {
@@ -477,6 +543,7 @@ export async function evaluateTerseFollowUps(model: AssistantModelClient, option
     ...(skipReason === undefined ? {} : { skipReason }),
     requestBudget,
     requestsUsed: options.requestsUsed?.() ?? 0,
+    runs,
     cases: results,
     failedCases: results.filter((entry) => entry.path === "classifier_failed").length,
     timeouts: results.filter((entry) => entry.scopeFailure === "no_response").length,
@@ -491,21 +558,27 @@ const CLASSIFIER_TIMEOUT_TEXT = `${SCOPE_FIRST_ATTEMPT_TIMEOUT_MS / 1000} s firs
 export function renderTerseFollowUpReport(report: TerseFollowUpReport): string[] {
   const verdictCases = report.cases.filter((entry) => entry.scope !== "failed");
   const refused = verdictCases.filter((entry) => entry.falseRefusal).length;
-  const acceptable = report.status === "run" && report.failedCases === 0;
+  // Issue 63: acceptance needs every run of every case to pass the rule, not only a verdict from each (the 12 Nov run read "yes"
+  // with three cases failing). A skipped suite, or one that ran fewer cases than the table, is never valid.
+  const failingPassRule = report.cases.filter((entry) => !entry.pass).length;
+  const complete = report.cases.length === TERSE_FOLLOW_UP_CASES.length * report.runs;
+  const acceptable = report.status === "run" && complete && failingPassRule === 0;
+  const invalidReason = report.status !== "run" ? "suite skipped" : !complete ? "not every case ran" : `${failingPassRule} cases failed the pass rule`;
   const lines = [
     "## Terse follow-up cases",
     "",
     `- Status: ${report.status}${report.skipReason ? ` (${report.skipReason})` : ""}`,
+    `- Runs per case: ${report.runs}`,
     `- Request budget: ${report.requestBudget}; used: ${report.requestsUsed}`,
     `- False-refusal rate: ${report.falseRefusalRate.toFixed(3)} (${refused} of ${verdictCases.length} cases with a verdict)`,
     `- Failed cases: ${report.failedCases}`,
     `- Classifier timeouts: ${report.timeouts} (no_response; ${CLASSIFIER_TIMEOUT_TEXT})`,
-    `- Valid for acceptance: ${acceptable ? "yes" : `no${report.status !== "run" ? " (suite skipped)" : " (a case failed)"}`}`,
+    `- Valid for acceptance: ${acceptable ? "yes" : `no (${invalidReason})`}`,
     "",
     ...(report.cases.length === 0 ? [] : [
-      "| Case | Open question | Scope | Reason | Code sent | Results | Failure | Outcome | Slot | Path | Result |",
-      "|---|---|---|---|---|---|---|---|---|---|---|",
-      ...report.cases.map((entry) => `| ${entry.id} | ${entry.openQuestion} | ${entry.scope} | ${entry.reasonCode} | ${entry.openQuestionSent ?? "none"} | ${entry.resultCountSent ?? "none"} | ${entry.scopeFailure ?? "none"} | ${entry.controlOutcome ?? "none"} | ${entry.answeredSlotHeld ? "held" : "no"} | ${entry.path} | ${entry.pass ? "PASS" : "FAIL"} |`),
+      "| Case | Run | Open question | Scope | Reason | Code sent | Results | Failure | Outcome | Planner | Slot | Path | Result |",
+      "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+      ...report.cases.map((entry) => `| ${entry.id} | ${entry.run} | ${entry.openQuestion} | ${entry.scope} | ${entry.reasonCode} | ${entry.openQuestionSent ?? "none"} | ${entry.resultCountSent ?? "none"} | ${entry.scopeFailure ?? "none"} | ${entry.controlOutcome ?? "none"} | ${entry.plannerActions.length === 0 ? "none" : entry.plannerActions.join(" > ")} | ${entry.answeredSlotHeld ? "held" : "no"} | ${entry.path} | ${entry.pass ? "PASS" : "FAIL"} |`),
     ]),
     "",
   ];

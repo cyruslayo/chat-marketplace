@@ -506,3 +506,58 @@ test("Issue 63: every terse eval case runs from a realistic cold journey, not an
     if (testCase.needsResults === true) assert.ok(Number(request.resultCount) >= 2, `${testCase.id}: a real discovery surface is shown`);
   }
 });
+
+// Issue 63 (12 Nov 2026 live run): three cases failed the pass rule yet the report read "Valid for acceptance: yes", because the flag
+// only counted cases with no verdict. Acceptance needs every measured case to pass.
+test("Issue 63: the terse report is valid for acceptance only when every measured case passes", async () => {
+  const passing = await evaluateTerseFollowUps(fakeTerseModel(() => null));
+  assert.match(renderTerseFollowUpReport(passing).join("\n"), /- Valid for acceptance: yes$/m);
+  const silent: AssistantModelClient = {
+    generate: async (request) => request.structuredOutput?.name === "concierge_scope"
+      ? { text: JSON.stringify({ scope: "in_scope", risk: "ordinary", intents: ["search"], reasonCode: "supported", slots: EMPTY_SLOTS }) }
+      : { text: JSON.stringify({ kind: "show_results", references: [] }) },
+  };
+  const report = await evaluateTerseFollowUps(silent);
+  assert.equal(report.failedCases, 0, "every case returned a verdict");
+  const failing = report.cases.filter((entry) => !entry.pass).length;
+  assert.ok(failing > 0);
+  assert.ok(renderTerseFollowUpReport(report).includes(`- Valid for acceptance: no (${failing} cases failed the pass rule)`));
+});
+
+// Issue 63: the planner's action on the measured turn is reported as closed codes only: the tool name, the slot argument names it
+// filled (never their values), the typed reply kind, and a denied tool with its closed code. Keys outside the tool schema are dropped.
+test("Issue 63: the terse report names the planner's action on the measured turn as closed codes only", async () => {
+  const model: AssistantModelClient = {
+    generate: async (request) => {
+      if (request.structuredOutput?.name === "concierge_scope") {
+        return { text: JSON.stringify({ scope: "in_scope", risk: "ordinary", intents: ["search"], reasonCode: "supported", slots: EMPTY_SLOTS }) };
+      }
+      if (request.history.at(-1)?.role === "tool_results") return { text: JSON.stringify({ kind: "show_results", references: [] }) };
+      return { toolCalls: [{ id: "planner-search", name: "search_stays", args: { city: "Lagos", guests: 2, nights: null, notInSchema: "Lekki secret" } }] };
+    },
+  };
+  const report = await evaluateTerseFollowUps(model);
+  const numeral = report.cases.find((entry) => entry.id === "party_size:numeral");
+  assert.ok(numeral);
+  assert.equal(numeral.plannerActions[0], "search_stays(city,guests)", "the tool and the filled schema keys, sorted, without values");
+  assert.ok(numeral.plannerActions.some((action) => /^(reply:show_results|denied:search_stays(:[A-Z_]+)?)$/.test(action)), "the reply kind or the closed denial follows");
+  const rendered = renderTerseFollowUpReport(report).join("\n");
+  assert.match(rendered, /\| Planner \|/);
+  assert.doesNotMatch(rendered, /notInSchema|Lekki secret|"guests"|: ?2\b/);
+});
+
+// Issue 63: one live sample cannot tell a flaky model from a broken path, so each case runs once per configured run, and the run is
+// valid for acceptance only when every run of every case passes.
+test("Issue 63: each terse case runs once per configured run, and acceptance needs every run to pass", async () => {
+  const report = await evaluateTerseFollowUps(fakeTerseModel(() => null), { runs: 2 });
+  assert.equal(report.cases.length, TERSE_FOLLOW_UP_CASES.length * 2);
+  assert.deepEqual([...new Set(report.cases.map((entry) => entry.run))], [1, 2]);
+  assert.equal(report.runs, 2);
+  assert.match(renderTerseFollowUpReport(report).join("\n"), /- Runs per case: 2/);
+  let seen = 0;
+  const flaky = fakeTerseModel((message) => message === "2" && ++seen === 2 ? "unclear" : null);
+  const mixed = await evaluateTerseFollowUps(flaky, { runs: 2 });
+  const numeral = mixed.cases.filter((entry) => entry.id === "party_size:numeral").map((entry) => entry.pass);
+  assert.deepEqual(numeral, [true, false], "the second run of the case fails");
+  assert.match(renderTerseFollowUpReport(mixed).join("\n"), /- Valid for acceptance: no \(1 cases failed the pass rule\)/);
+});

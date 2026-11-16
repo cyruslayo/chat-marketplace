@@ -133,7 +133,9 @@ LLM_BASE_URL=https://openrouter.ai/api/v1 \
 LLM_MODEL=openai/gpt-6-luna \
 LLM_PROVIDER_LABEL=openrouter \
 LLM_API_KEY=…(owner-supplied)… \
-npm run pilot:local:agent-smoke -- --request-limit 16
+npm run pilot:local:agent-smoke -- --request-limit 16 --runs 3
 ```
+
+`--runs 3` runs the journey and each terse case three times (issue 63): one live sample cannot tell a flaky model from a broken path, so the run is valid for acceptance only when every run of every case passes. The terse budget scales with the runs (52 per run). The Planner column names what the planner did on the measured turn as closed codes (tool and the argument names it filled, a refused tool with its code, the reply kind), never values or text.
 
 Then record the false-refusal rate in issue 61's Comments. Target on `openai/gpt-6-luna`: no false refusals across the cases.
