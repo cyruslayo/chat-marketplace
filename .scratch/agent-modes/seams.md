@@ -13,24 +13,32 @@ All seven issues are `ready-for-agent` (released by the owner on 11 Nov 2026). A
  |-- 03b (persist active task and task list)
  |    `-- 03d (per-task lanes in memory)
  |         |-- 03e (lane event rows and export)
+ |         |    `-- 03h (lane read path table split)
  |         `-- 03f (tier C mode suggestion) <-- also needs 03c
  `-- 03c (mode follows the active task)
       |-- 03f (tier C mode suggestion)
+      |-- 03k (mode theme colour switch)
+      |-- 03l (mode switch announcement)
       `-- 03g (mode preview strip and sheet)
+          |-- 03i (client lane cache and scroll memory; also needs 03d)
+          `-- 03j (mode switch view transition)
 ```
 
-Order: 03a, then 03b and 03c (either order), then 03d, then 03e, 03f and 03g. Edges: 03a to 03b, 03a to 03c, 03b to 03d, 03d to 03e, 03c and 03d to 03f, 03c to 03g.
+Order: 03a, then 03b and 03c (either order), then 03d, then 03e, 03f and 03g. Edges: 03a to 03b, 03a to 03c, 03b to 03d, 03d to 03e, 03c and 03d to 03f, 03c to 03g. New issues (16 Nov 2026, `needs-triage`): 03e to 03h, 03d and 03g to 03i, 03g to 03j, 03c to 03k, 03c to 03l.
 
 ## Serial merge warning
 
 These files are touched by more than one issue. Merge them one issue at a time, in a dedicated merge worktree, and rebase the next issue before it is gated:
 
-- `apps/local-guest/src/shortlet-app.ts`: 03b, 03c, 03d, 03f.
+- `apps/local-guest/src/shortlet-app.ts`: 03b, 03c, 03d, 03f, 03h.
 - `apps/local-guest/src/assistant/assistant-runtime.ts`: 03a, 03b, 03d, 03f (removes `#route`).
-- `apps/local-guest/src/client.ts`: 03c, 03d, 03g.
+- `apps/local-guest/src/client.ts`: 03c, 03d, 03g, 03i, 03j, 03k, 03l.
 - `apps/local-guest/src/guest-kit.ts`: 03g (strip and sheet markup).
-- `apps/web-agent/src/guest-content.ts`: 03f (suggestion copy), 03g (persona label and warning copy).
-- `apps/web/src/shortlet-foundations.css`: 03c only; 03g may add none. Do not run a formatter on it.
+- `domains/shortlet/src/guest-interaction-store.ts`: 03e (lane rows DDL), 03h (lane read path).
+- `apps/local-guest/src/response-mode.ts`: 03c, 03k.
+- `apps/local-guest/src/guest-server.ts`: 03k (theme colour meta in the shell head). Check 03g's shell markup before merging 03k.
+- `apps/web-agent/src/guest-content.ts`: 03f (suggestion copy), 03g (persona label and warning copy), 03l (switch announcement copy).
+- `apps/web/src/shortlet-foundations.css`: 03c only; 03g may add none; 03j may add the mode-switch rules (its owner decision 4). Do not run a formatter on it.
 
 ## Owner decisions
 
@@ -47,7 +55,7 @@ These files are touched by more than one issue. Merge them one issue at a time, 
 
 ## Unassigned slice 4 and 5 items
 
-These come from the analysis and no issue owns them yet: the `applyMode` View Transition (5.5), the `<meta name="theme-color">` switch (5.4), the switch announcement through the existing announcer (5.5), and the client lane cache and scroll memory (11.5). Proposed home: 03f (the first real switch), with the cache in a later issue. The owner or orchestrator should assign them.
+Assigned on 16 Nov 2026 as `needs-triage` issues, each released by the owner before it is built: the lane read path ([03h](issues/03h-lane-read-path-table-split.md), analysis 11.4), the client lane cache and scroll memory ([03i](issues/03i-client-lane-cache-and-scroll-memory.md), 11.5), the `mode-switch` View Transition ([03j](issues/03j-mode-switch-view-transition.md), 5.5), the theme colour switch ([03k](issues/03k-mode-theme-color-switch.md), 5.4) and the switch announcement ([03l](issues/03l-mode-switch-announcement.md), 5.5). Each issue lists its own open owner decisions near the top.
 
 ## Gaps found by the survey
 

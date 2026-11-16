@@ -22,3 +22,8 @@ Goal: switching Domain Packs changes the agent and the guest UI together (ADR 01
 | 4b | Tier C mode suggestion (part 1). Tiers A and B stay disabled (ADR 0107 correction 3); keyword `#route` removed | [03f](issues/03f-tier-c-mode-suggestion.md) | ready-for-agent (released 11 Nov; O6 and O8 closed 16 Nov) |
 | 5 | Mode preview strip and sheet, preview only (part 1). Deep links and manifest shortcuts remain out of scope | [03g](issues/03g-mode-preview-strip.md) | ready-for-agent (released 11 Nov). Dependency graph and merge order: [seams](seams.md) |
 | 6 | First real second domain | — | owner decision |
+| 3c-read | Lane read path from per-task rows, building on 03e's write-only rows (analysis 11.4). Worth doing when the lane count grows (seam O2) | [03h](issues/03h-lane-read-path-table-split.md) | needs-triage |
+| 5-cache | Client lane cache and scroll memory, in memory only (ADR 0107 decision 11, analysis 11.5) | [03i](issues/03i-client-lane-cache-and-scroll-memory.md) | needs-triage |
+| 5-motion | Mode switch View Transition, feature-detected and typed `mode-switch` (ADR 0107 decision 7, analysis 5.5) | [03j](issues/03j-mode-switch-view-transition.md) | needs-triage |
+| 4-theme | Browser theme colour updated from the mode tokens on a switch (analysis 5.4) | [03k](issues/03k-mode-theme-color-switch.md) | needs-triage |
+| 4-announce | Mode switch announced through the existing polite announcer (ADR 0107 decision 7) | [03l](issues/03l-mode-switch-announcement.md) | needs-triage |
