@@ -1,6 +1,6 @@
 # Announce a mode switch through the existing polite announcer
 
-Status: needs-triage
+Status: ready-for-agent
 Type: task
 Blocked by: 03c (resolved: the client applies the server's mode and can tell when it changes). It also serves 03f (the tier C suggestion changes the mode only after a confirmation) and 03g (the strip commits a preview). Owner release before any build (ADR 0107 "Settled", 8 Nov 2026).
 Requested: 16 Nov 2026

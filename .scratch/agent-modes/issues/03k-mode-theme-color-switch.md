@@ -1,6 +1,6 @@
 # Update the browser theme colour from the mode tokens on a switch
 
-Status: needs-triage
+Status: ready-for-agent
 Type: task
 Blocked by: 03c (resolved: the client applies the server's mode and sets `data-mode`). Owner release before any build (ADR 0107 "Settled", 8 Nov 2026).
 Requested: 16 Nov 2026
