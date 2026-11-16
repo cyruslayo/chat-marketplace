@@ -3356,6 +3356,9 @@ export class LocalGuestApp {
       ...(stay.statedStay ? { statedStay: { nights: stay.statedStay.nights, unit: stay.statedStay.unit, count: stay.statedStay.count } } : {}),
       ...(Number.isSafeInteger(stay.partySize) && (stay.partySize ?? 0) > 0 ? { partySize: stay.partySize } : {}),
       ...(Number.isSafeInteger(stay.bedrooms) && (stay.bedrooms ?? -1) >= 0 ? { bedrooms: stay.bedrooms } : {}),
+      // Issue 63 (ADR 0106, 9 Nov 2026 amendment): the closed code rides on a partial context too, so a `where` question asked
+      // before any area is known survives a cold restore. The projection parser already accepts it on this shape.
+      ...(state.openQuestion === undefined ? {} : { openQuestion: state.openQuestion }),
     };
     return Object.keys(context).length === 0 ? null : context;
   }

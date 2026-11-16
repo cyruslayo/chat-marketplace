@@ -269,6 +269,33 @@ test("the concierge_scope schema and instruction allow every scope and reason th
   assert.deepEqual(Object.keys(envelope.context).sort(), ["description", "domain", "hasOffer", "hasSelectedStay", "hasShortlist", "openQuestion", "resultCount"]);
 });
 
+// Issue 63 (ADR 0106 amendment of 16 Nov 2026, and the 2 Nov confirmed-phrase rule): the 16 Nov 2026 three-run live eval read a guest
+// accepting the date the server had shown back as `unclear` in two runs. The instruction states a slot rule for each other open
+// question and none for the two confirmations, so the rule is stated for the closed codes only, in general terms and with no slots.
+// No guest wording is quoted, so the live pass stays the model's reading (ADR 0106: no keyword fast path).
+test("the scope-classifier instruction puts an acceptance or refusal of a shown-back value in scope", async () => {
+  const requests: AssistantModelRequest[] = [];
+  const client: AssistantModelClient = {
+    generate: async (request: AssistantModelRequest): Promise<AssistantModelResponse> => {
+      requests.push(request);
+      return { text: JSON.stringify(scopeVerdict()) };
+    },
+  };
+  const classifier = new ModelScopeClassifier(client, 1_000);
+  for (const openQuestion of ["date_confirm", "location_confirm"] as const) {
+    await classifier.assess("that works for me", {
+      domain: "shortlet", description: "shortlet stays", hasShortlist: false, hasSelectedStay: false, hasOffer: false,
+      openQuestion,
+    });
+  }
+  assert.equal(requests.length, 2, "both confirmation codes were classified");
+  const instruction = requests[0]!.systemInstruction;
+  assert.ok(requests.every((request) => request.systemInstruction === instruction), "one instruction for both codes");
+  assert.match(instruction, /openQuestion is date_confirm or location_confirm/);
+  assert.match(instruction, /accepts or declines/);
+  assert.match(instruction, /no slots/);
+});
+
 // Issue 61 review: the eval must not teach to the test. The instruction states general rules, never a case's own words, so a live
 // pass is the model's reading and not a quoted phrase (ADR 0106: no deterministic in-scope fast path).
 test("the scope-classifier instruction quotes none of the live eval's case texts", async () => {
@@ -283,7 +310,7 @@ test("the scope-classifier instruction quotes none of the live eval's case texts
   for (const testCase of TERSE_FOLLOW_UP_CASES) {
     await classifier.assess(testCase.text, {
       domain: "shortlet", description: "shortlet stays", hasShortlist: false, hasSelectedStay: false, hasOffer: false,
-      openQuestion: testCase.openQuestion, resultCount: testCase.seededResults ?? 0,
+      openQuestion: testCase.openQuestion, resultCount: testCase.needsResults === true ? 2 : 0,
     });
   }
   assert.equal(instructions.length, TERSE_FOLLOW_UP_CASES.length, "every case was classified");

@@ -87,6 +87,8 @@ let terseFollowUpReport: TerseFollowUpReport | undefined;
 let terseModel: AssistantModelClient | undefined;
 /** Issue 61: the terse suite's own request accounting (a bounded budget, recorded in the report). */
 let terseRequestsUsed = 0;
+/** Issue 63: each terse case runs once per configured journey run (`--runs`), so its budget scales with the runs. */
+const terseRequestBudget = TERSE_REQUEST_BUDGET * configuredJourneys;
 let terseBudgetExceeded = false;
 
 type ScenarioReport = SmokeScenarioReport;
@@ -227,7 +229,7 @@ if (!credential && !scripted) {
     const reserveProviderRequest = (currentTurn: ActiveProviderTurn): void => {
       if (currentTurn.terse) {
         // The terse follow-up suite has its own small budget, so it can never exhaust the journeys'.
-        if (terseRequestsUsed >= TERSE_REQUEST_BUDGET) {
+        if (terseRequestsUsed >= terseRequestBudget) {
           terseBudgetExceeded = true;
           throw new ProviderRequestBudgetExceededError();
         }
@@ -572,7 +574,8 @@ if (!credential && !scripted) {
           : terseBudgetExceeded ? "terse_budget_exceeded"
             : undefined;
     terseFollowUpReport = await evaluateTerseFollowUps(terseModel, {
-      requestBudget: TERSE_REQUEST_BUDGET,
+      requestBudget: terseRequestBudget,
+      runs: configuredJourneys,
       requestsUsed: () => terseRequestsUsed,
       skipReason: terseSkipReason,
       runCase: runTerseCase,
