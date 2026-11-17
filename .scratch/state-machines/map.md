@@ -6,8 +6,8 @@ PRD: `PRD.md`. Line numbers come from a sweep of an earlier checkout and are app
 
 | # | Track | Issue | Status | Blocked by |
 |---|---|---|---|---|
-| 01 | A | State-machine map for agents (`docs/agents/state-machines.md`) | ready-for-agent | - |
-| 02 | A | Ratchet test keeps the map current | ready-for-agent | 01 |
+| 01 | A | State-machine map for agents (`docs/agents/state-machines.md`) | resolved | - |
+| 02 | A | Ratchet test keeps the map current | resolved | 01 |
 | 03 | B | `canTransition` predicate in platform-core | ready-for-agent | - |
 | 04 | B | BookingRequest: typed records (no `any`), exported status union, one delivered/deadline predicate | to write | 03 |
 | 05 | B | ConditionalOffer and Reservation unions and tables | to write | 03 |
@@ -30,6 +30,7 @@ PRD: `PRD.md`. Line numbers come from a sweep of an earlier checkout and are app
 | 22 | D | Client in-flight flags (`isLoading` vs `eventInFlight`), `THREAD_BUSY` | to write | - |
 | 23 | D | Offer page reload loop at the deadline | to write | - |
 | 24 | D | Deposit-claim day 14/45/90 steps have no from-state check | to write | - |
+| 25 | D | Owner decision: keep or remove each never-written state (offer `revoked`; card session `failed`/`expired`; journey `failed`/`expired`; check-in `active`/`human_owned`/`closed`; overstay `resolved`) | needs-info | - |
 
 ## Seed inventory (for issue 01)
 

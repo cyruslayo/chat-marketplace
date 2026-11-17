@@ -55,6 +55,6 @@ About 30 lifecycles in apartment booking are implicit. Each is a string union, o
 ## Questions for the owner (agents do not decide these)
 
 1. **Late decline.** When an operator declines after the response deadline, the code records `declined`; ADR 0041 suggests `expired`. Which should it be? (`booking-request.ts`, `decline`)
-2. **States never written.** Offer `revoked`, card session `failed`/`expired`, and journey `failed`/`expired`. Keep each as a reserved state, or remove it from its union?
+2. **States never written** (issue 25). Offer `revoked`, card session `failed`/`expired`, journey `failed`/`expired`, check-in support `active`/`human_owned`/`closed`, and overstay `resolved`. Keep each as a reserved state, or remove it from its union?
 3. **Legacy managers.** Delete the test-only `DepositClaimManager` and `SecurityDepositManager`?
 4. **Glossary alias.** Add a CONTEXT.md alias (`disclosed` = "Pending Operator") without renaming the stored string?

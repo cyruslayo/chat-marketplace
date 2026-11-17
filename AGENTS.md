@@ -36,6 +36,8 @@ System-wide architectural decisions are recorded in `docs/adr/`. Agents frequent
 
 See `docs/agents/domain.md` for the no-invented-logic rule, vocabulary standards, and ADR conflict guidance.
 
+- Before changing any `status`/`stage`/`state` field or adding a lifecycle, read `docs/agents/state-machines.md` and update its row in the same commit.
+
 ### Common Agent Anti-Patterns (Do NOT do these)
 
 Code reviewers frequently catch agents making the following mistakes. Prevent them proactively:
