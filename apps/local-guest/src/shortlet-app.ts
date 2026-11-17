@@ -3188,8 +3188,14 @@ export class LocalGuestApp {
             offerArtifact.facts.status === "expired"
               ? "Conditional Booking Offer expired"
               : "Conditional Booking Offer",
+          // Issue 13 (ADR 0074): a stale or revoked offer restores closed, as the journey rail and offer-presentation treat it.
           status:
-            offerArtifact.facts.status === "expired" ? "expired" : "active",
+            offerArtifact.facts.status === "expired"
+              ? "expired"
+              : offerArtifact.facts.status === "stale" ||
+                  offerArtifact.facts.status === "revoked"
+                ? "stale"
+                : "active",
           conventionalRoute: conventionalConditionalOfferRoute(
             projection.offerId,
           ),

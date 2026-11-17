@@ -496,6 +496,8 @@ export class ConditionalOfferManager {
         || !this.#extendedStayPolicy || !isEligibleExtendedStayUnit(rawUnit as Unit, this.#extendedStayPolicy)))
         || (offer.quote?.stayType !== "extended" && ((rawUnit as Unit).inspection?.materialChangePending || !(rawUnit as Unit).published))) {
         offer.status = "stale";
+        // Persist the stale mark so a cold restore matches the warm process (ADR 0106) and stays non-actionable (ADR 0074).
+        this.#persistOffer(offer);
         throw new Error("Offer terms are stale or changed: Unit eligibility no longer covers checkout");
       }
     }
