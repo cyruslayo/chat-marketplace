@@ -168,7 +168,10 @@ test("criterion 4: a pending action whose thread, actor, tenant or expiry does n
       assert.equal(output.ok, false, `a ${name} mismatch must not confirm`);
       assert.equal(output.code, "STALE_SURFACE", `a ${name} mismatch returns a closed code`);
       assert.deepEqual(confirmed, [], `no stage handler confirm may run for a ${name} mismatch`);
-      assert.notEqual(runtime.getThread(SHOP_THREAD).taskState.pendingAction, null, `the ${name} mismatch leaves the proposal in place`);
+      const held = runtime.getThread(SHOP_THREAD).taskState.pendingAction;
+      // Issue 14: an expired proposal of this thread, guest and tenant is cleared; every other mismatch leaves it in place.
+      if (name === "expiry") assert.equal(held, null, "an expired proposal is cleared (issue 14)");
+      else assert.notEqual(held, null, `the ${name} mismatch leaves the proposal in place`);
     } finally { environment.close(); }
   }
 

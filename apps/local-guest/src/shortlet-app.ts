@@ -982,6 +982,7 @@ export class LocalGuestApp {
     const storedThread = this.#threads.get(threadId) ?? (this.#environment.guestDataIsRemote ? null : this.#loadThread(threadId));
     if (storedThread) this.#restoreAssistantFromGuestThread(threadId, storedThread);
     const result = await this.#handleTurn(threadId, text);
+    if (this.#assistantRuntime?.takeExpiredPendingClear(threadId)) await this.#persistExpiredPendingClear(threadId);
     const decorated = this.#decorateResult(result);
     if (decorated.ok) {
       await this.#prefetchActiveLane(threadId);
@@ -1313,7 +1314,9 @@ export class LocalGuestApp {
       return this.#withJourney(threadId, decorated);
     }
     await this.#prefetchEventTarget(threadId, payload);
-    const result = this.#decorateResult(this.#handleEvent(threadId, payload));
+    const handled = this.#handleEvent(threadId, payload);
+    if (this.#assistantRuntime?.takeExpiredPendingClear(threadId)) await this.#persistExpiredPendingClear(threadId);
+    const result = this.#decorateResult(handled);
     // ADR 0093: keep each durable work projection current for reads through any linked principal; remote compositions persist it below.
     if (result.ok) await this.#prefetchActiveLane(threadId);
     if (result.ok) this.#rememberResult(threadId, undefined, result);
@@ -3781,6 +3784,18 @@ export class LocalGuestApp {
       ...(thread.pendingActionSurfaceId ? { pendingActionSurfaceId: thread.pendingActionSurfaceId } : {}),
       ...(thread.discoveryArtifact ? { discoveryArtifact: thread.discoveryArtifact } : {}),
     });
+  }
+
+  /**
+   * Issue 14 (ADR 0106): a refused turn that cleared an expired pending action persists the cleared action only. A cold restore
+   * then reads no pending action, so the expired proposal cannot come back. Other refusals persist nothing.
+   */
+  async #persistExpiredPendingClear(threadId: string): Promise<void> {
+    const thread = this.#threads.get(threadId) ?? (this.#environment.guestDataIsRemote ? null : this.#loadThread(threadId));
+    if (!thread) return;
+    this.#syncPendingAction(threadId, thread);
+    if (this.#environment.guestDataIsRemote) await this.#persistRemoteThread(threadId);
+    else this.#persistThread(thread);
   }
 
   /**
