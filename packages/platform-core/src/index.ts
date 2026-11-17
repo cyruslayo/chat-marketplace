@@ -67,4 +67,5 @@ export * from "./interaction-security.js";
 export * from "./reconciliation.js";
 export * from "./provider-certification.js";
 export * from "./telemetry.js";
+export * from "./state-transition.js";
 
