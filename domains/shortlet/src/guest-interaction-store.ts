@@ -369,6 +369,15 @@ function requiredPurpose(value: unknown): "stay" | "security_deposit" {
 }
 
 /**
+ * Issue 15: maps only the four known card checkout statuses (union in card-payment.ts). An unknown stored value fails
+ * closed. The message carries no ids or row data (ADR 0075).
+ */
+function checkoutSessionStatus(value: unknown): DurableCardCheckoutSession["status"] {
+  if (value === "initiated" || value === "completed" || value === "expired" || value === "failed") return value;
+  throw new Error("Unknown card checkout session status");
+}
+
+/**
  * The immutable contact-email snapshot of each Booking Request (ADR 0093). One row per request, inserted only when the
  * request is first saved, so the claim evidence never changes after creation and is never read from guest_contacts.
  * Kept as its own table rather than a column so that migrations and the Node constructor cannot both add it.
@@ -1277,14 +1286,7 @@ export class SqliteGuestInteractionStore {
         : {}),
       ...(row.checkout_url === null ? {} : { checkoutUrl: row.checkout_url }),
       expiresAt: row.expires_at,
-      status:
-        row.status === "completed"
-          ? "completed"
-          : row.status === "expired"
-            ? "expired"
-            : row.status === "failed"
-              ? "failed"
-              : "initiated",
+      status: checkoutSessionStatus(row.status),
     });
   }
 
