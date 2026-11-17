@@ -188,3 +188,17 @@ export const redactSensitiveData: (data: unknown) => unknown = createSensitiveDa
   sensitiveKeys,
   platformIdPrefixesByKey: PLATFORM_ID_PREFIXES_BY_KEY
 });
+
+/** The text an email address is replaced with wherever it is masked (issue 03e lane rows, issue 03n timeline and model history). */
+export const EMAIL_ADDRESS_MASK = "[REDACTED]";
+
+const EMAIL_ADDRESS_SHAPE = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+
+/**
+ * ADR 0093 and ADR 0075: masks email addresses in free text (issue 03e lane rows, issue 03n timeline). It is separate from
+ * `redactSensitiveData`, which keeps its current shapes; callers that store guest text apply both. Contact records and the
+ * checkout handoff never pass through this helper (ADR 0092/0093 contact records).
+ */
+export function maskEmailAddresses(text: string): string {
+  return text.replace(EMAIL_ADDRESS_SHAPE, EMAIL_ADDRESS_MASK);
+}

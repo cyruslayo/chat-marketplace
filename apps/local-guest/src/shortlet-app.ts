@@ -247,7 +247,7 @@ import type { DurableLaneEvent } from "../../../domains/shortlet/src/index.js";
 import { DEFAULT_LANE_TIMELINE_CAP, capLaneTimeline, validateLaneTimelineCap } from "./assistant/task-lanes.js";
 import { ASSISTANT_CONTROL_COPY } from "./assistant/control-copy.js";
 import { createInitialTaskState, isAssistantBudgetPer, type AssistantStayReference, type AssistantTaskState } from "./assistant/assistant-state.js";
-import { redactSensitiveData } from "../../../packages/platform-core/src/redaction.js";
+import { maskEmailAddresses, redactSensitiveData } from "../../../packages/platform-core/src/redaction.js";
 import {
   TASK_START_EVENT,
   TASK_SWITCH_EVENT,
@@ -2712,12 +2712,15 @@ export class LocalGuestApp {
    * stays domain on a thread without a runtime task list.
    */
   #pushLaneEntry(thread: GuestThreadState, entry: GuestTimelineEntry): void {
-    thread.timeline.push(entry);
+    // Issue 03n (ADR 0093, ADR 0075): every guest-visible timeline entry enters here, so the in-memory lane, the persisted
+    // projection and the lane rows all take the masked text. Contact records and the checkout handoff never use the timeline.
+    const masked: GuestTimelineEntry = { ...entry, text: maskEmailAddresses(entry.text) };
+    thread.timeline.push(masked);
     const taskId = thread.timelineTaskId;
     const seq = (thread.laneEventSeq.get(taskId) ?? 0) + 1;
     thread.laneEventSeq.set(taskId, seq);
     const domain = this.#assistantRuntime?.persistedTasksFor(thread.threadId)?.tasks.find((task) => task.taskId === taskId)?.domain ?? STAYS_DOMAIN;
-    thread.pendingLaneEvents.push({ taskId, domain, seq, role: entry.role, text: entry.text, createdAt: this.#environment.clock().toISOString() });
+    thread.pendingLaneEvents.push({ taskId, domain, seq, role: masked.role, text: masked.text, createdAt: this.#environment.clock().toISOString() });
   }
 
   #projectionFor(
@@ -3833,7 +3836,7 @@ export class LocalGuestApp {
       // Refresh paths can re-present the same outcome message (ADR-0074);
       // avoid duplicating an identical assistant message at the tail.
       const tail = thread.timeline.at(-1);
-      if (tail?.role === "assistant" && tail.text === message) continue;
+      if (tail?.role === "assistant" && tail.text === maskEmailAddresses(message)) continue;
       this.#pushLaneEntry(thread, { role: "assistant", text: message });
     }
     for (const receipt of result.receipts ?? [])

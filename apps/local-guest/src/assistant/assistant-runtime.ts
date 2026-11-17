@@ -80,7 +80,7 @@ import {
   ASSISTANT_CANCEL_ACTION_EVENT,
   pendingActionSurfaceId,
 } from "./pending-action-a2ui.js";
-import { redactSensitiveData } from "../../../../packages/platform-core/src/redaction.js";
+import { maskEmailAddresses, redactSensitiveData } from "../../../../packages/platform-core/src/redaction.js";
 
 export { ASSISTANT_CONTROL_OUTCOMES, type AssistantControlOutcome, type AssistantToolEffectCode } from "./assistant-platform.js";
 
@@ -483,7 +483,8 @@ export class AssistantRuntime {
 
   #sanitizeHistory(history: readonly AssistantConversationStep[]): AssistantConversationStep[] {
     const projected = history.map((step): AssistantConversationStep => {
-      if (step.role === "user") return { role: "user", text: redactSensitiveData(step.text) as string };
+      // Issue 03n (owner decision 2, ADR 0093): prior guest text in model history carries the masked email form.
+      if (step.role === "user") return { role: "user", text: maskEmailAddresses(redactSensitiveData(step.text) as string) };
       if (step.role === "assistant") return { role: "assistant", text: "Server reply delivered." };
       if (step.role === "tool_calls") {
         const calls = step.calls.map((call) => ({ id: call.id, name: safeAssistantToolName(call.name, this.#packs), args: redactSensitiveData(call.args) as Record<string, unknown> }));
