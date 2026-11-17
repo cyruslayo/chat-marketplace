@@ -23,7 +23,7 @@ import { PILOT_NOTIFICATIONS_SCHEMA } from "../../pilot/src/notifications/pilot-
 import { GUEST_ACCOUNT_SCHEMA } from "../../../packages/platform-core/src/accounts/authority.js";
 import { GUEST_ACCOUNT_LINK_SCHEMA } from "../../../packages/platform-core/src/accounts/links.js";
 import { GUEST_CONTACT_SCHEMA } from "../../../packages/platform-core/src/accounts/contact.js";
-import { LANE_EVENT_SCHEMA, THREAD_SESSION_SCHEMA } from "../../../domains/shortlet/src/index.js";
+import { LANE_EVENT_SCHEMA, THREAD_SESSION_SCHEMA } from "../../../packages/platform-core/src/thread-schema.js";
 import { MODEL_REQUEST_QUOTA_SCHEMA } from "../../../packages/platform-core/src/model-request-quota.js";
 
 /**
