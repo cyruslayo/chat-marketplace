@@ -172,3 +172,5 @@ The grep for `conventionalRoute`, `fallback-link`, `payments/offers`, `/payments
 - `env -u LLM_API_KEY npx tsx --test test/card-checkout-after-email.test.ts test/assistant-paystack-checkout-contact.test.ts test/assistant-cold-journey.test.ts test/timeline-email-masking.test.ts`: 24 tests, 24 pass.
 
 Working-tree note: test runs rewrote generated screenshots under `.scratch/ui-recovery/recovered/*.png`; those were already modified before this issue's work and are not committed here.
+
+- Owner, 17 Nov 2026: accepted the one-click change in the local demo checkout too (deviation 1), and the deposit-amount and textFallback changes (deviations 2 and 3). The repeated Paystack initialize after a cold restore (deviation 5) is fixed in issue 66. Orchestrator check: npm run check exit 0; 7 node files 45/45; paystack-real-browser 1/1 solo.
