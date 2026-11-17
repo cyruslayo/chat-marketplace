@@ -9,13 +9,13 @@ PRD: `PRD.md`. Line numbers come from a sweep of an earlier checkout and are app
 | 01 | A | State-machine map for agents (`docs/agents/state-machines.md`) | resolved | - |
 | 02 | A | Ratchet test keeps the map current | resolved | 01 |
 | 03 | B | `canTransition` predicate in platform-core | resolved | - |
-| 04 | B | BookingRequest: typed records (no `any`), exported status union, one delivered/deadline predicate | to write | 03 |
-| 05 | B | ConditionalOffer and Reservation unions and tables | to write | 03 |
-| 06 | B | Card session, bank transfer session, manual transfer, live attempt tables | to write | 03 |
-| 07 | B | BookingPaymentJourney stage table and one `#setStage` | to write | 03 |
-| 08 | B | One `SurfaceLifecycleStatus` (re-export from platform-core) | to write | 01 |
-| 09 | B | Exhaustive `satisfies Record` copy maps in web-agent presentation | to write | 01 |
-| 10 | B | `deriveGuestStage` projection that keeps today's per-site results, plus a matrix | to write | 01 |
+| 04 | B | BookingRequest: typed records (no `any`), exported status union, one delivered/deadline predicate | ready-for-agent | 03 |
+| 05 | B | ConditionalOffer and Reservation unions and tables | ready-for-agent | 03 |
+| 06 | B | Card session, bank transfer session, manual transfer, live attempt tables | ready-for-agent | 03 |
+| 07 | B | BookingPaymentJourney stage table and one `#setStage` | ready-for-agent | 03 |
+| 08 | B | One `SurfaceLifecycleStatus` (re-export from platform-core) | ready-for-agent | 01 |
+| 09 | B | Exhaustive `satisfies Record` copy maps in web-agent presentation | ready-for-agent | 01 |
+| 10 | B | `deriveGuestStage` projection that keeps today's per-site results, plus a matrix | ready-for-agent | 01 |
 | 11 | C | Deposit payment in processing restores as processing | resolved | - |
 | 12 | C | Unknown payment status no longer says "Booking confirmed" | to write | 09 |
 | 13 | C | Stale or revoked offer does not restore as active | resolved | - |

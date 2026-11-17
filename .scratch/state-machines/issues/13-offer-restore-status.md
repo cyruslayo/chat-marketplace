@@ -48,9 +48,9 @@ ADRs: 0074, 0106.
 
 ## Comments
 
-Status set to `resolved` after the orchestrator-approved persistence change below (pending owner review). Every AC holds. The full `npm test` is the batch gate (AGENTS.md Test scope), not run per issue.
+Status set to `resolved` after the orchestrator-approved persistence change below (owner confirmed 2026-11-18). Every AC holds. The full `npm test` is the batch gate (AGENTS.md Test scope), not run per issue.
 
-**Resolution (orchestrator approved, pending owner review).** `ConditionalOfferManager.acceptOffer` (`domains/shortlet/src/conditional-offer.ts`) now calls `this.#persistOffer(offer)` right after `offer.status = "stale"` and before the throw. Reason: a warm process already keeps the offer stale for its lifetime (the cached object is mutated). Persisting makes a cold restore match warm (ADR 0106) and keeps stale non-actionable (ADR 0074). The expired branch is unchanged.
+**Resolution (orchestrator approved; owner confirmed 2026-11-18).** `ConditionalOfferManager.acceptOffer` (`domains/shortlet/src/conditional-offer.ts`) now calls `this.#persistOffer(offer)` right after `offer.status = "stale"` and before the throw. Reason: a warm process already keeps the offer stale for its lifetime (the cached object is mutated). Persisting makes a cold restore match warm (ADR 0106) and keeps stale non-actionable (ADR 0074). The expired branch is unchanged.
 
 **Post-approval runs:**
 - `npx tsx --test test/offer-restore-status.test.ts test/guest-process-restart.test.ts test/guest-journey-rail.test.ts test/guest-offer-consistency.test.ts test/assistant-cold-journey.test.ts test/conditional-offer-token-restore.test.ts test/integrate-conditional-offer-application.test.ts test/render-conditional-offer-weaver-a2ui.test.ts test/issue-and-accept-conditional-booking-offer.test.ts`: 59 tests, 59 pass, 0 fail (AC1 now passes).
@@ -73,3 +73,4 @@ The earlier finding below is now resolved by the persistence change.
 
 **Acceptance criteria.** AC1 fails (durability gap). AC2 and AC3 pass. AC4 passes. Definition of Done item 7 (`npm test`) not run, per the per-issue scope.
 - Orchestrator review: diff read; re-ran the 9 files (59 pass) and `npm run check` (exit 0). The `#persistOffer` on stale was approved by the orchestrator, not the owner; it is called out for owner review in the batch summary. The restored stale summary keeps the existing "Conditional Booking Offer" wording (no new copy).
+- Owner decision (2026-11-18): keep the persisted stale mark. A stale offer stays stale after a restart; the guest needs a fresh offer.
