@@ -224,7 +224,8 @@ test("Real Chromium completes and persists the local Booking Request to Booking 
     await guest.waitForText("Payment handoff", 15000);
     await assertWeaverSurface(guest, "payment handoff");
     const continued = await guest.evaluate<boolean>(`(() => { const link=[...document.querySelectorAll('a')].find((candidate)=>candidate.getAttribute('href')?.includes('/payments/offers/')); if (!(link instanceof HTMLAnchorElement)) return false; link.click(); return true; })()`); assert.equal(continued, true);
-    await guest.waitForText("Continue to local demo payment", 15000); const localContinuation = await guest.evaluate<boolean>(`(() => { const link=[...document.querySelectorAll('a')].find((candidate)=>candidate.textContent?.includes('Continue to local demo payment')); if (!(link instanceof HTMLAnchorElement)) return false; link.click(); return true; })()`); assert.equal(localContinuation, true);
+    // Issue 65: the chat link now runs /continue, which opens the local demo checkout directly (one click).
+    await guest.waitForText("Local demo payment", 15000);
     await guest.waitForText("Local demo payment", 15000); assert.equal(await guest.clickButton("Complete local payment"), true);
     try { await guest.waitForText("Booking confirmed", 15000); } catch (error) { throw new Error(await guest.evaluate<string>("document.getElementById('active-workspace')?.innerText || document.body.innerText"), { cause: error }); }
     const confirmedText = await guest.evaluate<string>("document.body.innerText"); assert.match(confirmedText, /Booking confirmed[\s\S]*Reservation confirmed/);
@@ -386,8 +387,8 @@ for (const width of [320, 390]) test(`AC${width === 320 ? 26 : 27} — ${width}p
     await guest.waitForText("Continue to stay payment", 15000); const workspace = await guest.evaluate<string>("location.href");
     const emailStatus = await guest.evaluate<number>(`fetch('/guest/contact/email',{method:'POST',headers:{'content-type':'application/x-www-form-urlencoded'},body:new URLSearchParams({contactEmail:${JSON.stringify(`mobile.${width}@example.test`)},expectedRevision:'1'}),redirect:'manual'}).then((response)=>response.status)`); assert.equal(emailStatus, 0);
     await guest.navigate(workspace); await guest.waitForText("Continue to stay payment", 15000); await clickActiveButton(guest, "Continue to stay payment"); await guest.waitForText("Payment handoff", 15000);
-    const standard = await guest.evaluate<string>(`[...document.querySelectorAll('a')].find((link)=>link.getAttribute('href')?.includes('/payments/offers/'))?.href || ''`); assert.ok(standard); await guest.navigate(standard); await guest.waitForText("Continue to local demo payment", 15000);
-    const local = await guest.evaluate<string>(`[...document.querySelectorAll('a')].find((link)=>link.textContent?.includes('Continue to local demo payment'))?.href || ''`); assert.ok(local); await guest.navigate(local); await guest.waitForText("Local demo payment", 15000); assert.equal(await guest.clickButton("Complete local payment"), true); await guest.waitForText("Booking confirmed", 15000);
+    const standard = await guest.evaluate<string>(`[...document.querySelectorAll('a')].find((link)=>link.getAttribute('href')?.includes('/payments/offers/'))?.href || ''`); assert.ok(standard); await guest.navigate(standard); await guest.waitForText("Local demo payment", 15000); // Issue 65: /continue opens the local checkout
+    assert.equal(await guest.clickButton("Complete local payment"), true); await guest.waitForText("Booking confirmed", 15000);
     const metrics = await guest.evaluate<{ viewport: number; document: number; reservation: boolean }>(`({viewport:innerWidth,document:document.documentElement.scrollWidth,reservation:document.body.innerText.includes('Booking confirmed')})`);
     const database = new DatabaseSync(paths.databasePath, { readOnly: true });
     try {

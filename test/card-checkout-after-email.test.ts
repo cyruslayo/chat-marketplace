@@ -82,8 +82,9 @@ test("Following that control after the email save, and then following the direct
       const again = await environment.cardPaymentApp.initializePaystackCheckout(offerId, environment.guestPrincipal(), environment.payments);
       assert.equal(again.pspReference, first.pspReference, "the restored continue control reuses the same Live Payment Attempt");
       assert.equal(again.checkoutId, first.checkoutId, "no second checkout session is created");
-      // The restored session keeps no checkout URL (the durable store omits it), so the restored call re-initializes the same reference.
-      assert.deepEqual([...new Set(initializeReferences(fake.requests))], [first.pspReference], "every Paystack initialize call carries the one session reference");
+      // Known gap (Comments, finding): the durable store keeps no checkout URL, so the restored call initializes the same reference again.
+      // The attempt, its reference and its checkout id are unchanged. Pinned here so a fix shows up as a deliberate change.
+      assert.deepEqual(initializeReferences(fake.requests), [first.pspReference, first.pspReference], "the restored continue re-initializes the same reference and no other");
     } finally {
       restarted.close();
     }
@@ -102,19 +103,26 @@ test("The response carries no Paystack URL; the redirect comes only from /contin
   } finally { h.f.close(); }
 });
 
-test("The standalone payment page still shows its own continue button and posts the no-JS card choice through /continue (no-JS path unchanged)", async () => {
+test("The standalone payment page still shows Continue to hosted card checkout (no-JS path unchanged)", async () => {
   const page = await guestPaymentPage({ localPayment: false });
   try {
-    const response = await page.get(page.paymentPage);
-    assert.equal(response.status, 200);
-    const html = await response.text();
-    const text = visibleText(html);
-    assert.match(text, /Hosted card checkout\./, "the standalone page offers the hosted card method");
-    assert.match(text, /Continue to stay payment/, "the standalone page keeps its own continue button");
-    assert.match(html, new RegExp(`<form method="post" action="${page.paymentPage}"`), "the standalone button posts to the offer's payment page");
+    // Ready offer, no attempt yet: the page offers the method form, and its card choice redirects through /continue (no JS).
+    const ready = await page.get(page.paymentPage);
+    assert.equal(ready.status, 200);
+    const readyHtml = await ready.text();
+    assert.match(visibleText(readyHtml), /Hosted card checkout\./, "the ready page offers the hosted card method");
+    assert.match(readyHtml, new RegExp(`<form method="post" action="${page.paymentPage}"`), "the ready page's form posts to the offer's payment page");
     const posted = await page.post(page.paymentPage, { method: "card" });
     assert.equal(posted.status, 303, "the no-JS card choice redirects");
     assert.equal(posted.headers.get("location"), `${page.paymentPage}/continue`, "the no-JS redirect goes through /continue");
+
+    // A checkout attempt exists (the state after the chat hands off): the page's single link is Continue to hosted card checkout.
+    page.env.cardPaymentApp.initializeCheckout(page.offerId, page.env.guestPrincipal());
+    const started = await page.get(page.paymentPage);
+    assert.equal(started.status, 200);
+    const startedHtml = await started.text();
+    assert.match(visibleText(startedHtml), /Continue to hosted card checkout/, "the standalone page shows Continue to hosted card checkout");
+    assert.match(startedHtml, new RegExp(`<a class="ui-button ui-button--primary ui-button--block" href="${page.paymentPage}/continue">Continue to hosted card checkout</a>`), "that link goes through /continue");
   } finally { await page.close(); }
 });
 

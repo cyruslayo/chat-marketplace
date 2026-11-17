@@ -142,3 +142,33 @@ ADR table (read in full: 0087, 0044, 0046, 0074, 0077, 0080, 0093, 0106):
 5. No invented policy string: the message is the existing direct-path text, moved to one constant.
 6. No credential or restricted material in logs or audit: the helper emits the existing transitions with the offer and checkout ids only, as before.
 7. `npm run check`: zero errors. Full `npm test` is the batch gate, not run per issue.
+
+### Follow-up after review (agent, 17 Nov 2026)
+
+- AC5 deviation withdrawn. The literal "Continue to hosted card checkout" does appear on the standalone page once a checkout attempt exists (`checkout_initiated`, `apps/local-guest/src/guest-server.ts` around line 4302, `localPayment` false): the single link is `href="/payments/offers/<id>/continue"`. The earlier "Deviation" paragraph is superseded. Test 5 is titled as the criterion again and asserts the literal and its `/continue` href. The ready-offer method form and its no-JS 303 to `/continue` are asserted too, in the same test.
+- Test 3 (AC3) no longer dedupes. It asserts the exact list of Paystack initialize references: `[ref, ref]` (the email-path continue, then the cold-restored continue). Reading `paystack.ts`: `reference_conflict` is raised only for a malformed reference or a response that returns a different reference. A repeated identical reference is not a conflict in our code. How Paystack itself answers a repeated reference is not verified offline; if it refuses one, `/continue` fails closed with `provider_rejected` and no second attempt is created.
+- Amount fallback (outside the two owner decisions, listed as a deviation): the shared helper uses the email path's fallback, so a direct-path checkout with a deposit and no `currentComponentAmountKobo` now shows the deposit amount instead of the stay total. Only that edge case changes.
+- Reach beyond the email path. `#handleCardCheckout` also serves every `initialize-checkout` event when Paystack is not wired (local demo mode, `shortlet-app.ts` case near line 1621). So the chat link changed in local mode too: it now runs `/continue`, which opens the local demo checkout (`/payments/local/checkout`) in one click. This is the owner's one-click decision applied to the local path; no separate local route was kept.
+- Deliberate test change: `test/pilot-local.test.ts` (two local-payment journeys: the first around line 226, the AC26/AC27 journeys around line 388). They expected the chat link to open the standalone page, then click "Continue to local demo payment". With the change they wait for "Local demo payment" after the chat link (or the link that now targets `/continue`). Before the change `pilot-local` on the pre-change source passed 44 of 44 (run against HEAD source, then restored); on the change it failed 15 (first error: timeout waiting for "Continue to local demo payment"); after the test update it passes 44 of 44.
+- Pre-existing environment failure, not caused by the change: `test/guest-request-handler.test.ts` test "ADR 0101: a handler composed with commerce locally creates the commerce tables and ledger rows" fails in a plain run (`COMMERCE_REFERENCE_HMAC_KEY ... must be set`). Solo with `NODE_ENV=test COMMERCE_REFERENCE_TEST_KEY=allow` the file passes 9 of 9. Commerce composition, untouched by this issue.
+
+### Wider coverage run (agent, 17 Nov 2026)
+
+The grep for `conventionalRoute`, `fallback-link`, `payments/offers`, `/payments/local`, handoff wording, `initialize-checkout`, `card-payment`, the continue-label strings and the journey helper importers gave 140 files. Two are Worker specs, 15 are real-Chrome (both groups below).
+
+- Node files, plain runs (`env -u LLM_API_KEY npx tsx --test <files>`, in 5 chunks; 123 files):
+  - chunk 00: 334 tests, 334 pass.
+  - chunk 01: 200 tests, 200 pass.
+  - chunk 02: 135 tests, 134 pass, 1 fail (commerce key precondition above; passes solo with the test-only setting, 9 of 9).
+  - chunk 03: 234 tests, 234 pass.
+  - chunk 04: 30 tests, 30 pass.
+- Real Chrome, one at a time, solo: `test/guest-offer-payment-clarity-chromium.test.ts` 1 of 1; `test/guest-real-browser-cross-tab.test.ts` 14 of 14; `test/mobile-guest-journey-chromium.test.ts` 43 of 43 (about 3 minutes); `test/guest-cross-tab-concurrency.test.ts` 18 of 18; `test/paystack-real-browser.test.ts` 1 of 1; `test/pilot-local.test.ts` 44 of 44 after the deliberate update (see above).
+- Real-Chrome files with no payment-handoff reference were not run (confirmation, phone shell, sign-in offer, split workspace, unit detail, manual-transfer copy, weaver failure, criteria strip): the issue does not change those screens.
+- Worker specs (`env -u LLM_API_KEY npm run test:workers -- apps/cloudflare/test/demo-extended-stay.spec.ts apps/cloudflare/test/later-period-payments.spec.ts`): 2 files, 4 of 4 pass (from the earlier run; unchanged since).
+
+### Commands re-run after the follow-up (agent, 17 Nov 2026)
+
+- `env -u LLM_API_KEY npm run check`: exit 0.
+- `env -u LLM_API_KEY npx tsx --test test/card-checkout-after-email.test.ts test/assistant-paystack-checkout-contact.test.ts test/assistant-cold-journey.test.ts test/timeline-email-masking.test.ts`: 24 tests, 24 pass.
+
+Working-tree note: test runs rewrote generated screenshots under `.scratch/ui-recovery/recovered/*.png`; those were already modified before this issue's work and are not committed here.
