@@ -9422,7 +9422,7 @@ Known schemas:
     const announce2 = () => {
       announcer2.textContent = counter.textContent;
     };
-    const settle = () => {
+    const settle2 = () => {
       pendingIndex = null;
       announce2();
     };
@@ -9430,7 +9430,7 @@ Known schemas:
     track.addEventListener("scroll", () => {
       current = clampIndex(Math.round(track.scrollLeft / Math.max(1, track.clientWidth)));
       show(current);
-      if (pendingIndex !== null && Math.abs(track.scrollLeft - pendingIndex * track.clientWidth) < SCROLL_SETTLE_TOLERANCE_PX) settle();
+      if (pendingIndex !== null && Math.abs(track.scrollLeft - pendingIndex * track.clientWidth) < SCROLL_SETTLE_TOLERANCE_PX) settle2();
     }, { passive: true });
     track.addEventListener("scrollend", () => {
       if (pendingIndex === null) announce2();
@@ -10423,6 +10423,41 @@ Known schemas:
   function refreshThemeColourOnSchemeChange(root, metas, readTint) {
     if (root.dataset.theme !== "system") return;
     writeThemeColour(metas, readTint);
+  }
+
+  // apps/local-guest/src/mode-switch-transition.ts
+  var MODE_SWITCH_TYPE = "mode-switch";
+  function modeSwitchChanges(currentModeId, value) {
+    const mode = readResponseMode(value);
+    return mode !== void 0 && mode.id !== currentModeId;
+  }
+  function runModeSwitch(update, environment) {
+    if (environment.start === void 0 || environment.reducedMotion || environment.transitionRunning) {
+      update();
+      return "instant";
+    }
+    const start = environment.start;
+    try {
+      settle(start({ update, types: [MODE_SWITCH_TYPE] }));
+      return "typed";
+    } catch {
+    }
+    try {
+      settle(start(update));
+      return "untyped";
+    } catch {
+    }
+    update();
+    return "instant";
+  }
+  function settle(transition) {
+    if (typeof transition !== "object" || transition === null) return;
+    for (const key3 of ["finished", "ready", "updateCallbackDone"]) {
+      const promise = transition[key3];
+      if (typeof promise === "object" && promise !== null && typeof promise.then === "function") {
+        promise.then(void 0, () => void 0);
+      }
+    }
   }
 
   // apps/local-guest/src/mode-choice.ts
@@ -11888,13 +11923,27 @@ Known schemas:
   window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
     refreshThemeColourOnSchemeChange(document.documentElement, themeColourMetas(), readModeTint);
   });
+  function modeSwitchEnvironment() {
+    const running = document.activeViewTransition;
+    return {
+      start: typeof document.startViewTransition === "function" ? (options) => Reflect.apply(document.startViewTransition, document, [options]) : void 0,
+      reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+      transitionRunning: running !== void 0 && running !== null
+    };
+  }
+  var holdModeSwitchForFirstMessage = false;
   function applyResponseMode(response) {
-    appliedMode = readResponseMode(response.mode) ?? appliedMode;
+    const committed = readResponseMode(response.mode);
+    appliedMode = committed ?? appliedMode;
     modeAnnouncements.applyResponse(response.mode);
-    applyResponseModeAndThemeColour(document.documentElement, themeColourMetas(), readModeTint, response.mode);
-    if (previewDomain === void 0) renderEmptyCopy(appliedMode);
-    syncModeMark();
-    renderModeStrip();
+    const update = () => {
+      if (committed !== void 0 && appliedMode.id === committed.id) applyResponseModeAndThemeColour(document.documentElement, themeColourMetas(), readModeTint, committed);
+      if (previewDomain === void 0) renderEmptyCopy(appliedMode);
+      syncModeMark();
+      renderModeStrip();
+    };
+    if (committed !== void 0 && !holdModeSwitchForFirstMessage && modeSwitchChanges(document.documentElement.dataset.mode, committed)) runModeSwitch(update, modeSwitchEnvironment());
+    else update();
   }
   var AGENT_MARK_POP_MS = 400;
   var agentMarkState = "idle";
@@ -12791,7 +12840,13 @@ Known schemas:
     void commitPreviewThenSend(start, text);
   }
   async function commitPreviewThenSend(start, text) {
-    const ok = await sendTaskEvent(TASK_START_EVENT, { domain: start.domain }, "switcher");
+    holdModeSwitchForFirstMessage = true;
+    let ok;
+    try {
+      ok = await sendTaskEvent(TASK_START_EVENT, { domain: start.domain }, "switcher");
+    } finally {
+      holdModeSwitchForFirstMessage = false;
+    }
     previewDomain = void 0;
     if (!ok || appliedMode.id !== start.presentation.id) {
       renderEmptyCopy(appliedMode);

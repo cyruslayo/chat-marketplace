@@ -491,6 +491,17 @@
     @keyframes agent-mark-switch { from { opacity: 0; } to { opacity: 1; } }
     /* The page snaps; only the shared mark group glides from the hero to the app bar (ADR 0107 decision 9). */
     ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+    /* Issue 03j (ADR 0107 decision 7): a confirmed mode switch only, typed mode-switch. Owner, 17 Nov 2026. The transcript cross-fades over
+       --duration-base with --ease-standard; the app bar, the composer and the persona keep their place (they are named, never moved). */
+    @keyframes mode-switch-fade-in { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes mode-switch-fade-out { from { opacity: 1; } to { opacity: 0; } }
+    :root:active-view-transition-type(mode-switch)::view-transition-old(root) { animation: mode-switch-fade-out var(--duration-base) var(--ease-standard) both; }
+    :root:active-view-transition-type(mode-switch)::view-transition-new(root) { animation: mode-switch-fade-in var(--duration-base) var(--ease-standard) both; }
+    :root:active-view-transition-type(mode-switch) .ui-appbar { view-transition-name: app-bar; }
+    :root:active-view-transition-type(mode-switch) form#composer { view-transition-name: composer; }
+    :root:active-view-transition-type(mode-switch) .mode-mark { view-transition-name: persona; }
+    :root:active-view-transition-type(mode-switch)::view-transition-group(app-bar), :root:active-view-transition-type(mode-switch)::view-transition-group(composer), :root:active-view-transition-type(mode-switch)::view-transition-group(persona) { animation-duration: 0s; }
+    :root:active-view-transition-type(mode-switch)::view-transition-old(app-bar), :root:active-view-transition-type(mode-switch)::view-transition-new(app-bar), :root:active-view-transition-type(mode-switch)::view-transition-old(composer), :root:active-view-transition-type(mode-switch)::view-transition-new(composer), :root:active-view-transition-type(mode-switch)::view-transition-old(persona), :root:active-view-transition-type(mode-switch)::view-transition-new(persona) { animation: none; }
   }
   /* Commerce offer card (ADR 0078): the title sits under the card padding, not under the browser's default heading margin. */
   .ui-panel[data-commerce-offer] > h2 { margin-block-start: 0; }

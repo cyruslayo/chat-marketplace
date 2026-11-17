@@ -114,8 +114,8 @@ test("AC6: A user action never writes the meta: the client calls the write once,
   const endOfBody = body.indexOf("\n}\n");
   assert.match(
     body.slice(0, endOfBody),
-    /applyResponseModeAndThemeColour\(document\.documentElement, themeColourMetas\(\), readModeTint, response\.mode\);/,
-    "the one call is inside applyResponseMode, fed the response's mode",
+    /applyResponseModeAndThemeColour\(document\.documentElement, themeColourMetas\(\), readModeTint, committed\);/,
+    "the one call is inside applyResponseMode, fed the response's validated mode when the update runs (issue 03j)",
   );
   // A repeat of the same mode id is not a change, so the tint is not read and the meta is not rewritten.
   const root = { dataset: { mode: "shop", theme: "system" } as Record<string, string | undefined> };

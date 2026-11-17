@@ -44,6 +44,7 @@ import {
   refreshThemeColourOnSchemeChange,
   type ThemeColourMeta,
 } from "./response-mode.js";
+import { modeSwitchChanges, runModeSwitch, type ModeSwitchEnvironment } from "./mode-switch-transition.js";
 import { chooseModes, markIsControl, showsModeChooser, startBeforeTurn, type ModeChoice } from "./mode-choice.js";
 import { createModeAnnouncements } from "./mode-announcement.js";
 import { LaneCache, planSwitch, serverRowsMatch, type SwitchOrigin, type SwitchPlan } from "./lane-cache.js";
@@ -1581,17 +1582,44 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () 
   refreshThemeColourOnSchemeChange(document.documentElement, themeColourMetas(), readModeTint);
 });
 
+/**
+ * Issue 03j: the mode-switch transition's environment. Feature-detected: no View Transitions API means an instant update. A switch never
+ * starts over a running transition.
+ */
+function modeSwitchEnvironment(): ModeSwitchEnvironment {
+  const running = (document as unknown as { activeViewTransition?: unknown }).activeViewTransition;
+  return {
+    start: typeof document.startViewTransition === "function"
+      ? (options: unknown) => Reflect.apply(document.startViewTransition, document, [options])
+      : undefined,
+    reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+    transitionRunning: running !== undefined && running !== null,
+  };
+}
+
+// Issue 03j: set while a first message commits a previewed mode. The switch then stays instant, so the hero transition runs as before.
+let holdModeSwitchForFirstMessage = false;
+
 function applyResponseMode(response: GuestResponse): void {
-  appliedMode = readResponseMode(response.mode) ?? appliedMode;
+  // Issue 03j: the mode this response validated, or undefined. An absent or malformed mode writes nothing (ADR 0107 decision 6).
+  const committed = readResponseMode(response.mode);
+  appliedMode = committed ?? appliedMode;
   // Issue 03l (ADR 0107 decision 7): a committed switch is held for the polite announcer; the first response is never a switch.
   modeAnnouncements.applyResponse(response.mode);
-  // Issue 03c (ADR 0107 decision 6): the document's data-mode follows the validated response, never a user action or the DOM.
-  // Issue 03k (ADR 0107 decision 2): the browser theme colour follows the same validated response, and only when the id changed.
-  applyResponseModeAndThemeColour(document.documentElement, themeColourMetas(), readModeTint, response.mode);
-  // Issue 03g: with no preview pending, the empty copy and the strip follow the committed mode.
-  if (previewDomain === undefined) renderEmptyCopy(appliedMode);
-  syncModeMark();
-  renderModeStrip();
+  // Issue 03j: the DOM part of the response's mode is one update. A confirmed switch (the validated id differs from data-mode) runs it
+  // through the feature-detected transition; anything else runs it at once. The update writes only when this response's mode is still
+  // the committed one, so an earlier update still pending can never overwrite a later switch.
+  const update = (): void => {
+    // Issue 03c (ADR 0107 decision 6): the document's data-mode follows the validated response, never a user action or the DOM.
+    // Issue 03k (ADR 0107 decision 2): the browser theme colour follows the same validated response, and only when the id changed.
+    if (committed !== undefined && appliedMode.id === committed.id) applyResponseModeAndThemeColour(document.documentElement, themeColourMetas(), readModeTint, committed);
+    // Issue 03g: with no preview pending, the empty copy and the strip follow the committed mode.
+    if (previewDomain === undefined) renderEmptyCopy(appliedMode);
+    syncModeMark();
+    renderModeStrip();
+  };
+  if (committed !== undefined && !holdModeSwitchForFirstMessage && modeSwitchChanges(document.documentElement.dataset.mode, committed)) runModeSwitch(update, modeSwitchEnvironment());
+  else update();
 }
 
 // Issue 01b (ADR 0107 decision 9): the Agent Mark follows signals the shell already has. The state is never persisted (ADR 0106), so
@@ -2741,7 +2769,13 @@ function startTurn(text: string): void {
 }
 
 async function commitPreviewThenSend(start: ModeChoice, text: string): Promise<void> {
-  const ok = await sendTaskEvent(TASK_START_EVENT, { domain: start.domain }, "switcher");
+  holdModeSwitchForFirstMessage = true;
+  let ok: boolean;
+  try {
+    ok = await sendTaskEvent(TASK_START_EVENT, { domain: start.domain }, "switcher");
+  } finally {
+    holdModeSwitchForFirstMessage = false;
+  }
   previewDomain = undefined;
   if (!ok || appliedMode.id !== start.presentation.id) {
     renderEmptyCopy(appliedMode);
