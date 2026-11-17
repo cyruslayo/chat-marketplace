@@ -46,7 +46,7 @@ import {
 } from "./response-mode.js";
 import { chooseModes, markIsControl, showsModeChooser, startBeforeTurn, type ModeChoice } from "./mode-choice.js";
 import { createModeAnnouncements } from "./mode-announcement.js";
-import { LaneCache, planSwitch, timelinesEqual, type SwitchOrigin, type SwitchPlan } from "./lane-cache.js";
+import { LaneCache, planSwitch, serverRowsMatch, type SwitchOrigin, type SwitchPlan } from "./lane-cache.js";
 import { nextAgentMarkState, type AgentMarkEvent, type AgentMarkState } from "./agent-mark-state.js";
 import {
   breakdownHtml,
@@ -2313,10 +2313,9 @@ function createLaneElement(): HTMLElement {
   return lane;
 }
 
-/** Issue 03i: every new turn, marker or choice goes to the visible lane and marks it as changed since the server's last timeline. */
+/** Issue 03i: every new turn, marker or choice goes to the visible lane. */
 function appendToLane(node: Node): void {
   activeLane.appendChild(node);
-  activeLane.dataset.dirty = "true";
 }
 
 /** Issue 03i (ADR 0107 decision 11): a switch's history step replaces the entry; it never pushes one. */
@@ -2429,18 +2428,34 @@ async function loadVisibleLane(taskId: string, restoreTop?: number): Promise<voi
     if (!response.ok || response.timeline === undefined || activeLaneId !== taskId) return;
     const rows = response.timeline;
     const cached = laneCache.peek(taskId);
-    const unchanged = cached !== undefined && activeLane.dataset.dirty !== "true" && timelinesEqual(cached.rows, rows);
+    // Owner decision (17 Nov 2026): a lane whose server lines still match is kept as rendered, with the guest's own lines. On any
+    // mismatch the server wins and the rendered lane is rebuilt from the server's timeline.
+    const kept = cached !== undefined && serverRowsMatch(cached.rows, rows);
     laneCache.remember(taskId, { rows });
-    if (!unchanged) {
+    if (!kept) {
       withoutLiveAnnouncement(() => {
         activeLane.replaceChildren();
         for (const entry of rows) addTimelineEntry(entry);
       });
-      activeLane.dataset.dirty = "false";
     }
     if (restoreTop !== undefined) restoreLaneScroll(restoreTop, window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "auto");
   } catch {
     /* The lane stays as the cache showed it; the next switch asks again. */
+  }
+}
+
+/**
+ * Owner decision (17 Nov 2026): after a turn, the server's lines for the visible lane become the baseline a later switch compares
+ * against. The lane is not re-rendered here, so the guest's own lines stay as they are.
+ */
+async function refreshLaneRows(): Promise<void> {
+  const taskId = activeLaneId;
+  if (taskId === undefined) return;
+  try {
+    const response = (await postJson(`/api/state?threadId=${encodeURIComponent(threadId)}`)) as GuestStateResponse;
+    if (response.ok && response.timeline !== undefined && activeLaneId === taskId) laneCache.remember(taskId, { rows: response.timeline });
+  } catch {
+    /* The next switch compares against the last baseline; a mismatch falls back to the server. */
   }
 }
 
@@ -3220,6 +3235,7 @@ async function sendTurn(text: string): Promise<void> {
   turnCancel.addEventListener("click", stop);
   try {
     if (renderResponse(await postJson("/api/turn", { threadId, text }, CLIENT_TURN_TIMEOUT_MS, cancel.signal))) {
+      await refreshLaneRows();
       if (composerInput.value.trim() === text) composerInput.value = "";
     }
   } catch {
@@ -3426,10 +3442,7 @@ async function restoreServerState(): Promise<boolean> {
     for (const entry of response.timeline ?? []) addTimelineEntry(entry);
     renderTaskRail(response.tasks);
     // Issue 03i: the restored lane's rows are the server's; a later switch back compares against them.
-    if (activeLaneId !== undefined) {
-      laneCache.remember(activeLaneId, { rows: response.timeline ?? [] });
-      activeLane.dataset.dirty = "false";
-    }
+    if (activeLaneId !== undefined) laneCache.remember(activeLaneId, { rows: response.timeline ?? [] });
     renderJourney(response.journey);
     renderCriteria(response.criteria);
     renderSurfaces(response.surfaces ?? []);

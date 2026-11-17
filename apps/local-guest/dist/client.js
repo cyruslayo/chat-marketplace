@@ -10570,6 +10570,12 @@ Known schemas:
     if (a.length !== b.length) return false;
     return a.every((row, index) => row.role === b[index]?.role && row.text === b[index]?.text);
   }
+  function serverRowsMatch(cachedServerRows, serverRows) {
+    return timelinesEqual(serverSourced(cachedServerRows), serverSourced(serverRows));
+  }
+  function serverSourced(rows) {
+    return rows.filter((row) => row.role !== "user");
+  }
 
   // apps/local-guest/src/agent-mark-state.ts
   var BUSY_STATES = ["thinking", "working", "responding"];
@@ -12436,7 +12442,6 @@ Known schemas:
   }
   function appendToLane(node) {
     activeLane.appendChild(node);
-    activeLane.dataset.dirty = "true";
   }
   function replaceHistoryEntry() {
     try {
@@ -12523,16 +12528,24 @@ Known schemas:
       if (!response.ok || response.timeline === void 0 || activeLaneId !== taskId) return;
       const rows = response.timeline;
       const cached = laneCache.peek(taskId);
-      const unchanged = cached !== void 0 && activeLane.dataset.dirty !== "true" && timelinesEqual(cached.rows, rows);
+      const kept = cached !== void 0 && serverRowsMatch(cached.rows, rows);
       laneCache.remember(taskId, { rows });
-      if (!unchanged) {
+      if (!kept) {
         withoutLiveAnnouncement(() => {
           activeLane.replaceChildren();
           for (const entry of rows) addTimelineEntry(entry);
         });
-        activeLane.dataset.dirty = "false";
       }
       if (restoreTop !== void 0) restoreLaneScroll(restoreTop, window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "auto");
+    } catch {
+    }
+  }
+  async function refreshLaneRows() {
+    const taskId = activeLaneId;
+    if (taskId === void 0) return;
+    try {
+      const response = await postJson(`/api/state?threadId=${encodeURIComponent(threadId)}`);
+      if (response.ok && response.timeline !== void 0 && activeLaneId === taskId) laneCache.remember(taskId, { rows: response.timeline });
     } catch {
     }
   }
@@ -13228,6 +13241,7 @@ Known schemas:
     turnCancel.addEventListener("click", stop);
     try {
       if (renderResponse(await postJson("/api/turn", { threadId, text }, CLIENT_TURN_TIMEOUT_MS, cancel.signal))) {
+        await refreshLaneRows();
         if (composerInput.value.trim() === text) composerInput.value = "";
       }
     } catch {
@@ -13415,10 +13429,7 @@ Known schemas:
       if ((!response.timeline || response.timeline.length === 0) && !(response.tasks && response.tasks.length > 1)) return false;
       for (const entry of response.timeline ?? []) addTimelineEntry(entry);
       renderTaskRail(response.tasks);
-      if (activeLaneId !== void 0) {
-        laneCache.remember(activeLaneId, { rows: response.timeline ?? [] });
-        activeLane.dataset.dirty = "false";
-      }
+      if (activeLaneId !== void 0) laneCache.remember(activeLaneId, { rows: response.timeline ?? [] });
       renderJourney(response.journey);
       renderCriteria(response.criteria);
       renderSurfaces(response.surfaces ?? []);

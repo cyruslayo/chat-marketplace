@@ -157,3 +157,16 @@ export function timelinesEqual(a: readonly LaneRow[], b: readonly LaneRow[]): bo
   if (a.length !== b.length) return false;
   return a.every((row, index) => row.role === b[index]?.role && row.text === b[index]?.text);
 }
+
+/**
+ * Owner decision (17 Nov 2026): after a switch, a lane whose server-sourced lines are unchanged is kept as rendered, so the guest's own
+ * lines stay. The guest's lines are not part of the server timeline and are ignored here. Any other difference is a mismatch, and the
+ * server wins. Nothing is stored for this comparison.
+ */
+export function serverRowsMatch(cachedServerRows: readonly LaneRow[], serverRows: readonly LaneRow[]): boolean {
+  return timelinesEqual(serverSourced(cachedServerRows), serverSourced(serverRows));
+}
+
+function serverSourced(rows: readonly LaneRow[]): readonly LaneRow[] {
+  return rows.filter((row) => row.role !== "user");
+}

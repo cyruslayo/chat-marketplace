@@ -135,3 +135,25 @@ Each is its own `test()` in `test/agent-mode-lane-cache.test.ts` (new), except A
 **Not covered.** A refused switch has no test. The code path reverts the lane and refreshes state. A chip-driven switch is covered only by the pure rule. The batch `npm test` and `npm run test:workers` were not run, per Test scope.
 
 **Status.** Resolved, per the brief. The open finding above is for the owner before merge to main.
+
+### Owner decision and fix (17 Nov 2026, issue 03i open finding)
+
+**Decision.** On a switch, when the server's timeline for a lane equals the cached lane's server-sourced lines (guest lines ignored) in order, the lane is kept as rendered, including the guest's own lines. Only what the server changed outside the transcript is refreshed: surfaces, quick replies and actions stay server-current, and a cached action is never re-enabled (Retry and quick replies are still removed when a lane is left). On any mismatch the server wins and the rendered lane is rebuilt, which drops the cached guest lines. Nothing new is stored on the server or in browser storage. A reload still shows replies only.
+
+**Implementation.**
+- `apps/local-guest/src/lane-cache.ts`: `serverRowsMatch(cachedServerRows, serverRows)` compares the rows with `role` "user" removed, in order. It reuses `timelinesEqual`.
+- `apps/local-guest/src/client.ts`: `loadVisibleLane` keeps the rendered lane when `serverRowsMatch` is true and rebuilds it otherwise. The `dirty` flag is removed, because it forced a rebuild on every lane that had a guest line. `refreshLaneRows()` runs after each successful turn and sets the lane's server baseline, without re-rendering. Without it, a lane first seen at search time would have no baseline and would always rebuild.
+
+**Red runs (before the fix).**
+- Node: `npx tsx --test test/agent-mode-lane-cache.test.ts`, before `serverRowsMatch` existed: `SyntaxError: ... does not provide an export named 'serverRowsMatch'`, tests 1, pass 0, fail 1.
+- Chrome, on the committed bundle (before the fix): `npx tsx --test test/agent-mode-lane-cache-chromium.test.ts --test-name-pattern="Owner decision"`: the guest's line is missing after the round trip, `guestLines` 0, expected 1. The assertion ran, so the red is the feature failing, not a harness fault. The first attempt at this test had a wait on the first user turn only, which timed out; that was a test bug and was fixed before the red run was recorded.
+
+**Green runs (after the fix).**
+- Node, new file: `npx tsx --test test/agent-mode-lane-cache.test.ts`: tests 14, pass 14, fail 0. The two new ones are "Owner decision, match" (guest lines kept, empty lane matches) and "Owner decision, mismatch" (server wins, guest lines dropped).
+- Chrome, owner test: pass 1 of 1, in the lane file.
+- `npm run check`: exit 0.
+- Node set (the listed set, the new file, and the wider set from the earlier report): tests 127, pass 126, fail 0, skipped 1 (the same pre-existing skip in `shortlet-ui-foundations`).
+- Chrome, solo, one after another: `test/agent-mode-lane-cache-chromium.test.ts`: pass 3, fail 0 (AC10, AC1 and AC3, and the owner test). `test/agent-mode-sheet-chromium.test.ts`: pass 5, fail 0. `test/agent-mode-theme-color-chromium.test.ts`: pass 2, fail 0.
+- Build: `npm run build` (with `env -u LLM_API_KEY`). Unrelated output restored with `git checkout --` (`apps/cloudflare/public/_headers`, `dist/gallery.js`, `landing.js`, `offer.js`, `payment.js`). Only `dist/client.js` is committed.
+
+**Limits.** The rule keeps the rendered lane whenever the server's non-guest lines match. A rendered line that the server never recorded (for example a refusal message appended on the switch response) is kept too, and it is not in the server timeline. This follows the owner's rule as written.

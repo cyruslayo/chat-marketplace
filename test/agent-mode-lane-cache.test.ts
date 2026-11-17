@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { LANE_CACHE_LIMIT, LaneCache, planSwitch, timelinesEqual } from "../apps/local-guest/src/lane-cache.js";
+import { LANE_CACHE_LIMIT, LaneCache, planSwitch, serverRowsMatch, timelinesEqual } from "../apps/local-guest/src/lane-cache.js";
 
 // Issue 03i (ADR 0107 decision 11, analysis 5.5 and 11.5): the client keeps each visited lane in memory with its scroll position.
 // The cache is a pure module; the client keeps only DOM glue. The server response stays the authority for every lane.
@@ -119,4 +119,20 @@ test("timelinesEqual compares the server's role and text in order", () => {
   assert.equal(timelinesEqual(a, [{ role: "user", text: "hi" }, { role: "assistant", text: "hello" }]), true);
   assert.equal(timelinesEqual(a, [{ role: "assistant", text: "hello" }, { role: "user", text: "hi" }]), false);
   assert.equal(timelinesEqual(a, [{ role: "user", text: "hi" }]), false);
+});
+
+// Owner decision (17 Nov 2026): on a switch, a lane whose server-sourced lines still match is kept as rendered, guest lines included.
+test("Owner decision, match: when the server's lines equal the cached server lines in order, the lane is kept as rendered and the guest's own lines stay", () => {
+  const cached = [{ role: "assistant", text: "I found 1 matching stay" }];
+  assert.equal(serverRowsMatch(cached, [{ role: "assistant", text: "I found 1 matching stay" }]), true, "the server lines match, so the rendered lane (with the guest's lines) is kept");
+  const withGuest = [{ role: "user", text: "Ikoyi for 2 nights" }, { role: "assistant", text: "I found 1 matching stay" }];
+  assert.equal(serverRowsMatch(withGuest, [{ role: "assistant", text: "I found 1 matching stay" }]), true, "the guest's own lines are not compared, so they never cause a rebuild");
+  assert.equal(serverRowsMatch([], []), true, "an empty lane that stays empty matches");
+});
+
+test("Owner decision, mismatch: when the server's lines differ, the server wins and the cached guest lines are dropped (rebuild)", () => {
+  const cached = [{ role: "assistant", text: "I found 1 matching stay" }];
+  assert.equal(serverRowsMatch(cached, [{ role: "assistant", text: "I found 2 matching stays" }]), false, "a changed server line is a mismatch");
+  assert.equal(serverRowsMatch(cached, [{ role: "assistant", text: "I found 1 matching stay" }, { role: "assistant", text: "Done." }]), false, "a new server line is a mismatch");
+  assert.equal(serverRowsMatch([], [{ role: "assistant", text: "I found 1 matching stay" }]), false, "a lane with no cached server lines is a mismatch, so the server's timeline is applied");
 });

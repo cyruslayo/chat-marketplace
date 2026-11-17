@@ -129,3 +129,40 @@ test("AC1 and AC3: A visited lane appears before the server answers a switch, an
     await fixture.close();
   }
 });
+
+test("Owner decision (17 Nov 2026): a guest's own line in a lane is still shown after a switch away and back", async () => {
+  const fixture = await startTaskRailServer();
+  const browser = await launchRealBrowser();
+  try {
+    const tab = await browser.createTab();
+    await tab.setViewport(390, 900);
+    await tab.navigate(`${fixture.base}/`);
+    await tab.waitForSelector("#composer-input");
+    await countStateReads(tab);
+    await tab.focus("#composer-input");
+    await tab.insertText(STAYS_TEXT);
+    await tab.pressKey("Enter");
+    await tab.waitForSelector("#active-workspace .stay-card", 15_000);
+    await tab.focus("#composer-input");
+    await tab.insertText("start a new task");
+    await tab.pressKey("Enter");
+    await tab.waitForFunction("!document.querySelector('#task-rail').hidden", 15_000);
+
+    // Back in the stays lane, the guest sends a message; its own line is then in the lane.
+    await switchTo(tab, "shortlet");
+    await tab.focus("#composer-input");
+    await tab.insertText("Ikoyi for 2 nights");
+    await tab.pressKey("Enter");
+    await tab.waitForFunction("[...document.querySelectorAll('.transcript-lane:not([hidden]) .turn.user')].some((turn) => turn.textContent.includes('Ikoyi for 2 nights')) && !document.getElementById('composer-submit').disabled", 20_000);
+    await new Promise((resolve) => { setTimeout(resolve, 300); });
+
+    await switchTo(tab, "shop");
+    await switchTo(tab, "shortlet");
+    const guestLines = await tab.evaluate<number>("[...document.querySelectorAll('.transcript-lane:not([hidden]) .turn.user')].filter((turn) => turn.textContent.includes('Ikoyi for 2 nights')).length");
+    assert.equal(guestLines, 1, "the guest's own message is still in the lane after a switch away and back");
+    await tab.close();
+  } finally {
+    await browser.close();
+    await fixture.close();
+  }
+});
