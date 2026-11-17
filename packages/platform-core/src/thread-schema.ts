@@ -7,7 +7,7 @@
 
 /**
  * Issue 03e (ADR 0107 decision 11, owner decision O4): one row per lane event, beside guest_threads. Only the write path and the
- * export touch it; no application code selects from it (AC7). Platform migration 5 applies the same DDL to existing objects.
+ * export touch it, and the restore reader (packages/platform-core/src/lane-restore.ts, issue 03h) is the only module that selects from it. Platform migration 5 applies the same DDL to existing objects.
  */
 export const LANE_EVENT_SCHEMA = `
       CREATE TABLE IF NOT EXISTS guest_thread_lane_events (

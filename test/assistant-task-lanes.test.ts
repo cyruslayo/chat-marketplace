@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { temporaryDatabasePath } from "./helpers/temporary-database.js";
+import { readLaneRows } from "./helpers/lane-event-fixtures.js";
 import { TASK_START_EVENT, TASK_SWITCH_EVENT } from "../apps/local-guest/src/assistant/assistant-platform.js";
 import type { AssistantModelClient } from "../apps/local-guest/src/assistant/assistant-model.js";
 import type { GuestTimelineEntry, GuestTurnResult } from "../apps/local-guest/src/shortlet-app.js";
@@ -91,10 +92,13 @@ function storedProjection(path: string, threadId: string): { readonly raw: strin
   }
 }
 
+/** The stored lanes, read from the lane rows (issue 03h: the projection carries no lanes; the rows are the stored lanes). */
 function storedLanes(path: string, threadId: string): readonly { readonly taskId: string; readonly domain: string; readonly timeline: readonly GuestTimelineEntry[] }[] {
-  const lanes = storedProjection(path, threadId).value.lanes;
-  assert.ok(Array.isArray(lanes), "the stored projection carries the lanes");
-  return lanes as { readonly taskId: string; readonly domain: string; readonly timeline: readonly GuestTimelineEntry[] }[];
+  const rows = readLaneRows(path, threadId);
+  return [...new Set(rows.map((row) => row.taskId))].map((taskId) => {
+    const laneRows = rows.filter((row) => row.taskId === taskId).sort((left, right) => left.seq - right.seq);
+    return { taskId, domain: laneRows[0]!.domain, timeline: laneRows.map((row) => ({ role: row.role as GuestTimelineEntry["role"], text: row.textRedacted })) };
+  });
 }
 
 function storedTaskIds(path: string, threadId: string): readonly string[] {
@@ -252,7 +256,7 @@ test("AC5: New conversation starts a fresh thread that carries no lanes, tasks o
   assert.deepEqual(await coldTimeline(path, model, previous), previousTimeline, "the previous thread's active timeline is unchanged");
 });
 
-test("AC6: a lane longer than the named cap keeps the cap; older entries are replaced by one receipt summary, and the stored projection stays under the cap", async () => {
+test("AC6: a lane longer than the named cap keeps the cap; older entries are replaced by one receipt summary, and the lane rows keep the whole lane (issue 03h)", async () => {
   const model = laneModel();
   const path = temporaryDatabasePath("task-lanes-ac6.sqlite");
   const threadId = "g-b03d0007";
@@ -271,7 +275,7 @@ test("AC6: a lane longer than the named cap keeps the cap; older entries are rep
   assert.equal(timeline.at(-1)?.role, "assistant", "the newest entry is kept");
 
   const stored = storedLanes(path, threadId).find((lane) => lane.domain === "shop");
-  assert.ok(stored && stored.timeline.length <= cap, "the stored shop lane stays under the cap");
+  assert.ok(stored && stored.timeline.length > cap, "the stored shop lane keeps every row; the cap applies to what a restore reads (issue 03h)");
 });
 
 test("AC7: a persisted lanes entry whose taskId is not in tasks rejects the lanes list only; the stays progress is kept and one closed diagnostic is recorded", async () => {
@@ -288,8 +292,7 @@ test("AC7: a persisted lanes entry whose taskId is not in tasks rejects the lane
   const store = coldModeApp(path, model);
   try {
     rewriteStoredProjection(store.environment, threadId, (projection) => {
-      const lanes = projection.lanes as { taskId: string; domain: string; timeline: unknown[] }[];
-      projection.lanes = [...lanes, { taskId: "task-missing", domain: "shop", timeline: [{ role: "user", text: "ghost" }] }];
+      projection.lanes = [{ taskId: "task-missing", domain: "shop", timeline: [{ role: "user", text: "ghost" }] }];
     });
   } finally {
     store.close();

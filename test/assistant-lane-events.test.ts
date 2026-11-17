@@ -5,14 +5,13 @@ import { SCRIPT, STAY_TEXT } from "./helpers/assistant-cold-journey-harness.js";
 import { scriptedPlanner, type ScriptedTurn } from "./helpers/guest-date-fixtures.js";
 import { coldModeApp, type ColdModeApp } from "./helpers/mode-follows-task-harness.js";
 import { readLaneRows } from "./helpers/lane-event-fixtures.js";
-import { openNodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
 import { TASK_START_EVENT, TASK_SWITCH_EVENT } from "../apps/local-guest/src/assistant/assistant-platform.js";
 import type { AssistantModelClient } from "../apps/local-guest/src/assistant/assistant-model.js";
 import type { GuestTimelineEntry, GuestTurnResult } from "../apps/local-guest/src/shortlet-app.js";
 
 // Issue 03e (ADR 0107 decision 11, ADR 0106 cold restore, ADR 0075). Every event runs on a NEW application over the same store
 // (a cold restore) on a fresh thread, with the assistant runtime enabled, the staging-like clock (27 Oct 2026) and a guest with
-// no seeded phone or email. The shop lane is the fake shop pack. The rows are checked against the lanes the projection holds.
+// no seeded phone or email. The shop lane is the fake shop pack. The rows are checked against the lanes a cold restore reads back (issue 03h).
 
 const SHOP_TEXT = "Show me the products";
 const LANE_SCRIPT: Readonly<Record<string, ScriptedTurn>> = {
@@ -49,33 +48,40 @@ function successOf(result: GuestTurnResult, label: string): void {
   assert.equal(result.ok, true, result.ok ? "" : `${label}: expected success, saw ${result.code}: ${result.message}`);
 }
 
-/** The lanes the stored projection holds, read from the thread row (the projection is the authority the rows must match). */
-function storedLanes(path: string, threadId: string): { readonly lanes: readonly StoredLane[]; readonly raw: string } {
-  const database = openNodeSqliteDatabase(path);
-  try {
-    const row = database.prepare("SELECT thread_json FROM guest_threads WHERE thread_id = $threadId").get({ $threadId: threadId });
-    assert.ok(row && typeof row.thread_json === "string", "the thread is stored");
-    const raw = row.thread_json;
-    const projection = JSON.parse(raw) as {
-      readonly timeline: readonly GuestTimelineEntry[];
-      readonly activeTaskId?: string;
-      readonly tasks?: readonly { readonly taskId: string; readonly domain: string }[];
-      readonly lanes?: readonly StoredLane[];
+/**
+ * The lanes the lane rows hold, grouped by task id (issue 03h: the projection carries no lanes; the rows are the stored lanes).
+ * Each lane's timeline is its rows in seq order.
+ */
+function storedLanes(path: string, threadId: string): { readonly lanes: readonly StoredLane[] } {
+  const rows = readLaneRows(path, threadId);
+  const taskIds = [...new Set(rows.map((row) => row.taskId))];
+  const lanes = taskIds.map((taskId): StoredLane => {
+    const laneRows = rows.filter((row) => row.taskId === taskId).sort((left, right) => left.seq - right.seq);
+    return {
+      taskId,
+      domain: laneRows[0]!.domain,
+      timeline: laneRows.map((row) => ({ role: row.role as GuestTimelineEntry["role"], text: row.textRedacted })),
     };
-    if (projection.lanes !== undefined) return { lanes: projection.lanes, raw };
-    const task = projection.tasks?.[0];
-    const taskId = projection.activeTaskId ?? task?.taskId ?? "task-1";
-    return { lanes: [{ taskId, domain: task?.domain ?? "shortlet", timeline: projection.timeline }], raw };
-  } finally {
-    database.close();
-  }
+  });
+  return { lanes };
 }
 
-/** Every lane entry has exactly one row with its task id, domain, role and copy, and each lane's sequence runs 1..n. */
+/**
+ * Every lane entry has exactly one row with its task id, domain, role and copy, each lane's sequence runs 1..n, and the restored active
+ * lane is its rows (issue 03h: a cold restore reads the rows, so the restored timeline is the check on the stored lane).
+ */
 function assertOneRowPerEntry(path: string, threadId: string, label: string): void {
   const { lanes } = storedLanes(path, threadId);
   const rows = readLaneRows(path, threadId);
   assert.equal(rows.length, lanes.reduce((total, lane) => total + lane.timeline.length, 0), `${label}: one row for each lane entry`);
+  const restored = coldModeApp(path, laneModel());
+  try {
+    restored.app.getState(threadId);
+    const active = lanes.find((lane) => lane.taskId === restored.runtime.activeTaskIdFor(threadId));
+    assert.deepEqual(restored.app.getState(threadId)?.timeline ?? [], active?.timeline ?? [], `${label}: the restored active lane is its rows`);
+  } finally {
+    restored.close();
+  }
   for (const lane of lanes) {
     const laneRows = rows.filter((row) => row.taskId === lane.taskId);
     assert.deepEqual(laneRows.map((row) => row.seq), lane.timeline.map((_, index) => index + 1), `${label}: lane ${lane.taskId} sequence runs 1..n`);

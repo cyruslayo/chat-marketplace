@@ -244,10 +244,11 @@ import {
   STAYS_DOMAIN,
 } from "./assistant/assistant-runtime.js";
 import type { DurableLaneEvent } from "../../../domains/shortlet/src/index.js";
-import { DEFAULT_LANE_TIMELINE_CAP, capLaneTimeline, validateLaneTimelineCap } from "./assistant/task-lanes.js";
+import { DEFAULT_LANE_TIMELINE_CAP, LANE_SUMMARY_TEXT, capLaneTimeline, validateLaneTimelineCap } from "./assistant/task-lanes.js";
 import { ASSISTANT_CONTROL_COPY } from "./assistant/control-copy.js";
 import { createInitialTaskState, isAssistantBudgetPer, type AssistantStayReference, type AssistantTaskState } from "./assistant/assistant-state.js";
-import { maskEmailAddresses, redactSensitiveData } from "../../../packages/platform-core/src/redaction.js";
+import { redactLaneText } from "../../../packages/platform-core/src/redaction.js";
+import type { LaneRestoreRefusal, LaneRestoreResult } from "../../../packages/platform-core/src/lane-restore.js";
 import {
   TASK_START_EVENT,
   TASK_SWITCH_EVENT,
@@ -726,6 +727,13 @@ type GuestStage =
   | "payment"
   | "booking";
 
+/** Issue 03h: a legacy lane (no rows yet) whose stored entries are migrated to lane rows once on restore. */
+interface LaneMigration {
+  readonly taskId: string;
+  readonly domain: string;
+  readonly entries: readonly GuestTimelineEntry[];
+}
+
 interface GuestThreadState {
   readonly threadId: string;
   discoveryContext: DiscoverySearchContext | null;
@@ -755,6 +763,8 @@ interface GuestThreadState {
   laneTimelines: Map<string, GuestTimelineEntry[]>;
   /** Issue 03e (ADR 0107 decision 11): the next lane row sequence per task id. Persisted in the projection (`laneEventSeq`). */
   laneEventSeq: Map<string, number>;
+  /** Issue 03h: the stored entry count of a legacy lane that already has rows, kept in memory only, to check it when the lane loads. */
+  legacyResidue: Map<string, number>;
   /** Issue 03e: lane rows queued by this thread's timeline writes, cleared only after a save commits, so a failed save is retried. */
   pendingLaneEvents: DurableLaneEvent[];
   lastSurfaces: GuestSurfacePayload[];
@@ -970,6 +980,7 @@ export class LocalGuestApp {
     const result = await this.#handleTurn(threadId, text);
     const decorated = this.#decorateResult(result);
     if (decorated.ok) {
+      await this.#prefetchActiveLane(threadId);
       this.#rememberResult(threadId, decorated.discardUserInput ? undefined : text, decorated);
       if (this.#environment.guestDataIsRemote) await this.#persistRemoteThread(threadId);
     }
@@ -1290,14 +1301,17 @@ export class LocalGuestApp {
       }
       const decorated = this.#decorateResult(result);
       if (decorated.ok) {
+        await this.#prefetchActiveLane(threadId);
         this.#rememberResult(threadId, undefined, decorated);
         if (this.#environment.guestDataIsRemote) await this.#persistRemoteThread(threadId);
       }
       await this.#flushRemoteContact();
       return this.#withJourney(threadId, decorated);
     }
+    await this.#prefetchEventTarget(threadId, payload);
     const result = this.#decorateResult(this.#handleEvent(threadId, payload));
     // ADR 0093: keep each durable work projection current for reads through any linked principal; remote compositions persist it below.
+    if (result.ok) await this.#prefetchActiveLane(threadId);
     if (result.ok) this.#rememberResult(threadId, undefined, result);
     if (result.ok && this.#environment.guestDataIsRemote) await this.#persistRemoteThread(threadId);
     await this.#flushRemoteContact();
@@ -1788,6 +1802,7 @@ export class LocalGuestApp {
     if (thread.activeContact?.kind !== "phone" || thread.activeContact.resumeContext.resumeAction !== "review") return;
     await this.#hydrateRemoteContact();
     const result = this.#decorateResult(this.#handleDraftReview(thread, { name: REQUEST_DRAFT_REVIEW_EVENT, surfaceId: thread.activeContact.surfaceId, sourceComponentId: "contact-form", timestamp: this.#environment.clock().toISOString(), context: { artifactId: requestDraftArtifactId(id), draftId: id } }));
+    if (result.ok) await this.#prefetchActiveLane(thread.threadId);
     if (result.ok) this.#rememberResult(thread.threadId, undefined, result);
     if (result.ok && this.#environment.guestDataIsRemote) await this.#persistRemoteThread(thread.threadId);
   }
@@ -2228,6 +2243,11 @@ export class LocalGuestApp {
   #alignTimelineLane(threadId: string, thread: GuestThreadState): void {
     const activeTaskId = this.#assistantRuntime?.activeTaskIdFor(threadId);
     if (activeTaskId === undefined || activeTaskId === thread.timelineTaskId) return;
+    // Issue 03h (AC10): a lane that becomes active is loaded from its rows first, so a switch never shows an empty or stale lane. A remote
+    // composition loads it before the turn writes (`#prefetchActiveLane`).
+    if (!this.#environment.guestDataIsRemote && !thread.laneTimelines.has(activeTaskId) && (thread.laneEventSeq.get(activeTaskId) ?? 0) > 0) {
+      thread.laneTimelines.set(activeTaskId, this.#laneFromRows(this.#readLaneRowsSync(threadId, activeTaskId), thread.legacyResidue.get(activeTaskId)));
+    }
     thread.laneTimelines.set(thread.timelineTaskId, thread.timeline);
     thread.timeline = thread.laneTimelines.get(activeTaskId) ?? [];
     thread.laneTimelines.delete(activeTaskId);
@@ -2240,49 +2260,123 @@ export class LocalGuestApp {
   }
 
   /**
-   * Issue 03d (owner decision O2): the lanes the projection stores, one per persisted task, with the domain each holds. Stored only for a
-   * thread with more than one task; a one-task thread keeps the legacy top-level timeline alone, so its stored shape is unchanged.
+   * Issue 03h (ADR 0107 decision 11, owner decisions 2 and 3): the lanes a stored projection restores. A lane with rows (its
+   * `laneEventSeq` is above zero) is read from its rows only: the active lane from `activeRead`, which the caller reads before the
+   * thread exists, and any other lane when it becomes active (`#alignTimelineLane`, `#prefetchActiveLane`). A lane with no rows is a
+   * legacy lane (issue 03d or earlier): its stored entries are migrated once. They are masked, queued as rows and kept in memory, so the
+   * next save writes them, with a projection that carries no timeline. A legacy entry of a lane that already has rows cannot be placed in
+   * order, so it is not migrated; one closed diagnostic records that. A usable task list names the active lane, as the runtime restores
+   * it. Legacy lanes are used only when they name persisted tasks with their domains and no id repeats.
    */
-  #persistedLanes(thread: GuestThreadState): { readonly lanes?: readonly PersistedLane[] } {
-    const persisted = this.#assistantRuntime?.persistedTasksFor(thread.threadId);
-    if (persisted === undefined || persisted.tasks.length < 2) return {};
-    const lanes = persisted.tasks.map((task): PersistedLane => {
-      const lane = task.taskId === thread.timelineTaskId ? thread.timeline : (thread.laneTimelines.get(task.taskId) ?? []);
-      return { taskId: task.taskId, domain: task.domain, timeline: capLaneTimeline(lane, this.#laneTimelineCap).map(({ role, text }) => ({ role, text })) };
-    });
-    return { lanes };
+  #restoredLanes(
+    projection: GuestPersistentProjection,
+    activeRead: LaneRestoreResult | undefined,
+  ): { timeline: GuestTimelineEntry[]; timelineTaskId: string; laneTimelines: Map<string, GuestTimelineEntry[]>; migrations: readonly LaneMigration[]; residues: ReadonlyMap<string, number> } {
+    const laneTimelines = new Map<string, GuestTimelineEntry[]>();
+    const timelineTaskId = this.#restoredLaneId(projection);
+    const seqs: Readonly<Record<string, number>> = projection.laneEventSeq ?? {};
+    const migrations: LaneMigration[] = [];
+    const residues = new Map<string, number>();
+    const runtime = this.#assistantRuntime;
+    const persisted = projection.tasks !== undefined && projection.activeTaskId !== undefined ? { activeTaskId: projection.activeTaskId, tasks: projection.tasks } : undefined;
+    const domainOf = (taskId: string): string => persisted?.tasks.find((task) => task.taskId === taskId)?.domain ?? STAYS_DOMAIN;
+    let timeline: GuestTimelineEntry[] = [];
+    if ((seqs[timelineTaskId] ?? 0) > 0) {
+      timeline = this.#laneFromRows(activeRead, projection.timeline.length);
+    } else if (projection.timeline.length > 0) {
+      migrations.push({ taskId: timelineTaskId, domain: domainOf(timelineTaskId), entries: projection.timeline });
+    }
+    const lanes: readonly PersistedLane[] = projection.lanes ?? [];
+    if (lanes.length > 0 && persisted !== undefined && runtime !== null && runtime.taskListRefusal(persisted.tasks, persisted.activeTaskId) === undefined) {
+      const ids = new Set(lanes.map((lane) => lane.taskId));
+      const named = ids.size === lanes.length && lanes.every((lane) => persisted.tasks.some((task) => task.taskId === lane.taskId && task.domain === lane.domain));
+      if (!named) {
+        this.#recordLaneRefusal("INVALID_TASK_LIST");
+      } else {
+        for (const lane of lanes) {
+          if (lane.taskId === timelineTaskId) continue;
+          if ((seqs[lane.taskId] ?? 0) > 0) {
+            // A lane with rows keeps them; its stored copy is checked against its rows only when the lane is loaded.
+            if (lane.timeline.length > 0) residues.set(lane.taskId, lane.timeline.length);
+            continue;
+          }
+          if (lane.timeline.length > 0) migrations.push({ taskId: lane.taskId, domain: lane.domain, entries: lane.timeline });
+        }
+      }
+    }
+    return { timeline, timelineTaskId, laneTimelines, migrations, residues };
   }
 
-  /**
-   * Issue 03d (ADR 0107 decision 11, owner decisions O2 and O3): the lanes a stored projection restores. A usable task list names the active
-   * lane, as the runtime restores it; an unusable one restores as a legacy blob does, with the top-level timeline as the stays lane. The
-   * stored lanes are kept only when every lane names a persisted task with its domain and no id repeats. Otherwise the lanes list alone
-   * is refused, with one closed diagnostic (no ids, no text) and the active lane stays. Every restored lane is capped.
-   */
-  #restoredLanes(projection: GuestPersistentProjection): { timeline: GuestTimelineEntry[]; timelineTaskId: string; laneTimelines: Map<string, GuestTimelineEntry[]> } {
-    const cap = this.#laneTimelineCap;
-    const timeline = capLaneTimeline(projection.timeline, cap);
-    const laneTimelines = new Map<string, GuestTimelineEntry[]>();
+  /** Issue 03h: the lane a cold restore loads: the active task's, or the initial lane when the persisted task list is not usable. */
+  #restoredLaneId(projection: GuestPersistentProjection): string {
     const runtime = this.#assistantRuntime;
     const persisted = projection.tasks !== undefined && projection.activeTaskId !== undefined ? { activeTaskId: projection.activeTaskId, tasks: projection.tasks } : undefined;
     const usable = persisted !== undefined && runtime !== null && runtime.taskListRefusal(persisted.tasks, persisted.activeTaskId) === undefined;
-    const timelineTaskId = usable && persisted !== undefined ? persisted.activeTaskId : INITIAL_TASK_ID;
-    if (!usable || persisted === undefined || projection.lanes === undefined) return { timeline, timelineTaskId, laneTimelines };
-    const lanes: readonly PersistedLane[] = projection.lanes;
-    const ids = new Set(lanes.map((lane) => lane.taskId));
-    const named = ids.size === lanes.length && lanes.every((lane) => persisted.tasks.some((task) => task.taskId === lane.taskId && task.domain === lane.domain));
-    if (!named) {
-      this.#recordLaneRefusal("INVALID_TASK_LIST");
-      return { timeline, timelineTaskId, laneTimelines };
+    return usable && persisted !== undefined ? persisted.activeTaskId : INITIAL_TASK_ID;
+  }
+
+  /**
+   * Issue 03h: a lane's rows as the timeline shows them. A refused lane restores empty; the cap's summary replaces the oldest entry.
+   * `residue` is the stored entry count of a legacy lane that already had rows (owner decision, see the Comments): when it is larger than
+   * the rows, the legacy entries that are not rows are not shown, and one closed diagnostic records that (no ids, no text).
+   */
+  #laneFromRows(read: LaneRestoreResult | undefined, residue?: number): GuestTimelineEntry[] {
+    if (read === undefined) return [];
+    if (read.refusal !== undefined) {
+      // ADR 0075 and ADR 0079: the refusal is recorded as a closed code; the lane never falls back to other stored text.
+      this.#recordLaneRefusal(read.refusal);
+      return [];
     }
-    for (const lane of lanes) {
-      if (lane.taskId !== timelineTaskId) laneTimelines.set(lane.taskId, capLaneTimeline(lane.timeline, cap));
+    if (residue !== undefined && residue > read.total) this.#recordLaneRefusal("LEGACY_LANE_NOT_MIGRATED");
+    const entries = read.entries.map(({ role, text }): GuestTimelineEntry => ({ role, text }));
+    return read.truncated ? [{ role: "receipt", text: LANE_SUMMARY_TEXT }, ...entries.slice(1)] : entries;
+  }
+
+  #readLaneRowsSync(threadId: string, taskId: string): LaneRestoreResult {
+    return this.#environment.interactionStore.findLaneTimeline(threadId, this.#environment.config.tenantId, taskId, this.#laneTimelineCap);
+  }
+
+  #readLaneRowsRemote(threadId: string, taskId: string): Promise<LaneRestoreResult> {
+    return this.#environment.guestData.findLaneTimeline(threadId, this.#environment.config.tenantId, taskId, this.#laneTimelineCap);
+  }
+
+  /**
+   * Issue 03h (AC10, remote composition): loads a lane from its rows through the guest-data port before it can become active, so the
+   * timeline a request writes never starts from an empty lane. The local composition loads it synchronously in `#alignTimelineLane`.
+   */
+  async #prefetchLane(threadId: string, taskId: string): Promise<void> {
+    const thread = this.#threads.get(threadId);
+    if (!this.#environment.guestDataIsRemote || !thread || taskId === thread.timelineTaskId || thread.laneTimelines.has(taskId)) return;
+    if ((thread.laneEventSeq.get(taskId) ?? 0) === 0) return;
+    thread.laneTimelines.set(taskId, this.#laneFromRows(await this.#readLaneRowsRemote(threadId, taskId), thread.legacyResidue.get(taskId)));
+  }
+
+  /** Issue 03h: a remote turn loads the lane the runtime made active while it ran, before the turn's own timeline writes. */
+  async #prefetchActiveLane(threadId: string): Promise<void> {
+    const activeTaskId = this.#assistantRuntime?.activeTaskIdFor(threadId);
+    if (activeTaskId !== undefined) await this.#prefetchLane(threadId, activeTaskId);
+  }
+
+  /**
+   * Issue 03h (AC10, remote composition): a task switch or a task start can make another lane active inside the event itself, and its
+   * timeline is aligned before the event returns. The target lane is loaded first. A start names its domain; its lane is the task
+   * already held for that domain (a new task has no rows).
+   */
+  async #prefetchEventTarget(threadId: string, payload: unknown): Promise<void> {
+    if (!this.#environment.guestDataIsRemote) return;
+    const event = readEventPayload(payload);
+    const context = event?.context as { readonly taskId?: unknown; readonly domain?: unknown } | undefined;
+    if (event?.name === TASK_SWITCH_EVENT && typeof context?.taskId === "string") {
+      await this.#prefetchLane(threadId, context.taskId);
+    } else if (event?.name === TASK_START_EVENT && typeof context?.domain === "string" && this.#assistantRuntime?.hasThread(threadId)) {
+      const domain = context.domain;
+      const held = this.#assistantRuntime.getTaskRail(threadId).find((entry) => entry.domain === domain);
+      if (held) await this.#prefetchLane(threadId, held.taskId);
     }
-    return { timeline, timelineTaskId, laneTimelines };
   }
 
   /** Issue 03d: the closed diagnostic for a refused lanes list (ADR 0075). Telemetry never changes the restore. */
-  #recordLaneRefusal(reason: TaskRestoreRefusal): void {
+  #recordLaneRefusal(reason: TaskRestoreRefusal | LaneRestoreRefusal | "LEGACY_LANE_NOT_MIGRATED"): void {
     try {
       this.#environment.telemetry.track({ type: "assistant.task.restore.refused.v1", reason });
     } catch {
@@ -2707,20 +2801,26 @@ export class LocalGuestApp {
   }
 
   /**
-   * Issue 03e (ADR 0107 decision 11): appends one entry to the active lane and queues its lane row. The sequence is per task and is
-   * assigned now, so a retried save writes the same rows (the store ignores a replay). The domain is the task's domain, or the
-   * stays domain on a thread without a runtime task list.
+   * Issue 03e and 03h (ADR 0107 decision 11, owner decision 2): appends one entry to the active lane and queues its lane row. The
+   * timeline, the row and a migrated lane all take `redactLaneText`, so they carry the same text. Contact records and the checkout
+   * handoff never use the timeline (ADR 0093).
    */
   #pushLaneEntry(thread: GuestThreadState, entry: GuestTimelineEntry): void {
-    // Issue 03n (ADR 0093, ADR 0075): every guest-visible timeline entry enters here, so the in-memory lane, the persisted
-    // projection and the lane rows all take the masked text. Contact records and the checkout handoff never use the timeline.
-    const masked: GuestTimelineEntry = { ...entry, text: maskEmailAddresses(entry.text) };
+    const masked: GuestTimelineEntry = { role: entry.role, text: redactLaneText(entry.text) };
     thread.timeline.push(masked);
     const taskId = thread.timelineTaskId;
+    const domain = this.#assistantRuntime?.persistedTasksFor(thread.threadId)?.tasks.find((task) => task.taskId === taskId)?.domain ?? STAYS_DOMAIN;
+    this.#queueLaneRow(thread, taskId, masked, domain);
+  }
+
+  /**
+   * Issue 03e (ADR 0107 decision 11): assigns the next sequence in a task's lane and queues its row. The sequence is assigned now, so a
+   * retried save writes the same rows (the store ignores a replay). Only the sequence counter and the queue change; the timeline does not.
+   */
+  #queueLaneRow(thread: GuestThreadState, taskId: string, entry: GuestTimelineEntry, domain: string): void {
     const seq = (thread.laneEventSeq.get(taskId) ?? 0) + 1;
     thread.laneEventSeq.set(taskId, seq);
-    const domain = this.#assistantRuntime?.persistedTasksFor(thread.threadId)?.tasks.find((task) => task.taskId === taskId)?.domain ?? STAYS_DOMAIN;
-    thread.pendingLaneEvents.push({ taskId, domain, seq, role: masked.role, text: masked.text, createdAt: this.#environment.clock().toISOString() });
+    thread.pendingLaneEvents.push({ taskId, domain, seq, role: entry.role, text: entry.text, createdAt: this.#environment.clock().toISOString() });
   }
 
   #projectionFor(
@@ -2732,7 +2832,8 @@ export class LocalGuestApp {
     this.#alignTimelineLane(thread.threadId, thread);
     return {
       version: 1,
-      timeline: capLaneTimeline(thread.timeline, this.#laneTimelineCap).map(({ role, text }) => ({ role, text })),
+      // Issue 03h (owner decision 3, ADR 0107 decision 11): lane timelines live in the lane rows only; the projection keeps no copy.
+      timeline: [],
       discoveryContext:
         thread.discoveryContext === null
           ? null
@@ -2759,8 +2860,6 @@ export class LocalGuestApp {
       assistantContext: thread.assistantContext,
       // Issue 03b (ADR 0107 decision 11, ADR 0106): the task ids and domains only; a cold restore re-keys them, never re-mints them.
       ...(this.#assistantRuntime?.persistedTasksFor(thread.threadId) ?? {}),
-      // Issue 03d (owner decision O2): each task's guest-visible lane, with the active lane's transcript in `timeline` above.
-      ...this.#persistedLanes(thread),
       // Issue 03e (ADR 0107 decision 11): the next lane row sequence per task, so a cold restore continues it.
       laneEventSeq: Object.fromEntries(thread.laneEventSeq),
       pendingAction: thread.pendingAction,
@@ -2824,7 +2923,11 @@ export class LocalGuestApp {
     const environment = this.#environment;
     const record = environment.interactionStore.findThread(threadId);
     if (!record) return null;
-    return this.#hydrateThreadRecord(record, principalIds);
+    const projection = this.#ownedProjection(record, principalIds);
+    if (!projection) return null;
+    const laneId = this.#restoredLaneId(projection);
+    const activeRead = (projection.laneEventSeq?.[laneId] ?? 0) > 0 ? this.#readLaneRowsSync(threadId, laneId) : undefined;
+    return this.#hydrateProjection(record, projection, activeRead);
   }
 
   async getStateAsync(threadId: string): Promise<GuestStateSnapshot | undefined> {
@@ -2859,7 +2962,12 @@ export class LocalGuestApp {
     const existing = this.#threads.get(threadId);
     if (existing) return existing;
     const record = await this.#environment.guestData.findThread(threadId);
-    return record ? this.#hydrateThreadRecord(record, principalIds) : null;
+    if (!record) return null;
+    const projection = this.#ownedProjection(record, principalIds);
+    if (!projection) return null;
+    const laneId = this.#restoredLaneId(projection);
+    const activeRead = (projection.laneEventSeq?.[laneId] ?? 0) > 0 ? await this.#readLaneRowsRemote(threadId, laneId) : undefined;
+    return this.#hydrateProjection(record, projection, activeRead);
   }
 
   async #persistRemoteThread(threadId: string): Promise<void> {
@@ -2884,30 +2992,36 @@ export class LocalGuestApp {
     thread.pendingLaneEvents = [];
   }
 
-  #hydrateThreadRecord(
+  /**
+   * Issue 03h: the owned, parsed projection of a stored thread, or null. Fail closed: another principal's or tenant's thread, and a
+   * projection that does not parse, read as null.
+   */
+  #ownedProjection(
     record: { readonly threadId: string; readonly principalId: string; readonly tenantId: string; readonly threadJson: string },
     principalIds?: readonly string[],
-  ): GuestThreadState | null {
-    const threadId = record.threadId;
+  ): GuestPersistentProjection | null {
     const environment = this.#environment;
     // Callers that list an account's work pass the account's principal set, which the store already scoped (ADR 0093).
     const owners = principalIds ?? [environment.guestPrincipal().id];
-    if (
-      !owners.includes(record.principalId) ||
-      record.tenantId !== environment.config.tenantId
-    ) {
+    if (!owners.includes(record.principalId) || record.tenantId !== environment.config.tenantId) return null;
+    try {
+      return parseGuestProjection(JSON.parse(record.threadJson) as unknown);
+    } catch {
       return null;
     }
-    let projection: GuestPersistentProjection | null = null;
-    try {
-      projection = parseGuestProjection(
-        JSON.parse(record.threadJson) as unknown,
-      );
-    } catch {
-      projection = null;
-    }
-    if (!projection) return null;
-    const lanes = this.#restoredLanes(projection);
+  }
+
+  /**
+   * Issue 03h: the thread a stored projection restores to. `activeRead` holds the active lane's rows (ADR 0106 cold restore), or is
+   * undefined when that lane has none. The lanes are restored by `#restoredLanes`.
+   */
+  #hydrateProjection(
+    record: { readonly threadId: string },
+    projection: GuestPersistentProjection,
+    activeRead: LaneRestoreResult | undefined,
+  ): GuestThreadState {
+    const threadId = record.threadId;
+    const lanes = this.#restoredLanes(projection, activeRead);
 
     const thread: GuestThreadState = {
       threadId,
@@ -2934,6 +3048,7 @@ export class LocalGuestApp {
       laneTimelines: lanes.laneTimelines,
       // Issue 03e: the sequence counters continue from the projection; no lane row is re-minted after a cold restore.
       laneEventSeq: new Map(Object.entries(projection.laneEventSeq ?? {})),
+      legacyResidue: new Map(lanes.residues),
       pendingLaneEvents: [],
       lastSurfaces: [],
       searchHistory: projection.searchHistory.map((context) => ({
@@ -2951,6 +3066,14 @@ export class LocalGuestApp {
       pendingDraftReplacement: projection.pendingDraftReplacement ?? null,
     };
     if (thread.pendingDraftReplacement) thread.activeSurfaces.set(DRAFT_REPLACEMENT_STAGE, thread.pendingDraftReplacement.surfaceId);
+    // Issue 03h: legacy lanes are migrated once. Each entry is masked, queued as a lane row and kept in memory; the next save writes the
+    // rows and a projection with no timeline. A thread read without a save migrates the same way from the same stored projection.
+    for (const migration of lanes.migrations) {
+      const entries = migration.entries.map((entry): GuestTimelineEntry => ({ role: entry.role, text: redactLaneText(entry.text) }));
+      for (const entry of entries) this.#queueLaneRow(thread, migration.taskId, entry, migration.domain);
+      if (migration.taskId === thread.timelineTaskId) thread.timeline = entries;
+      else thread.laneTimelines.set(migration.taskId, entries);
+    }
     this.#threads.set(threadId, thread);
     this.#rebuildAssistantDiscovery(thread);
     const restoredProjection = thread.assistantContext
@@ -3328,6 +3451,7 @@ export class LocalGuestApp {
       timelineTaskId: INITIAL_TASK_ID,
       laneTimelines: new Map(),
       laneEventSeq: new Map(),
+      legacyResidue: new Map(),
       pendingLaneEvents: [],
       lastSurfaces: [],
       searchHistory: [],
@@ -3810,7 +3934,7 @@ export class LocalGuestApp {
     // Issue 03d: the turn's own text and replies go to the lane the turn leaves the guest in (a switch turn's text crosses with it).
     this.#alignTimelineLane(threadId, thread);
     if (userText !== undefined)
-      this.#pushLaneEntry(thread, { role: "user", text: redactSensitiveData(userText) as string });
+      this.#pushLaneEntry(thread, { role: "user", text: userText });
     if (result.surfaces.length > 0) thread.lastSurfaces = [...result.surfaces];
     if (result.assistantManaged) this.#syncAssistantPersistence(threadId, thread);
     this.#syncPendingAction(threadId, thread);
@@ -3836,7 +3960,7 @@ export class LocalGuestApp {
       // Refresh paths can re-present the same outcome message (ADR-0074);
       // avoid duplicating an identical assistant message at the tail.
       const tail = thread.timeline.at(-1);
-      if (tail?.role === "assistant" && tail.text === maskEmailAddresses(message)) continue;
+      if (tail?.role === "assistant" && tail.text === redactLaneText(message)) continue;
       this.#pushLaneEntry(thread, { role: "assistant", text: message });
     }
     for (const receipt of result.receipts ?? [])

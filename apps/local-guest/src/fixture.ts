@@ -440,6 +440,7 @@ export class LocalGuestEnvironment {
       async deleteSessionBindingsForPrincipals(principalIds, tenantId) { interactions.deleteSessionBindingsForPrincipals(principalIds, tenantId); },
       async saveThread(thread) { interactions.saveThread(thread); },
       async findThread(threadId) { return interactions.findThread(threadId); },
+      async findLaneTimeline(threadId, tenantId, taskId, cap) { return interactions.findLaneTimeline(threadId, tenantId, taskId, cap); },
       async findThreadsForPrincipal(principalId, tenantId) { return interactions.findThreadsForPrincipal(principalId, tenantId); },
       async findThreadsForPrincipals(principalIds, tenantId) { return interactions.findThreadsForPrincipals(principalIds, tenantId); },
       async findContact(guestId, tenantId) { return contacts!.find(guestId, tenantId); },

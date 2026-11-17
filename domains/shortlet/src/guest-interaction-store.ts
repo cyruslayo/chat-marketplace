@@ -1,7 +1,8 @@
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
 import { createHash } from "node:crypto";
 import { normalizeContactEmail } from "../../../packages/platform-core/src/accounts/contact.js";
-import { maskEmailAddresses, redactSensitiveData } from "../../../packages/platform-core/src/redaction.js";
+import { redactLaneText } from "../../../packages/platform-core/src/redaction.js";
+import { readLaneTimeline, type LaneRestoreResult } from "../../../packages/platform-core/src/lane-restore.js";
 import { THREAD_SESSION_SCHEMA } from "../../../packages/platform-core/src/thread-schema.js";
 
 /**
@@ -695,8 +696,8 @@ export function saveThreadRecord(database: SqlDatabase, thread: DurableGuestThre
           $domain: event.domain,
           $seq: event.seq,
           $role: event.role,
-          // ADR 0075 and ADR 0093: lane rows are exported interaction data, so email text is masked here too (issue 03e, shared rule 03n).
-          $textRedacted: maskEmailAddresses(redactSensitiveData(event.text) as string),
+          // ADR 0075 and ADR 0093, owner decision 2 (issue 03h): the same rule as the timeline, so the row text equals the timeline text.
+          $textRedacted: redactLaneText(event.text),
           $createdAt: event.createdAt,
         });
       } catch {
@@ -818,6 +819,14 @@ export class SqliteGuestInteractionStore {
 
   saveThread(thread: DurableGuestThreadRecord): void {
     saveThreadRecord(this.#database, thread);
+  }
+
+  /**
+   * Issue 03h (ADR 0107 decision 11): one lane's rows for a cold restore, through the single lane reader. A lane the reader refuses
+   * restores empty; the reader never falls back to other text.
+   */
+  findLaneTimeline(threadId: string, tenantId: string, taskId: string, cap: number): LaneRestoreResult {
+    return readLaneTimeline(this.#database, { threadId, tenantId, taskId, cap });
   }
 
   findThread(threadId: string): DurableGuestThreadRecord | null {

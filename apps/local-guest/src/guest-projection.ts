@@ -75,12 +75,12 @@ export interface GuestPersistentProjection {
   readonly lanes?: readonly PersistedLane[];
   /**
    * Issue 03e (ADR 0107 decision 11): the next lane row sequence per task id. It is kept here because the capped timeline cannot
-   * give it back, and the app never reads the lane table. Absent in projections written before issue 03e (every task starts at 0).
+   * give it back. Issue 03h: a lane's rows are the stored lane, and a positive count means the lane has rows; the restore reads the table only through its one reader. Absent in projections written before issue 03e (every task starts at 0).
    */
   readonly laneEventSeq?: Readonly<Record<string, number>>;
 }
 
-/** Issue 03d: one task's lane as the projection stores it. The id and domain name the task; the timeline is guest-visible copy only. */
+/** Issue 03d: one task's lane as a projection written before issue 03h stored it. Issue 03h reads it only to migrate a lane with no rows. */
 export interface PersistedLane {
   readonly taskId: string;
   readonly domain: string;

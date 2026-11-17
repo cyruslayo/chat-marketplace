@@ -264,3 +264,39 @@ test("3e AC5: the daily export writes the lane table to the key for the date", a
   expect(body).toContain(probe);
   expect(body).not.toContain("801 234 5678");
 });
+
+test("3h AC: the platform object reads one lane through its lane route, in seq order, and no other lane", async () => {
+  // Issue 03h (ADR 0107 decision 11, ADR 0106 cold restore): a remote composition restores a lane through the platform object's single
+  // lane reader. The route returns the named task's rows only, in seq order, and refuses a cap below one.
+  const tenant = isolatedTenantName("lane-read-route");
+  const platform = isolatedPlatformStub(tenant);
+  const threadId = `g-03b-${crypto.randomUUID().slice(0, 8)}`;
+  await runInDurableObject(platform, (_instance, ctx) => {
+    saveThreadRecord(new DurableObjectSqlDatabase(ctx.storage), {
+      threadId,
+      principalId: "guest-lane-route",
+      tenantId: tenant,
+      threadJson: "{\"version\":1}",
+      laneEvents: [
+        { taskId: "task-a", domain: "shortlet", seq: 1, role: "user", text: "first", createdAt: "2026-10-27T10:00:00.000Z" },
+        { taskId: "task-a", domain: "shortlet", seq: 2, role: "assistant", text: "second", createdAt: "2026-10-27T10:00:01.000Z" },
+        { taskId: "task-b", domain: "shop", seq: 1, role: "user", text: "other lane", createdAt: "2026-10-27T10:00:02.000Z" },
+      ],
+    });
+  });
+  const response = await platform.fetch("https://do.internal/_internal/guest-data/findLaneTimeline", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ tenantId: tenant, threadId, taskId: "task-a", cap: 10 }),
+  });
+  expect(response.ok).toBe(true);
+  const body = (await response.json()) as { result: { entries: { role: string; text: string }[]; truncated: boolean } };
+  expect(body.result.entries).toEqual([{ role: "user", text: "first" }, { role: "assistant", text: "second" }]);
+  expect(body.result.truncated).toBe(false);
+  const refused = await platform.fetch("https://do.internal/_internal/guest-data/findLaneTimeline", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ tenantId: tenant, threadId, taskId: "task-a", cap: 0 }),
+  });
+  expect(refused.status).toBe(400);
+});

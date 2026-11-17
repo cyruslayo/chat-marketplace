@@ -18,12 +18,14 @@ const MASKED_EMAIL_TURN = `My email is ${MASK}`;
 
 interface TimelineEntry { readonly role: string; readonly text: string }
 
-/** The timeline the thread projection stored in the guest store (the persisted `guest_threads` timeline). */
+/**
+ * The timeline the guest store holds for the thread: its lane rows, in seq order (issue 03h: the projection no longer carries a
+ * timeline, so the rows are the persisted timeline).
+ */
 function persistedTimeline(f: ReturnType<typeof datedFixture>, threadId: string): readonly TimelineEntry[] {
   const record = f.environment.interactionStore.findThread(threadId);
   if (!record) throw new Error(`thread ${threadId} is not persisted`);
-  const projection = JSON.parse(record.threadJson) as { readonly timeline: readonly TimelineEntry[] };
-  return projection.timeline;
+  return readLaneRows(f.databasePath!, threadId).sort((left, right) => left.seq - right.seq).map((row) => ({ role: row.role, text: row.textRedacted }));
 }
 
 /** Every serialised surface, lane row and stored projection a guest can read back for a thread. */

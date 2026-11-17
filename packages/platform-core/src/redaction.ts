@@ -202,3 +202,12 @@ const EMAIL_ADDRESS_SHAPE = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 export function maskEmailAddresses(text: string): string {
   return text.replace(EMAIL_ADDRESS_SHAPE, EMAIL_ADDRESS_MASK);
 }
+
+/**
+ * Issue 03h (owner decision 2, 17 Nov 2026; ADR 0075, ADR 0093): the one redaction rule for guest-visible lane text. The timeline
+ * (`#pushLaneEntry`), the lane rows (`saveThreadRecord`) and a migrated legacy lane all use it, so the rows and the timeline carry
+ * the same text. Phone and card shapes are masked by `redactSensitiveData`; email addresses by `maskEmailAddresses`.
+ */
+export function redactLaneText(text: string): string {
+  return maskEmailAddresses(redactSensitiveData(text) as string);
+}

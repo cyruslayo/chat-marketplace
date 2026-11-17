@@ -16,6 +16,7 @@ import type { GuestAccountAuthorityErrorCode } from "../../../packages/platform-
 import { usableCodeHashingKey } from "../../../packages/platform-core/src/accounts/remote-port.js";
 import { SqliteGuestContactRepository } from "../../../packages/platform-core/src/accounts/contact.js";
 import { parseDurableLaneEvents, saveThreadRecord } from "../../../domains/shortlet/src/index.js";
+import { readLaneTimeline } from "../../../packages/platform-core/src/lane-restore.js";
 import { shortletDomainClient } from "./do-clients.js";
 import { SqliteModelRequestQuota } from "../../../packages/platform-core/src/model-request-quota.js";
 import { pilotLimits } from "../../pilot/src/pilot-config-core.js";
@@ -142,6 +143,13 @@ export class PlatformDO extends DurableObject<CloudflareEnv> {
       if (laneEvents === null) return new Response("Bad request", { status: 400 });
       saveThreadRecord(database, { threadId, principalId, tenantId, threadJson, laneEvents });
       return Response.json({ result: null });
+    }
+    if (operation === "findLaneTimeline") {
+      // Issue 03h (ADR 0107 decision 11): one lane's rows for a cold restore, through the platform's single lane reader.
+      const threadId = text("threadId"), taskId = text("taskId");
+      const cap = Number.isSafeInteger(input.cap) ? Number(input.cap) : 0;
+      if (!threadId || !taskId || cap < 1 || input.tenantId !== tenantId) return new Response("Bad request", { status: 400 });
+      return Response.json({ result: readLaneTimeline(database, { threadId, tenantId, taskId, cap }) });
     }
     if (operation === "findThread") {
       const threadId = text("threadId"); if (!threadId) return new Response("Bad request", { status: 400 });

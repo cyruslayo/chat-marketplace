@@ -136,6 +136,8 @@ export function platformGuestData(env: CloudflareEnv, tenantId: string): GuestDa
       ? call("deleteSessionBindingsForPrincipals", { principalIds }) : Promise.reject(new Error("Invalid guest session scope")),
     saveThread: (thread) => thread.tenantId === normalizedTenant ? call("saveThread", thread as unknown as Record<string, unknown>) : Promise.reject(new Error("Invalid thread scope")),
     findThread: (threadId) => call("findThread", { threadId }),
+    findLaneTimeline: (threadId, requestedTenant, taskId, cap) => requestedTenant === normalizedTenant
+      ? call("findLaneTimeline", { threadId, tenantId: requestedTenant, taskId, cap }) : Promise.reject(new Error("Invalid thread scope")),
     findThreadsForPrincipal: (principalId, requestedTenant) => requestedTenant === normalizedTenant
       ? call("findThreadsForPrincipal", { principalId }) : Promise.reject(new Error("Invalid thread scope")),
     findThreadsForPrincipals: (principalIds, requestedTenant) => requestedTenant === normalizedTenant

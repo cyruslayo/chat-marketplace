@@ -195,11 +195,12 @@ test("A malformed persisted pendingAction is read as null: the thread still rest
     const parsed = parseGuestProjection(JSON.parse(stored.threadJson));
     assert.ok(parsed, "a malformed pendingAction does not discard the whole projection");
     assert.equal(parsed.pendingAction, null, "the malformed action is read as null");
-    assert.ok(parsed.timeline.length > 0, "the conversation timeline is kept");
 
     // A cold restore still reads the thread, and holds no pending action.
     const fixture = wireDatedApp(environment, model);
     assert.ok(fixture.app.getState(threadId), "the thread is restored");
+    // Issue 03h: the timeline lives in the lane rows, not the projection; a cold restore reads it back.
+    assert.ok((fixture.app.getState(threadId)?.timeline.length ?? 0) > 0, "the conversation timeline is kept");
     assert.equal(fixture.runtime.getThread(threadId).taskState.pendingAction ?? null, null, "the action is not restored");
   } finally { environment.close(); }
 });
