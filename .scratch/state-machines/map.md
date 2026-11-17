@@ -8,7 +8,7 @@ PRD: `PRD.md`. Line numbers come from a sweep of an earlier checkout and are app
 |---|---|---|---|---|
 | 01 | A | State-machine map for agents (`docs/agents/state-machines.md`) | resolved | - |
 | 02 | A | Ratchet test keeps the map current | resolved | 01 |
-| 03 | B | `canTransition` predicate in platform-core | ready-for-agent | - |
+| 03 | B | `canTransition` predicate in platform-core | resolved | - |
 | 04 | B | BookingRequest: typed records (no `any`), exported status union, one delivered/deadline predicate | to write | 03 |
 | 05 | B | ConditionalOffer and Reservation unions and tables | to write | 03 |
 | 06 | B | Card session, bank transfer session, manual transfer, live attempt tables | to write | 03 |
@@ -16,11 +16,11 @@ PRD: `PRD.md`. Line numbers come from a sweep of an earlier checkout and are app
 | 08 | B | One `SurfaceLifecycleStatus` (re-export from platform-core) | to write | 01 |
 | 09 | B | Exhaustive `satisfies Record` copy maps in web-agent presentation | to write | 01 |
 | 10 | B | `deriveGuestStage` projection that keeps today's per-site results, plus a matrix | to write | 01 |
-| 11 | C | Deposit payment in processing restores as processing | ready-for-agent | - |
+| 11 | C | Deposit payment in processing restores as processing | resolved | - |
 | 12 | C | Unknown payment status no longer says "Booking confirmed" | to write | 09 |
-| 13 | C | Stale or revoked offer does not restore as active | ready-for-agent | - |
-| 14 | C | Expired confirmation is cleared, so the guest is not stuck | ready-for-agent | - |
-| 15 | C | Unknown card-session status fails closed | ready-for-agent | - |
+| 13 | C | Stale or revoked offer does not restore as active | resolved | - |
+| 14 | C | Expired confirmation is cleared, so the guest is not stuck | resolved | - |
+| 15 | C | Unknown card-session status fails closed | resolved | - |
 | 16 | C | Stale `draftId` cleared on a new search | to write | 10 |
 | 17 | C | Allow-list hardening: `resolveExpiry`, `commitAmendment`, surface from-state | to write | 05, 06, 07, 08 |
 | 18 | C | One guest stage everywhere: collapse each matrix disagreement | to write | 10, 11, 13, 16 |
