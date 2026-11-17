@@ -153,6 +153,7 @@ import {
   type SignInOfferContent,
 } from "./guest-kit.js";
 import {
+  isCardPaymentProcessing,
   paymentScreenContent,
   type PaymentScreenContent,
 } from "../../web-agent/src/payment-presentation.js";
@@ -3286,7 +3287,7 @@ export class LocalGuestApp {
         // and ready surfaces must restore to the same lifecycle state.
         if (
           storedSurfaceId.includes(":payment:result:") ||
-          artifact.facts.journeyStage === "stay_payment_processing"
+          isCardPaymentProcessing(artifact.facts)
         ) {
           const processingId = storedSurfaceId.includes(":payment:result:")
             ? storedSurfaceId
