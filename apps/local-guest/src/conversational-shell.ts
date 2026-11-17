@@ -1,12 +1,10 @@
-export type PresentationMode = "text" | "inline-surface" | "focused-surface";
+// ADR 0074: the one declaration lives in platform-core. This type-only import and re-export are erased at build time, so the
+// browser bundle never loads surface.ts at runtime.
+import type { SurfaceLifecycleStatus } from "../../../packages/platform-core/src/surface.js";
 
-export type SurfaceLifecycleStatus =
-  | "active"
-  | "superseded"
-  | "stale"
-  | "expired"
-  | "deleted"
-  | "fallback";
+export type { SurfaceLifecycleStatus };
+
+export type PresentationMode = "text" | "inline-surface" | "focused-surface";
 
 export interface SurfacePresentation {
   readonly surfaceId: string;
