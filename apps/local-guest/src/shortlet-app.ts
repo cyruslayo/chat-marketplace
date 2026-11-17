@@ -168,6 +168,7 @@ import type { ConditionalOfferArtifact } from "../../../apps/web/src/conditional
 import type { BookingContractArtifact } from "../../../apps/web/src/booking-contract-artifact.js";
 import { projectContractArtifact } from "./assistant/contract-artifact-projection.js";
 import type { CardPaymentApplication } from "../../../apps/web/src/card-payment-application.js";
+import type { CardPaymentArtifact } from "../../../apps/web/src/card-payment-artifact.js";
 import {
   LocalGuestEnvironment,
   LOCAL_GUEST_PORT,
@@ -550,6 +551,9 @@ const UNIT_STAGE = "unit";
 const REQUEST_STAGE = "request";
 const OFFER_STAGE = "offer";
 const PAYMENT_STAGE = "payment";
+/** Issue 65: the one checkout-ready message, on the email-just-saved and the direct card path. */
+const CARD_CHECKOUT_READY_MESSAGE =
+  "Hosted card checkout is ready. Payment has not succeeded; your booking details remain available when you return.";
 const BOOKING_STAGE = "booking";
 /** Issue 13b: the two-up comparison opened from results. */
 const COMPARE_STAGE = "compare";
@@ -1381,44 +1385,7 @@ export class LocalGuestApp {
         thread.offerId!,
         this.#environment.guestPrincipal(),
       );
-      const surfaceId = `thread-${thread.threadId}:payment:checkout:${session.checkoutId}`;
-      this.#supersede(thread, PAYMENT_STAGE);
-      thread.activeSurfaces.set(PAYMENT_STAGE, surfaceId);
-      this.#emitTransition(thread, "payment.handoff.opened", {
-        aggregateType: "payment",
-        aggregateId: thread.offerId!,
-        surfaceId,
-      });
-      this.#emitTransition(thread, "payment.attempt.initialized", {
-        aggregateType: "payment_attempt",
-        aggregateId: session.checkoutId,
-        correlationId: thread.offerId!,
-      });
-      const checkoutAmount =
-        artifact.facts.currentComponentAmountKobo ??
-        artifact.facts.allInStayTotalKobo ??
-        artifact.facts.amountDueNowKobo;
-      const checkoutPurpose =
-        artifact.facts.currentComponent === "security_deposit"
-          ? GUEST_GLOSSARY.refundableSecurityDeposit
-          : "stay payment";
-      return {
-        ok: true,
-        messages: [
-          "Hosted card checkout is ready. Payment has not succeeded; your booking details remain available when you return.",
-        ],
-        surfaces: [
-          {
-            surfaceId,
-            mode: "focused-surface",
-            summary: "Payment handoff",
-            conventionalRoute: `/payments/offers/${encodeURIComponent(thread.offerId!)}/continue`,
-            conventionalRouteLabel: `Continue to ${checkoutPurpose} · ${formatNgnKobo(checkoutAmount)}`,
-            textFallback: `You will leave Shortlet temporarily for hosted card checkout. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Next payment: ${formatNgnKobo(checkoutAmount)}. ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Payment has not succeeded and the booking is not confirmed. Your booking details will be retained when you return.`,
-            a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }),
-          },
-        ],
-      };
+      return this.#cardCheckoutHandoff(thread, artifact, session.checkoutId);
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       if (/email address is required/i.test(message))
@@ -6192,18 +6159,33 @@ export class LocalGuestApp {
       thread.offerId,
       environment.guestPrincipal(),
     );
-    const surfaceId = `thread-${thread.threadId}:payment:checkout:${session.checkoutId}`;
+    return this.#cardCheckoutHandoff(thread, artifact, session.checkoutId);
+  }
+
+  /**
+   * Issue 65 (ADR 0087, 0046, 0077): the one card-checkout handoff. Both the email-just-saved path (#handleCardCheckout) and the
+   * direct initialize-checkout path (#handlePaystackCardCheckout) build it here, so the route, label, message and text cannot
+   * drift apart. The continue control is the server route /continue, which initializes or reuses the Live Payment Attempt; no
+   * Paystack URL is placed in the result. The standalone page (conventionalCardPaymentRoute) is not used here (ADR 0080).
+   */
+  #cardCheckoutHandoff(
+    thread: GuestThreadState,
+    artifact: CardPaymentArtifact,
+    checkoutId: string,
+  ): GuestTurnSuccess {
+    const offerId = thread.offerId!;
+    const surfaceId = `thread-${thread.threadId}:payment:checkout:${checkoutId}`;
     this.#supersede(thread, PAYMENT_STAGE);
     thread.activeSurfaces.set(PAYMENT_STAGE, surfaceId);
     this.#emitTransition(thread, "payment.handoff.opened", {
       aggregateType: "payment",
-      aggregateId: thread.offerId,
+      aggregateId: offerId,
       surfaceId,
     });
     this.#emitTransition(thread, "payment.attempt.initialized", {
       aggregateType: "payment_attempt",
-      aggregateId: session.checkoutId,
-      correlationId: thread.offerId,
+      aggregateId: checkoutId,
+      correlationId: offerId,
     });
     const checkoutAmount =
       artifact.facts.currentComponentAmountKobo ??
@@ -6217,17 +6199,15 @@ export class LocalGuestApp {
         : "stay payment";
     return {
       ok: true,
-      messages: [
-        "Payment checkout is ready. Payment has not succeeded; your booking details remain available when you return.",
-      ],
+      messages: [CARD_CHECKOUT_READY_MESSAGE],
       surfaces: [
         {
           surfaceId,
           mode: "focused-surface",
           summary: "Payment handoff",
-          conventionalRoute: conventionalCardPaymentRoute(thread.offerId),
+          conventionalRoute: `/payments/offers/${encodeURIComponent(offerId)}/continue`,
           conventionalRouteLabel: `Continue to ${checkoutPurpose} · ${formatNgnKobo(checkoutAmount)}`,
-          textFallback: `Payment handoff ready for ${artifact.facts.unit}, ${formatStayDates(artifact.facts.checkIn, artifact.facts.checkOut)}. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Next payment: ${formatNgnKobo(checkoutAmount)}. ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Payment has not succeeded and the booking is not confirmed. Your booking details will be retained when you return.`,
+          textFallback: `You will leave Shortlet temporarily for hosted card checkout. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Next payment: ${formatNgnKobo(checkoutAmount)}. ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Payment has not succeeded and the booking is not confirmed. Your booking details will be retained when you return.`,
           a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }),
         },
       ],

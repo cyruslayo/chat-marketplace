@@ -40,6 +40,8 @@ export async function guestPaymentPage(options: {
   readonly config?: Partial<LocalGuestFixtureConfig>;
   readonly dir?: string;
   readonly existing?: { readonly offerId: string };
+  /** Serves the local demo payment (the default). False serves the hosted card checkout labels (ADR 0087). */
+  readonly localPayment?: boolean;
 } = {}): Promise<GuestPaymentPage> {
   const dir = options.dir ?? mkdtempSync(join(tmpdir(), "guest-payment-"));
   let current = new Date(options.start ?? "2026-09-03T10:02:00.000Z");
@@ -54,7 +56,7 @@ export async function guestPaymentPage(options: {
     const offer = env.conditionalOfferApp.getOffer(offerId);
     env.conditionalOfferApp.accept({ offerId, confirmationToken: offer.confirmationToken, expectedVersion: offer.offerVersion, principal: env.guestPrincipal() });
   }
-  const server = startLocalGuestServer({ port: 0, environment: env, localPayment: true, conciergeMode: "deterministic" });
+  const server = startLocalGuestServer({ port: 0, environment: env, localPayment: options.localPayment ?? true, conciergeMode: "deterministic" });
   const port = await server.listen();
   const base = `http://127.0.0.1:${port}`;
   const cookie = (await fetch(`${base}/`)).headers.get("set-cookie")?.split(";")[0] ?? "";

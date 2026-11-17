@@ -30,7 +30,7 @@ test("saving the email resumes to the payment-ready card after a cold restore", 
     const emailAsk = firstButtonAction(ask.surfaces[0]!);
     const saved = successOf(await coldApp(h).handleEventAsync(h.threadId, { ...emailAsk, context: { ...emailAsk.context, contactValue: EMAIL } }), "Save email");
     assert.match(saved.surfaces[0]!.surfaceId, /:payment:checkout:/, "the email save resumes to the payment-ready card");
-    assert.match(saved.surfaces[0]!.conventionalRoute ?? "", /^\/payments\/offers\/[^/]+$/, "the resumed card links to the offer's payment page");
+    assert.match(saved.surfaces[0]!.conventionalRoute ?? "", /^\/payments\/offers\/[^/]+\/continue$/, "the resumed card links to the offer's continue route, as the direct path does (issue 65)");
   } finally { h.f.close(); }
 });
 
