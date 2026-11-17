@@ -269,6 +269,14 @@ export const GUEST_MODE_CHOOSER = Object.freeze({
   openProposalWarning: "Changing concierge now cancels the step waiting for your answer.",
 });
 
+/**
+ * Issue 03l (ADR 0107 decision 7; owner, 17 Nov 2026): the polite announcement of a committed mode switch. One template, fed the
+ * persona name (for stays, "Concierge · Stays"). The client never writes this copy itself.
+ */
+export function guestModeSwitchAnnouncement(personaName: string): string {
+  return `You’re now talking to ${personaName}.`;
+}
+
 /** Issue 13a: committed work a new conversation leaves untouched (ADR-0079). */
 export type GuestCommittedWorkKind = "request" | "offer" | "reservation";
 

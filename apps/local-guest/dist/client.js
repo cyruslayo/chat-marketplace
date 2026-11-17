@@ -9698,6 +9698,9 @@ Known schemas:
     // Owner-approved on 16 Nov 2026 (issue 03g step 5). Shown when the current task has an open proposal, before a switch.
     openProposalWarning: "Changing concierge now cancels the step waiting for your answer."
   });
+  function guestModeSwitchAnnouncement(personaName) {
+    return `You\u2019re now talking to ${personaName}.`;
+  }
   var COMMITTED_WORK_NAMES = {
     request: GUEST_GLOSSARY.bookingRequest,
     offer: GUEST_GLOSSARY.conditionalBookingOffer,
@@ -10446,6 +10449,33 @@ Known schemas:
     const preview = choices.find((choice) => choice.domain === previewDomain2);
     if (preview === void 0 || preview.presentation.id === committedModeId) return void 0;
     return preview;
+  }
+
+  // apps/local-guest/src/mode-announcement.ts
+  function createModeAnnouncements() {
+    let lastModeId;
+    let held;
+    return {
+      applyResponse(value) {
+        const mode = readResponseMode(value);
+        if (mode === void 0) return;
+        if (lastModeId !== void 0 && lastModeId !== mode.id) {
+          held = guestModeSwitchAnnouncement(GUEST_MODE_CHOOSER.conciergeLabel(mode.label));
+        }
+        lastModeId = mode.id;
+      },
+      politeText(text) {
+        if (held === void 0) return text;
+        const switchText = held;
+        held = void 0;
+        return text.trim() === "" ? switchText : `${switchText} ${text}`;
+      },
+      flush() {
+        const switchText = held;
+        held = void 0;
+        return switchText;
+      }
+    };
   }
 
   // apps/local-guest/src/agent-mark-state.ts
@@ -11749,6 +11779,7 @@ Known schemas:
     return value;
   }
   var appliedMode = GUEST_MODES.stays;
+  var modeAnnouncements = createModeAnnouncements();
   function themeColourMetas() {
     return Array.from(document.querySelectorAll('meta[name="theme-color"]'));
   }
@@ -11760,6 +11791,7 @@ Known schemas:
   });
   function applyResponseMode(response) {
     appliedMode = readResponseMode(response.mode) ?? appliedMode;
+    modeAnnouncements.applyResponse(response.mode);
     applyResponseModeAndThemeColour(document.documentElement, themeColourMetas(), readModeTint, response.mode);
     if (previewDomain === void 0) renderEmptyCopy(appliedMode);
     syncModeMark();
@@ -11827,7 +11859,15 @@ Known schemas:
     });
   }
   function announce(text, assertive = false) {
-    (assertive ? errorAnnouncer : announcer).textContent = text;
+    if (assertive) {
+      errorAnnouncer.textContent = text;
+      return;
+    }
+    announcer.textContent = modeAnnouncements.politeText(text);
+  }
+  function flushModeSwitchAnnouncement() {
+    const alone = modeAnnouncements.flush();
+    if (alone !== void 0) announcer.textContent = alone;
   }
   var RENDERED_TURN_WINDOW = 6;
   function deferOlderTurns() {
@@ -12883,6 +12923,7 @@ Known schemas:
     for (const receipt of response.receipts ?? []) addReceipt(receipt);
     if (response.modeChange?.reason === "suggested") setAgentMark({ type: "mode-suggested" });
     else landAgentReply();
+    flushModeSwitchAnnouncement();
     return true;
   }
   async function refreshServerState(preserveConversation = shellState.activeSurface?.mode === "focused-surface" && !shellState.focusedSurfaceOpen) {
@@ -12896,6 +12937,7 @@ Known schemas:
         renderTaskRail(response.tasks);
         renderVerticalStarters(response.verticals);
         applyResponseMode(response);
+        flushModeSwitchAnnouncement();
         if (response.modeChange?.reason === "suggested") renderQuickReplies(response.quickReplies);
       }
       if (response.ok && response.surfaces && response.surfaces.length > 0) {
@@ -13155,6 +13197,7 @@ Known schemas:
       renderQuickReplies(response.quickReplies);
       if (response.modeChange?.reason === "suggested") setAgentMark({ type: "mode-suggested" });
       announce("Your conversation has been restored.");
+      flushModeSwitchAnnouncement();
       return true;
     } catch {
       return false;

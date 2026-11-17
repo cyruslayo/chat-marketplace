@@ -45,6 +45,7 @@ import {
   type ThemeColourMeta,
 } from "./response-mode.js";
 import { chooseModes, markIsControl, showsModeChooser, startBeforeTurn, type ModeChoice } from "./mode-choice.js";
+import { createModeAnnouncements } from "./mode-announcement.js";
 import { nextAgentMarkState, type AgentMarkEvent, type AgentMarkState } from "./agent-mark-state.js";
 import {
   breakdownHtml,
@@ -1561,6 +1562,8 @@ function readGuestResponse(value: unknown): GuestResponse {
 // Slice 1 of the agent-modes effort: the applied presentation drives the shell announcements. It is only ever set from a
 // validated copy, so a raw response object never reaches the copy. Stays is the default before the first response.
 let appliedMode: ModePresentation = GUEST_MODES.stays;
+// Issue 03l (ADR 0107 decision 7): the switch announcement state. Pure (mode-announcement.ts); the client only routes text through it.
+const modeAnnouncements = createModeAnnouncements();
 
 /** Issue 03k: the theme-color tags the shell renders. Read at the time of each write, so a re-render never leaves a stale list. */
 function themeColourMetas(): ThemeColourMeta[] {
@@ -1579,6 +1582,8 @@ window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () 
 
 function applyResponseMode(response: GuestResponse): void {
   appliedMode = readResponseMode(response.mode) ?? appliedMode;
+  // Issue 03l (ADR 0107 decision 7): a committed switch is held for the polite announcer; the first response is never a switch.
+  modeAnnouncements.applyResponse(response.mode);
   // Issue 03c (ADR 0107 decision 6): the document's data-mode follows the validated response, never a user action or the DOM.
   // Issue 03k (ADR 0107 decision 2): the browser theme colour follows the same validated response, and only when the id changed.
   applyResponseModeAndThemeColour(document.documentElement, themeColourMetas(), readModeTint, response.mode);
@@ -1692,7 +1697,18 @@ function trackTelemetry(event: ShellTelemetryEvent): void {
 function announce(text: string, assertive = false): void {
   // ADR-0078: separate polite progress from assertive errors so normal turns
   // never upgrade the live region's urgency.
-  (assertive ? errorAnnouncer : announcer).textContent = text;
+  if (assertive) {
+    errorAnnouncer.textContent = text;
+    return;
+  }
+  // Issue 03l: a held mode-switch copy is combined into this one polite write, switch first.
+  announcer.textContent = modeAnnouncements.politeText(text);
+}
+
+/** Issue 03l: writes a held mode-switch copy on its own when no reply announcement combined with it. */
+function flushModeSwitchAnnouncement(): void {
+  const alone = modeAnnouncements.flush();
+  if (alone !== undefined) announcer.textContent = alone;
 }
 
 /** Issue 24 (guideline §12): keep the latest turns rendered; older ones defer until scrolled near, and stay reachable. */
@@ -2945,6 +2961,8 @@ function renderResponse(response: GuestResponse): boolean {
   for (const receipt of response.receipts ?? []) addReceipt(receipt);
   if (response.modeChange?.reason === "suggested") setAgentMark({ type: "mode-suggested" });
   else landAgentReply();
+  // Issue 03l: a switch with no other announcement for this response is written alone.
+  flushModeSwitchAnnouncement();
   return true;
 }
 
@@ -2959,6 +2977,7 @@ async function refreshServerState(preserveConversation = shellState.activeSurfac
       renderTaskRail(response.tasks);
       renderVerticalStarters(response.verticals);
       applyResponseMode(response);
+      flushModeSwitchAnnouncement();
       if (response.modeChange?.reason === "suggested") renderQuickReplies(response.quickReplies);
     }
     if (response.ok && response.surfaces && response.surfaces.length > 0) {
@@ -3239,6 +3258,7 @@ async function restoreServerState(): Promise<boolean> {
     renderQuickReplies(response.quickReplies);
     if (response.modeChange?.reason === "suggested") setAgentMark({ type: "mode-suggested" });
     announce("Your conversation has been restored.");
+    flushModeSwitchAnnouncement();
     return true;
   } catch { return false; }
 }

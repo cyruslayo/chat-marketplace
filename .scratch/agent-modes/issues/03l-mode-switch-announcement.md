@@ -1,6 +1,6 @@
 # Announce a mode switch through the existing polite announcer
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 03c (resolved: the client applies the server's mode and can tell when it changes). It also serves 03f (the tier C suggestion changes the mode only after a confirmation) and 03g (the strip commits a preview). Owner release before any build (ADR 0107 "Settled", 8 Nov 2026).
 Requested: 16 Nov 2026
@@ -74,3 +74,30 @@ Each is its own `test()` in `test/agent-mode-announcement.test.ts` (new).
 - The View Transition (03j) and the theme colour (03k).
 
 ## Comments
+
+### 17 Nov 2026: built (agent)
+
+Owner decisions applied:
+
+- 1+2. Wording is `You’re now talking to {persona}.`, one template `guestModeSwitchAnnouncement(personaName)` in `apps/web-agent/src/guest-content.ts`. The persona is `GUEST_MODE_CHOOSER.conciergeLabel(mode.label)` (for stays, "Concierge · Stays"). `ModePresentation` and its validator are unchanged.
+- 3. A strip preview announces nothing: `previewChoose` and `renderModeStrip` make no response and call neither `announce` nor `applyResponseMode` (AC7).
+- 4. A tier C suggestion announces only when accepted, through the same response path (the server response carries the new mode). No special case.
+- 5. One response with a reply and a switch: the held switch copy is the first text in one polite write (switch copy, a space, then the reply text). If a response has no polite text, the switch is written alone by `flushModeSwitchAnnouncement()`. A reply delivered as chat messages is announced by the transcript (`#transcript`, role log), not by `#announcer`, so the switch is written alone there and the guest hears each once. Owner to confirm this reading.
+
+Implementation: pure helper `apps/local-guest/src/mode-announcement.ts` (`createModeAnnouncements`). The first response after load is never a switch (the restore and the first state read are baseline). A malformed mode is refused by `readResponseMode` and changes nothing. `announce()` routes polite text through the helper and writes assertive text straight to `#error-announcer`. `client.ts` holds no switch copy.
+
+ADRs read and applied: 0107 (decisions 2, 6, 7, 9), 0077 (one copy source in guest-content.ts), 0078 (announce meaningful changes, not tokens; the switch copy names the persona), 0080 (the no-JS page reloads per turn, so there is no in-place switch to announce; untouched).
+
+Deviation: Definition of Done item 7 names `npm test`. Per the owner's instruction for this batch, the full `npm test` and `npm run test:workers` run once at the pre-merge gate, not per issue.
+
+Commands and pass counts (all prefixed `env -u LLM_API_KEY`):
+
+- Before changes: `npx tsx --test test/guest-focus-announcements.test.ts`: 3/3 pass.
+- New test, red first (module not found), then green: `npx tsx --test test/agent-mode-announcement.test.ts`: 8/8 pass (AC1 to AC8, one `test()` each).
+- `npm run check`: exit 0 (tsc for the root, apps/cloudflare, the test and tooling configs, and the worker bundle guard).
+- `npx tsx --test test/agent-mode-announcement.test.ts test/agent-mode-follows-task.test.ts test/guest-focus-announcements.test.ts test/agent-mode-theme-color.test.ts test/agent-mode-shell.test.ts`: 42/42 pass.
+- Related node tests (agent-mark-shell, agent-mode-preview, mode-suggestion-tier-c, guest-internal-terms, guest-copy-pass, guest-presentation-contract, local-guest-shell, guest-refusal-copy, guest-retired-classes, guest-surface-hooks, guest-new-conversation, guest-turn-cancel, guest-long-conversation, guest-chip-continuity, guest-changed-elsewhere, guest-amount-labels, guest-date-format, extended-stay-counsel-copy, assistant-pack-contract, assistant-task-lanes): 112/112 pass, one command.
+- `npx tsx --test test/agent-mode-sheet-chromium.test.ts` (solo): 5/5 pass. Then `npx tsx --test test/agent-mode-theme-color-chromium.test.ts` (solo, after the first finished): 2/2 pass.
+- `npm run build`: regenerated `apps/local-guest/dist/client.js`. Restored `dist/gallery.js`, `dist/landing.js`, `dist/offer.js`, `dist/payment.js` and `apps/cloudflare/public/_headers` with `git checkout --`; only `client.js` is committed from dist.
+
+Owner check (not an agent gate): a manual screen-reader check on the reference low-end Android Chrome, confirming the switch is heard once and the reply is not repeated.
