@@ -46,6 +46,7 @@ import {
 } from "./response-mode.js";
 import { chooseModes, markIsControl, showsModeChooser, startBeforeTurn, type ModeChoice } from "./mode-choice.js";
 import { createModeAnnouncements } from "./mode-announcement.js";
+import { LaneCache, planSwitch, timelinesEqual, type SwitchOrigin, type SwitchPlan } from "./lane-cache.js";
 import { nextAgentMarkState, type AgentMarkEvent, type AgentMarkState } from "./agent-mark-state.js";
 import {
   breakdownHtml,
@@ -1660,6 +1661,17 @@ function dropPaymentNoticeFlag(): void {
 dropPaymentNoticeFlag();
 
 const threadId = getThreadId();
+/**
+ * Issue 03i (ADR 0107 decision 11): every visited lane is a live element inside the transcript, shown or hidden, never re-inserted.
+ * The cache is in memory only; the server's task list and timeline decide what is shown (see lane-cache.ts).
+ */
+const laneCache = new LaneCache<HTMLElement>(threadId);
+let activeLane = createLaneElement();
+let activeLaneId: string | undefined;
+/** Set by a switch made from the switcher (rail, strip or sheet): the lane heading takes focus when the lane changes. */
+let laneFocusRequested = false;
+transcript.appendChild(activeLane);
+routeHeading.tabIndex = -1;
 let shellState: ConversationShellState = createConversationShellState();
 let activePayload: GuestSurfacePayload | undefined;
 /** Issue 14: a turn's assistant message is announced by the transcript log, so the workspace stays silent for that turn. */
@@ -1714,7 +1726,7 @@ function flushModeSwitchAnnouncement(): void {
 /** Issue 24 (guideline §12): keep the latest turns rendered; older ones defer until scrolled near, and stay reachable. */
 const RENDERED_TURN_WINDOW = 6;
 function deferOlderTurns(): void {
-  const turns = transcript.querySelectorAll<HTMLElement>(".turn");
+  const turns = activeLane.querySelectorAll<HTMLElement>(".turn");
   const cutoff = Math.max(0, turns.length - RENDERED_TURN_WINDOW);
   turns.forEach((turn, index) => turn.classList.toggle("turn--deferred", index < cutoff));
 }
@@ -1733,7 +1745,7 @@ function addTurn(role: "assistant" | "user", text: string): void {
   bubble.className = "bubble";
   bubble.textContent = text;
   turn.appendChild(bubble);
-  transcript.appendChild(turn);
+  appendToLane(turn);
   deferOlderTurns();
   transcript.scrollTop = transcript.scrollHeight;
   requestAnimationFrame(() => {
@@ -1743,7 +1755,7 @@ function addTurn(role: "assistant" | "user", text: string): void {
 
 function addRetryTurn(text: string, retry: () => void): void {
   addTurn("assistant", text);
-  const turn = transcript.lastElementChild;
+  const turn = activeLane.lastElementChild;
   if (!(turn instanceof HTMLElement)) return;
   const button = document.createElement("button");
   button.type = "button";
@@ -1766,7 +1778,7 @@ function addMarker(text: string, className: string): void {
   const item = document.createElement("p");
   item.className = className;
   item.textContent = text;
-  transcript.appendChild(item);
+  appendToLane(item);
 }
 
 function addHistoricalSummary(
@@ -2294,9 +2306,166 @@ function taskRailSurfaceId(): string {
   return `thread-${threadId}:tasks`;
 }
 
-/** Slice 26: the task rail mirrors the server projection; the browser never switches on its own. */
+/** Issue 03i: one lane is one live transcript element. Hidden lanes take no layout and stay in the DOM. */
+function createLaneElement(): HTMLElement {
+  const lane = document.createElement("div");
+  lane.className = "transcript-lane";
+  return lane;
+}
+
+/** Issue 03i: every new turn, marker or choice goes to the visible lane and marks it as changed since the server's last timeline. */
+function appendToLane(node: Node): void {
+  activeLane.appendChild(node);
+  activeLane.dataset.dirty = "true";
+}
+
+/** Issue 03i (ADR 0107 decision 11): a switch's history step replaces the entry; it never pushes one. */
+function replaceHistoryEntry(): void {
+  try {
+    window.history.replaceState(window.history.state, "", window.location.href);
+  } catch {
+    /* The address bar is a convenience; the lane still changes. */
+  }
+}
+
+/**
+ * Issue 03i (analysis 11.5): restores a lane's scroll now and again after the frame. A turn schedules its own scroll-to-end on the
+ * next frame (addTurn), which would otherwise undo the restore.
+ */
+function restoreLaneScroll(top: number, behavior: ScrollBehavior): void {
+  transcript.scrollTo({ top, behavior });
+  requestAnimationFrame(() => transcript.scrollTo({ top, behavior }));
+}
+
+/** Issue 03i: a live region would announce every node a lane brings back, so announcements pause while the lane is written. */
+function withoutLiveAnnouncement(write: () => void): void {
+  transcript.setAttribute("aria-live", "off");
+  try {
+    write();
+  } finally {
+    transcript.setAttribute("aria-live", "polite");
+  }
+}
+
+/** Issue 03i: the server's task list is the authority. A lane it no longer lists is removed, and a lane the server made active is shown. */
+function syncLanes(tasks: readonly GuestTask[] | undefined): void {
+  if (tasks === undefined) return;
+  const active = tasks.find((task) => task.active);
+  if (active !== undefined) {
+    if (activeLaneId === undefined) bindVisibleLane(active.taskId);
+    else if (active.taskId !== activeLaneId) {
+      const origin: SwitchOrigin = laneFocusRequested ? "switcher" : "server";
+      laneFocusRequested = false;
+      const plan = enterLane(active.taskId, origin, tasks);
+      if (plan !== undefined) void loadVisibleLane(active.taskId, plan.scrollTop);
+    }
+  }
+  for (const lane of laneCache.retain(tasks.map((task) => task.taskId))) {
+    if (lane !== activeLane) lane.remove();
+  }
+}
+
+/** The first lane is the one the page started in; its id arrives with the server's task list. */
+function bindVisibleLane(taskId: string): void {
+  activeLaneId = taskId;
+  laneCache.put(taskId, activeLane);
+}
+
+/** Interactive controls of a lane (Retry, quick replies) are not kept: a cached lane shows its text only, and never sends. */
+function stripLaneControls(lane: HTMLElement): void {
+  for (const control of lane.querySelectorAll(".retry-action, .quick-replies")) control.remove();
+}
+
+/**
+ * Issue 03i: shows a lane. A cached lane appears at once from memory with its scroll position; an uncached one appears empty until the
+ * server's timeline arrives (loadVisibleLane). Returns the plan, or undefined when the server does not list the task.
+ */
+function enterLane(taskId: string, origin: SwitchOrigin, tasks: readonly GuestTask[] = lastTasks): SwitchPlan | undefined {
+  if (taskId === activeLaneId) return undefined;
+  const plan = planSwitch(laneCache, {
+    target: taskId,
+    serverTaskIds: tasks.map((task) => task.taskId),
+    origin,
+    reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  });
+  if (plan.show === "none") return undefined;
+  const outgoing = activeLaneId;
+  if (outgoing !== undefined) laneCache.remember(outgoing, { scrollTop: transcript.scrollTop });
+  let lane: HTMLElement;
+  if (plan.show === "cached") {
+    lane = laneCache.get(taskId)?.handle ?? createLaneElement();
+  } else {
+    lane = createLaneElement();
+    lane.hidden = true;
+    transcript.appendChild(lane);
+  }
+  stripLaneControls(activeLane);
+  activeLane.hidden = true;
+  lane.hidden = false;
+  activeLane = lane;
+  activeLaneId = taskId;
+  if (plan.show === "fresh") {
+    for (const dropped of laneCache.put(taskId, lane)) {
+      if (dropped !== lane) dropped.remove();
+    }
+  }
+  if (plan.scroll === "restore" && plan.scrollTop !== undefined) {
+    restoreLaneScroll(plan.scrollTop, plan.scrollBehavior);
+  } else {
+    transcript.scrollTop = 0;
+  }
+  replaceHistoryEntry();
+  if (plan.focus === "lane-heading") routeHeading.focus();
+  return plan;
+}
+
+/**
+ * Issue 03i: the server's timeline for the visible lane. It is applied after a switch, so the server wins: a lane is rebuilt unless its
+ * server rows are unchanged and the guest has added nothing to it since. The remembered scroll position is restored either way.
+ */
+async function loadVisibleLane(taskId: string, restoreTop?: number): Promise<void> {
+  try {
+    const response = (await postJson(`/api/state?threadId=${encodeURIComponent(threadId)}`)) as GuestStateResponse;
+    if (!response.ok || response.timeline === undefined || activeLaneId !== taskId) return;
+    const rows = response.timeline;
+    const cached = laneCache.peek(taskId);
+    const unchanged = cached !== undefined && activeLane.dataset.dirty !== "true" && timelinesEqual(cached.rows, rows);
+    laneCache.remember(taskId, { rows });
+    if (!unchanged) {
+      withoutLiveAnnouncement(() => {
+        activeLane.replaceChildren();
+        for (const entry of rows) addTimelineEntry(entry);
+      });
+      activeLane.dataset.dirty = "false";
+    }
+    if (restoreTop !== undefined) restoreLaneScroll(restoreTop, window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "auto");
+  } catch {
+    /* The lane stays as the cache showed it; the next switch asks again. */
+  }
+}
+
+/** A rail switch: the lane changes at once from memory (or empty), the event goes to the server, and the server's answer decides. */
+async function switchFromRail(taskId: string): Promise<void> {
+  if (taskEventInFlight || isLoading || taskId === activeLaneId) return;
+  const previous = activeLaneId;
+  const plan = enterLane(taskId, "switcher");
+  if (plan === undefined) return;
+  const ok = await sendTaskEvent(TASK_SWITCH_EVENT, { taskId }, "switcher");
+  if (!ok) {
+    // A refused or failed switch returns to the lane the guest was in; the server's state is read again.
+    if (previous !== undefined && activeLaneId === taskId) enterLane(previous, "server");
+    void refreshServerState();
+    return;
+  }
+  // The response has re-rendered the rail and the workspace; the lane's remembered position is applied again after that.
+  if (plan.scroll === "restore" && plan.scrollTop !== undefined) restoreLaneScroll(plan.scrollTop, plan.scrollBehavior);
+  void loadVisibleLane(taskId, plan.scrollTop);
+}
+
+/** Slice 26: the task rail mirrors the server projection; a rail switch is the only switch the guest makes from it. */
 function renderTaskRail(tasks: readonly GuestTask[] | undefined): void {
   lastTasks = tasks ?? [];
+  syncLanes(tasks);
   if (!tasks || tasks.length <= 1) {
     taskRail.replaceChildren();
     taskRail.hidden = true;
@@ -2337,7 +2506,7 @@ function renderTaskRail(tasks: readonly GuestTask[] | undefined): void {
     state.textContent = ` ${task.active ? GUEST_TASK_RAIL.currentTask : GUEST_TASK_RAIL.openTask}`;
     button.appendChild(state);
     button.addEventListener("click", () => {
-      void sendTaskEvent(TASK_SWITCH_EVENT, { taskId: task.taskId });
+      void switchFromRail(task.taskId);
     });
     item.appendChild(button);
     list.appendChild(item);
@@ -2525,8 +2694,8 @@ async function chooseInSheet(choice: ModeChoice): Promise<void> {
   if (choice.domain === committedChoice()?.domain) return;
   const task = lastTasks.find((entry) => entry.domain === choice.domain);
   const ok = task === undefined
-    ? await sendTaskEvent(TASK_START_EVENT, { domain: choice.domain })
-    : await sendTaskEvent(TASK_SWITCH_EVENT, { taskId: task.taskId });
+    ? await sendTaskEvent(TASK_START_EVENT, { domain: choice.domain }, "switcher")
+    : await sendTaskEvent(TASK_SWITCH_EVENT, { taskId: task.taskId }, "switcher");
   previewDomain = undefined;
   if (ok) modeSheet?.close();
   renderModeStrip();
@@ -2557,7 +2726,7 @@ function startTurn(text: string): void {
 }
 
 async function commitPreviewThenSend(start: ModeChoice, text: string): Promise<void> {
-  const ok = await sendTaskEvent(TASK_START_EVENT, { domain: start.domain });
+  const ok = await sendTaskEvent(TASK_START_EVENT, { domain: start.domain }, "switcher");
   previewDomain = undefined;
   if (!ok || appliedMode.id !== start.presentation.id) {
     renderEmptyCopy(appliedMode);
@@ -2572,10 +2741,12 @@ async function commitPreviewThenSend(start: ModeChoice, text: string): Promise<v
 
 /** Sends a task-rail event; unlike surface actions, it needs no active surface. */
 /** Returns whether the server accepted the event (issue 03g: a refused start keeps the server's mode). */
-async function sendTaskEvent(name: string, context: Readonly<Record<string, unknown>>): Promise<boolean> {
+async function sendTaskEvent(name: string, context: Readonly<Record<string, unknown>>, origin: SwitchOrigin = "server"): Promise<boolean> {
   if (taskEventInFlight || isLoading) return false;
   taskEventInFlight = true;
   taskRail.setAttribute("aria-busy", "true");
+  // Issue 03i: a switch from the switcher moves focus to the lane heading (the flag is read by syncLanes and cleared below).
+  laneFocusRequested = origin === "switcher";
   try {
     const response = await postJson("/api/event", {
       threadId,
@@ -2597,6 +2768,7 @@ async function sendTaskEvent(name: string, context: Readonly<Record<string, unkn
     return false;
   } finally {
     taskEventInFlight = false;
+    laneFocusRequested = false;
     taskRail.removeAttribute("aria-busy");
   }
 }
@@ -2875,7 +3047,7 @@ function renderQuickReplies(replies: readonly GuestQuickReply[] | undefined): vo
       if (reply.domain !== undefined) {
         // ADR 0107: the chip is guest consent, not classifier authority. The server checks the registered target.
         void sendTaskEvent(reply.taskId === undefined ? TASK_START_EVENT : TASK_SWITCH_EVENT,
-          reply.taskId === undefined ? { domain: reply.domain } : { taskId: reply.taskId });
+          reply.taskId === undefined ? { domain: reply.domain } : { taskId: reply.taskId }, "chip");
         return;
       }
       if (reply.edit !== undefined) {
@@ -2888,7 +3060,7 @@ function renderQuickReplies(replies: readonly GuestQuickReply[] | undefined): vo
     });
     group.appendChild(button);
   }
-  transcript.appendChild(group);
+  appendToLane(group);
   transcript.scrollTop = transcript.scrollHeight;
 }
 
@@ -3236,7 +3408,8 @@ document.addEventListener("click", (event) => {
 composerForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const text = composerInput.value.trim();
-  if (text === "" || isLoading) return;
+  // Issue 03i: a message never races a switch that is still waiting for the server.
+  if (text === "" || isLoading || taskEventInFlight) return;
   clearQuickReplies();
   startTurn(text);
 });
@@ -3252,6 +3425,11 @@ async function restoreServerState(): Promise<boolean> {
     if ((!response.timeline || response.timeline.length === 0) && !(response.tasks && response.tasks.length > 1)) return false;
     for (const entry of response.timeline ?? []) addTimelineEntry(entry);
     renderTaskRail(response.tasks);
+    // Issue 03i: the restored lane's rows are the server's; a later switch back compares against them.
+    if (activeLaneId !== undefined) {
+      laneCache.remember(activeLaneId, { rows: response.timeline ?? [] });
+      activeLane.dataset.dirty = "false";
+    }
     renderJourney(response.journey);
     renderCriteria(response.criteria);
     renderSurfaces(response.surfaces ?? []);

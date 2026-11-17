@@ -442,6 +442,9 @@
   }
 
   /* Guest UI kit (guest-ui-consistency): the same components on every screen, chat workspace and standalone page. */
+  /* Issue 03i (ADR 0107 decision 11): a lane is laid out as the transcript's own children; a hidden lane takes no space. */
+  .transcript-lane { display: contents; }
+  .transcript-lane[hidden] { display: none; }
   .ui-appbar { display: flex; align-items: center; gap: var(--space-3); min-block-size: 4rem; padding: var(--space-2) var(--layout-gutter-mobile); border-block-end: 1px solid var(--color-border-subtle); background: var(--color-surface); }
   /* Skip link (issue 15): the first focusable control on every standard page; 44x44 when focused. */
   .ui-skip-link { position: absolute; inset-block-start: var(--space-2); inset-inline-start: var(--space-4); z-index: var(--layer-skip-link); display: inline-flex; align-items: center; min-block-size: var(--control-min-target); min-inline-size: var(--control-min-target); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-text); transform: translateY(-200%); }

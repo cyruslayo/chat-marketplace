@@ -10478,6 +10478,99 @@ Known schemas:
     };
   }
 
+  // apps/local-guest/src/lane-cache.ts
+  var LANE_CACHE_LIMIT = 4;
+  var LaneCache = class {
+    #limit;
+    #threadId;
+    #lanes = /* @__PURE__ */ new Map();
+    constructor(threadId2, limit = LANE_CACHE_LIMIT) {
+      this.#threadId = threadId2;
+      this.#limit = limit;
+    }
+    get size() {
+      return this.#lanes.size;
+    }
+    get threadId() {
+      return this.#threadId;
+    }
+    has(taskId) {
+      return this.#lanes.has(taskId);
+    }
+    /** Reads a lane and makes it the most recently used. */
+    get(taskId) {
+      const lane = this.#lanes.get(taskId);
+      if (lane === void 0) return void 0;
+      this.#lanes.delete(taskId);
+      this.#lanes.set(taskId, lane);
+      return lane;
+    }
+    /** Reads a lane without changing its order. */
+    peek(taskId) {
+      return this.#lanes.get(taskId);
+    }
+    /** Adds a lane as the most recently used. Returns the handles dropped to stay within the cap (least recently used first). */
+    put(taskId, handle, rows = [], scrollTop = 0) {
+      this.#lanes.delete(taskId);
+      this.#lanes.set(taskId, { handle, rows, scrollTop });
+      const evicted = [];
+      while (this.#lanes.size > this.#limit) {
+        const oldest = this.#lanes.keys().next().value;
+        if (oldest === void 0) break;
+        const lane = this.#lanes.get(oldest);
+        this.#lanes.delete(oldest);
+        if (lane !== void 0) evicted.push(lane.handle);
+      }
+      return evicted;
+    }
+    /** Records the server's rows and/or the scroll position for a cached lane. Does not change the order. */
+    remember(taskId, patch) {
+      const lane = this.#lanes.get(taskId);
+      if (lane === void 0) return;
+      if (patch.rows !== void 0) lane.rows = patch.rows;
+      if (patch.scrollTop !== void 0) lane.scrollTop = patch.scrollTop;
+    }
+    /** Drops every lane whose task the server no longer lists (fail closed). Returns the dropped handles. */
+    retain(serverTaskIds) {
+      const dropped = [];
+      for (const [taskId, lane] of [...this.#lanes]) {
+        if (serverTaskIds.includes(taskId)) continue;
+        this.#lanes.delete(taskId);
+        dropped.push(lane.handle);
+      }
+      return dropped;
+    }
+    /** Clears the cache when the thread id changes. Returns every handle dropped (empty when the thread is the same). */
+    bindThread(threadId2) {
+      if (threadId2 === this.#threadId) return [];
+      this.#threadId = threadId2;
+      const dropped = [...this.#lanes.values()].map((lane) => lane.handle);
+      this.#lanes.clear();
+      return dropped;
+    }
+    /** The task ids, least recently used first. */
+    order() {
+      return [...this.#lanes.keys()];
+    }
+  };
+  function planSwitch(cache, request) {
+    const listed = request.serverTaskIds.includes(request.target);
+    const cached = listed ? cache.peek(request.target) : void 0;
+    const base = {
+      sendEvent: true,
+      history: "replace",
+      focus: request.origin === "switcher" ? "lane-heading" : "keep",
+      scrollBehavior: request.reducedMotion ? "instant" : "auto"
+    };
+    if (!listed) return { ...base, show: "none", scroll: "none" };
+    if (cached === void 0) return { ...base, show: "fresh", scroll: "none" };
+    return { ...base, show: "cached", scroll: "restore", scrollTop: cached.scrollTop };
+  }
+  function timelinesEqual(a, b) {
+    if (a.length !== b.length) return false;
+    return a.every((row, index) => row.role === b[index]?.role && row.text === b[index]?.text);
+  }
+
   // apps/local-guest/src/agent-mark-state.ts
   var BUSY_STATES = ["thinking", "working", "responding"];
   function nextAgentMarkState(current, event) {
@@ -11840,6 +11933,12 @@ Known schemas:
   }
   dropPaymentNoticeFlag();
   var threadId = getThreadId();
+  var laneCache = new LaneCache(threadId);
+  var activeLane = createLaneElement();
+  var activeLaneId;
+  var laneFocusRequested = false;
+  transcript.appendChild(activeLane);
+  routeHeading.tabIndex = -1;
   var shellState = createConversationShellState();
   var activePayload;
   var transcriptAnnouncesTurn = false;
@@ -11871,7 +11970,7 @@ Known schemas:
   }
   var RENDERED_TURN_WINDOW = 6;
   function deferOlderTurns() {
-    const turns = transcript.querySelectorAll(".turn");
+    const turns = activeLane.querySelectorAll(".turn");
     const cutoff = Math.max(0, turns.length - RENDERED_TURN_WINDOW);
     turns.forEach((turn, index) => turn.classList.toggle("turn--deferred", index < cutoff));
   }
@@ -11888,7 +11987,7 @@ Known schemas:
     bubble.className = "bubble";
     bubble.textContent = text;
     turn.appendChild(bubble);
-    transcript.appendChild(turn);
+    appendToLane(turn);
     deferOlderTurns();
     transcript.scrollTop = transcript.scrollHeight;
     requestAnimationFrame(() => {
@@ -11897,7 +11996,7 @@ Known schemas:
   }
   function addRetryTurn(text, retry) {
     addTurn("assistant", text);
-    const turn = transcript.lastElementChild;
+    const turn = activeLane.lastElementChild;
     if (!(turn instanceof HTMLElement)) return;
     const button = document.createElement("button");
     button.type = "button";
@@ -11919,7 +12018,7 @@ Known schemas:
     const item = document.createElement("p");
     item.className = className;
     item.textContent = text;
-    transcript.appendChild(item);
+    appendToLane(item);
   }
   function addHistoricalSummary(summary) {
     addMarker(
@@ -12330,8 +12429,130 @@ Known schemas:
   function taskRailSurfaceId() {
     return `thread-${threadId}:tasks`;
   }
+  function createLaneElement() {
+    const lane = document.createElement("div");
+    lane.className = "transcript-lane";
+    return lane;
+  }
+  function appendToLane(node) {
+    activeLane.appendChild(node);
+    activeLane.dataset.dirty = "true";
+  }
+  function replaceHistoryEntry() {
+    try {
+      window.history.replaceState(window.history.state, "", window.location.href);
+    } catch {
+    }
+  }
+  function restoreLaneScroll(top, behavior) {
+    transcript.scrollTo({ top, behavior });
+    requestAnimationFrame(() => transcript.scrollTo({ top, behavior }));
+  }
+  function withoutLiveAnnouncement(write) {
+    transcript.setAttribute("aria-live", "off");
+    try {
+      write();
+    } finally {
+      transcript.setAttribute("aria-live", "polite");
+    }
+  }
+  function syncLanes(tasks) {
+    if (tasks === void 0) return;
+    const active = tasks.find((task) => task.active);
+    if (active !== void 0) {
+      if (activeLaneId === void 0) bindVisibleLane(active.taskId);
+      else if (active.taskId !== activeLaneId) {
+        const origin = laneFocusRequested ? "switcher" : "server";
+        laneFocusRequested = false;
+        const plan = enterLane(active.taskId, origin, tasks);
+        if (plan !== void 0) void loadVisibleLane(active.taskId, plan.scrollTop);
+      }
+    }
+    for (const lane of laneCache.retain(tasks.map((task) => task.taskId))) {
+      if (lane !== activeLane) lane.remove();
+    }
+  }
+  function bindVisibleLane(taskId) {
+    activeLaneId = taskId;
+    laneCache.put(taskId, activeLane);
+  }
+  function stripLaneControls(lane) {
+    for (const control of lane.querySelectorAll(".retry-action, .quick-replies")) control.remove();
+  }
+  function enterLane(taskId, origin, tasks = lastTasks) {
+    if (taskId === activeLaneId) return void 0;
+    const plan = planSwitch(laneCache, {
+      target: taskId,
+      serverTaskIds: tasks.map((task) => task.taskId),
+      origin,
+      reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    });
+    if (plan.show === "none") return void 0;
+    const outgoing = activeLaneId;
+    if (outgoing !== void 0) laneCache.remember(outgoing, { scrollTop: transcript.scrollTop });
+    let lane;
+    if (plan.show === "cached") {
+      lane = laneCache.get(taskId)?.handle ?? createLaneElement();
+    } else {
+      lane = createLaneElement();
+      lane.hidden = true;
+      transcript.appendChild(lane);
+    }
+    stripLaneControls(activeLane);
+    activeLane.hidden = true;
+    lane.hidden = false;
+    activeLane = lane;
+    activeLaneId = taskId;
+    if (plan.show === "fresh") {
+      for (const dropped of laneCache.put(taskId, lane)) {
+        if (dropped !== lane) dropped.remove();
+      }
+    }
+    if (plan.scroll === "restore" && plan.scrollTop !== void 0) {
+      restoreLaneScroll(plan.scrollTop, plan.scrollBehavior);
+    } else {
+      transcript.scrollTop = 0;
+    }
+    replaceHistoryEntry();
+    if (plan.focus === "lane-heading") routeHeading.focus();
+    return plan;
+  }
+  async function loadVisibleLane(taskId, restoreTop) {
+    try {
+      const response = await postJson(`/api/state?threadId=${encodeURIComponent(threadId)}`);
+      if (!response.ok || response.timeline === void 0 || activeLaneId !== taskId) return;
+      const rows = response.timeline;
+      const cached = laneCache.peek(taskId);
+      const unchanged = cached !== void 0 && activeLane.dataset.dirty !== "true" && timelinesEqual(cached.rows, rows);
+      laneCache.remember(taskId, { rows });
+      if (!unchanged) {
+        withoutLiveAnnouncement(() => {
+          activeLane.replaceChildren();
+          for (const entry of rows) addTimelineEntry(entry);
+        });
+        activeLane.dataset.dirty = "false";
+      }
+      if (restoreTop !== void 0) restoreLaneScroll(restoreTop, window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "auto");
+    } catch {
+    }
+  }
+  async function switchFromRail(taskId) {
+    if (taskEventInFlight || isLoading || taskId === activeLaneId) return;
+    const previous = activeLaneId;
+    const plan = enterLane(taskId, "switcher");
+    if (plan === void 0) return;
+    const ok = await sendTaskEvent(TASK_SWITCH_EVENT, { taskId }, "switcher");
+    if (!ok) {
+      if (previous !== void 0 && activeLaneId === taskId) enterLane(previous, "server");
+      void refreshServerState();
+      return;
+    }
+    if (plan.scroll === "restore" && plan.scrollTop !== void 0) restoreLaneScroll(plan.scrollTop, plan.scrollBehavior);
+    void loadVisibleLane(taskId, plan.scrollTop);
+  }
   function renderTaskRail(tasks) {
     lastTasks = tasks ?? [];
+    syncLanes(tasks);
     if (!tasks || tasks.length <= 1) {
       taskRail.replaceChildren();
       taskRail.hidden = true;
@@ -12372,7 +12593,7 @@ Known schemas:
       state.textContent = ` ${task.active ? GUEST_TASK_RAIL.currentTask : GUEST_TASK_RAIL.openTask}`;
       button.appendChild(state);
       button.addEventListener("click", () => {
-        void sendTaskEvent(TASK_SWITCH_EVENT, { taskId: task.taskId });
+        void switchFromRail(task.taskId);
       });
       item.appendChild(button);
       list.appendChild(item);
@@ -12534,7 +12755,7 @@ Known schemas:
   async function chooseInSheet(choice) {
     if (choice.domain === committedChoice()?.domain) return;
     const task = lastTasks.find((entry) => entry.domain === choice.domain);
-    const ok = task === void 0 ? await sendTaskEvent(TASK_START_EVENT, { domain: choice.domain }) : await sendTaskEvent(TASK_SWITCH_EVENT, { taskId: task.taskId });
+    const ok = task === void 0 ? await sendTaskEvent(TASK_START_EVENT, { domain: choice.domain }, "switcher") : await sendTaskEvent(TASK_SWITCH_EVENT, { taskId: task.taskId }, "switcher");
     previewDomain = void 0;
     if (ok) modeSheet?.close();
     renderModeStrip();
@@ -12557,7 +12778,7 @@ Known schemas:
     void commitPreviewThenSend(start, text);
   }
   async function commitPreviewThenSend(start, text) {
-    const ok = await sendTaskEvent(TASK_START_EVENT, { domain: start.domain });
+    const ok = await sendTaskEvent(TASK_START_EVENT, { domain: start.domain }, "switcher");
     previewDomain = void 0;
     if (!ok || appliedMode.id !== start.presentation.id) {
       renderEmptyCopy(appliedMode);
@@ -12569,10 +12790,11 @@ Known schemas:
       void sendTurn(text);
     });
   }
-  async function sendTaskEvent(name, context) {
+  async function sendTaskEvent(name, context, origin = "server") {
     if (taskEventInFlight || isLoading) return false;
     taskEventInFlight = true;
     taskRail.setAttribute("aria-busy", "true");
+    laneFocusRequested = origin === "switcher";
     try {
       const response = await postJson("/api/event", {
         threadId,
@@ -12594,6 +12816,7 @@ Known schemas:
       return false;
     } finally {
       taskEventInFlight = false;
+      laneFocusRequested = false;
       taskRail.removeAttribute("aria-busy");
     }
   }
@@ -12851,7 +13074,8 @@ Known schemas:
         if (reply.domain !== void 0) {
           void sendTaskEvent(
             reply.taskId === void 0 ? TASK_START_EVENT : TASK_SWITCH_EVENT,
-            reply.taskId === void 0 ? { domain: reply.domain } : { taskId: reply.taskId }
+            reply.taskId === void 0 ? { domain: reply.domain } : { taskId: reply.taskId },
+            "chip"
           );
           return;
         }
@@ -12868,7 +13092,7 @@ Known schemas:
       });
       group.appendChild(button);
     }
-    transcript.appendChild(group);
+    appendToLane(group);
     transcript.scrollTop = transcript.scrollHeight;
   }
   var lastRefusalSignature;
@@ -13178,7 +13402,7 @@ Known schemas:
   composerForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const text = composerInput.value.trim();
-    if (text === "" || isLoading) return;
+    if (text === "" || isLoading || taskEventInFlight) return;
     clearQuickReplies();
     startTurn(text);
   });
@@ -13191,6 +13415,10 @@ Known schemas:
       if ((!response.timeline || response.timeline.length === 0) && !(response.tasks && response.tasks.length > 1)) return false;
       for (const entry of response.timeline ?? []) addTimelineEntry(entry);
       renderTaskRail(response.tasks);
+      if (activeLaneId !== void 0) {
+        laneCache.remember(activeLaneId, { rows: response.timeline ?? [] });
+        activeLane.dataset.dirty = "false";
+      }
       renderJourney(response.journey);
       renderCriteria(response.criteria);
       renderSurfaces(response.surfaces ?? []);
