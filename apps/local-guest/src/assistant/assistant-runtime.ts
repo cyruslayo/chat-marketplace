@@ -421,6 +421,8 @@ export class AssistantRuntime {
   readonly #modelCallTimeoutMs: number;
   readonly #turnDeadlineMs: number;
   readonly #threads = new Map<string, AssistantThreadState>();
+  /** Issue 14: threads whose expired pending action was cleared on a refused turn, until the shell takes the signal. */
+  readonly #expiredPendingClears = new Set<string>();
   readonly #packs = new AssistantPackRegistry();
 
   constructor(environment: LocalGuestEnvironment, modelClient: AssistantModelClient, options: AssistantRuntimeOptions = {}) {
@@ -810,6 +812,14 @@ export class AssistantRuntime {
 
   hasThread(threadId: string): boolean {
     return this.#threads.has(threadId);
+  }
+
+  /**
+   * Issue 14: true once when a refused turn cleared an expired pending action. The shell persists the cleared action, so a cold
+   * restore does not bring it back. Any other refusal leaves the flag unset.
+   */
+  takeExpiredPendingClear(threadId: string): boolean {
+    return this.#expiredPendingClears.delete(threadId);
   }
 
   /**
@@ -2062,12 +2072,21 @@ export class AssistantRuntime {
     // ADR-0070/ADR-0074/ADR-0075: interaction authority is scoped and expires fail closed.
     const thread = this.#threads.get(threadId);
     const expiresAt = Date.parse(action.expiresAt);
-    if (action.threadId !== threadId
-      || !thread
-      || action.guestActorId !== thread.guestActorId
-      || action.tenantId !== thread.tenantId
-      || !Number.isFinite(expiresAt)
-      || expiresAt <= this.#environment.clock().getTime()) {
+    const identityMatches = action.threadId === threadId
+      && !!thread
+      && action.guestActorId === thread.guestActorId
+      && action.tenantId === thread.tenantId;
+    if (!identityMatches || !Number.isFinite(expiresAt)) {
+      // A foreign or malformed action is refused and never cleared (fail closed).
+      return { ok: false, code: "STALE_SURFACE", message: "This action has expired or is no longer authorized." };
+    }
+    if (expiresAt <= this.#environment.clock().getTime()) {
+      // Issue 14 (ADR 0070, 0074, 0106): an expired action of this thread, guest and tenant is cleared and its card superseded in
+      // the turn transaction, so the guest is not stuck on a refusal. The cancel path clears the same way.
+      tx.clearPendingAction();
+      tx.supersede(PENDING_ACTION_STAGE);
+      this.#commitDroppedProposal(threadId, tx);
+      this.#expiredPendingClears.add(threadId);
       return { ok: false, code: "STALE_SURFACE", message: "This action has expired or is no longer authorized." };
     }
 
