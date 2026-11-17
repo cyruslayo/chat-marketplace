@@ -101,3 +101,5 @@ Commands and pass counts (all prefixed `env -u LLM_API_KEY`):
 - `npm run build`: regenerated `apps/local-guest/dist/client.js`. Restored `dist/gallery.js`, `dist/landing.js`, `dist/offer.js`, `dist/payment.js` and `apps/cloudflare/public/_headers` with `git checkout --`; only `client.js` is committed from dist.
 
 Owner check (not an agent gate): a manual screen-reader check on the reference low-end Android Chrome, confirming the switch is heard once and the reply is not repeated.
+
+- Owner, 17 Nov 2026: accepted the decision 5 reading. A reply shown as a chat message is read by the transcript (role=log), so the switch copy is announced alone; the combined message is used only when the response also has a polite announcer message. The guest hears each item once.
