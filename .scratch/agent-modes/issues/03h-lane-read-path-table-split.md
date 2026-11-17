@@ -135,3 +135,5 @@ No `client.ts` change, so no `dist` rebuild.
 **Open owner decisions.** (a) Lanes that already have rows drop their pre-03e stored copy (above). (b) Confirm the AC4 reading: exactly `cap` entries including the receipt summary.
 
 **Status.** Resolved. Commit: `feat(agent-modes): restore lane timelines from lane rows (issue 03h)`.
+
+- Owner, 17 Nov 2026: accepted for the pilot that a mixed lane (03e rows plus older projection entries) keeps only its rows (LEGACY_LANE_NOT_MIGRATED); check before any real-guest launch. Accepted the AC4 reading: the cap counts the receipt summary at the head. Orchestrator check: npm run check exit 0; 12 node files 88/88; daily-export 11/11, restore-from-export 4/4, data-migration 29/29. Test-first was not followed for the new file (recorded deviation).
