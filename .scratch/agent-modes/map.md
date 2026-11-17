@@ -25,8 +25,8 @@ Goal: switching Domain Packs changes the agent and the guest UI together (ADR 01
 | 3c-read | Lane read path from per-task rows, building on 03e's write-only rows (analysis 11.4). Worth doing when the lane count grows (seam O2) | [03h](issues/03h-lane-read-path-table-split.md) | needs-triage |
 | 5-cache | Client lane cache and scroll memory, in memory only (ADR 0107 decision 11, analysis 11.5) | [03i](issues/03i-client-lane-cache-and-scroll-memory.md) | needs-triage |
 | 5-motion | Mode switch View Transition, feature-detected and typed `mode-switch` (ADR 0107 decision 7, analysis 5.5) | [03j](issues/03j-mode-switch-view-transition.md) | needs-triage |
-| 4-theme | Browser theme colour updated from the mode tokens on a switch (analysis 5.4) | [03k](issues/03k-mode-theme-color-switch.md) | ready-for-agent |
-| 4-announce | Mode switch announced through the existing polite announcer (ADR 0107 decision 7) | [03l](issues/03l-mode-switch-announcement.md) | ready-for-agent |
+| 4-theme | Browser theme colour updated from the mode tokens on a switch (analysis 5.4) | [03k](issues/03k-mode-theme-color-switch.md) | resolved (on main at 7edd15f; owner decisions 17 Nov in 03k Comments; Android address-bar check is the owner's) |
+| 4-announce | Mode switch announced through the existing polite announcer (ADR 0107 decision 7) | [03l](issues/03l-mode-switch-announcement.md) | resolved (on main at 7edd15f; owner decisions 17 Nov in 03l Comments; Android screen-reader check is the owner's) |
 | O4-ddl | Move the platform-owned guest_threads and lane DDL out of the shortlet domain store (ADR 0101; seams O4 follow-up) | [03m](issues/03m-platform-thread-ddl-module.md) | needs-triage |
 | 0093-email | Mask the typed email in the existing thread timeline (ADR 0093; 03e OD-1 follow-up) | [03n](issues/03n-timeline-email-masking.md) | needs-triage |
 
