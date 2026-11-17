@@ -170,3 +170,15 @@ export function serverRowsMatch(cachedServerRows: readonly LaneRow[], serverRows
 function serverSourced(rows: readonly LaneRow[]): readonly LaneRow[] {
   return rows.filter((row) => row.role !== "user");
 }
+
+/** How a rail or server switch ended: still waiting for the server, accepted, or refused. */
+export type SwitchOutcome = "pending" | "accepted" | "refused";
+
+/**
+ * Issue 03i fix (regression, AC10 tier C in agent-mark-chromium): a lane's interactive controls (quick replies, Retry) are removed only
+ * once the switch that leaves the lane is final. While the switch is pending they stay, so a busy or refused task event leaves the
+ * guest's suggestion chip in place. Once final, the controls go, so a cached lane never re-enables a stale action.
+ */
+export function stripsControlsOnLeave(outcome: SwitchOutcome): boolean {
+  return outcome !== "pending";
+}

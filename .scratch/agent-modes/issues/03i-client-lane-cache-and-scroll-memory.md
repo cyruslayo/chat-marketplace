@@ -157,3 +157,26 @@ Each is its own `test()` in `test/agent-mode-lane-cache.test.ts` (new), except A
 - Build: `npm run build` (with `env -u LLM_API_KEY`). Unrelated output restored with `git checkout --` (`apps/cloudflare/public/_headers`, `dist/gallery.js`, `landing.js`, `offer.js`, `payment.js`). Only `dist/client.js` is committed.
 
 **Limits.** The rule keeps the rendered lane whenever the server's non-guest lines match. A rendered line that the server never recorded (for example a refusal message appended on the switch response) is kept too, and it is not in the server timeline. This follows the owner's rule as written.
+
+### Regression fix (agent, 17 Nov 2026): suggestion chip lost on a refused or busy lane switch
+
+**Regression.** `test/agent-mark-chromium.test.ts` AC10 ("tier C: a busy task event leaves a restored suggestion chip and transcript untouched") passes 6 of 6 on `main` (64eb2d8) and on the 03h branch, and fails on the 03i branch. Confirmed by the orchestrator.
+
+**Cause.** `enterLane` called `stripLaneControls(activeLane)` on the outgoing lane at the moment of the switch click, before the server answered. A rail click on a busy task therefore removed the restored suggestion chip from the DOM. The chip could not be recovered when the event was refused or held, and the test's `.quick-reply` lookup found nothing.
+
+**Fix.** The decision is a pure rule in `apps/local-guest/src/lane-cache.ts`: `stripsControlsOnLeave(outcome)` with `SwitchOutcome` = `pending` | `accepted` | `refused`. It returns `false` only while the switch is pending. The client glue (`client.ts`) follows it:
+- `enterLane` no longer strips. The outgoing lane keeps its controls while the switch is pending, so a busy or held event leaves the chip in place.
+- `switchFromRail`: on an accepted switch the lane it left is stripped. On a refused switch the lane it attempted is stripped, and the lane the guest returns to keeps its own controls.
+- `syncLanes` (a server-made change, already accepted): the lane it leaves is stripped.
+- 03i's rule holds: a cached lane never re-enables a stale action, since every lane that is left by a final outcome has its controls removed. The server-current controls come from the next response, as before.
+
+**Red run (before the fix).** `npx tsx --test test/agent-mode-lane-cache.test.ts` with the new test importing `stripsControlsOnLeave`: `SyntaxError: ... does not provide an export named 'stripsControlsOnLeave'`, tests 1, pass 0, fail 1.
+
+**Green and final counts (every command prefixed `env -u LLM_API_KEY`).**
+- Node, `test/agent-mode-lane-cache.test.ts`: tests 15, pass 15, fail 0 (new test: "Issue 03i fix: a lane's controls stay while a switch is pending, and are stripped once the server accepts or refuses it").
+- `npm run check`: exit 0.
+- Real Chrome, solo, one after another: `test/agent-mark-chromium.test.ts` pass 6 of 6 (AC10 tier C green); `test/agent-mode-lane-cache-chromium.test.ts` pass 3 of 3; `test/agent-mode-view-transition-chromium.test.ts` pass 4 of 4; `test/agent-mode-sheet-chromium.test.ts` pass 5 of 5; `test/agent-mode-theme-color-chromium.test.ts` pass 2 of 2.
+- Listed node set (announcement, theme-color, lane-cache, follows-task, agent-mark-shell, shortlet-ui-foundations, retired-classes, design-system, assistant-cold-journey, view-transition): tests 76, pass 75, fail 0, skipped 1 (the pre-existing `shortlet-ui-foundations` browser gate).
+- Affected non-browser node set (35 files that read `client.ts`, `dist/client.js` or the foundations CSS): tests 257, pass 257, fail 0.
+- Build: `npm run build`; unrelated output restored with `git checkout --`. Only `apps/local-guest/dist/client.js` is committed from dist.
+- The test expectations of AC10 were not changed.

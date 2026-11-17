@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { LANE_CACHE_LIMIT, LaneCache, planSwitch, serverRowsMatch, timelinesEqual } from "../apps/local-guest/src/lane-cache.js";
+import { LANE_CACHE_LIMIT, LaneCache, planSwitch, serverRowsMatch, stripsControlsOnLeave, timelinesEqual } from "../apps/local-guest/src/lane-cache.js";
 
 // Issue 03i (ADR 0107 decision 11, analysis 5.5 and 11.5): the client keeps each visited lane in memory with its scroll position.
 // The cache is a pure module; the client keeps only DOM glue. The server response stays the authority for every lane.
@@ -135,4 +135,11 @@ test("Owner decision, mismatch: when the server's lines differ, the server wins 
   assert.equal(serverRowsMatch(cached, [{ role: "assistant", text: "I found 2 matching stays" }]), false, "a changed server line is a mismatch");
   assert.equal(serverRowsMatch(cached, [{ role: "assistant", text: "I found 1 matching stay" }, { role: "assistant", text: "Done." }]), false, "a new server line is a mismatch");
   assert.equal(serverRowsMatch([], [{ role: "assistant", text: "I found 1 matching stay" }]), false, "a lane with no cached server lines is a mismatch, so the server's timeline is applied");
+});
+
+// Issue 03i fix (regression, AC10 tier C in agent-mark-chromium): a lane's interactive controls stay while a switch is pending.
+test("Issue 03i fix: a lane's controls stay while a switch is pending, and are stripped once the server accepts or refuses it", () => {
+  assert.equal(stripsControlsOnLeave("pending"), false, "a pending switch keeps the lane's suggestion chip for a busy or refused event");
+  assert.equal(stripsControlsOnLeave("accepted"), true, "an accepted switch strips the lane it leaves, so a cached action cannot re-enable");
+  assert.equal(stripsControlsOnLeave("refused"), true, "a refused switch strips the lane it attempted, which the guest never kept");
 });

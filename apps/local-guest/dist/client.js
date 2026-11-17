@@ -10611,6 +10611,9 @@ Known schemas:
   function serverSourced(rows) {
     return rows.filter((row) => row.role !== "user");
   }
+  function stripsControlsOnLeave(outcome) {
+    return outcome !== "pending";
+  }
 
   // apps/local-guest/src/agent-mark-state.ts
   var BUSY_STATES = ["thinking", "working", "responding"];
@@ -12518,8 +12521,12 @@ Known schemas:
       else if (active.taskId !== activeLaneId) {
         const origin = laneFocusRequested ? "switcher" : "server";
         laneFocusRequested = false;
+        const left = activeLane;
         const plan = enterLane(active.taskId, origin, tasks);
-        if (plan !== void 0) void loadVisibleLane(active.taskId, plan.scrollTop);
+        if (plan !== void 0) {
+          if (stripsControlsOnLeave("accepted")) stripLaneControls(left);
+          void loadVisibleLane(active.taskId, plan.scrollTop);
+        }
       }
     }
     for (const lane of laneCache.retain(tasks.map((task) => task.taskId))) {
@@ -12552,7 +12559,6 @@ Known schemas:
       lane.hidden = true;
       transcript.appendChild(lane);
     }
-    stripLaneControls(activeLane);
     activeLane.hidden = true;
     lane.hidden = false;
     activeLane = lane;
@@ -12601,14 +12607,18 @@ Known schemas:
   async function switchFromRail(taskId) {
     if (taskEventInFlight || isLoading || taskId === activeLaneId) return;
     const previous = activeLaneId;
+    const left = activeLane;
     const plan = enterLane(taskId, "switcher");
     if (plan === void 0) return;
+    const attempted = activeLane;
     const ok = await sendTaskEvent(TASK_SWITCH_EVENT, { taskId }, "switcher");
     if (!ok) {
       if (previous !== void 0 && activeLaneId === taskId) enterLane(previous, "server");
+      if (stripsControlsOnLeave("refused")) stripLaneControls(attempted);
       void refreshServerState();
       return;
     }
+    if (stripsControlsOnLeave("accepted")) stripLaneControls(left);
     if (plan.scroll === "restore" && plan.scrollTop !== void 0) restoreLaneScroll(plan.scrollTop, plan.scrollBehavior);
     void loadVisibleLane(taskId, plan.scrollTop);
   }

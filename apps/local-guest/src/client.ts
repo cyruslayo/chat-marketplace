@@ -47,7 +47,7 @@ import {
 import { modeSwitchChanges, runModeSwitch, type ModeSwitchEnvironment } from "./mode-switch-transition.js";
 import { chooseModes, markIsControl, showsModeChooser, startBeforeTurn, type ModeChoice } from "./mode-choice.js";
 import { createModeAnnouncements } from "./mode-announcement.js";
-import { LaneCache, planSwitch, serverRowsMatch, type SwitchOrigin, type SwitchPlan } from "./lane-cache.js";
+import { LaneCache, planSwitch, serverRowsMatch, stripsControlsOnLeave, type SwitchOrigin, type SwitchPlan } from "./lane-cache.js";
 import { nextAgentMarkState, type AgentMarkEvent, type AgentMarkState } from "./agent-mark-state.js";
 import {
   breakdownHtml,
@@ -2383,8 +2383,13 @@ function syncLanes(tasks: readonly GuestTask[] | undefined): void {
     else if (active.taskId !== activeLaneId) {
       const origin: SwitchOrigin = laneFocusRequested ? "switcher" : "server";
       laneFocusRequested = false;
+      const left = activeLane;
       const plan = enterLane(active.taskId, origin, tasks);
-      if (plan !== undefined) void loadVisibleLane(active.taskId, plan.scrollTop);
+      // Issue 03i fix: the server has accepted this change, so the lane it leaves is final.
+      if (plan !== undefined) {
+        if (stripsControlsOnLeave("accepted")) stripLaneControls(left);
+        void loadVisibleLane(active.taskId, plan.scrollTop);
+      }
     }
   }
   for (const lane of laneCache.retain(tasks.map((task) => task.taskId))) {
@@ -2426,7 +2431,7 @@ function enterLane(taskId: string, origin: SwitchOrigin, tasks: readonly GuestTa
     lane.hidden = true;
     transcript.appendChild(lane);
   }
-  stripLaneControls(activeLane);
+  // Issue 03i fix: the outgoing lane keeps its controls until the switch is final (switchFromRail and syncLanes strip it).
   activeLane.hidden = true;
   lane.hidden = false;
   activeLane = lane;
@@ -2491,15 +2496,21 @@ async function refreshLaneRows(): Promise<void> {
 async function switchFromRail(taskId: string): Promise<void> {
   if (taskEventInFlight || isLoading || taskId === activeLaneId) return;
   const previous = activeLaneId;
+  const left = activeLane;
   const plan = enterLane(taskId, "switcher");
   if (plan === undefined) return;
+  const attempted = activeLane;
   const ok = await sendTaskEvent(TASK_SWITCH_EVENT, { taskId }, "switcher");
   if (!ok) {
     // A refused or failed switch returns to the lane the guest was in; the server's state is read again.
     if (previous !== undefined && activeLaneId === taskId) enterLane(previous, "server");
+    // Issue 03i fix: the lane that was attempted is final now. The lane the guest returns to keeps its own controls.
+    if (stripsControlsOnLeave("refused")) stripLaneControls(attempted);
     void refreshServerState();
     return;
   }
+  // Issue 03i fix: the server accepted the switch, so the lane it leaves is final.
+  if (stripsControlsOnLeave("accepted")) stripLaneControls(left);
   // The response has re-rendered the rail and the workspace; the lane's remembered position is applied again after that.
   if (plan.scroll === "restore" && plan.scrollTop !== undefined) restoreLaneScroll(plan.scrollTop, plan.scrollBehavior);
   void loadVisibleLane(taskId, plan.scrollTop);
