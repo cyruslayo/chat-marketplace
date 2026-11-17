@@ -30,6 +30,24 @@ export function mintCardPspReference(commandId: string, now: Date): string {
   return `psp-ref-${safeCommandPart}-${now.getTime()}`;
 }
 
+/**
+ * Issue 66 (ADR 0087, 0046): the approved Paystack checkout address is kept with the durable session so a cold restore reuses
+ * it. Only an approved address whose provider environment is recorded is written; the placeholder never is.
+ */
+function storableCheckoutUrl(session: { readonly checkoutUrl: string; readonly providerEnvironment?: "test" | "live"; readonly status: string }): string | undefined {
+  // The address lives only while the attempt is live: a completed, failed or expired attempt drops it on its next write.
+  return session.status === "initiated" && session.providerEnvironment !== undefined && isApprovedPaystackCheckoutUrl(session.checkoutUrl) ? session.checkoutUrl : undefined;
+}
+
+/**
+ * Issue 66, validation on read (fail closed): a restored address is exposed only when it is approved and the attempt records
+ * its provider environment. Otherwise the placeholder is returned, which the application treats as "initialize again".
+ */
+function restoredCheckoutUrl(record: { readonly pspReference: string; readonly checkoutUrl?: string; readonly providerEnvironment?: "test" | "live"; readonly status: string }): string {
+  const stored = storableCheckoutUrl({ checkoutUrl: record.checkoutUrl ?? "", status: record.status, ...(record.providerEnvironment === undefined ? {} : { providerEnvironment: record.providerEnvironment }) });
+  return stored ?? `https://checkout.psp.example.com/pay/${record.pspReference}`;
+}
+
 function assertNoRawCardCredentials(payload: Record<string, unknown>): void {
   if (!payload || typeof payload !== "object") return;
   const forbiddenKeys = [
@@ -146,7 +164,7 @@ export interface LedgerEntry {
 }
 
 /** The provider transaction types now live in the platform Payments module (ADR 0099 rule 2); re-exported for callers. */
-import type { PSPVerifyResult } from "../../../packages/platform-core/src/payments/index.js";
+import { isApprovedPaystackCheckoutUrl, type PSPVerifyResult } from "../../../packages/platform-core/src/payments/index.js";
 export type { MockPSPVerifyResult, PSPVerifyResult } from "../../../packages/platform-core/src/payments/index.js";
 
 export type CardPaymentVerificationOutcome = { readonly outcome: "deposit_required"; readonly journey: import("./booking-payment-journey.js").BookingPaymentJourney } | { readonly outcome: "confirmed"; readonly reservation: Reservation; readonly bookingContract: BookingContract; readonly ledgerEntries: readonly LedgerEntry[] };
@@ -269,6 +287,7 @@ export class CardPaymentManager {
   }
 
   #persistSession(session: CardCheckoutSession): void {
+    const checkoutUrl = storableCheckoutUrl(session);
     this.#store?.saveCheckoutSession({
       checkoutId: session.checkoutId,
       offerId: session.offerId,
@@ -279,6 +298,7 @@ export class CardPaymentManager {
       currency: session.currency,
       contactEmail: session.contactEmail,
       ...(session.providerEnvironment === undefined ? {} : { providerEnvironment: session.providerEnvironment }),
+      ...(checkoutUrl === undefined ? {} : { checkoutUrl }),
       expiresAt: session.expiresAt,
       status: session.status,
     });
@@ -429,6 +449,8 @@ export class CardPaymentManager {
   updateCheckoutUrl(pspReference: string, checkoutUrl: string, providerEnvironment: "test" | "live"): CardCheckoutSession {
     const session = this.getCheckoutSessionByReference(pspReference);
     if (!session) throw new Error("PSP reference is not bound to an authoritative checkout session");
+    // Issue 66: an address is stored only when approved (ADR 0087); the adapter already checks, and this refuses any other writer.
+    if (!isApprovedPaystackCheckoutUrl(checkoutUrl)) throw new Error("The checkout address is not an approved Paystack checkout address");
     const next: CardCheckoutSession = { ...session, checkoutUrl, providerEnvironment };
     this.#sessions.set(next.checkoutId, next);
     this.#persistSession(next);
@@ -786,8 +808,8 @@ export class CardPaymentManager {
       checkoutId: record.checkoutId,
       offerId: record.offerId,
       pspReference: record.pspReference,
-      // ADR-0075: the PSP checkout URL is derived, never persisted.
-      checkoutUrl: `https://checkout.psp.example.com/pay/${record.pspReference}`,
+      // Issue 66 (ADR 0087, 0075, owner decision): the approved address is restored from the durable row when it is valid.
+      checkoutUrl: restoredCheckoutUrl(record),
       totalAmountDueNowKobo: record.totalAmountDueNowKobo,
       amountKobo: record.amountKobo,
       purpose: record.purpose,
@@ -810,7 +832,7 @@ export class CardPaymentManager {
       checkoutId: record.checkoutId,
       offerId: record.offerId,
       pspReference: record.pspReference,
-      checkoutUrl: `https://checkout.psp.example.com/pay/${record.pspReference}`,
+      checkoutUrl: restoredCheckoutUrl(record),
       totalAmountDueNowKobo: record.totalAmountDueNowKobo,
       amountKobo: record.amountKobo,
       purpose: record.purpose,

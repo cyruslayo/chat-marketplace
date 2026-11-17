@@ -74,6 +74,11 @@ export interface Payments {
    * the intent so a later verification carries the domain id (ADR 0099 rule 2). Absent when transfers are not certified.
    */
   readonly transfers?: BankTransferProviderClient;
+  /**
+   * The provider environment this port is bound to (issue 66). A checkout address stored from an earlier start is reused only
+   * when the session's recorded environment equals this one. Absent means unknown, so a stored address is not reused.
+   */
+  readonly environment?: "test" | "live";
   /** Begin a payment for an intent: a hosted card checkout or a provider-issued transfer account. */
   start(intent: PaymentIntent): Promise<PaymentStartResult>;
   /** Server-side verification of a card reference (a callback or webhook is only a prompt; ADR 0087). */
@@ -114,6 +119,11 @@ export class PaystackPayments implements Payments {
    */
   get transfers(): BankTransferProviderClient | undefined {
     return this.#transfers;
+  }
+
+  /** The environment of the configured card client (issue 66). Checkout addresses are reused only within it. */
+  get environment(): "test" | "live" {
+    return this.#card.configuration.environment;
   }
 
   async start(intent: PaymentIntent): Promise<PaymentStartResult> {

@@ -210,7 +210,11 @@ export class CardPaymentApplication {
     if (!payments) throw new Error("Paystack checkout is not configured");
     const envelope = createPlatformCommandEnvelope({ commandName: "card_payment.initialize_checkout", principal: trustedPayerPrincipal, payload: { offerId } });
     const existing = this.#manager.getCheckoutSession(offerId);
-    if (existing?.status === "initiated" && existing.providerEnvironment !== undefined && isApprovedPaystackCheckoutUrl(existing.checkoutUrl)) return existing;
+    // Issue 66 (ADR 0044, 0046, 0087): no continuation begins after the Payment Window closes, whether or not an address is stored.
+    if (existing?.status === "initiated" && this.#clock().getTime() >= new Date(existing.expiresAt).getTime()) throw new Error("Payment window has expired; cannot initialize checkout");
+    // Issue 66: the stored address is reused only when it is approved and the attempt's recorded provider environment is the one
+    // this Payments port is bound to. A port that reports no environment, or a different one, initializes again (fail closed).
+    if (existing?.status === "initiated" && existing.providerEnvironment !== undefined && payments.environment === existing.providerEnvironment && isApprovedPaystackCheckoutUrl(existing.checkoutUrl)) return existing;
     // ADR 0046, 0049: a retry of an attempt that Paystack never accepted (no provider environment) with a legacy reference
     // takes a platform reference, within the same checkout and Payment Window. A bound or conforming attempt is reused as is.
     const session = existing?.status === "initiated"

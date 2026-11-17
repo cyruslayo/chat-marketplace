@@ -5,7 +5,7 @@ import { SqliteAuditLog } from "../../../packages/platform-core/src/sqlite-audit
 import { DurableObjectSqlDatabase } from "../src/do-sql-database.js";
 import { runAlarmTasks } from "../src/do-alarm.js";
 import { ORIGIN, isolatedPlatformStub, isolatedTenantName, provisionTenant } from "./ops-test-helpers.js";
-import { saveThreadRecord } from "../../../domains/shortlet/src/guest-interaction-store.js";
+import { SqliteGuestInteractionStore, saveThreadRecord } from "../../../domains/shortlet/src/guest-interaction-store.js";
 import { SHORTLET_EXPORT_TABLES, PLATFORM_EXPORT_TABLES, deleteExpiredExports, exportObjectKey, exportTable, lagosDate, runDailyExport, type DailyExportDependencies } from "../src/do-export.js";
 
 const stubFor = (name: string) => env.SHORTLET.get(env.SHORTLET.idFromName(`${name}-${crypto.randomUUID()}`));
@@ -299,4 +299,34 @@ test("3h AC: the platform object reads one lane through its lane route, in seq o
     body: JSON.stringify({ tenantId: tenant, threadId, taskId: "task-a", cap: 0 }),
   });
   expect(refused.status).toBe(400);
+});
+
+// Issue 66 (ADR 0087, 0075, 0096): the Paystack checkout address stays in the durable checkout session on the object. A cold
+// restore reuses it, but no daily export carries it (EXPORT_EXCLUDED_COLUMNS). A migrated object with no address column gets it
+// from the store's constructor, and the address round-trips on that object's storage.
+test("Issue 66 AC2 (Worker): a migrated object without the address column gets it, the address round-trips, and the daily export leaves it out", async () => {
+  const stub = stubFor(`66-address-${crypto.randomUUID()}`);
+  const address = `https://checkout.paystack.com/co-66-worker-${crypto.randomUUID()}`;
+  const checkoutId = `chk_66_${crypto.randomUUID().slice(0, 8)}`;
+  await runInDurableObject(stub, (_instance, ctx) => {
+    const database = new DurableObjectSqlDatabase(ctx.storage);
+    const store = new SqliteGuestInteractionStore(database);
+    store.saveCheckoutSession({ checkoutId, offerId: "offer-66-worker", pspReference: "psp-ref-66worker-1", totalAmountDueNowKobo: 1000, amountKobo: 1000, purpose: "stay", currency: "NGN", contactEmail: "guest@example.com", providerEnvironment: "test", expiresAt: "2026-10-27T10:20:00.000Z", status: "initiated", checkoutUrl: address });
+    expect(store.findCheckoutSession(checkoutId)?.checkoutUrl).toBe(address);
+
+    // An object migrated before this change: the column is absent, and the store's constructor adds it.
+    database.exec("ALTER TABLE guest_checkout_sessions DROP COLUMN checkout_url");
+    const restored = new SqliteGuestInteractionStore(database);
+    expect(restored.findCheckoutSession(checkoutId)?.checkoutUrl).toBeUndefined();
+    restored.saveCheckoutSession({ checkoutId, offerId: "offer-66-worker", pspReference: "psp-ref-66worker-1", totalAmountDueNowKobo: 1000, amountKobo: 1000, purpose: "stay", currency: "NGN", contactEmail: "guest@example.com", providerEnvironment: "test", expiresAt: "2026-10-27T10:20:00.000Z", status: "initiated", checkoutUrl: address });
+    expect(new SqliteGuestInteractionStore(database).findCheckoutSession(checkoutId)?.checkoutUrl).toBe(address);
+  });
+
+  await runInDurableObject(stub, async (instance) => { await instance.alarm(); });
+  const exported = await env.EXPORTS.get(exportObjectKey(lagosDate(new Date()), "guest_checkout_sessions"));
+  expect(exported).not.toBeNull();
+  const text = await exported!.text();
+  expect(text).toContain(checkoutId);
+  expect(text).not.toContain(address);
+  expect(text).not.toContain("checkout_url");
 });

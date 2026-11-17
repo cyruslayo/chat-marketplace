@@ -1,5 +1,5 @@
 import type { R2Bucket, R2MultipartUpload, R2Object, R2UploadedPart } from "@cloudflare/workers-types";
-import { CREDENTIAL_TABLES, encodeValue } from "../../../packages/platform-core/src/data-migration.js";
+import { CREDENTIAL_TABLES, encodeValue, exportedRow } from "../../../packages/platform-core/src/data-migration.js";
 import type { SqlDatabase, SqlRow, SqlValue } from "../../../packages/platform-core/src/sql-database.js";
 
 /**
@@ -208,8 +208,9 @@ export async function exportTable(dependencies: DailyExportDependencies, date: s
           .all({ $after: after });
         for (const row of rows) {
           after = Number(row.__rowid);
-          const { __rowid: _rowid, ...columns } = row;
-          const line = encodedLine(columns);
+          const { __rowid: _rowid, ...withoutRowid } = row;
+          // Issue 66: columns the export leaves out (EXPORT_EXCLUDED_COLUMNS) are dropped before encoding.
+          const line = encodedLine(exportedRow(table, withoutRowid));
           buffered.push(line);
           bufferedBytes += ENCODER.encode(line).byteLength;
           rowCount += 1;

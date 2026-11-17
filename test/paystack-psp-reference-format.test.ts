@@ -6,7 +6,7 @@ import { DirectPaystackClient, PaystackProviderFailure, type PaystackHttpFetcher
 import { DEFAULT_PAYER_METADATA_KEY } from "../packages/platform-core/src/payments/paystack.js";
 import { createPaystackHttpFake } from "./helpers/paystack-http.js";
 import { firstButtonAction, scriptedPlanner, trueRestartedDatedApp } from "./helpers/guest-date-fixtures.js";
-import { PAYSTACK_CONFIG, clearEmail, coldApp, harness, initializeReferences, offerIdOf, reachPaymentReady, successOf, type Harness } from "./helpers/paystack-checkout-journey.js";
+import { PAYSTACK_CONFIG, clearEmail, coldApp, harness, initializeReferences, offerIdOf, reachPaymentReady, startRefusedCheckout, successOf, switchableFetcher, type Harness } from "./helpers/paystack-checkout-journey.js";
 
 // ADR 0049 and 0046: the Paystack transaction reference rule. Paystack accepts only letters, digits, "-", "." and "=".
 // A reference with an underscore is refused by the provider, and a rejected initialize reuses the same reference on each
@@ -78,29 +78,6 @@ test("the chat card start initializes Paystack with a conforming reference only"
     assert.match(references[0]!, CONFORMING, "the reference sent to Paystack is conforming");
   } finally { h.f.close(); }
 });
-
-/** A Paystack fake whose initialize can be switched between refusing and accepting, recording every reference attempted. */
-function switchableFetcher(fake: ReturnType<typeof createPaystackHttpFake>) {
-  const attempts: string[] = [];
-  const state = { accepting: false };
-  const fetcher: PaystackHttpFetcher = async (url, init) => {
-    attempts.push(...initializeReferences([{ url, ...(init.body === undefined ? {} : { body: init.body }) }]));
-    if (!state.accepting) return { status: 400, json: async () => ({ status: false, message: "synthetic rejection" }) };
-    return fake.fetcher(url, init);
-  };
-  return { fetcher, attempts, state };
-}
-
-/** Sets the staging guest's payment email, then starts the card checkout with the switchable provider refusing. */
-async function startRefusedCheckout(h: Harness, switchable: ReturnType<typeof switchableFetcher>) {
-  const payment = await reachPaymentReady(h);
-  clearEmail(h);
-  h.f.environment.guestContactApp.submitEmail({ contactEmail: "guest@example.com" }, h.f.environment.guestPrincipal());
-  const refused = await coldApp(h).handleEventAsync(h.threadId, firstButtonAction(payment));
-  assert.equal(refused.ok, false, "the first start is refused by the provider");
-  assert.equal(switchable.attempts.length, 1, "the first start made one Paystack initialization");
-  return { payment, offerId: offerIdOf(payment) };
-}
 
 test("a stuck initiated attempt with a legacy underscore reference gets a conforming reference on retry after a true cold restore", async () => {
   const fake = createPaystackHttpFake();

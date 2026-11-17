@@ -3,36 +3,12 @@ import test from "node:test";
 import { createPaystackHttpFake } from "./helpers/paystack-http.js";
 import { firstButtonAction, trueRestartedDatedApp, scriptedPlanner } from "./helpers/guest-date-fixtures.js";
 import { guestPaymentPage, visibleText } from "./helpers/guest-payment-page.js";
-import { EMAIL, START_MS, clearEmail, coldApp, harness, initializeReferences, offerIdOf, reachPaymentReady, successOf, type Harness } from "./helpers/paystack-checkout-journey.js";
+import { EMAIL, CHECKOUT_MESSAGE, coldApp, handoffAfterEmailSave, handoffWithEmailOnFile, harness, initializeReferences } from "./helpers/paystack-checkout-journey.js";
 
 // Issue 65: after the guest saves an email for card checkout, the chat hands off exactly as the direct path does (one click to
 // /payments/offers/<offerId>/continue, the same label and message). The journey is the staging-like guest of the Paystack
 // checkout tests (test/helpers/paystack-checkout-journey.ts): the Paystack module wired, the assistant runtime enabled, a cold
 // restore before every event, no phone and no email, on the 27 Oct 2026 clock.
-
-const CHECKOUT_MESSAGE = "Hosted card checkout is ready. Payment has not succeeded; your booking details remain available when you return.";
-const CONTINUE_EVENT = "shortlet.card-payment.initialize-checkout";
-
-/** The email-just-saved path: Start checkout asks for the email first, and saving it returns the handoff. */
-async function handoffAfterEmailSave(h: Harness) {
-  const payment = await reachPaymentReady(h);
-  clearEmail(h);
-  const ask = successOf(await coldApp(h).handleEventAsync(h.threadId, firstButtonAction(payment)), "Start checkout");
-  assert.match(ask.surfaces[0]!.surfaceId, /:contact:email:/, "Start checkout asks for the email first");
-  const emailAsk = firstButtonAction(ask.surfaces[0]!);
-  const saved = successOf(await coldApp(h).handleEventAsync(h.threadId, { ...emailAsk, context: { ...emailAsk.context, contactValue: EMAIL } }), "Save email");
-  assert.match(saved.surfaces[0]!.surfaceId, /:payment:checkout:/, "the email save returns the payment handoff");
-  return { offerId: offerIdOf(saved.surfaces[0]!), handoff: saved.surfaces[0]!, result: saved };
-}
-
-/** The direct path: the guest already has an email on file, so Start checkout returns the handoff in one step. */
-async function handoffWithEmailOnFile(h: Harness) {
-  const payment = await reachPaymentReady(h);
-  h.f.environment.guestContactApp.submitEmail({ contactEmail: EMAIL }, h.f.environment.guestPrincipal());
-  const direct = successOf(await coldApp(h).handleEventAsync(h.threadId, firstButtonAction(payment)), "Start checkout with the email on file");
-  assert.match(direct.surfaces[0]!.surfaceId, /:payment:checkout:/, "the direct path returns the payment handoff");
-  return { offerId: offerIdOf(direct.surfaces[0]!), handoff: direct.surfaces[0]!, result: direct };
-}
 
 test("After the guest saves an email for card checkout, the handoff surface's continue control is /payments/offers/<offerId>/continue, the same as for a guest with an email on file", async () => {
   const emailPathHarness = harness("g-d1c6500501", createPaystackHttpFake().fetcher);
@@ -82,9 +58,9 @@ test("Following that control after the email save, and then following the direct
       const again = await environment.cardPaymentApp.initializePaystackCheckout(offerId, environment.guestPrincipal(), environment.payments);
       assert.equal(again.pspReference, first.pspReference, "the restored continue control reuses the same Live Payment Attempt");
       assert.equal(again.checkoutId, first.checkoutId, "no second checkout session is created");
-      // Known gap (Comments, finding): the durable store keeps no checkout URL, so the restored call initializes the same reference again.
-      // The attempt, its reference and its checkout id are unchanged. Pinned here so a fix shows up as a deliberate change.
-      assert.deepEqual(initializeReferences(fake.requests), [first.pspReference, first.pspReference], "the restored continue re-initializes the same reference and no other");
+      // Issue 66 (AC7, deliberate change): the durable checkout session keeps the approved Paystack address, so the restored
+      // continue reuses it and initializes nothing. Before issue 66 this pinned [ref, ref] (the known gap in issue 65, deviation 5).
+      assert.deepEqual(initializeReferences(fake.requests), [first.pspReference], "the restored continue reuses the stored address: one initialization in total");
     } finally {
       restarted.close();
     }

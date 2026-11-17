@@ -104,6 +104,23 @@ export function isCredentialTable(name: string): boolean {
   return Object.hasOwn(CREDENTIAL_TABLES, name);
 }
 
+/**
+ * Columns that no export, migration checksum or import carries (issue 66). The checkout address is Paystack's payment-page
+ * link. The durable checkout session keeps it so a cold restore reuses it; it never leaves the database. A restored session
+ * has no address and initializes Paystack once for its own reference (fail closed). Owner confirmation pending (issue 66).
+ * Every path that reads whole rows applies this list, so a source and its target checksum the same columns.
+ */
+export const EXPORT_EXCLUDED_COLUMNS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  guest_checkout_sessions: Object.freeze(["checkout_url"]),
+});
+
+/** A row as an export carries it: the table's columns less the excluded ones (issue 66). */
+export function exportedRow(table: string, row: SqlRow): SqlRow {
+  if (!Object.hasOwn(EXPORT_EXCLUDED_COLUMNS, table)) return row;
+  const excluded = EXPORT_EXCLUDED_COLUMNS[table] ?? [];
+  return Object.fromEntries(Object.entries(row).filter(([column]) => !excluded.includes(column)));
+}
+
 /** The table that holds receipt bytes in the Node composition (07a). Its bytes move to R2, not to the table. */
 export const RECEIPT_BLOB_TABLE = "receipt_blobs";
 const RECEIPT_TABLE = "manual_transfer_receipts";
@@ -339,7 +356,7 @@ export async function checksumTables(
 ): Promise<Record<string, TableChecksum>> {
   const checksums: Record<string, TableChecksum> = {};
   for (const table of tables) {
-    const rows = database.prepare(`SELECT * FROM ${quoteIdentifier(table)}`).all();
+    const rows = database.prepare(`SELECT * FROM ${quoteIdentifier(table)}`).all().map((row) => exportedRow(table, row));
     const { content, rowCount } = canonicalTableContent(rows);
     checksums[table] = { rowCount, sha256: await contentSha256(content) };
   }
@@ -401,7 +418,7 @@ export async function buildExport(database: SqlDatabase): Promise<MigrationExpor
   // Parents before children, so the manifest's key order is a load order the object accepts (foreign keys are enforced).
   for (const table of importOrder(database, names)) {
     if (table === RECEIPT_BLOB_TABLE) continue;
-    let rows = database.prepare(`SELECT * FROM ${quoteIdentifier(table)}`).all();
+    let rows = database.prepare(`SELECT * FROM ${quoteIdentifier(table)}`).all().map((row) => exportedRow(table, row));
     if (table === RECEIPT_TABLE) rows = rows.map((row) => receiptRow(row, blobs, claimed, receipts));
     const canonical = canonicalTableContent(rows);
     contents[table] = canonical.content;

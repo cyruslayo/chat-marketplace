@@ -21,7 +21,8 @@ export const PAYSTACK_FAKE_TRANSFER_ACCOUNT = Object.freeze({ bankName: "Test Ba
 
 export function createPaystackHttpFake(options: {
   readonly transaction?: PaystackFakeTransaction;
-  readonly authorizationUrl?: string;
+  /** The checkout address the fake issues: fixed, or derived from the reference (issue 66 tells attempts apart). */
+  readonly authorizationUrl?: string | ((reference: string) => string);
   /** The expiry Paystack answers a transfer charge with; defaults to the requested `account_expires_at`. */
   readonly chargeExpiry?: (requested: string) => string;
 } = {}): { readonly fetcher: PaystackHttpFetcher; readonly requests: PaystackFakeRequest[]; setTransaction(transaction: PaystackFakeTransaction): void } {
@@ -33,7 +34,8 @@ export function createPaystackHttpFake(options: {
     if (url.endsWith("/transaction/initialize")) {
       const body: unknown = init.body === undefined ? undefined : JSON.parse(init.body);
       const reference = body !== null && typeof body === "object" && !Array.isArray(body) && typeof (body as { reference?: unknown }).reference === "string" ? (body as { reference: string }).reference : transaction.reference;
-      return response(200, { status: true, data: { authorization_url: options.authorizationUrl ?? "https://checkout.paystack.com/fake-token", reference } });
+      const authorizationUrl = typeof options.authorizationUrl === "function" ? options.authorizationUrl(reference) : (options.authorizationUrl ?? "https://checkout.paystack.com/fake-token");
+      return response(200, { status: true, data: { authorization_url: authorizationUrl, reference } });
     }
     if (url.endsWith("/charge")) {
       const body = JSON.parse(init.body ?? "{}") as { reference?: string; bank_transfer?: { account_expires_at?: string } };

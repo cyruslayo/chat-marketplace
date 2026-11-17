@@ -138,6 +138,8 @@ export interface DurableCardCheckoutSession {
   readonly currency: "NGN";
   readonly contactEmail: string;
   readonly providerEnvironment?: "test" | "live";
+  /** The approved Paystack checkout address the server received for this attempt (issue 66). Absent when none is stored. */
+  readonly checkoutUrl?: string;
   readonly expiresAt: string;
   readonly status: "initiated" | "completed" | "expired" | "failed";
 }
@@ -263,6 +265,7 @@ interface CardCheckoutSessionRow {
   currency: string;
   contact_email: string | null;
   provider_environment: string | null;
+  checkout_url: string | null;
   expires_at: string;
   status: string;
 }
@@ -737,6 +740,12 @@ export class SqliteGuestInteractionStore {
     )
       this.#database.exec(
         "ALTER TABLE guest_checkout_sessions ADD COLUMN provider_environment TEXT",
+      );
+    // Issue 66: the approved checkout address, nullable. Added here, not in a migration, because this constructor already
+    // runs for every database and store (Node and Cloudflare), and a migration's ADD COLUMN could not be re-run safely.
+    if (!checkoutColumns.some((column) => column.name === "checkout_url"))
+      this.#database.exec(
+        "ALTER TABLE guest_checkout_sessions ADD COLUMN checkout_url TEXT",
       );
   }
 
@@ -1213,9 +1222,9 @@ export class SqliteGuestInteractionStore {
       .prepare(`
       INSERT INTO guest_checkout_sessions (
         checkout_id, offer_id, psp_reference, total_amount_due_now_kobo,
-        amount_kobo, purpose, currency, contact_email, provider_environment, expires_at, status)
+        amount_kobo, purpose, currency, contact_email, provider_environment, expires_at, status, checkout_url)
       VALUES ($checkoutId, $offerId, $pspReference, $totalAmountDueNowKobo,
-        $amountKobo, $purpose, $currency, $contactEmail, $providerEnvironment, $expiresAt, $status)
+        $amountKobo, $purpose, $currency, $contactEmail, $providerEnvironment, $expiresAt, $status, $checkoutUrl)
       ON CONFLICT(checkout_id) DO UPDATE SET
         offer_id = excluded.offer_id,
         psp_reference = excluded.psp_reference,
@@ -1226,7 +1235,8 @@ export class SqliteGuestInteractionStore {
         contact_email = excluded.contact_email,
         provider_environment = excluded.provider_environment,
         expires_at = excluded.expires_at,
-        status = excluded.status
+        status = excluded.status,
+        checkout_url = excluded.checkout_url
     `)
       .run({
         $checkoutId: session.checkoutId,
@@ -1240,6 +1250,8 @@ export class SqliteGuestInteractionStore {
         $providerEnvironment: session.providerEnvironment ?? null,
         $expiresAt: session.expiresAt,
         $status: session.status,
+        // Issue 66: the approved address, or NULL. The domain decides what it writes; the store keeps what it is given.
+        $checkoutUrl: session.checkoutUrl ?? null,
       });
   }
 
@@ -1263,6 +1275,7 @@ export class SqliteGuestInteractionStore {
       row.provider_environment === "live"
         ? { providerEnvironment: row.provider_environment }
         : {}),
+      ...(row.checkout_url === null ? {} : { checkoutUrl: row.checkout_url }),
       expiresAt: row.expires_at,
       status:
         row.status === "completed"
