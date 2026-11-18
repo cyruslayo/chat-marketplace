@@ -25,7 +25,7 @@ import {
   type SecurityDepositCollectionCapabilityProvider,
 } from "./security-deposit.js";
 import type { SecurityDepositAccountingRepository } from "./security-deposit-accounting.js";
-import type { TransitionTable } from "../../../packages/platform-core/src/state-transition.js";
+import { canTransition, type TransitionTable } from "../../../packages/platform-core/src/state-transition.js";
 
 /** Issue 06: the bank transfer session statuses (persisted; never renamed). */
 export const BANK_TRANSFER_SESSION_STATUSES = ["initiated", "processing_in_grace", "completed", "expired", "refunded"] as const;
@@ -37,7 +37,7 @@ export type BankTransferSessionStatus = (typeof BANK_TRANSFER_SESSION_STATUSES)[
 export const BANK_TRANSFER_SESSION_TRANSITIONS = {
   initiated: ["processing_in_grace", "completed", "expired", "refunded"],
   processing_in_grace: ["processing_in_grace", "completed", "expired", "refunded"],
-  completed: ["expired"], // issue 17: latent, tightened there (resolveExpiry admits completed)
+  completed: [], // issue 17: a paid session is never expired (ADR 0044, 0045); resolveExpiry returns it unchanged
   expired: ["refunded"], // ADR 0045: a success after the expiry is refunded in full
   refunded: [],
 } as const satisfies TransitionTable<BankTransferSessionStatus>;
@@ -570,7 +570,7 @@ export class BankTransferPaymentManager {
         offer.offerId,
         journey.journeyVersion,
         (value) => ({
-          // Unguarded stage write, no from-stage check (issue 17). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
+          // Unguarded stage write, no from-stage check (issue 27). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
           ...this.#setStage(value, purpose === "stay" ? "stay_payment_active" : "deposit_payment_active"),
           [purpose === "stay" ? "stay" : "deposit"]: {
             ...(purpose === "stay" ? value.stay : value.deposit),
@@ -660,8 +660,9 @@ export class BankTransferPaymentManager {
     const now = clock();
     if (now.getTime() < new Date(session.graceEndsAt).getTime())
       throw new Error("Payment release deadline has not been reached");
-    // issue 17: latent, tightened there. This deny-list admits a completed session to expired (BANK_TRANSFER_SESSION_TRANSITIONS).
-    if (session.status === "expired" || session.status === "refunded")
+    // Issue 17 (ADR 0044, 0045, 0047): allow-list. Only initiated and processing_in_grace may expire. Expired, refunded
+    // and completed sessions return unchanged, with no release and no audit.
+    if (!canTransition(BANK_TRANSFER_SESSION_TRANSITIONS, session.status, "expired"))
       return { ...session };
     this.#calendar?.releasePaymentPending?.(offer.inventoryCommitmentId, {
       clock: () => now,
@@ -825,7 +826,7 @@ export class BankTransferPaymentManager {
           ledgerEntries: this.#ledgerEntries.get(current.finalReservationId),
         };
       this.#journeys.update(offer.offerId, current.journeyVersion, (value) => ({
-        // Unguarded stage write, no from-stage check (issue 17). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
+        // Unguarded stage write, no from-stage check (issue 27). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
         ...this.#setStage(value, "stay_settled"),
         stay: {
           ...value.stay,
@@ -1174,7 +1175,7 @@ export class BankTransferPaymentManager {
         status: deriveCompensationStatus({ ...value.compensation, deposit }),
       };
       return {
-        // Unguarded stage write, no from-stage check (issue 17). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
+        // Unguarded stage write, no from-stage check (issue 27). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
         ...this.#setStage(value, compensation.status === "pending" ? "compensation_pending" : compensation.status === "reconciliation_required" ? "reconciliation_required" : "compensated"),
         compensation,
       };
@@ -1184,7 +1185,7 @@ export class BankTransferPaymentManager {
     const journey = this.#journeys?.findByOfferId(offerId);
     if (journey)
       this.#journeys!.update(offerId, journey.journeyVersion, (value) => ({
-        // Unguarded stage write, no from-stage check (issue 17). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
+        // Unguarded stage write, no from-stage check (issue 27). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
         ...this.#setStage(value, "reconciliation_required"),
         compensation: {
           ...value.compensation,
@@ -1204,7 +1205,7 @@ export class BankTransferPaymentManager {
     const obligationId = `payment-compensation:${offerId}:stay`;
     if (!reference || !this.#compensationRefundProvider) {
       this.#journeys?.update(offerId, journey.journeyVersion, (value) => ({
-        // Unguarded stage write, no from-stage check (issue 17). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
+        // Unguarded stage write, no from-stage check (issue 27). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
         ...this.#setStage(value, "reconciliation_required"),
         compensation: {
           ...value.compensation,
@@ -1241,7 +1242,7 @@ export class BankTransferPaymentManager {
         throw new Error("Compensation provider mismatch");
     } catch {
       this.#journeys?.update(offerId, journey.journeyVersion, (value) => ({
-        // Unguarded stage write, no from-stage check (issue 17). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
+        // Unguarded stage write, no from-stage check (issue 27). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
         ...this.#setStage(value, "reconciliation_required"),
         compensation: {
           ...value.compensation,
@@ -1281,7 +1282,7 @@ export class BankTransferPaymentManager {
         status: deriveCompensationStatus({ ...value.compensation, stay }),
       };
       return {
-        // Unguarded stage write, no from-stage check (issue 17). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
+        // Unguarded stage write, no from-stage check (issue 27). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
         ...this.#setStage(value, compensation.status === "pending" ? "compensation_pending" : compensation.status === "reconciliation_required" ? "reconciliation_required" : "compensated"),
         compensation,
       };

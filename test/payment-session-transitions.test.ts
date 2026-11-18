@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { ConditionalBookingOffer } from "../domains/shortlet/src/conditional-offer.js";
 import { CardPaymentManager, type PSPVerifyResult } from "../domains/shortlet/src/card-payment.js";
-import { BankTransferPaymentManager, type BankTransferProviderResult } from "../domains/shortlet/src/bank-transfer.js";
 import { InMemoryBookingStateRepository } from "../domains/shortlet/src/index.js";
 import { LivePaymentAttemptRegistry } from "../domains/shortlet/src/payment-attempt.js";
 import { CARD_CHECKOUT_SESSION_TRANSITIONS } from "../domains/shortlet/src/card-payment.js";
@@ -10,50 +8,16 @@ import { BANK_TRANSFER_SESSION_TRANSITIONS } from "../domains/shortlet/src/bank-
 import { MANUAL_TRANSFER_TRANSITIONS } from "../domains/shortlet/src/manual-transfer.js";
 import { LIVE_PAYMENT_ATTEMPT_TRANSITIONS } from "../domains/shortlet/src/payment-attempt.js";
 import { canTransition } from "../packages/platform-core/src/state-transition.js";
-import type { PlatformCommandEnvelope, CommandPrincipal } from "../packages/platform-core/src/index.js";
-import { createTestAvailabilityCalendar } from "./helpers/availability-calendar.js";
-import { TEST_GUEST_CONTACTS, issueTransferAccount } from "./helpers/bank-transfer-provider.js";
+import type { CommandPrincipal } from "../packages/platform-core/src/index.js";
+import { TEST_GUEST_CONTACTS } from "./helpers/bank-transfer-provider.js";
 import { TEST_MANUAL_ACCOUNT, TEST_RECEIPTS, guestPaymentPage, multipartBody } from "./helpers/guest-payment-page.js";
+import { at, paymentOffer, envelope, bankSetup, providerSuccess } from "./helpers/bank-transfer-session-fixture.js";
 
 // Issue 06 (state-machines PRD, Track B). Characterisation of the payment session lifecycles as they run TODAY.
 // No behaviour changes here: every assertion pins a status or error text the code produces now.
 // ADRs 0044 (Payment Window 20 + 10 grace minutes), 0045 (refund every late payment), 0046 (one live attempt),
 // 0047 (expiring bank transfers), 0090 (manual transfer and its 60-minute hold).
 
-const T0 = new Date("2026-07-22T10:00:00Z");
-const MINUTE = 60_000;
-const at = (minutes: number): Date => new Date(T0.getTime() + minutes * MINUTE);
-
-function paymentOffer(overrides: { readonly offerId: string; readonly guestId: string; readonly tenantId: string }): ConditionalBookingOffer {
-  return {
-    offerId: overrides.offerId,
-    offerVersion: 1,
-    requestId: "request",
-    inventoryCommitmentId: `commit-${overrides.offerId}`,
-    unitId: "unit-06",
-    tenantId: overrides.tenantId,
-    parties: { primaryGuest: { id: overrides.guestId, name: "Guest Six" }, operator: { id: "operator", name: "Operator" }, distinctPayer: null },
-    unit: { id: "unit-06", title: "Unit Six", propertyId: "property", location: { city: "Lagos" } },
-    dates: { checkIn: "2026-08-01", checkOut: "2026-08-05", nights: 4 },
-    occupants: [{ name: "Guest Six" }],
-    quote: { breakdown: { accommodationNetKobo: 8_000_000, platformCommissionKobo: 2_000_000 } },
-    totalAmountDueNowKobo: 10_000,
-    refundableSecurityDepositKobo: 0,
-    policies: { cancellationPolicy: {}, guestConductRules: [] },
-    disclosures: [],
-    paymentWindow: { durationMinutes: 20, expiresAt: new Date(T0.getTime() + 20 * MINUTE).toISOString() },
-    status: "accepted",
-    issuedAt: T0.toISOString(),
-    acceptedAt: T0.toISOString(),
-    confirmationToken: "token",
-    tokenUsed: true,
-    aggregateVersions: { offerVersion: 1, pricingVersion: "v1", quoteVersion: "v1", cancellationPolicyVersion: "v1", managementAuthorityVersion: "v1", inspectionVersion: "v1" },
-  };
-}
-
-function envelope<T>(commandName: string, payload: T, principal: CommandPrincipal): PlatformCommandEnvelope<T> {
-  return { commandId: `${commandName}-${Math.random()}`, commandName, principal, payload, timestamp: T0.toISOString() };
-}
 
 // ---- Card checkout session -------------------------------------------------------------------------------------
 
@@ -88,44 +52,6 @@ function startCard(manager: CardPaymentManager, reuseExisting = false) {
 
 // ---- Bank transfer session -------------------------------------------------------------------------------------
 
-function bankSetup(id: string) {
-  const offer = paymentOffer({ offerId: id, guestId: "guest-11", tenantId: "tenant-11" });
-  const calendar = createTestAvailabilityCalendar();
-  const block = calendar.createBookingRequestBlock({ unitId: offer.unitId, holderId: offer.parties.primaryGuest.id, start: offer.dates.checkIn, end: offer.dates.checkOut, clock: () => T0 });
-  calendar.transitionBookingRequestBlockToPaymentPending({ commitmentId: block.commitmentId, unitId: offer.unitId, start: offer.dates.checkIn, end: offer.dates.checkOut, clock: () => T0 });
-  const authoritative = { ...offer, inventoryCommitmentId: block.commitmentId };
-  let providerResult: BankTransferProviderResult | undefined;
-  const manager = new BankTransferPaymentManager({
-    offerManager: { getOffer: () => authoritative },
-    calendar,
-    providerClient: {
-      createTransferAccount: issueTransferAccount,
-      verifyTransfer: () => {
-        if (!providerResult) throw new Error("fake provider result not configured");
-        return providerResult;
-      },
-    },
-    guestContacts: TEST_GUEST_CONTACTS,
-  });
-  const payer: CommandPrincipal = { id: "guest-11", role: "guest", tenantId: "tenant-11" };
-  const server: CommandPrincipal = { id: "payment-worker", role: "system", tenantId: "tenant-11" };
-  return {
-    manager,
-    offer: authoritative,
-    payer,
-    server,
-    start: async () => manager.initializeBankTransfer(envelope("bank_transfer.initialize", { offerId: id }, payer), { clock: () => T0 }),
-    setResult: (result: BankTransferProviderResult) => {
-      providerResult = result;
-    },
-    verify: (reference: string, minutes: number) =>
-      manager.verifyAndProcessTransfer({ ...envelope("bank_transfer.verify_and_process", { transferReference: reference }, server), principal: server }, { clock: () => at(minutes) }),
-  };
-}
-
-function providerSuccess(reference: string, amountKobo: number, payerId = "guest-11"): BankTransferProviderResult {
-  return { verified: true, status: "success", amountKobo, currency: "NGN", pspReference: reference, payerId };
-}
 
 // ---- Manual transfer -------------------------------------------------------------------------------------------
 
@@ -300,7 +226,6 @@ describe("Issue 06: transition tables", () => {
       ["processing_in_grace", "completed"],
       ["initiated", "expired"],
       ["processing_in_grace", "expired"],
-      ["completed", "expired"], // issue 17: latent, tightened there
       ["initiated", "refunded"],
       ["processing_in_grace", "refunded"],
       ["expired", "refunded"],
@@ -326,6 +251,7 @@ describe("Issue 06: transition tables", () => {
     assert.equal(canTransition(CARD_CHECKOUT_SESSION_TRANSITIONS, "failed", "completed"), false);
     assert.equal(canTransition(BANK_TRANSFER_SESSION_TRANSITIONS, "refunded", "completed"), false);
     assert.equal(canTransition(BANK_TRANSFER_SESSION_TRANSITIONS, "expired", "completed"), false);
+    assert.equal(canTransition(BANK_TRANSFER_SESSION_TRANSITIONS, "completed", "expired"), false); // issue 17: a paid session never expires
     assert.equal(canTransition(MANUAL_TRANSFER_TRANSITIONS, "awaiting_receipt", "confirmed"), false);
     assert.equal(canTransition(MANUAL_TRANSFER_TRANSITIONS, "expired", "confirmed"), false);
     assert.equal(canTransition(MANUAL_TRANSFER_TRANSITIONS, "rejected", "confirmed"), false);
