@@ -17,14 +17,14 @@ PRD: `PRD.md`. Line numbers come from a sweep of an earlier checkout and are app
 | 09 | B | Exhaustive `satisfies Record` copy maps in web-agent presentation | resolved | 01 |
 | 10 | B | `deriveGuestStage` projection that keeps today's per-site results, plus a matrix | resolved | 01 |
 | 11 | C | Deposit payment in processing restores as processing | resolved | - |
-| 12 | C | Unknown payment status no longer says "Booking confirmed" | to write | 09 |
+| 12 | C | Unknown payment status no longer says "Booking confirmed" | ready-for-agent | 09 |
 | 13 | C | Stale or revoked offer does not restore as active | resolved | - |
 | 14 | C | Expired confirmation is cleared, so the guest is not stuck | resolved | - |
 | 15 | C | Unknown card-session status fails closed | resolved | - |
-| 16 | C | Stale `draftId` cleared on a new search | to write | 10 |
-| 17 | C | Allow-list hardening: `resolveExpiry`, `commitAmendment`, surface from-state | to write | 05, 06, 07, 08 |
-| 18 | C | One guest stage everywhere: collapse each matrix disagreement | to write | 10, 11, 13, 16 |
-| 19 | C | Draft-replacement card restored after a cold restore | to write | 10 |
+| 16 | C | Stale `draftId` cleared on a new search (merged into 18) | resolved | 10 |
+| 17 | C | Allow-list hardening: `resolveExpiry`, `commitAmendment`, surface from-state | ready-for-agent | 05, 06, 07, 08 |
+| 18 | C | One guest stage everywhere: collapse each matrix disagreement | ready-for-agent | 10, 11, 13, 16 |
+| 19 | C | Draft-replacement card restored after a cold restore | ready-for-agent | 10 |
 | 20 | D | Pending-action card re-rendered after a cold restore? | to write | - |
 | 21 | D | Turn recovery: redacted server text vs raw client text | to write | - |
 | 22 | D | Client in-flight flags (`isLoading` vs `eventInFlight`), `THREAD_BUSY` | to write | - |
