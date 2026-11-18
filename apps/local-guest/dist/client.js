@@ -1,8 +1,8 @@
 "use strict";
 (() => {
-  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/layout.js
-  function applyBasicHook(element, component) {
-    element.setAttribute("data-a2ui-component", component);
+  // node_modules/@cylayo/weaver-web/dist/basic/layout.js
+  function applyBasicHook(element2, component) {
+    element2.setAttribute("data-a2ui-component", component);
   }
   function mapJustify(value) {
     switch (value) {
@@ -43,9 +43,9 @@
     return relationship.kind === "single" ? relationship.child === void 0 ? [] : [relationship.child] : relationship.children;
   }
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/markdown.js
-  function appendText(document2, parent, text) {
-    const lines = text.split("\n");
+  // node_modules/@cylayo/weaver-web/dist/basic/markdown.js
+  function appendText(document2, parent, text2) {
+    const lines = text2.split("\n");
     lines.forEach((line, index) => {
       if (index > 0)
         parent.appendChild(document2.createElement("br"));
@@ -53,7 +53,7 @@
         parent.appendChild(document2.createTextNode(line));
     });
   }
-  function renderBasicInlineMarkdown(document2, text) {
+  function renderBasicInlineMarkdown(document2, text2) {
     const output = document2.createDocumentFragment();
     let literal = "";
     let marker;
@@ -63,36 +63,36 @@
       literal = "";
     };
     const closeFormatting = () => {
-      const element = document2.createElement(marker === "`" ? "code" : marker === "**" || marker === "__" ? "strong" : "em");
-      appendText(document2, element, formatted);
-      output.appendChild(element);
+      const element2 = document2.createElement(marker === "`" ? "code" : marker === "**" || marker === "__" ? "strong" : "em");
+      appendText(document2, element2, formatted);
+      output.appendChild(element2);
       marker = void 0;
       formatted = "";
     };
-    for (let index = 0; index < text.length; ) {
+    for (let index = 0; index < text2.length; ) {
       const target = marker === void 0 ? "literal" : "formatted";
-      if (text[index] === "\\" && index + 1 < text.length && "*_`\\".includes(text[index + 1])) {
+      if (text2[index] === "\\" && index + 1 < text2.length && "*_`\\".includes(text2[index + 1])) {
         if (target === "literal")
-          literal += text[index + 1];
+          literal += text2[index + 1];
         else
-          formatted += text[index + 1];
+          formatted += text2[index + 1];
         index += 2;
         continue;
       }
       if (marker !== void 0) {
-        if (text.startsWith(marker, index)) {
+        if (text2.startsWith(marker, index)) {
           const markerLength = marker.length;
           closeFormatting();
           index += markerLength;
         } else {
-          formatted += text[index];
+          formatted += text2[index];
           index++;
         }
         continue;
       }
-      const candidate = text.startsWith("**", index) ? "**" : text.startsWith("__", index) ? "__" : text[index] === "*" ? "*" : text[index] === "_" ? "_" : text[index] === "`" ? "`" : void 0;
+      const candidate = text2.startsWith("**", index) ? "**" : text2.startsWith("__", index) ? "__" : text2[index] === "*" ? "*" : text2[index] === "_" ? "_" : text2[index] === "`" ? "`" : void 0;
       if (candidate === void 0) {
-        literal += text[index];
+        literal += text2[index];
         index++;
         continue;
       }
@@ -106,24 +106,24 @@
     return [...output.childNodes];
   }
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/styles.js
+  // node_modules/@cylayo/weaver-web/dist/basic/styles.js
   var basicSpace = "var(--a2ui-space, 8px)";
   var basicRadius = "var(--a2ui-radius, 8px)";
   var basicOutline = "var(--a2ui-color-outline, rgba(0, 0, 0, 0.22))";
   var basicControl = "var(--a2ui-color-control, rgba(127, 127, 127, 0.10))";
   var basicCardShadow = "var(--a2ui-card-shadow, 0 1px 3px rgba(0, 0, 0, 0.12))";
-  function appendBasicStyle(element, declarations) {
-    const existing = element.getAttribute("style");
-    element.setAttribute("style", `${existing === null || existing.trim() === "" ? "" : `${existing.trim().replace(/;?$/, ";")} `}${declarations}`);
+  function appendBasicStyle(element2, declarations) {
+    const existing = element2.getAttribute("style");
+    element2.setAttribute("style", `${existing === null || existing.trim() === "" ? "" : `${existing.trim().replace(/;?$/, ";")} `}${declarations}`);
   }
-  function applyBasicMargin(element) {
-    appendBasicStyle(element, `margin: ${basicSpace}`);
+  function applyBasicMargin(element2) {
+    appendBasicStyle(element2, `margin: ${basicSpace}`);
   }
-  function applyControlShape(element) {
-    appendBasicStyle(element, `border: 1px solid ${basicOutline}; border-radius: ${basicRadius}`);
+  function applyControlShape(element2) {
+    appendBasicStyle(element2, `border: 1px solid ${basicOutline}; border-radius: ${basicRadius}`);
   }
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/renderers.js
+  // node_modules/@cylayo/weaver-web/dist/basic/renderers.js
   var textElements = {
     h1: "h1",
     h2: "h2",
@@ -135,44 +135,44 @@
   };
   var renderText = ({ document: document2, properties }) => {
     const variant = typeof properties.variant === "string" && properties.variant in textElements ? properties.variant : "body";
-    const element = document2.createElement(textElements[variant]);
-    applyBasicHook(element, "Text");
-    element.style.fontSize = variant === "body" ? "1em" : variant === "caption" ? "0.8em" : { h1: "2.5em", h2: "2em", h3: "1.75em", h4: "1.5em", h5: "1.25em" }[variant];
-    element.style.fontWeight = variant === "body" || variant === "caption" ? "normal" : "700";
+    const element2 = document2.createElement(textElements[variant]);
+    applyBasicHook(element2, "Text");
+    element2.style.fontSize = variant === "body" ? "1em" : variant === "caption" ? "0.8em" : { h1: "2.5em", h2: "2em", h3: "1.75em", h4: "1.5em", h5: "1.25em" }[variant];
+    element2.style.fontWeight = variant === "body" || variant === "caption" ? "normal" : "700";
     if (variant === "caption")
-      element.style.fontStyle = "italic";
+      element2.style.fontStyle = "italic";
     if (variant !== "body" && variant !== "caption")
-      element.style.lineHeight = "1.2";
-    applyBasicMargin(element);
+      element2.style.lineHeight = "1.2";
+    applyBasicMargin(element2);
     if (typeof properties.text === "string") {
       try {
-        element.append(...renderBasicInlineMarkdown(document2, properties.text));
+        element2.append(...renderBasicInlineMarkdown(document2, properties.text));
       } catch {
-        element.textContent = properties.text;
+        element2.textContent = properties.text;
       }
     }
-    return element;
+    return element2;
   };
   var renderDivider = ({ document: document2, properties }) => {
     if (properties.axis !== "vertical") {
-      const element2 = document2.createElement("hr");
-      applyBasicHook(element2, "Divider");
-      element2.style.border = "0";
-      element2.style.width = "auto";
-      appendBasicStyle(element2, `border-block-start: 1px solid ${basicOutline}`);
-      applyBasicMargin(element2);
-      return element2;
+      const element3 = document2.createElement("hr");
+      applyBasicHook(element3, "Divider");
+      element3.style.border = "0";
+      element3.style.width = "auto";
+      appendBasicStyle(element3, `border-block-start: 1px solid ${basicOutline}`);
+      applyBasicMargin(element3);
+      return element3;
     }
-    const element = document2.createElement("div");
-    applyBasicHook(element, "Divider");
-    element.setAttribute("role", "separator");
-    element.setAttribute("aria-orientation", "vertical");
-    element.style.alignSelf = "stretch";
-    element.style.minHeight = "1em";
-    element.style.width = "0px";
-    appendBasicStyle(element, `border-inline-start: 1px solid ${basicOutline}`);
-    applyBasicMargin(element);
-    return element;
+    const element2 = document2.createElement("div");
+    applyBasicHook(element2, "Divider");
+    element2.setAttribute("role", "separator");
+    element2.setAttribute("aria-orientation", "vertical");
+    element2.style.alignSelf = "stretch";
+    element2.style.minHeight = "1em";
+    element2.style.width = "0px";
+    appendBasicStyle(element2, `border-inline-start: 1px solid ${basicOutline}`);
+    applyBasicMargin(element2);
+    return element2;
   };
   function appendLayoutRelationshipChildren(parent, relationships, stretch) {
     const relationship = relationships.find((candidate) => candidate.property === "children");
@@ -200,33 +200,33 @@
   }
   function renderLayout(direction, component) {
     return ({ document: document2, properties, relationships }) => {
-      const element = document2.createElement("div");
-      applyBasicHook(element, component);
-      element.style.display = "flex";
-      element.style.flexDirection = direction;
+      const element2 = document2.createElement("div");
+      applyBasicHook(element2, component);
+      element2.style.display = "flex";
+      element2.style.flexDirection = direction;
       const stretch = properties.justify === "stretch";
-      element.style.justifyContent = stretch ? "flex-start" : mapJustify(properties.justify);
-      element.style.alignItems = mapAlign(properties.align);
-      appendLayoutRelationshipChildren(element, relationships, stretch);
-      return element;
+      element2.style.justifyContent = stretch ? "flex-start" : mapJustify(properties.justify);
+      element2.style.alignItems = mapAlign(properties.align);
+      appendLayoutRelationshipChildren(element2, relationships, stretch);
+      return element2;
     };
   }
   var renderRow = renderLayout("row", "Row");
   var renderColumn = renderLayout("column", "Column");
   var renderList = ({ document: document2, properties, relationships }) => {
-    const element = document2.createElement("div");
-    applyBasicHook(element, "List");
-    element.setAttribute("role", "list");
-    element.style.display = "flex";
+    const element2 = document2.createElement("div");
+    applyBasicHook(element2, "List");
+    element2.setAttribute("role", "list");
+    element2.style.display = "flex";
     const horizontal = properties.direction === "horizontal";
-    element.style.flexDirection = horizontal ? "row" : "column";
-    element.style.alignItems = mapAlign(properties.align);
-    element.style.minHeight = "0";
-    element.style.minWidth = "0";
-    element.style.overflowX = horizontal ? "auto" : "hidden";
-    element.style.overflowY = horizontal ? "hidden" : "auto";
+    element2.style.flexDirection = horizontal ? "row" : "column";
+    element2.style.alignItems = mapAlign(properties.align);
+    element2.style.minHeight = "0";
+    element2.style.minWidth = "0";
+    element2.style.overflowX = horizontal ? "auto" : "hidden";
+    element2.style.overflowY = horizontal ? "hidden" : "auto";
     if (horizontal)
-      element.style.flexWrap = "nowrap";
+      element2.style.flexWrap = "nowrap";
     for (const child of relationshipChildren(relationships, "children")) {
       const item = document2.createElement("div");
       item.setAttribute("role", "listitem");
@@ -235,20 +235,20 @@
         item.style.maxWidth = "100%";
       }
       item.append(child);
-      element.append(item);
+      element2.append(item);
     }
-    return element;
+    return element2;
   };
   var renderCard = ({ document: document2, relationships }) => {
-    const element = document2.createElement("div");
-    applyBasicHook(element, "Card");
-    element.style.background = "transparent";
-    element.style.padding = "16px";
-    applyControlShape(element);
-    appendBasicStyle(element, `box-shadow: ${basicCardShadow}`);
-    applyBasicMargin(element);
-    element.append(...relationshipChildren(relationships, "child"));
-    return element;
+    const element2 = document2.createElement("div");
+    applyBasicHook(element2, "Card");
+    element2.style.background = "transparent";
+    element2.style.padding = "16px";
+    applyControlShape(element2);
+    appendBasicStyle(element2, `box-shadow: ${basicCardShadow}`);
+    applyBasicMargin(element2);
+    element2.append(...relationshipChildren(relationships, "child"));
+    return element2;
   };
   function tabChildIndex(relationship) {
     const [tabs, index, child] = relationship.location;
@@ -334,20 +334,20 @@
     return void 0;
   }
   var focusableSelector = "button,input,select,textarea,a[href],[tabindex]";
-  function usableFocusable(element) {
-    if (!("focus" in element) || element.getAttribute("tabindex") === "-1")
+  function usableFocusable(element2) {
+    if (!("focus" in element2) || element2.getAttribute("tabindex") === "-1")
       return false;
-    if ("disabled" in element && element.disabled)
+    if ("disabled" in element2 && element2.disabled)
       return false;
-    return !element.hidden;
+    return !element2.hidden;
   }
   function findFocusable(root) {
     const elements = [];
     if (root.matches(focusableSelector) && usableFocusable(root))
       elements.push(root);
-    for (const element of root.querySelectorAll(focusableSelector))
-      if (usableFocusable(element))
-        elements.push(element);
+    for (const element2 of root.querySelectorAll(focusableSelector))
+      if (usableFocusable(element2))
+        elements.push(element2);
     return elements;
   }
   var renderModal = ({ document: document2, relationships, interactions }) => {
@@ -471,9 +471,9 @@
       appendBasicStyle(button, `background-color: ${basicControl}; color: inherit; border: 1px solid ${basicOutline}`);
     appendBasicStyle(button, `padding: ${basicSpace} calc(${basicSpace} * 1.5); border-radius: ${basicRadius}`);
     applyBasicMargin(button);
-    const children = relationshipChildren(relationships, "child");
-    button.append(...children);
-    button.disabled = children.length === 0 || checks !== void 0 && checks.status !== "valid";
+    const children2 = relationshipChildren(relationships, "child");
+    button.append(...children2);
+    button.disabled = children2.length === 0 || checks !== void 0 && checks.status !== "valid";
     if (button.disabled)
       appendBasicStyle(button, "opacity: 0.6");
     button.addEventListener("click", () => {
@@ -482,7 +482,7 @@
     return button;
   };
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/icon.js
+  // node_modules/@cylayo/weaver-web/dist/basic/icon.js
   var SVG_NAMESPACE = "http://www.w3.org/2000/svg";
   function createSvg(document2, svgPath) {
     const svg = document2.createElementNS(SVG_NAMESPACE, "svg");
@@ -514,7 +514,7 @@
     };
   }
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/inputs.js
+  // node_modules/@cylayo/weaver-web/dist/basic/inputs.js
   function createBasicInputRenderers(regexMatcher, dateTimeInputLocalValueResolver) {
     let opaqueId2 = 0;
     const nextId = (kind) => `weaver-basic-${kind}-${++opaqueId2}`;
@@ -557,9 +557,9 @@
       control.type = "checkbox";
       applyPrimaryAccent(control);
       control.checked = properties.value === true;
-      const text = document2.createElement("span");
-      text.textContent = stringOrEmpty(properties.label);
-      label.append(control, text);
+      const text2 = document2.createElement("span");
+      text2.textContent = stringOrEmpty(properties.label);
+      label.append(control, text2);
       interactions.registerControl(control, "value");
       applyValidation(document2, wrapper, [control], input.checks, nextId);
       control.addEventListener("change", () => interactions.writeInput("value", control.checked));
@@ -639,9 +639,9 @@
         control.name = groupName;
         control.value = option.value;
         control.checked = multiple ? selected.includes(option.value) : radioSelection === option.value;
-        const text = document2.createElement("span");
-        text.textContent = stringOrEmpty(option.label);
-        row.append(control, text);
+        const text2 = document2.createElement("span");
+        text2.textContent = stringOrEmpty(option.label);
+        row.append(control, text2);
         if (displayStyle === "chips") {
           row.style.display = "inline-flex";
           row.style.alignItems = "center";
@@ -765,10 +765,10 @@
       wrapper.setAttribute("data-a2ui-variant", variant);
     return wrapper;
   }
-  function labelFor(document2, id, text) {
+  function labelFor(document2, id, text2) {
     const label = document2.createElement("label");
     label.htmlFor = id;
-    label.textContent = text;
+    label.textContent = text2;
     return label;
   }
   function stringOrEmpty(value) {
@@ -813,7 +813,7 @@
     if (status === "invalid")
       controls.forEach((control) => control.setAttribute("aria-invalid", "true"));
     const messages = [];
-    const list = document2.createElement("div");
+    const list2 = document2.createElement("div");
     if (checks?.status === "invalid") {
       for (const check of checks.checks) {
         if (check.status !== "failed")
@@ -822,7 +822,7 @@
         message.id = nextId("validation");
         message.textContent = check.message;
         messages.push(message.id);
-        list.append(message);
+        list2.append(message);
       }
     }
     if (regexp === "failed") {
@@ -830,12 +830,12 @@
       message.id = nextId("validation");
       message.textContent = "Value does not match the required format.";
       messages.push(message.id);
-      list.append(message);
+      list2.append(message);
     }
     if (messages.length === 0)
       return;
     controls.forEach((control) => mergeDescribedBy(control, messages));
-    wrapper.append(list);
+    wrapper.append(list2);
   }
   function mergeDescribedBy(control, messageIds) {
     const tokens = new Set((control.getAttribute("aria-describedby") ?? "").split(/\s+/).filter(Boolean));
@@ -874,7 +874,7 @@
       control.setAttribute(name, normalized);
   }
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/media.js
+  // node_modules/@cylayo/weaver-web/dist/basic/media.js
   var imageFits = {
     contain: "contain",
     cover: "cover",
@@ -890,18 +890,18 @@
     "largeFeature",
     "header"
   ]);
-  function applyResource(element, kind, value, resourcePolicy) {
+  function applyResource(element2, kind, value, resourcePolicy) {
     if (typeof value !== "string" || value.trim() === "") {
-      element.setAttribute("data-a2ui-resource-state", "unavailable");
+      element2.setAttribute("data-a2ui-resource-state", "unavailable");
       return;
     }
     const approved = resourcePolicy?.(Object.freeze({ kind, url: value }));
     if (typeof approved !== "string" || approved.trim() === "") {
-      element.setAttribute("data-a2ui-resource-state", "blocked");
+      element2.setAttribute("data-a2ui-resource-state", "blocked");
       return;
     }
-    element.setAttribute("src", approved);
-    element.setAttribute("data-a2ui-resource-state", "approved");
+    element2.setAttribute("src", approved);
+    element2.setAttribute("data-a2ui-resource-state", "approved");
   }
   function createBasicMediaRenderers(resourcePolicy) {
     const Image = ({ document: document2, properties }) => {
@@ -966,7 +966,7 @@
     return { Image, Video, AudioPlayer };
   }
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/createBasicCatalogRendererRegistrations.js
+  // node_modules/@cylayo/weaver-web/dist/basic/createBasicCatalogRendererRegistrations.js
   function createBasicCatalogRendererRegistrations(options) {
     const inputs = createBasicInputRenderers(options.regexMatcher, options.dateTimeInputLocalValueResolver);
     const media = createBasicMediaRenderers(options.resourcePolicy);
@@ -992,7 +992,7 @@
     ];
   }
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic/theme.js
+  // node_modules/@cylayo/weaver-web/dist/basic/theme.js
   function createBasicCatalogThemeAdapter(options) {
     return (input) => {
       if (input.catalogId !== options.catalogId)
@@ -1006,7 +1006,7 @@
     };
   }
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-model/clone.js
+  // node_modules/@cylayo/weaver-core/dist/data-model/clone.js
   function setObjectValue(target, key3, value) {
     Object.defineProperty(target, key3, {
       configurable: true,
@@ -1107,7 +1107,7 @@
     return true;
   }
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-model/pointer.js
+  // node_modules/@cylayo/weaver-core/dist/data-model/pointer.js
   var success = (value) => ({ ok: true, value });
   function parsePointer(path) {
     if (path === "/")
@@ -1179,7 +1179,7 @@
     return true;
   }
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-context/path.js
+  // node_modules/@cylayo/weaver-core/dist/data-context/path.js
   var success2 = (value) => ({ ok: true, value });
   function resolveScopedPath(path, scopeTokens) {
     if (path.startsWith("/")) {
@@ -1213,7 +1213,7 @@
     return success2({ absolutePath: formatPointer(tokens), tokens });
   }
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-context/DataContext.js
+  // node_modules/@cylayo/weaver-core/dist/data-context/DataContext.js
   var success3 = (value) => ({ ok: true, value });
   var DataContext = class _DataContext {
     #dataModel;
@@ -1285,7 +1285,7 @@
     }
   };
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-context/types.js
+  // node_modules/@cylayo/weaver-core/dist/data-context/types.js
   function isDataPathBinding(value) {
     if (value === null || typeof value !== "object" || Array.isArray(value))
       return false;
@@ -1293,7 +1293,7 @@
     return keys.length === 1 && keys[0] === "path" && typeof value.path === "string";
   }
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/functions/FunctionRegistry.js
+  // node_modules/@cylayo/weaver-core/dist/functions/FunctionRegistry.js
   var key = (catalogId, name) => JSON.stringify([catalogId, name]);
   var FunctionRegistry = class {
     #catalogs;
@@ -1351,24 +1351,24 @@
     }
   };
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/functions/types.js
+  // node_modules/@cylayo/weaver-core/dist/functions/types.js
   function isFunctionCall(value) {
     if (value === null || typeof value !== "object" || Array.isArray(value))
       return false;
     const prototype = Object.getPrototypeOf(value);
     if (prototype !== Object.prototype && prototype !== null)
       return false;
-    const record = value;
-    if (typeof record.call !== "string" || record.args === null || typeof record.args !== "object" || Array.isArray(record.args)) {
+    const record2 = value;
+    if (typeof record2.call !== "string" || record2.args === null || typeof record2.args !== "object" || Array.isArray(record2.args)) {
       return false;
     }
-    const argsPrototype = Object.getPrototypeOf(record.args);
+    const argsPrototype = Object.getPrototypeOf(record2.args);
     if (argsPrototype !== Object.prototype && argsPrototype !== null)
       return false;
-    return !("returnType" in record) || typeof record.returnType === "string" && ["string", "number", "boolean", "array", "object", "any", "void"].includes(record.returnType);
+    return !("returnType" in record2) || typeof record2.returnType === "string" && ["string", "number", "boolean", "array", "object", "any", "void"].includes(record2.returnType);
   }
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/functions/FunctionEvaluator.js
+  // node_modules/@cylayo/weaver-core/dist/functions/FunctionEvaluator.js
   var MAX_DEFAULT_DEPTH = 32;
   var RecursiveFunctionFailure = class {
     error;
@@ -1666,7 +1666,7 @@
     }
   };
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/actions/ActionContextResolver.js
+  // node_modules/@cylayo/weaver-core/dist/actions/ActionContextResolver.js
   function isAllowedLiteral(value) {
     return typeof value === "string" || typeof value === "boolean" || typeof value === "number" && Number.isFinite(value) || Array.isArray(value);
   }
@@ -1759,7 +1759,7 @@
     }
   };
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/checks/CheckEvaluator.js
+  // node_modules/@cylayo/weaver-core/dist/checks/CheckEvaluator.js
   function actualType2(value) {
     if (value === null)
       return "null";
@@ -1903,7 +1903,7 @@
     }
   };
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/actions/ActionDispatcher.js
+  // node_modules/@cylayo/weaver-core/dist/actions/ActionDispatcher.js
   function cloneActionJson(value) {
     return cloneJson(value);
   }
@@ -2105,7 +2105,7 @@
     }
   };
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/basic-functions/formatString.js
+  // node_modules/@cylayo/weaver-core/dist/basic-functions/formatString.js
   var _a;
   var ExpressionParser = class {
     source;
@@ -2253,7 +2253,7 @@
     throw new Error("Unterminated interpolation");
   }
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/basic-catalog/generated-basic-catalog.js
+  // node_modules/@cylayo/weaver-core/dist/basic-catalog/generated-basic-catalog.js
   var A2UI_V091_BASIC_CATALOG_ID = "https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json";
   var A2UI_V091_BASIC_CATALOG = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -4799,7 +4799,7 @@
     }
   };
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/basic-catalog/index.js
+  // node_modules/@cylayo/weaver-core/dist/basic-catalog/index.js
   function createBasicCatalogV091Registration() {
     return {
       catalogId: A2UI_V091_BASIC_CATALOG_ID,
@@ -4807,7 +4807,7 @@
     };
   }
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/catalog/schema.js
+  // node_modules/@cylayo/weaver-core/dist/catalog/schema.js
   var A2UI_CATALOG_SCHEMA = {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     type: "object",
@@ -4827,7 +4827,7 @@
     additionalProperties: true
   };
 
-  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/deep-compare-strict.js
+  // node_modules/@cfworker/json-schema/dist/esm/deep-compare-strict.js
   function deepCompareStrict(a, b) {
     const typeofa = typeof a;
     if (typeofa !== typeof b) {
@@ -4868,7 +4868,7 @@
     return a === b;
   }
 
-  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/pointer.js
+  // node_modules/@cfworker/json-schema/dist/esm/pointer.js
   function encodePointer(p) {
     return encodeURI(escapePointer(p));
   }
@@ -4876,7 +4876,7 @@
     return p.replace(/~/g, "~0").replace(/\//g, "~1");
   }
 
-  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/dereference.js
+  // node_modules/@cfworker/json-schema/dist/esm/dereference.js
   var schemaArrayKeyword = {
     prefixItems: true,
     items: true,
@@ -4997,7 +4997,7 @@
     return lookup;
   }
 
-  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/format.js
+  // node_modules/@cfworker/json-schema/dist/esm/format.js
   var DATE = /^(\d\d\d\d)-(\d\d)-(\d\d)$/;
   var DAYS = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
   var TIME = /^(\d\d):(\d\d):(\d\d)(\.\d+)?(z|[+-]\d\d(?::?\d\d)?)?$/i;
@@ -5090,7 +5090,7 @@
     }
   }
 
-  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/types.js
+  // node_modules/@cfworker/json-schema/dist/esm/types.js
   var OutputFormat;
   (function(OutputFormat2) {
     OutputFormat2[OutputFormat2["Flag"] = 1] = "Flag";
@@ -5098,7 +5098,7 @@
     OutputFormat2[OutputFormat2["Detailed"] = 4] = "Detailed";
   })(OutputFormat || (OutputFormat = {}));
 
-  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/ucs2-length.js
+  // node_modules/@cfworker/json-schema/dist/esm/ucs2-length.js
   function ucs2length(s) {
     let result = 0;
     let length2 = s.length;
@@ -5117,7 +5117,7 @@
     return result;
   }
 
-  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/validate.js
+  // node_modules/@cfworker/json-schema/dist/esm/validate.js
   function validate(instance, schema, draft = "2019-09", lookup = dereference(schema), shortCircuit = true, recursiveAnchor = null, instanceLocation = "#", schemaLocation = "#", evaluated = /* @__PURE__ */ Object.create(null)) {
     if (schema === true) {
       return { valid: true, errors: [] };
@@ -5875,7 +5875,7 @@ Known schemas:
     return { valid: errors.length === 0, errors };
   }
 
-  // ../chat-marketplace/node_modules/@cfworker/json-schema/dist/esm/validator.js
+  // node_modules/@cfworker/json-schema/dist/esm/validator.js
   var Validator = class {
     schema;
     draft;
@@ -5898,7 +5898,7 @@ Known schemas:
     }
   };
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/catalog/schema-validator.js
+  // node_modules/@cylayo/weaver-core/dist/catalog/schema-validator.js
   var DRAFT = "2020-12";
   var TYPES = /* @__PURE__ */ new Set(["null", "boolean", "object", "array", "number", "string", "integer"]);
   function pointer(location2) {
@@ -6032,7 +6032,7 @@ Known schemas:
     return visit(schema, schema);
   }
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/catalog/CatalogRegistry.js
+  // node_modules/@cylayo/weaver-core/dist/catalog/CatalogRegistry.js
   var COMPONENT_ID_REF = "common_types.json#/$defs/ComponentId";
   var CHILD_LIST_REF = "common_types.json#/$defs/ChildList";
   var CHECKABLE_REF = "common_types.json#/$defs/Checkable";
@@ -6158,12 +6158,12 @@ Known schemas:
     }
     return result;
   }
-  function discoverStructure(componentSchema) {
+  function discoverStructure(componentSchema2) {
     const structure = {
       singleChildFields: [],
       childListFields: []
     };
-    const properties = componentSchema.properties;
+    const properties = componentSchema2.properties;
     if (properties === null || Array.isArray(properties) || typeof properties !== "object")
       return structure;
     for (const [property, propertySchema] of Object.entries(properties)) {
@@ -6176,7 +6176,7 @@ Known schemas:
     }
     return structure;
   }
-  function discoverStructureLocations(componentSchema) {
+  function discoverStructureLocations(componentSchema2) {
     const locations = [];
     const visit = (schema, path) => {
       if (schema.$ref === COMPONENT_ID_REF) {
@@ -6202,18 +6202,18 @@ Known schemas:
       if (isPlainObject3(schema.items))
         visit(schema.items, [...path, { kind: "arrayItems" }]);
     };
-    visit(componentSchema, []);
+    visit(componentSchema2, []);
     locations.sort((left, right) => left.path.length === 1 && right.path.length === 1 ? left.kind === right.kind ? 0 : left.kind === "single" ? -1 : 1 : 0);
     return locations;
   }
-  function discoverActionProperties(componentSchema) {
-    const properties = componentSchema.properties;
+  function discoverActionProperties(componentSchema2) {
+    const properties = componentSchema2.properties;
     if (!isPlainObject3(properties))
       return [];
     return Object.entries(properties).flatMap(([property, schema]) => isPlainObject3(schema) && schema.$ref === ACTION_REF ? [property] : []);
   }
-  function isCheckable(componentSchema) {
-    return Array.isArray(componentSchema.allOf) && componentSchema.allOf.some((entry) => isPlainObject3(entry) && entry.$ref === CHECKABLE_REF);
+  function isCheckable(componentSchema2) {
+    return Array.isArray(componentSchema2.allOf) && componentSchema2.allOf.some((entry) => isPlainObject3(entry) && entry.$ref === CHECKABLE_REF);
   }
   function dynamicKind(schema) {
     const direct = typeof schema.$ref === "string" ? DYNAMIC_PROPERTY_REFS[schema.$ref] : void 0;
@@ -6230,7 +6230,7 @@ Known schemas:
     }
     return void 0;
   }
-  function discoverDynamicValueLocations(componentSchema) {
+  function discoverDynamicValueLocations(componentSchema2) {
     const locations = [];
     const visit = (schema, path) => {
       const valueKind = dynamicKind(schema);
@@ -6250,10 +6250,10 @@ Known schemas:
       if (isPlainObject3(schema.items))
         visit(schema.items, [...path, { kind: "arrayItems" }]);
     };
-    visit(componentSchema, []);
+    visit(componentSchema2, []);
     return locations;
   }
-  function discoverBindableValues(componentSchema) {
+  function discoverBindableValues(componentSchema2) {
     const locations = [];
     const visit = (schema, path) => {
       if (Array.isArray(schema.oneOf)) {
@@ -6277,15 +6277,15 @@ Known schemas:
       if (isPlainObject3(schema.items))
         visit(schema.items, [...path, { kind: "arrayItems" }]);
     };
-    visit(componentSchema, []);
+    visit(componentSchema2, []);
     return locations.filter(({ literalSchemas }) => literalSchemas.length > 0);
   }
   function bindableLocationKey(path) {
     return JSON.stringify(path);
   }
-  function discoverDynamicProperties(componentSchema) {
+  function discoverDynamicProperties(componentSchema2) {
     const definitions = [];
-    const properties = componentSchema.properties;
+    const properties = componentSchema2.properties;
     if (properties === null || Array.isArray(properties) || typeof properties !== "object")
       return definitions;
     for (const [property, propertySchema] of Object.entries(properties)) {
@@ -6380,17 +6380,17 @@ Known schemas:
       }
       let themeValidator;
       try {
-        for (const [componentName, componentSchema] of Object.entries(components)) {
-          if (componentSchema === null || Array.isArray(componentSchema) || typeof componentSchema !== "object") {
+        for (const [componentName, componentSchema2] of Object.entries(components)) {
+          if (componentSchema2 === null || Array.isArray(componentSchema2) || typeof componentSchema2 !== "object") {
             throw new Error("invalid component schema");
           }
-          if (!isValidSchema(componentSchema))
+          if (!isValidSchema(componentSchema2))
             throw new Error("invalid component schema");
-          structures.set(componentName, discoverStructure(componentSchema));
-          structureLocations.set(componentName, discoverStructureLocations(componentSchema));
-          dynamicProperties.set(componentName, discoverDynamicProperties(componentSchema));
-          dynamicValueLocations.set(componentName, discoverDynamicValueLocations(componentSchema));
-          const bindableValues = discoverBindableValues(componentSchema);
+          structures.set(componentName, discoverStructure(componentSchema2));
+          structureLocations.set(componentName, discoverStructureLocations(componentSchema2));
+          dynamicProperties.set(componentName, discoverDynamicProperties(componentSchema2));
+          dynamicValueLocations.set(componentName, discoverDynamicValueLocations(componentSchema2));
+          const bindableValues = discoverBindableValues(componentSchema2);
           bindableValueLocations.set(componentName, bindableValues.map(({ path }) => ({ path })));
           for (const [index, bindable] of bindableValues.entries()) {
             const compilationSchema2 = cloneJson(schema);
@@ -6403,12 +6403,12 @@ Known schemas:
               throw new Error("unresolved schema reference");
             bindableValueValidators.set(`${componentName}:${bindableLocationKey(bindable.path)}`, new SchemaValidator(compilationSchema2));
           }
-          actionProperties.set(componentName, discoverActionProperties(componentSchema));
-          if (isCheckable(componentSchema))
+          actionProperties.set(componentName, discoverActionProperties(componentSchema2));
+          if (isCheckable(componentSchema2))
             checkableComponents.add(componentName);
           const compilationSchema = cloneJson(schema);
           compilationSchema.$id = `https://weaver.invalid/catalog/${this.#registrationSequence}/${encodeURIComponent(componentName)}/catalog.json`;
-          compilationSchema.$defs.weaverComponent = cloneJson(componentSchema);
+          compilationSchema.$defs.weaverComponent = cloneJson(componentSchema2);
           compilationSchema.$ref = "#/$defs/weaverComponent";
           if (!referencesResolve(compilationSchema))
             throw new Error("unresolved schema reference");
@@ -6754,7 +6754,7 @@ Known schemas:
     }
   };
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/runtime/safety.js
+  // node_modules/@cylayo/weaver-core/dist/runtime/safety.js
   var DEFAULT_MAX_RESOLUTION_DEPTH = 32;
   var DEFAULT_MAX_RESOLVED_INSTANCES = 1e3;
   var MAX_CONFIGURED_RESOLUTION_DEPTH = 256;
@@ -6865,7 +6865,7 @@ Known schemas:
     });
   }
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/component-tree/ComponentTreeResolver.js
+  // node_modules/@cylayo/weaver-core/dist/component-tree/ComponentTreeResolver.js
   function resolverError(error2) {
     return {
       code: error2.code === "CATALOG_NOT_FOUND" ? "CATALOG_NOT_FOUND" : "COMPONENT_STRUCTURE_NOT_FOUND",
@@ -7055,7 +7055,7 @@ Known schemas:
     }
   };
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/component-instances/ComponentInstanceResolver.js
+  // node_modules/@cylayo/weaver-core/dist/component-instances/ComponentInstanceResolver.js
   function treeFailure(cause) {
     return {
       ok: false,
@@ -7162,13 +7162,13 @@ Known schemas:
             });
             continue;
           }
-          const children = [];
+          const children2 = [];
           relationships.push({
             kind: "template",
             property: relationship.property,
             location: relationship.location.map((segment) => ({ ...segment })),
             collectionPath: relationship.path,
-            children
+            children: children2
           });
           const collection = context.get(relationship.path);
           if (!collection.ok) {
@@ -7237,7 +7237,7 @@ Known schemas:
               continue;
             const child = instantiate(subtree.value.root, childContext.value, relationship.property, depth + 1);
             if (child !== void 0)
-              children.push(child);
+              children2.push(child);
           }
         }
         active.delete(identity);
@@ -7264,7 +7264,7 @@ Known schemas:
     }
   };
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/component-properties/ComponentPropertyResolver.js
+  // node_modules/@cylayo/weaver-core/dist/component-properties/ComponentPropertyResolver.js
   function clonePlain(value) {
     return cloneJson(value);
   }
@@ -7517,22 +7517,22 @@ Known schemas:
             continue;
           }
           if (relationship.kind === "list") {
-            const children2 = [];
+            const children3 = [];
             for (const childInstance of relationship.children) {
               const child = hydrate(childInstance, context);
               if (!child.ok)
                 return child;
-              children2.push(child.value);
+              children3.push(child.value);
             }
             relationships.push({
               kind: "list",
               property: relationship.property,
               location: relationship.location.map((segment) => ({ ...segment })),
-              children: children2
+              children: children3
             });
             continue;
           }
-          const children = [];
+          const children2 = [];
           for (const childInstance of relationship.children) {
             const index = childInstance.collectionIndex;
             const childContext = index === void 0 ? {
@@ -7559,14 +7559,14 @@ Known schemas:
             const child = hydrate(childInstance, childContext.value);
             if (!child.ok)
               return child;
-            children.push(child.value);
+            children2.push(child.value);
           }
           relationships.push({
             kind: "template",
             property: relationship.property,
             location: relationship.location.map((segment) => ({ ...segment })),
             collectionPath: relationship.collectionPath,
-            children
+            children: children2
           });
         }
         return {
@@ -7597,7 +7597,7 @@ Known schemas:
     }
   };
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/input-binding/InputBindingWriter.js
+  // node_modules/@cylayo/weaver-core/dist/input-binding/InputBindingWriter.js
   function compatible2(kind, value) {
     switch (kind) {
       case "dynamicString":
@@ -7686,7 +7686,7 @@ Known schemas:
     }
   };
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/data-model/DataModel.js
+  // node_modules/@cylayo/weaver-core/dist/data-model/DataModel.js
   var success4 = (value) => ({ ok: true, value });
   var DataModel = class {
     #state = {};
@@ -7906,7 +7906,7 @@ Known schemas:
     }
   };
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/validation.js
+  // node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/validation.js
   var MESSAGE_KEYS = [
     "createSurface",
     "updateComponents",
@@ -8078,12 +8078,12 @@ Known schemas:
     }
   }
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/client-capabilities.js
+  // node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/client-capabilities.js
   function buildA2UIClientCapabilities(input) {
     return { "v0.9": { supportedCatalogIds: [...input.supportedCatalogIds] } };
   }
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/validation-error.js
+  // node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/validation-error.js
   function buildA2UIValidationFailedClientMessage(input) {
     if (input.surfaceId.length === 0)
       throw new TypeError("surfaceId must not be empty");
@@ -8169,7 +8169,7 @@ Known schemas:
     return typeof value === "object" && value !== null && !Array.isArray(value);
   }
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/surfaces/SurfaceStore.js
+  // node_modules/@cylayo/weaver-core/dist/surfaces/SurfaceStore.js
   var success5 = (value) => ({ ok: true, value });
   var SurfaceStore = class {
     #surfaces = /* @__PURE__ */ new Map();
@@ -8338,7 +8338,7 @@ Known schemas:
     }
   };
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/message-processor/A2UIMessageProcessor.js
+  // node_modules/@cylayo/weaver-core/dist/message-processor/A2UIMessageProcessor.js
   var A2UIMessageProcessor = class {
     store;
     catalogs;
@@ -8423,7 +8423,7 @@ Known schemas:
     }
   };
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-core/dist/runtime/WeaverRuntime.js
+  // node_modules/@cylayo/weaver-core/dist/runtime/WeaverRuntime.js
   function cloneRuntimeJson(value) {
     return cloneJson(value);
   }
@@ -8566,8 +8566,8 @@ Known schemas:
     if (root.sourceComponentId === sourceComponentId && root.scopePath === scopePath)
       return root;
     for (const relationship of root.relationships) {
-      const children = relationship.kind === "single" ? relationship.child === void 0 ? [] : [relationship.child] : relationship.children;
-      for (const child of children) {
+      const children2 = relationship.kind === "single" ? relationship.child === void 0 ? [] : [relationship.child] : relationship.children;
+      for (const child of children2) {
         const found = findInstance(child, sourceComponentId, scopePath);
         if (found !== void 0)
           return found;
@@ -8631,7 +8631,7 @@ Known schemas:
     };
   }
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/renderers/errors.js
+  // node_modules/@cylayo/weaver-web/dist/renderers/errors.js
   var RendererRegistryConfigurationError = class extends Error {
     code = "RENDERER_ALREADY_REGISTERED";
     catalogId;
@@ -8644,7 +8644,7 @@ Known schemas:
     }
   };
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/renderers/RendererRegistry.js
+  // node_modules/@cylayo/weaver-web/dist/renderers/RendererRegistry.js
   var key2 = (catalogId, component) => JSON.stringify([catalogId, component]);
   var RendererRegistry = class {
     #renderers = /* @__PURE__ */ new Map();
@@ -8672,7 +8672,7 @@ Known schemas:
     }
   };
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/surface/WebSurfaceRenderer.js
+  // node_modules/@cylayo/weaver-web/dist/surface/WebSurfaceRenderer.js
   var identityKey = (sourceComponentId, scopePath) => JSON.stringify([sourceComponentId, scopePath]);
   var controlIdentityKey = (sourceComponentId, scopePath, localKey) => JSON.stringify([sourceComponentId, scopePath, localKey]);
   var WebSurfaceRenderer = class {
@@ -8880,14 +8880,14 @@ Known schemas:
           });
           continue;
         }
-        const children = [];
+        const children2 = [];
         const childComponents = [];
         const childProperties = [];
         for (const childInstance of relationship.children) {
           const child = this.#renderInstance(surfaceId, catalogId, childInstance, checks, document2, generation, isCurrent, requestRefresh, localState, renderedIdentities, controlMetadata, controls);
           if (!child.ok)
             return child;
-          children.push(child.value);
+          children2.push(child.value);
           childComponents.push(childInstance.component);
           childProperties.push(cloneHydratedProperties(childInstance.properties));
         }
@@ -8895,7 +8895,7 @@ Known schemas:
           kind: relationship.kind,
           property: relationship.property,
           location: relationship.location.map((segment) => ({ ...segment })),
-          children,
+          children: children2,
           childComponents,
           childProperties
         });
@@ -8926,10 +8926,10 @@ Known schemas:
           requestRefresh();
           return { ok: true };
         },
-        registerControl: (element, localKey) => {
+        registerControl: (element2, localKey) => {
           const identity = controlIdentityKey(instance.sourceComponentId, instance.scopePath, localKey);
-          controlMetadata.set(element, identity);
-          controls.set(identity, element);
+          controlMetadata.set(element2, identity);
+          controls.set(identity, element2);
         },
         dispatchAction: (actionProperty) => {
           if (!isCurrent())
@@ -9049,7 +9049,7 @@ Known schemas:
     return result.ok ? { ok: true, value: { ...result.value } } : structuredClone(result);
   }
 
-  // ../chat-marketplace/node_modules/@cylayo/weaver-web/dist/basic-web-runtime/createBasicWebRuntime.js
+  // node_modules/@cylayo/weaver-web/dist/basic-web-runtime/createBasicWebRuntime.js
   function createBasicWebRuntime(config = {}) {
     const catalogId = A2UI_V091_BASIC_CATALOG_ID;
     const runtimeCreated = createWeaverRuntime({
@@ -9101,54 +9101,92 @@ Known schemas:
   function defineShortletCatalog(schema) {
     return schema;
   }
-  function shortletCatalog(catalogId) {
+  var UNIT_DETAIL_COMPONENT = "UnitDetail";
+  var UNIT_GALLERY_COMPONENT = "UnitGallery";
+  var UNIT_DETAIL_SHEET_COMPONENT = "UnitDetailSheet";
+  var UNIT_ACTION_BAR_COMPONENT = "UnitActionBar";
+  var COMPONENT_ID = { $ref: "common_types.json#/$defs/ComponentId" };
+  var CHILD_LIST = { $ref: "common_types.json#/$defs/ChildList" };
+  var TEXT = { type: "string", minLength: 1 };
+  function componentSchema(component, properties, required2) {
+    return {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        accessibility: { $ref: "common_types.json#/$defs/AccessibilityAttributes" },
+        weight: { type: "number" },
+        component: { const: component },
+        ...properties
+      },
+      required: ["id", "component", ...required2],
+      additionalProperties: false
+    };
+  }
+  var TILE = {
+    type: "object",
+    properties: { icon: { enum: ["bed", "bath", "users"] }, text: TEXT },
+    required: ["icon", "text"],
+    additionalProperties: false
+  };
+  var UNIT_BREAKDOWN = {
+    type: "object",
+    properties: { total: TEXT, totalLabel: TEXT, deposit: TEXT },
+    required: ["total", "totalLabel"],
+    additionalProperties: false
+  };
+  var PHOTO = {
+    type: "object",
+    properties: { url: TEXT, alt: TEXT },
+    required: ["url", "alt"],
+    additionalProperties: false
+  };
+  var UNIT_DETAIL_COMPONENTS = {
+    // The surface root: the unit detail's sections in their fixed order, so the client never searches the DOM for them.
+    [UNIT_DETAIL_COMPONENT]: componentSchema(UNIT_DETAIL_COMPONENT, {
+      gallery: COMPONENT_ID,
+      sheet: COMPONENT_ID,
+      amenities: CHILD_LIST,
+      supporting: CHILD_LIST,
+      actionBar: COMPONENT_ID
+    }, ["gallery", "sheet", "amenities", "supporting", "actionBar"]),
+    [UNIT_GALLERY_COMPONENT]: componentSchema(UNIT_GALLERY_COMPONENT, {
+      title: TEXT,
+      photos: { type: "array", items: PHOTO }
+    }, ["title", "photos"]),
+    [UNIT_DETAIL_SHEET_COMPONENT]: componentSchema(UNIT_DETAIL_SHEET_COMPONENT, {
+      where: TEXT,
+      title: TEXT,
+      demo: { type: "boolean" },
+      tiles: { type: "array", items: TILE, minItems: 1 },
+      breakdown: UNIT_BREAKDOWN,
+      extended: { type: "array", items: TEXT },
+      about: TEXT
+    }, ["where", "title", "tiles"]),
+    [UNIT_ACTION_BAR_COMPONENT]: componentSchema(UNIT_ACTION_BAR_COMPONENT, {
+      total: TEXT,
+      totalLabel: TEXT,
+      child: COMPONENT_ID
+    }, ["child"])
+  };
+  function withComponents(schema, components) {
+    const table = schema["components"];
+    const anyComponent = schema["$defs"]["anyComponent"];
+    const oneOf = anyComponent["oneOf"];
+    for (const [name, component] of Object.entries(components)) {
+      table[name] = structuredClone(component);
+      oneOf.push({ $ref: `#/components/${name}` });
+    }
+    return schema;
+  }
+  function shortletCatalog(catalogId, components = {}) {
     const basic = createBasicCatalogV091Registration();
     const schema = structuredClone(basic.schema);
     schema["$id"] = catalogId;
     schema["catalogId"] = catalogId;
-    return { catalogId, schema: defineShortletCatalog(schema) };
+    return { catalogId, schema: defineShortletCatalog(withComponents(schema, components)) };
   }
-  var SHORTLET_DISCOVERY_CATALOG = shortletCatalog(SHORTLET_DISCOVERY_CATALOG_ID);
+  var SHORTLET_DISCOVERY_CATALOG = shortletCatalog(SHORTLET_DISCOVERY_CATALOG_ID, UNIT_DETAIL_COMPONENTS);
   var SHORTLET_BOOKING_CATALOG = shortletCatalog(SHORTLET_BOOKING_CATALOG_ID);
-
-  // apps/local-guest/src/shortlet-renderers.ts
-  var SHORTLET_RENDERERS = [];
-
-  // apps/web-agent/src/commerce-catalogs.ts
-  var COMMERCE_CATALOG_NAMESPACE = "urn:chat-marketplace:commerce";
-  var COMMERCE_DISCOVERY_CATALOG_ID = `${COMMERCE_CATALOG_NAMESPACE}/discovery/v1`;
-  var COMMERCE_CART_CATALOG_ID = `${COMMERCE_CATALOG_NAMESPACE}/cart/v1`;
-  var COMMERCE_ORDER_CATALOG_ID = `${COMMERCE_CATALOG_NAMESPACE}/order/v1`;
-  function commerceCatalog(catalogId) {
-    const schema = structuredClone(createBasicCatalogV091Registration().schema);
-    schema["$id"] = catalogId;
-    schema["catalogId"] = catalogId;
-    return { catalogId, schema };
-  }
-  var COMMERCE_DISCOVERY_CATALOG = commerceCatalog(COMMERCE_DISCOVERY_CATALOG_ID);
-  var COMMERCE_CART_CATALOG = commerceCatalog(COMMERCE_CART_CATALOG_ID);
-  var COMMERCE_ORDER_CATALOG = commerceCatalog(COMMERCE_ORDER_CATALOG_ID);
-  var COMMERCE_CATALOGS = [COMMERCE_DISCOVERY_CATALOG, COMMERCE_CART_CATALOG, COMMERCE_ORDER_CATALOG];
-
-  // apps/local-guest/src/shortlet-runtime.ts
-  function createShortletWebRuntime(options = {}) {
-    const resourcePolicy = options.resourcePolicy ?? (() => void 0);
-    const commerceCatalogs = options.commerce === true ? COMMERCE_CATALOGS : [];
-    const created = createBasicWebRuntime({
-      additionalCatalogs: [SHORTLET_DISCOVERY_CATALOG, SHORTLET_BOOKING_CATALOG, ...commerceCatalogs],
-      additionalRenderers: [
-        ...createBasicCatalogRendererRegistrations({ catalogId: SHORTLET_DISCOVERY_CATALOG.catalogId, resourcePolicy }),
-        ...createBasicCatalogRendererRegistrations({ catalogId: SHORTLET_BOOKING_CATALOG.catalogId, resourcePolicy }),
-        ...commerceCatalogs.flatMap(({ catalogId }) => createBasicCatalogRendererRegistrations({ catalogId, resourcePolicy })),
-        ...SHORTLET_RENDERERS
-      ],
-      ...options.safety === void 0 ? {} : { runtime: { safety: options.safety } },
-      basic: { resourcePolicy },
-      ...options.onServerEvent === void 0 ? {} : { rendering: { onServerEvent: options.onServerEvent } }
-    });
-    if (!created.ok) throw new Error("Unable to create the Shortlet Weaver web runtime", { cause: created.error });
-    return created.value;
-  }
 
   // apps/web/src/ui-kit.ts
   function escapeHtml(value) {
@@ -9218,285 +9256,6 @@ Known schemas:
   }
   function statusBadge(label, tone) {
     return `<span class="ui-status ui-status--${tone}">${escapeHtml(label)}</span>`;
-  }
-
-  // apps/local-guest/src/listing-gallery.ts
-  var photosWord = (count) => `${count} ${count === 1 ? "photo" : "photos"}`;
-  var LISTING_GALLERY_STYLE = [
-    ".listing-gallery{container-type:inline-size;display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-2);min-width:0;position:relative}",
-    ".listing-gallery__track{display:flex;gap:var(--space-2);min-width:0;margin:0;padding:0;list-style:none;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x mandatory;scrollbar-width:thin;border-radius:var(--radius-card)}",
-    ".listing-gallery__track:focus-visible{outline:3px solid var(--color-focus);outline-offset:2px}",
-    ".listing-gallery__item{flex:0 0 100%;min-width:0;scroll-snap-align:start}",
-    ".listing-gallery__open{position:relative;display:block;height:100%;border-radius:var(--radius-card);overflow:hidden;background:var(--color-surface-subtle)}",
-    ".listing-gallery__open:focus-visible{outline:3px solid var(--color-focus);outline-offset:-3px}",
-    ".listing-gallery__open img,.listing-gallery__open .photo-fallback{display:block;width:100%!important;height:100%!important;max-width:none!important;min-height:0!important;margin:0!important;aspect-ratio:4/3;object-fit:cover!important;border-radius:0!important}",
-    ".listing-gallery__count{justify-self:end;margin:0;padding:var(--space-1) var(--space-3);border-radius:var(--radius-pill);background:var(--color-surface-subtle);color:var(--color-text-secondary);font-size:var(--font-size-small)}",
-    ".listing-gallery__all{justify-self:start;min-height:var(--control-min-target)}",
-    ".listing-gallery__all[hidden]{display:none}",
-    "@container (min-width:30rem){",
-    ".listing-gallery__track{display:grid;overflow:visible;scroll-snap-type:none;grid-template-columns:2fr 1fr 1fr;grid-auto-flow:dense}",
-    ".listing-gallery__item:first-child{grid-row:span 2}",
-    ".listing-gallery__item:first-child img,.listing-gallery__item:first-child .photo-fallback{aspect-ratio:auto}",
-    '.listing-gallery[data-count="1"] .listing-gallery__track{grid-template-columns:1fr}',
-    '.listing-gallery[data-count="1"] .listing-gallery__item:first-child{grid-row:auto}',
-    '.listing-gallery[data-count="2"] .listing-gallery__track{grid-template-columns:1fr 1fr}',
-    '.listing-gallery[data-count="2"] .listing-gallery__item:first-child{grid-row:auto}',
-    '.listing-gallery[data-count="3"] .listing-gallery__track,.listing-gallery[data-count="4"] .listing-gallery__track{grid-template-columns:2fr 1fr}',
-    '.listing-gallery[data-count="4"] .listing-gallery__item:first-child{grid-row:span 3}',
-    ".listing-gallery__count{display:none}",
-    ".listing-gallery.is-enhanced .listing-gallery__item:nth-child(n+6){display:none}",
-    ".listing-gallery__item[data-more]{position:relative}",
-    ".listing-gallery__item[data-more]::after{content:attr(data-more);position:absolute;inset:0;display:grid;place-items:center;background:rgb(0 0 0/.45);color:var(--color-text-on-viewer);font-weight:650;border-radius:var(--radius-card);pointer-events:none}",
-    "}",
-    // The viewer: full screen, one photo at a time, swipe or step through; opened only by the script.
-    ".listing-viewer{inset:0;width:100%;max-width:none;height:100%;max-height:none;margin:0;padding:0;border:0;background:var(--color-surface-viewer);color:var(--color-text-on-viewer)}",
-    ".listing-viewer::backdrop{background:rgb(0 0 0/.6)}",
-    ".listing-viewer[open]{display:grid;grid-template-rows:auto minmax(0,1fr)}",
-    ".listing-viewer__bar{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);padding:var(--space-2) var(--space-3)}",
-    ".listing-viewer__count{margin:0;font-size:var(--font-size-body);font-weight:600}",
-    ".listing-viewer__track{display:flex;height:100%;min-height:0;margin:0;padding:0;list-style:none;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x mandatory;scrollbar-width:none}",
-    ".listing-viewer__item{flex:0 0 100%;display:flex;align-items:center;justify-content:center;height:100%;min-width:0;padding:var(--space-2) var(--space-12);box-sizing:border-box;scroll-snap-align:start}",
-    "@media (max-width:40rem){.listing-viewer__item{padding-inline:var(--space-2)}}",
-    ".listing-viewer__item img{display:block;max-width:100%;max-height:100%;width:auto;height:auto;min-height:0;object-fit:contain}",
-    ".listing-viewer button{min-width:var(--control-min-target);min-height:var(--control-min-target);border:1px solid currentColor;border-radius:var(--radius-pill);background:var(--color-surface-viewer);color:var(--color-text-on-viewer);font-size:1.25rem;cursor:pointer}",
-    ".listing-viewer button:focus-visible{outline:3px solid var(--color-focus);outline-offset:2px}",
-    '.listing-viewer button:disabled,.listing-viewer button[aria-disabled="true"]{opacity:.35;cursor:default}',
-    ".listing-viewer__prev,.listing-viewer__next{position:absolute;top:50%;transform:translateY(-50%)}",
-    ".listing-viewer__prev{inset-inline-start:var(--space-2)}",
-    ".listing-viewer__next{inset-inline-end:var(--space-2)}",
-    "@media (prefers-reduced-motion:no-preference){.listing-gallery__track,.listing-viewer__track{scroll-behavior:smooth}}"
-  ].join("");
-  function watchPhotoFailure(image) {
-    if (image.dataset.failureWatched === "true") return;
-    image.dataset.failureWatched = "true";
-    const failed = () => {
-      const fallback2 = image.ownerDocument.createElement("div");
-      fallback2.className = "photo-fallback";
-      fallback2.setAttribute("role", "img");
-      fallback2.setAttribute("aria-label", `${image.alt || "Property photo"} unavailable`);
-      fallback2.textContent = "Photo unavailable";
-      image.replaceWith(fallback2);
-    };
-    image.addEventListener("load", () => image.classList.add("is-loaded"), { once: true });
-    image.addEventListener("error", failed, { once: true });
-    if (image.complete && image.naturalWidth > 0) image.classList.add("is-loaded");
-    else if (image.complete && image.getAttribute("src")) failed();
-  }
-  function buildListingGallery(doc, title, images) {
-    const count = images.length;
-    const section = doc.createElement("section");
-    section.className = "listing-gallery";
-    section.setAttribute("aria-label", `Photos of ${title}`);
-    section.dataset.count = String(count);
-    const track = doc.createElement("ul");
-    track.className = "listing-gallery__track";
-    track.setAttribute("role", "list");
-    track.tabIndex = 0;
-    track.setAttribute("aria-label", `${photosWord(count)} of ${title}. Swipe or scroll to see more.`);
-    for (const [index, image] of images.entries()) {
-      const item = doc.createElement("li");
-      item.className = "listing-gallery__item";
-      const link = doc.createElement("a");
-      link.className = "listing-gallery__open";
-      link.href = image.getAttribute("src") ?? "";
-      link.dataset.index = String(index);
-      if (!image.alt) image.alt = `Photo ${index + 1} of ${title}`;
-      const hint = doc.createElement("span");
-      hint.className = "ui-sr-only";
-      hint.textContent = ", open full size";
-      link.append(image, hint);
-      item.append(link);
-      track.append(item);
-    }
-    const counter = doc.createElement("p");
-    counter.className = "listing-gallery__count";
-    counter.setAttribute("aria-live", "polite");
-    counter.textContent = photosWord(count);
-    const all = doc.createElement("button");
-    all.type = "button";
-    all.className = "ui-button ui-button--secondary listing-gallery__all";
-    all.hidden = true;
-    all.textContent = `Show all ${photosWord(count)}`;
-    section.append(track, counter, all);
-    return section;
-  }
-  function enhanceListingGallery(gallery) {
-    if (gallery.classList.contains("is-enhanced")) return;
-    const doc = gallery.ownerDocument;
-    const view = doc.defaultView;
-    const track = gallery.querySelector(".listing-gallery__track");
-    if (!track || !view) return;
-    const links = [...track.querySelectorAll(".listing-gallery__open")];
-    const count = links.length;
-    if (count === 0) return;
-    gallery.classList.add("is-enhanced");
-    for (const image of track.querySelectorAll("img")) watchPhotoFailure(image);
-    const title = (gallery.getAttribute("aria-label") ?? "Photos").replace(/^Photos of /, "");
-    const counter = gallery.querySelector(".listing-gallery__count");
-    const all = gallery.querySelector(".listing-gallery__all");
-    const show = (index) => {
-      if (counter) counter.textContent = `Photo ${index + 1} of ${count}`;
-    };
-    show(0);
-    const observer = new view.IntersectionObserver((entries) => {
-      for (const entry of entries) if (entry.isIntersecting) show(links.indexOf(entry.target.querySelector("a")));
-    }, { root: track, threshold: 0.6 });
-    for (const item of track.children) observer.observe(item);
-    if (count > 5) {
-      const fifth = track.children[4];
-      if (fifth) fifth.dataset.more = `+${count - 5} more`;
-    }
-    if (all && count > 1) all.hidden = false;
-    let viewer = null;
-    const openViewer = (index, opener) => {
-      viewer ??= createViewer(doc, title, links.map((link) => ({ src: link.getAttribute("href") ?? "", alt: link.querySelector("img")?.alt || `Photo of ${title}` })));
-      viewer.open(index, opener);
-    };
-    for (const [index, link] of links.entries()) {
-      link.addEventListener("click", (event) => {
-        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-        event.preventDefault();
-        openViewer(index, link);
-      });
-    }
-    all?.addEventListener("click", () => openViewer(0, all));
-  }
-  function createViewer(doc, title, photos) {
-    const view = doc.defaultView;
-    const count = photos.length;
-    const dialog = doc.createElement("dialog");
-    dialog.className = "listing-viewer";
-    dialog.setAttribute("aria-label", `Photos of ${title}`);
-    dialog.setAttribute("closedby", "any");
-    const bar = doc.createElement("div");
-    bar.className = "listing-viewer__bar";
-    const counter = doc.createElement("p");
-    counter.className = "listing-viewer__count";
-    const close = doc.createElement("button");
-    close.type = "button";
-    close.className = "listing-viewer__close";
-    close.setAttribute("aria-label", "Close photos");
-    close.textContent = "\u2715";
-    bar.append(counter, close);
-    const track = doc.createElement("ul");
-    track.className = "listing-viewer__track";
-    track.setAttribute("role", "list");
-    for (const photo of photos) {
-      const item = doc.createElement("li");
-      item.className = "listing-viewer__item";
-      const image = doc.createElement("img");
-      image.src = photo.src;
-      image.alt = photo.alt;
-      image.referrerPolicy = "no-referrer";
-      image.decoding = "async";
-      image.loading = "lazy";
-      watchPhotoFailure(image);
-      item.append(image);
-      track.append(item);
-    }
-    const prev = doc.createElement("button");
-    prev.type = "button";
-    prev.className = "listing-viewer__prev";
-    prev.setAttribute("aria-label", "Previous photo");
-    prev.textContent = "\u2039";
-    const next = doc.createElement("button");
-    next.type = "button";
-    next.className = "listing-viewer__next";
-    next.setAttribute("aria-label", "Next photo");
-    next.textContent = "\u203A";
-    const announcer2 = doc.createElement("p");
-    announcer2.className = "ui-sr-only";
-    announcer2.setAttribute("aria-live", "polite");
-    dialog.append(bar, track, prev, next, announcer2);
-    doc.body.append(dialog);
-    let current = 0;
-    let opener = null;
-    let pendingIndex = null;
-    const SCROLL_SETTLE_TOLERANCE_PX = 2;
-    const clampIndex = (index) => Math.max(0, Math.min(count - 1, index));
-    const show = (index) => {
-      counter.textContent = `${index + 1} of ${count}`;
-      prev.setAttribute("aria-disabled", String(index === 0));
-      next.setAttribute("aria-disabled", String(index === count - 1));
-    };
-    const announce2 = () => {
-      announcer2.textContent = counter.textContent;
-    };
-    const settle2 = () => {
-      pendingIndex = null;
-      announce2();
-    };
-    const stepBase = () => pendingIndex ?? current;
-    track.addEventListener("scroll", () => {
-      current = clampIndex(Math.round(track.scrollLeft / Math.max(1, track.clientWidth)));
-      show(current);
-      if (pendingIndex !== null && Math.abs(track.scrollLeft - pendingIndex * track.clientWidth) < SCROLL_SETTLE_TOLERANCE_PX) settle2();
-    }, { passive: true });
-    track.addEventListener("scrollend", () => {
-      if (pendingIndex === null) announce2();
-    });
-    for (const gesture of ["pointerdown", "touchstart", "wheel"]) track.addEventListener(gesture, () => {
-      pendingIndex = null;
-    }, { passive: true });
-    const go = (index) => {
-      const target = clampIndex(index);
-      if (Math.abs(track.scrollLeft - target * track.clientWidth) < SCROLL_SETTLE_TOLERANCE_PX) {
-        pendingIndex = null;
-        current = target;
-        show(target);
-        announce2();
-        return;
-      }
-      pendingIndex = target;
-      show(target);
-      track.scrollTo({ left: target * track.clientWidth });
-    };
-    const stepTo = (index) => {
-      if (index >= 0 && index < count) go(index);
-    };
-    prev.addEventListener("click", () => stepTo(stepBase() - 1));
-    next.addEventListener("click", () => stepTo(stepBase() + 1));
-    close.addEventListener("click", () => dialog.close());
-    dialog.addEventListener("keydown", (event) => {
-      if (event.key === "ArrowRight") {
-        event.preventDefault();
-        stepTo(stepBase() + 1);
-      } else if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        stepTo(stepBase() - 1);
-      } else if (event.key === "Home") {
-        event.preventDefault();
-        go(0);
-      } else if (event.key === "End") {
-        event.preventDefault();
-        go(count - 1);
-      }
-    });
-    dialog.addEventListener("click", (event) => {
-      const target = event.target;
-      if (target === dialog || target.classList.contains("listing-viewer__item") || target === track) dialog.close();
-    });
-    dialog.addEventListener("close", () => {
-      const from = opener;
-      opener = null;
-      if (from) view.setTimeout(() => from.focus({ preventScroll: true }), 0);
-    });
-    return {
-      dialog,
-      open(index, from) {
-        opener = from;
-        from.focus({ preventScroll: true });
-        dialog.showModal();
-        const previous = track.style.scrollBehavior;
-        track.style.scrollBehavior = "auto";
-        track.scrollLeft = index * track.clientWidth;
-        track.style.scrollBehavior = previous;
-        pendingIndex = null;
-        current = index;
-        show(index);
-        close.focus();
-      }
-    };
   }
 
   // apps/web-agent/src/guest-content.ts
@@ -9827,9 +9586,9 @@ Known schemas:
     unpick: "Remove from compare"
   });
   var UNIT_DETAIL_ABOUT_HEADING = "About this apartment";
-  function guestFactValue(text, label) {
+  function guestFactValue(text2, label) {
     const prefix = `${label}: `;
-    const trimmed = text.trim();
+    const trimmed = text2.trim();
     return trimmed.startsWith(prefix) ? trimmed.slice(prefix.length) : void 0;
   }
   var GUEST_ACCOUNT_COPY = Object.freeze({
@@ -10069,8 +9828,8 @@ Known schemas:
     const prototype = Object.getPrototypeOf(value);
     return prototype === Object.prototype || prototype === null;
   }
-  function hasOnlyKeys(record, allowed) {
-    return Object.keys(record).every((key3) => allowed.includes(key3));
+  function hasOnlyKeys(record2, allowed) {
+    return Object.keys(record2).every((key3) => allowed.includes(key3));
   }
   function boundedText(value, maxLength = MODE_TEXT_MAX_LENGTH) {
     if (typeof value !== "string" || value.trim() === "" || value.length > maxLength) return void 0;
@@ -10226,6 +9985,778 @@ Known schemas:
     ];
   }
 
+  // apps/web-agent/src/booking-presentation.ts
+  function formatBookingDateTime(iso) {
+    return formatWatDateTime(iso);
+  }
+  function formatBookingDeadline(iso) {
+    const dateTime = formatBookingDateTime(iso);
+    return dateTime === "time unavailable" ? "Payment deadline unavailable" : `Pay by ${dateTime}`;
+  }
+  var GUEST_PAYMENT_STATUS_COPY = {
+    ready: { label: "Payment required", detail: "Continue to the designated payment checkout. Payment has not succeeded and the booking is not confirmed.", progress: "payment" },
+    checkout_initiated: {
+      processing: { label: "Payment processing \xB7 Checking payment", detail: "We are checking the provider\u2019s payment confirmation. Do not submit another payment while this result is pending. The booking is not confirmed until payment is verified and a Reservation exists.", progress: "payment-processing" },
+      handoff: { label: "Payment handoff ready \xB7 Payment not yet verified", detail: "Continue the current payment attempt. Payment has not succeeded and your booking is not confirmed. Your booking details will be retained when you return. Do not start another payment while this attempt is pending.", progress: "payment" }
+    },
+    deposit_required: { label: `Payment required \xB7 ${GUEST_GLOSSARY.refundableSecurityDeposit}`, detail: `The stay payment is verified. A separate ${GUEST_GLOSSARY.refundableSecurityDeposit} payment is still required before a Reservation can exist.`, progress: "payment" },
+    compensation_pending: { label: "Payment requires review \xB7 Booking not confirmed", detail: "This payment needs review. Your booking is not confirmed. Do not submit another payment while this payment is under review." },
+    reconciliation_required: { label: "Payment requires review \xB7 Booking not confirmed", detail: "This payment needs review. Your booking is not confirmed. Do not submit another payment while this payment is under review." },
+    compensated: { label: "Payment review update available", detail: "The payment attempt is closed and no Reservation exists. Check the current booking details before taking another action." },
+    expired: { label: "Payment window expired \xB7 Booking not confirmed", detail: "The Payment Window expired. This payment action is no longer available; no Reservation exists." },
+    failed: { label: "Payment was not verified \xB7 Booking not confirmed", detail: "Payment was not verified. No Reservation was created. Check the current booking status before retrying." },
+    confirmed: { label: "Booking confirmed", detail: "Payment verified and Reservation confirmed.", progress: "confirmed" }
+  };
+
+  // apps/web-agent/src/discovery-a2ui.ts
+  function formatNgnKobo(kobo) {
+    return formatMoney(kobo);
+  }
+  var COMPARE_ATTRIBUTES = [
+    {
+      key: "price",
+      label: GUEST_GLOSSARY.allInStayTotal,
+      value: (unit) => unit.price.allInStayTotalKobo === null ? `Not yet quoted \xB7 Indicative nightly rate ${formatNgnKobo(unit.price.nightlyKobo)}` : formatNgnKobo(unit.price.allInStayTotalKobo)
+    },
+    {
+      key: "deposit",
+      label: GUEST_FACT_LABELS.refundableSecurityDeposit,
+      value: (unit) => unit.price.refundableSecurityDepositKobo > 0 ? formatNgnKobo(unit.price.refundableSecurityDepositKobo) : "None"
+    },
+    { key: "where", label: GUEST_FACT_LABELS.where, value: (unit) => `${unit.location.neighbourhood}, ${unit.location.city}` },
+    { key: "bedrooms", label: "Bedrooms", value: (unit) => unit.bedrooms === void 0 ? "Not provided" : String(unit.bedrooms) },
+    { key: "bathrooms", label: "Bathrooms", value: (unit) => String(unit.bathrooms) },
+    { key: "sleeps", label: "Sleeps", value: (unit) => String(unit.capacity) }
+  ];
+
+  // apps/local-guest/src/conversational-shell.ts
+  function createConversationShellState() {
+    return { historicalSummaries: [], focusedSurfaceOpen: false };
+  }
+  function replaceActiveSurface(state, next) {
+    const current = state.activeSurface;
+    const shouldRecordCurrent = current !== void 0 && current.surfaceId !== next.surfaceId;
+    const historicalSummary = shouldRecordCurrent ? {
+      surfaceId: current.surfaceId,
+      status: "superseded",
+      summary: current.summary
+    } : void 0;
+    return {
+      activeSurface: next,
+      historicalSummaries: historicalSummary === void 0 ? state.historicalSummaries : [...state.historicalSummaries, historicalSummary],
+      focusedSurfaceOpen: next.mode === "focused-surface" && next.status === "active"
+    };
+  }
+  function closeFocusedSurface(state) {
+    if (state.activeSurface?.mode !== "focused-surface") return state;
+    return { ...state, focusedSurfaceOpen: false };
+  }
+  function reopenFocusedSurface(state) {
+    if (state.activeSurface?.mode !== "focused-surface" || state.activeSurface.status === "deleted" || state.activeSurface.status === "superseded") return state;
+    return { ...state, focusedSurfaceOpen: true };
+  }
+  function markActiveSurfaceStatus(state, status) {
+    if (!state.activeSurface) return state;
+    return {
+      ...state,
+      activeSurface: { ...state.activeSurface, status },
+      focusedSurfaceOpen: false
+    };
+  }
+  function canUseSurfaceActions(status) {
+    return status === "active";
+  }
+  function formatGuestHistorySummary(summary, status) {
+    if (status === "expired") return /offer/i.test(summary) ? "Offer expired" : "Booking details expired";
+    if (status === "deleted") return "Details no longer available";
+    const search = /^Search updated\s*·\s*(.*)$/.exec(summary);
+    const activity = search ? `Searched ${search[1]}` : /^(Discovery results|All discovery results)$/.test(summary) ? "Viewed stays for your search" : summary.endsWith(" details") ? `Viewed ${summary.slice(0, -" details".length)}` : summary === "Request Draft" ? status === "superseded" ? "" : "Your request" : summary === "Request review" ? "Booking details reviewed" : summary === "Request outcome" ? "Booking request update" : summary.includes("Conditional Booking Offer") ? "Booking offer received" : summary === "Payment handoff" ? "Opened hosted checkout" : summary === "Reservation confirmed" ? "Stay confirmed" : /workspace|booking/i.test(summary) ? "Booking details updated" : summary;
+    if (status === "stale") return `${activity} \xB7 details may have changed`;
+    if (status === "fallback") return `${activity} \xB7 details unavailable`;
+    return activity;
+  }
+  function guestSurfaceHeading(summary) {
+    if (/search|discovery/i.test(summary)) return "Stays for your search";
+    if (/details$/i.test(summary) || /unit/i.test(summary)) return "Stay details";
+    if (/draft|request review/i.test(summary)) return "Your booking details";
+    if (/offer/i.test(summary)) return "Booking offer";
+    if (/payment|checkout/i.test(summary)) return "Hosted checkout";
+    if (/confirm|reservation/i.test(summary)) return "Booking confirmed";
+    if (/phone|email|contact/i.test(summary)) return "Your contact details";
+    return "Booking details";
+  }
+  function guestSurfaceStatusMessage(status) {
+    if (status === "active") return "";
+    if (status === "superseded") return "Earlier details \xB7 no longer current";
+    if (status === "stale") return "These details may have changed. Check the latest version before continuing.";
+    if (status === "expired") return "These booking details have expired. Check the latest status before continuing.";
+    if (status === "deleted") return "These details are no longer available.";
+    return "Some details could not be shown. Continue in the conversation for help.";
+  }
+  var GUEST_STATUS_HEADLINES = [
+    { prefix: "Payment was not verified", tone: "danger" },
+    { prefix: "Payment requires review", tone: "danger" },
+    { prefix: "Request declined", tone: "danger" },
+    { prefix: "Request expired", tone: "warning" },
+    { prefix: "Offer expired", tone: "warning" },
+    { prefix: "Offer accepted \xB7 Payment required", tone: "warning" },
+    { prefix: "Payment required", tone: "warning" },
+    { prefix: "Payment processing", tone: "warning" },
+    { prefix: "Offer accepted", tone: "success" },
+    { prefix: "Booking confirmed", tone: "success" },
+    { prefix: "Reservation confirmed", tone: "success" },
+    { prefix: "Reservation and Booking Contract are confirmed", tone: "success" },
+    { prefix: "Request sent", tone: "info" },
+    { prefix: "Offer available", tone: "info" }
+  ];
+  function guestStatusTone(text2) {
+    const value = text2.trim();
+    return GUEST_STATUS_HEADLINES.find((entry) => value.startsWith(entry.prefix))?.tone;
+  }
+  function fallbackSummary(surface) {
+    if (surface.status === "fallback") return surface.textFallback ?? surface.summary;
+    return guestSurfaceStatusMessage(surface.status) || surface.summary;
+  }
+
+  // apps/local-guest/src/guest-kit.ts
+  function formatWAT(iso) {
+    return formatBookingDeadline(iso).replace(/^Pay by /, "");
+  }
+  function minutesUntil(deadlineIso, now) {
+    return Math.max(
+      0,
+      Math.ceil((Date.parse(deadlineIso) - now.getTime()) / 6e4)
+    );
+  }
+  var CHECK_IN_LABEL = GUEST_FACT_LABELS.checkIn;
+  var CHECK_OUT_LABEL = GUEST_FACT_LABELS.checkOut;
+  function ticketDate(label, part, end) {
+    const time2 = part.datetime === void 0 ? `<time>${escapeHtml(part.date)}</time>` : `<time datetime="${escapeHtml(part.datetime)}">${escapeHtml(part.date)}</time>`;
+    return `<div class="ui-ticket__date${end ? " ui-ticket__date--end" : ""}"><span class="ui-ticket__label">${label}</span><span class="ui-ticket__day">${escapeHtml(part.day)}</span>${time2}${part.time === void 0 ? "" : `<span class="ui-ticket__time">${escapeHtml(part.time)}</span>`}</div>`;
+  }
+  function ticketHtml(parts) {
+    return `<section class="ui-ticket" aria-label="Your stay"><div><p class="ui-ticket__label">Your stay</p><h2 class="ui-ticket__name">${escapeHtml(parts.title)}</h2></div><div class="ui-ticket__dates">${ticketDate(CHECK_IN_LABEL, parts.checkIn, false)}<span class="ui-ticket__arrow" aria-hidden="true">\u2192</span>${ticketDate(CHECK_OUT_LABEL, parts.checkOut, true)}</div><p class="ui-ticket__foot">${escapeHtml(parts.foot)}</p></section>`;
+  }
+  function breakdownHtml(parts) {
+    const money = (value) => `<span class="ui-price-breakdown__value">${escapeHtml(value)}</span>`;
+    const total = parts.total === void 0 ? "" : `<div><p class="ui-price-breakdown__label">${escapeHtml(parts.totalLabel ?? GUEST_FACT_LABELS.allInStayTotal)}</p><p class="ui-money-total">${escapeHtml(parts.total)}</p></div>`;
+    const deposit = parts.deposit === void 0 ? "" : `<p class="ui-price-breakdown__row">${parts.depositCollected ? `${GUEST_GLOSSARY.refundableSecurityDeposit} collected` : GUEST_FACT_LABELS.refundableSecurityDeposit}: ${money(parts.deposit)}</p>`;
+    const due = parts.due === void 0 ? "" : `<p class="ui-price-breakdown__due">${GUEST_FACT_LABELS.amountDueNow}: ${money(parts.due)}</p>`;
+    const thisPayment = parts.thisPayment === void 0 ? "" : `<p class="ui-price-breakdown__due">${GUEST_FACT_LABELS.thisPayment}: ${money(parts.thisPayment)}</p>`;
+    const paid = parts.paid === void 0 ? "" : `<p class="ui-price-breakdown__paid">${GUEST_FACT_LABELS.amountPaid}: ${money(parts.paid)}</p>`;
+    const next = parts.next === void 0 ? "" : `<p class="ui-price-breakdown__row payment-current-component">${GUEST_FACT_LABELS.nextPayment}: ${money(parts.next)}</p>`;
+    return `<section class="ui-panel ui-price-breakdown" aria-label="Price breakdown">${parts.condition ? `<p class="ui-price-breakdown__condition">${escapeHtml(parts.condition)}</p>` : ""}${total}${deposit}${due}${thisPayment}${paid}${next}</section>`;
+  }
+  function unitTilesHtml(tiles2) {
+    return `<ul class="ui-tiles" aria-label="Stay facts">${tiles2.map((tile) => `<li class="ui-tiles__tile">${icon(tile.icon)}${escapeHtml(tile.text)}</li>`).join("")}</ul>`;
+  }
+  function unitLocationHtml(where) {
+    return `<p class="unit-detail-location">${icon("pin")}${escapeHtml(where)}</p>`;
+  }
+  function unitTitleHtml(title) {
+    return `<h2 class="unit-detail-title">${escapeHtml(title)}</h2>`;
+  }
+  function unitAboutHtml(description) {
+    return `<h2 class="unit-detail-about-heading">${escapeHtml(UNIT_DETAIL_ABOUT_HEADING)}</h2><p class="unit-detail-description">${escapeHtml(description)}</p>`;
+  }
+  function deadlineBannerHtml(input) {
+    const minutes = minutesUntil(input.deadlineIso, input.now);
+    const remaining = `${minutes} ${minutes === 1 ? "minute" : "minutes"} left`;
+    const deadline = `${escapeHtml(input.label)} <time datetime="${escapeHtml(input.deadlineIso)}">${escapeHtml(formatWAT(input.deadlineIso))}</time>`;
+    return `<p class="ui-banner ui-banner--warning payment-deadline${input.countdown ? " offer-deadline" : ""}">${icon("clock")}<span>${input.countdown ? `<span class="waiting-deadline-time">${deadline}</span> \xB7 <span class="waiting-countdown">${remaining}</span>` : `${deadline} \xB7 ${remaining}`}${input.consequence ? `<br>${escapeHtml(input.consequence)}` : ""}</span></p>`;
+  }
+  function offerScreenHtml(content, ticket, breakdown) {
+    const form = (path, label, primary, surfaceId) => `<form method="post" action="${escapeHtml(path)}">${surfaceId === void 0 ? "" : `<input type="hidden" name="surfaceId" value="${escapeHtml(surfaceId)}">`}<button class="ui-button ui-button--${primary ? "primary" : "secondary"}" type="submit">${escapeHtml(label)}</button></form>`;
+    const live = content.state === "live";
+    const banner = live ? deadlineBannerHtml({
+      label: "Pay by",
+      deadlineIso: content.deadlineIso,
+      now: new Date(content.serverNow),
+      countdown: true,
+      consequence: content.consequence
+    }) : content.state === "expired" ? `<p class="ui-banner ui-banner--neutral offer-deadline">${icon("clock")}<span>The deadline was <time datetime="${escapeHtml(content.deadlineIso)}">${escapeHtml(formatWAT(content.deadlineIso))}</time><br>${escapeHtml(content.consequence)}</span></p>` : "";
+    const policies = live ? `<section class="ui-panel offer-policies" aria-label="Before you pay"><h2>Before you pay</h2><p>${escapeHtml(content.provider)}</p>${content.policies.map((section) => `<section><h3>${escapeHtml(section.heading)}</h3><ul>${section.items.map((text2) => `<li>${escapeHtml(text2)}</li>`).join("")}</ul></section>`).join("")}${content.notes.map((text2) => `<p>${escapeHtml(text2)}</p>`).join("")}</section>` : "";
+    const actions = content.accept ? `<div class="ui-action-bar offer-actions"><div><strong>${escapeHtml(content.amount)}</strong><span class="ui-price-breakdown__label">${GUEST_FACT_LABELS.amountDueNow}</span></div>${form(content.accept.path, GUEST_PAYMENT_COPY.accept, true, content.accept.surfaceId)}</div>` : `<div class="offer-actions request-actions">${form(content.conversationPath, "Back to your conversation", true)}${content.searchPath ? form(content.searchPath, "Find other stays", false) : ""}</div>`;
+    return `<section class="offer-screen" data-offer-state="${content.state}" data-server-now="${escapeHtml(content.serverNow)}"><header class="request-head offer-head" data-page="booking-record"><p class="ui-eyebrow">Conditional Booking Offer</p><h1>${escapeHtml(content.title)}</h1><span class="ui-status ui-status--${live ? "success" : content.state === "expired" || content.state === "closed" ? "danger" : "warning"}">${escapeHtml(content.status)}</span></header>${banner}${ticket}${live ? breakdown : ""}${policies}${content.steps.length ? `<section class="ui-panel"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>` : ""}${actions}</section>`;
+  }
+  function paymentLayoutHtml(input) {
+    const actions = input.actions === void 0 || input.actions === "" ? "" : `<div class="payment-actions ui-action-bar">${input.actions}</div>`;
+    return `<section class="payment-screen" data-payment-state="${escapeHtml(input.state)}"${input.serverNow === void 0 ? "" : ` data-server-now="${escapeHtml(input.serverNow)}"`}><header class="request-head payment-head" data-page="booking-record"><p class="ui-eyebrow">${escapeHtml(input.eyebrow)}</p><h1>${escapeHtml(input.title)}</h1>${input.status === void 0 ? "" : statusHtml(input.tone, input.status)}</header>${input.banner ?? ""}${input.ticket ?? ""}${input.breakdown ?? ""}${(input.sections ?? []).join("")}${actions}</section>`;
+  }
+  function paymentScreenHtml(content, ticket, breakdown, slots) {
+    const banner = content.deadlineIso === void 0 ? "" : deadlineBannerHtml({
+      label: "Pay by",
+      deadlineIso: content.deadlineIso,
+      now: new Date(content.serverNow),
+      ...slots.countdown ? { countdown: true } : {}
+    });
+    return paymentLayoutHtml({
+      state: content.state,
+      eyebrow: "Booking payment",
+      title: content.title,
+      tone: content.tone,
+      status: content.status,
+      banner,
+      ticket,
+      breakdown,
+      sections: [
+        ...content.schedule ? [`${content.schedule.currentPeriod === void 0 ? "" : `<p>${escapeHtml(content.schedule.currentPeriod)}</p>`}${paymentScheduleHtml(content.schedule)}`] : [],
+        `<p class="payment-explanation">${escapeHtml(content.explanation)}</p>`,
+        ...content.choice ? [paymentChoiceHtml(content.choice)] : slots.sections === void 0 ? [] : [slots.sections],
+        ...content.steps.length ? [
+          `<section class="ui-panel payment-steps"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>`
+        ] : []
+      ],
+      actions: content.choice ? "" : slots.actions ?? "",
+      serverNow: content.serverNow
+    });
+  }
+  function paymentChoiceHtml(input) {
+    const method = (value, label, help, checked = false) => `<label><input type="radio" name="method" value="${value}"${checked ? " checked" : ""} aria-labelledby="method-${value}-label" aria-describedby="method-${value}-help"><span class="ui-field"><strong id="method-${value}-label">${escapeHtml(label)}</strong><span id="method-${value}-help" class="ui-field__hint">${escapeHtml(help)}</span></span></label>`;
+    const methods = `<fieldset class="ui-segmented payment-choice-methods"><legend class="ui-sr-only">Payment method</legend>${method("card", GUEST_PAYMENT_COPY.card, GUEST_PAYMENT_COPY.cardHelp, true)}${input.providerTransfer ? method("bank_transfer", GUEST_PAYMENT_COPY.transfer, GUEST_PAYMENT_COPY.transferHelp) : ""}${input.manualAction ? method("manual_transfer", GUEST_PAYMENT_COPY.manual, GUEST_PAYMENT_COPY.manualHelp) : ""}</fieldset>`;
+    return `<form method="post" action="${escapeHtml(input.action)}" class="payment-choice-form"><section class="ui-panel payment-choice" aria-label="Choose how to pay"><h2>How would you like to pay?</h2>${methods}</section><div class="payment-actions ui-action-bar"><button class="ui-button ui-button--primary ui-button--block" type="submit">Continue to stay payment \xB7 ${escapeHtml(input.amount)}</button></div></form>`;
+  }
+  function stepsHtml(items) {
+    return `<ol class="ui-steps">${items.map((item, index) => `<li><span class="ui-steps__number">${index + 1}</span><span>${escapeHtml(item)}</span></li>`).join("")}</ol>`;
+  }
+  function confirmationExtensionHtml(extension) {
+    const outcome = extension.outcome === void 0 ? "" : `<p data-extension-outcome="${escapeHtml(extension.outcome)}">${escapeHtml(GUEST_EXTENSION_COPY[extension.outcome])}</p>`;
+    if (extension.requested) {
+      const rows = extensionFactRows(extension.requested.facts, formatNgnKobo, formatWAT(extension.requested.respondBy));
+      return `<section class="ui-panel" aria-labelledby="extension-requested-heading" data-extension-requested><h2 id="extension-requested-heading">${escapeHtml(GUEST_EXTENSION_COPY.heading)}</h2><p>${escapeHtml(GUEST_EXTENSION_COPY.requested)}</p>${extensionFactsDlHtml(rows)}</section>`;
+    }
+    const button = extension.offered ? `<div class="request-actions"><button class="ui-button ui-button--secondary ui-button--block" type="button" data-extension-open>${escapeHtml(GUEST_EXTENSION_COPY.action)}</button></div>` : "";
+    return `<section class="ui-panel" aria-labelledby="extension-heading" data-extension-step><h2 id="extension-heading">${escapeHtml(GUEST_EXTENSION_COPY.heading)}</h2>${outcome}${button}</section>`;
+  }
+  function extensionFactsDlHtml(rows) {
+    return `<dl class="ui-facts ui-facts--stacked">${rows.map((row) => `<dt>${escapeHtml(row.label)}</dt><dd data-extension-fact="${escapeHtml(row.key)}">${escapeHtml(row.value)}</dd>`).join("")}</dl>`;
+  }
+  function confirmationNoticeHtml(notice) {
+    if (notice.kind === "action") return `<div class="request-actions"><button class="ui-button ui-button--secondary ui-button--block" type="button" data-notice-open>${escapeHtml(GUEST_NOTICE_COPY.action)}</button></div>`;
+    return `<section class="ui-panel" aria-labelledby="notice-recorded-heading" data-notice-recorded><h2 id="notice-recorded-heading">${escapeHtml(GUEST_NOTICE_COPY.recordedHeading)}</h2><p>${escapeHtml(GUEST_NOTICE_COPY.recordedLead)}</p>${noticeFactsDlHtml(notice.facts)}</section>`;
+  }
+  function confirmationScreenHtml(content, ticket, breakdown) {
+    return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}${content.notice ? confirmationNoticeHtml(content.notice) : ""}${content.extension ? confirmationExtensionHtml(content.extension) : ""}<div class="confirmation-reference"><dl class="ui-facts ui-facts--stacked"><dt>Booking reference</dt><dd>${escapeHtml(content.bookingReference)}</dd></dl></div><section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}<a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Ask about arrival</a></section><div class="request-actions">${content.scheduleHref ? `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.scheduleHref)}">View payment schedule</a>` : ""}</div><details class="ui-panel booking-details" id="booking-details"><summary class="ui-button ui-button--secondary ui-button--block">Full contract terms</summary><p>${escapeHtml(content.details)}</p></details></section>`;
+  }
+  function signInOfferHtml(content) {
+    return `<section class="ui-panel" data-sign-in-offer aria-labelledby="sign-in-offer-title"><h2 id="sign-in-offer-title">${escapeHtml(GUEST_ACCOUNT_COPY.offerTitle)}</h2><p>${escapeHtml(GUEST_ACCOUNT_COPY.offerIntro)}</p><form method="post" action="/account/sign-in"><div class="ui-field"><label class="ui-field__label" for="sign-in-offer-email">${escapeHtml(GUEST_ACCOUNT_COPY.emailLabel)}</label><input id="sign-in-offer-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" maxlength="254" required value="${escapeHtml(content.email)}"></div><input type="hidden" name="return" value="${escapeHtml(content.returnPath)}"><button class="ui-button ui-button--secondary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.offerButton)}</button></form></section>`;
+  }
+  function paymentScheduleHtml(schedule) {
+    const periods = schedule.periods.map((text2) => `<li>${escapeHtml(text2)}</li>`).join("");
+    return `<section class="ui-panel" aria-label="${escapeHtml(schedule.heading)}"><h2>${escapeHtml(schedule.heading)}</h2><p>${escapeHtml(schedule.firstPeriodOnly)}</p><ol>${periods}</ol></section>`;
+  }
+  function requestScreenHtml(content, ticket, breakdown, actionTotal) {
+    const form = (action, primary) => `<form method="post" action="${escapeHtml(action.path)}">${action.surfaceId === void 0 ? "" : `<input type="hidden" name="surfaceId" value="${escapeHtml(action.surfaceId)}">`}<button class="ui-button ui-button--${primary ? "primary" : "secondary"} ui-button--block" type="submit"${action.surfaceId === "" ? " disabled" : ""}>${escapeHtml(action.label)}</button></form>`;
+    const who = content.guests === void 0 ? "" : `<section class="ui-panel request-guests" aria-label="Who's staying"><h2>Who's staying</h2><dl class="ui-facts ui-facts--stacked"><dt>Guests</dt><dd>${escapeHtml(content.guests)}</dd>${content.selfBooking === void 0 ? "" : `<dt>You're booking for yourself</dt><dd>${content.selfBooking ? "Yes" : "No"}</dd>`}</dl>${content.changeHref === void 0 ? "" : `<a class="ui-link" href="${escapeHtml(content.changeHref)}">Change dates or guests${icon("arrow-right")}</a>`}</section>`;
+    const edit = content.edit;
+    const editor = edit === void 0 ? "" : `<section class="ui-panel request-edit"><h2>${GUEST_REQUEST_EDIT_COPY.heading}</h2>${edit.error ? `<p id="request-edit-error" class="ui-field__error" role="alert">${escapeHtml(edit.error)}</p>` : ""}<form class="ui-field" method="post" action="${escapeHtml(edit.route)}"><input type="hidden" name="surfaceId" value="${escapeHtml(content.primary.surfaceId ?? "")}"><details${edit.error ? " open" : ""}><summary class="ui-button ui-button--secondary">${GUEST_REQUEST_EDIT_COPY.dates}</summary><div class="ui-field"><label for="request-check-in">${GUEST_FACT_LABELS.checkIn}</label><input id="request-check-in" type="date" name="checkIn" value="${escapeHtml(edit.entered?.checkIn ?? edit.checkIn)}"${edit.error ? ' aria-invalid="true" aria-describedby="request-edit-error"' : ""} required></div><div class="ui-field"><label for="request-check-out">${GUEST_FACT_LABELS.checkOut}</label><input id="request-check-out" type="date" name="checkOut" value="${escapeHtml(edit.entered?.checkOut ?? edit.checkOut)}"${edit.error ? ' aria-invalid="true" aria-describedby="request-edit-error"' : ""} required></div></details><details${edit.error ? " open" : ""}><summary class="ui-button ui-button--secondary">${GUEST_REQUEST_EDIT_COPY.guests}</summary><div class="ui-field"><label for="request-party-size">${GUEST_REQUEST_EDIT_COPY.guestCount}</label><input id="request-party-size" type="number" name="partySize" value="${escapeHtml(edit.entered?.partySize ?? String(edit.partySize))}"${edit.error ? ' aria-invalid="true" aria-describedby="request-edit-error"' : ""} min="1" required></div></details><button class="ui-button ui-button--secondary ui-button--block" type="submit">${GUEST_REQUEST_EDIT_COPY.save}</button></form><a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(edit.contactHref)}">${GUEST_REQUEST_EDIT_COPY.phone}</a></section>`;
+    const banner = content.banner === void 0 ? "" : `<p class="ui-banner ui-banner--neutral">${icon("info")}<span>${escapeHtml(content.banner)}</span></p>`;
+    const deadline = content.deadline === void 0 ? "" : `<p class="request-deadline"><time class="waiting-deadline-time" datetime="${escapeHtml(content.deadline.iso)}">${escapeHtml(content.deadline.text)}</time><span class="waiting-countdown"></span></p>`;
+    const editable = content.state === "draft" || content.state === "review";
+    const sum = editable && actionTotal !== void 0 ? `<p class="ui-action-bar__sum"><strong>${escapeHtml(actionTotal)}</strong><span class="ui-money-metadata">${GUEST_GLOSSARY.allInStayTotal}</span></p>` : "";
+    return `<section class="request-screen" data-request-state="${content.state}"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">${GUEST_GLOSSARY.bookingRequest}</p><h2>${escapeHtml(content.title)}</h2>${statusHtml(content.tone, content.status)}</header>${banner}<div class="request-ticket">${ticket}</div>${who}${editor}<div class="request-breakdown">${breakdown}</div>${content.schedule === void 0 ? "" : paymentScheduleHtml(content.schedule)}${content.provider === void 0 ? "" : `<p class="request-provider">${escapeHtml(content.provider)}</p>`}${content.sentAt === void 0 ? "" : `<p class="ui-field__hint">${escapeHtml(content.sentAt)}</p>`}${deadline}<section class="ui-panel request-next"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>${content.notes.length ? `<div class="request-notes">${content.notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</div>` : ""}<div class="request-actions${editable ? " ui-action-bar" : ""}">${sum}${form(content.primary, true)}${content.secondary === void 0 ? "" : form(content.secondary, false)}</div></section>`;
+  }
+  function statusHtml(tone, text2) {
+    return statusBadge(text2, tone);
+  }
+  function demoListingChipHtml() {
+    return `<span class="ui-chip ui-chip--demo" data-demo-listing>${escapeHtml(GUEST_FACT_LABELS.demoListing)}</span>`;
+  }
+  function photoCountHtml(count) {
+    if (count === void 0 || !Number.isInteger(count) || count < 2) return "";
+    return `<span class="ui-stay-card__count">${icon("grid")}<span aria-hidden="true">1 / ${count}</span><span class="ui-sr-only">${count} photos</span></span>`;
+  }
+  function stayPhotoHtml(parts) {
+    return parts.photoSrc === void 0 ? `<div class="ui-stay-card__photo ui-stay-card__photo--empty" role="img" aria-label="Photos are not available for ${escapeHtml(parts.title)}">${icon("photo")}Photos not available</div>` : `<div class="ui-stay-card__media"><img class="ui-stay-card__photo" src="${escapeHtml(parts.photoSrc)}" alt="Photo of ${escapeHtml(parts.title)}" width="800" height="600" loading="lazy" decoding="async" referrerpolicy="no-referrer">${photoCountHtml(parts.photoCount)}</div>`;
+  }
+  function stayCardInnerHtml(parts) {
+    const href = escapeHtml(parts.href);
+    const facts = parts.facts.map(
+      (fact) => `<span class="ui-fact">${icon(fact.icon)}${escapeHtml(fact.text)}</span>`
+    ).join("");
+    const deposit = parts.deposit === void 0 ? "" : `<p class="ui-money-metadata">+ ${escapeHtml(parts.deposit)} ${GUEST_FACT_LABELS.refundableSecurityDeposit}</p>`;
+    return `${stayPhotoHtml(parts)}${parts.demoListing === true ? demoListingChipHtml() : ""}<p class="ui-stay-card__where">${icon("pin")}${escapeHtml(parts.where)}</p><h2 class="ui-stay-card__title"><a href="${href}">${escapeHtml(parts.title)}</a></h2><div class="ui-stay-card__facts" aria-label="Stay facts">${facts}</div><div class="ui-stay-card__total"><p class="ui-money-total">${escapeHtml(parts.total)}</p><p class="ui-money-metadata">${escapeHtml(parts.totalLabel)}</p>${deposit}</div><a class="ui-button ui-button--primary ui-button--block ui-stay-card__view" href="${href}">${GUEST_GLOSSARY.viewUnit}<span class="ui-sr-only">: ${escapeHtml(parts.title)}</span></a>`;
+  }
+  function resultRowPartsHtml(parts) {
+    const thumb = parts.photoSrc === void 0 ? icon("photo") : `<img src="${escapeHtml(parts.photoSrc)}" alt="" width="64" height="64" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
+    return `<a class="ui-result-row" href="${escapeHtml(parts.href)}"><span class="ui-result-row__thumb">${thumb}</span><span class="ui-result-row__body"><span class="ui-result-row__title">${escapeHtml(parts.title)}</span><span class="ui-result-row__price">${escapeHtml(parts.total)} <span>${escapeHtml(parts.totalLabel)}</span></span></span>${icon("chevron-right")}</a>`;
+  }
+  function noticeFactsDlHtml(facts) {
+    const rows = noticeFactRows(facts, formatNgnKobo);
+    const cells = rows.map((row) => {
+      const attribute = row.key === "newLastNight" ? ` data-new-last-night="${escapeHtml(row.raw)}"` : row.key === "refund" ? ` data-refund-kobo="${escapeHtml(row.raw)}"` : row.key === "owed" ? ` data-owed-kobo="${escapeHtml(row.raw)}"` : "";
+      return `<dt>${escapeHtml(row.label)}</dt><dd${attribute}>${escapeHtml(row.value)}</dd>`;
+    }).join("");
+    return `<dl class="ui-facts ui-facts--stacked">${cells}</dl>`;
+  }
+
+  // apps/local-guest/src/listing-gallery.ts
+  var photosWord = (count) => `${count} ${count === 1 ? "photo" : "photos"}`;
+  var LISTING_GALLERY_STYLE = [
+    ".listing-gallery{container-type:inline-size;display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-2);min-width:0;position:relative}",
+    ".listing-gallery__track{display:flex;gap:var(--space-2);min-width:0;margin:0;padding:0;list-style:none;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x mandatory;scrollbar-width:thin;border-radius:var(--radius-card)}",
+    ".listing-gallery__track:focus-visible{outline:3px solid var(--color-focus);outline-offset:2px}",
+    ".listing-gallery__item{flex:0 0 100%;min-width:0;scroll-snap-align:start}",
+    ".listing-gallery__open{position:relative;display:block;height:100%;border-radius:var(--radius-card);overflow:hidden;background:var(--color-surface-subtle)}",
+    ".listing-gallery__open:focus-visible{outline:3px solid var(--color-focus);outline-offset:-3px}",
+    ".listing-gallery__open img,.listing-gallery__open .photo-fallback{display:block;width:100%!important;height:100%!important;max-width:none!important;min-height:0!important;margin:0!important;aspect-ratio:4/3;object-fit:cover!important;border-radius:0!important}",
+    ".listing-gallery__count{justify-self:end;margin:0;padding:var(--space-1) var(--space-3);border-radius:var(--radius-pill);background:var(--color-surface-subtle);color:var(--color-text-secondary);font-size:var(--font-size-small)}",
+    ".listing-gallery__all{justify-self:start;min-height:var(--control-min-target)}",
+    ".listing-gallery__all[hidden]{display:none}",
+    "@container (min-width:30rem){",
+    ".listing-gallery__track{display:grid;overflow:visible;scroll-snap-type:none;grid-template-columns:2fr 1fr 1fr;grid-auto-flow:dense}",
+    ".listing-gallery__item:first-child{grid-row:span 2}",
+    ".listing-gallery__item:first-child img,.listing-gallery__item:first-child .photo-fallback{aspect-ratio:auto}",
+    '.listing-gallery[data-count="1"] .listing-gallery__track{grid-template-columns:1fr}',
+    '.listing-gallery[data-count="1"] .listing-gallery__item:first-child{grid-row:auto}',
+    '.listing-gallery[data-count="2"] .listing-gallery__track{grid-template-columns:1fr 1fr}',
+    '.listing-gallery[data-count="2"] .listing-gallery__item:first-child{grid-row:auto}',
+    '.listing-gallery[data-count="3"] .listing-gallery__track,.listing-gallery[data-count="4"] .listing-gallery__track{grid-template-columns:2fr 1fr}',
+    '.listing-gallery[data-count="4"] .listing-gallery__item:first-child{grid-row:span 3}',
+    ".listing-gallery__count{display:none}",
+    ".listing-gallery.is-enhanced .listing-gallery__item:nth-child(n+6){display:none}",
+    ".listing-gallery__item[data-more]{position:relative}",
+    ".listing-gallery__item[data-more]::after{content:attr(data-more);position:absolute;inset:0;display:grid;place-items:center;background:rgb(0 0 0/.45);color:var(--color-text-on-viewer);font-weight:650;border-radius:var(--radius-card);pointer-events:none}",
+    "}",
+    // The viewer: full screen, one photo at a time, swipe or step through; opened only by the script.
+    ".listing-viewer{inset:0;width:100%;max-width:none;height:100%;max-height:none;margin:0;padding:0;border:0;background:var(--color-surface-viewer);color:var(--color-text-on-viewer)}",
+    ".listing-viewer::backdrop{background:rgb(0 0 0/.6)}",
+    ".listing-viewer[open]{display:grid;grid-template-rows:auto minmax(0,1fr)}",
+    ".listing-viewer__bar{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);padding:var(--space-2) var(--space-3)}",
+    ".listing-viewer__count{margin:0;font-size:var(--font-size-body);font-weight:600}",
+    ".listing-viewer__track{display:flex;height:100%;min-height:0;margin:0;padding:0;list-style:none;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x mandatory;scrollbar-width:none}",
+    ".listing-viewer__item{flex:0 0 100%;display:flex;align-items:center;justify-content:center;height:100%;min-width:0;padding:var(--space-2) var(--space-12);box-sizing:border-box;scroll-snap-align:start}",
+    "@media (max-width:40rem){.listing-viewer__item{padding-inline:var(--space-2)}}",
+    ".listing-viewer__item img{display:block;max-width:100%;max-height:100%;width:auto;height:auto;min-height:0;object-fit:contain}",
+    ".listing-viewer button{min-width:var(--control-min-target);min-height:var(--control-min-target);border:1px solid currentColor;border-radius:var(--radius-pill);background:var(--color-surface-viewer);color:var(--color-text-on-viewer);font-size:1.25rem;cursor:pointer}",
+    ".listing-viewer button:focus-visible{outline:3px solid var(--color-focus);outline-offset:2px}",
+    '.listing-viewer button:disabled,.listing-viewer button[aria-disabled="true"]{opacity:.35;cursor:default}',
+    ".listing-viewer__prev,.listing-viewer__next{position:absolute;top:50%;transform:translateY(-50%)}",
+    ".listing-viewer__prev{inset-inline-start:var(--space-2)}",
+    ".listing-viewer__next{inset-inline-end:var(--space-2)}",
+    "@media (prefers-reduced-motion:no-preference){.listing-gallery__track,.listing-viewer__track{scroll-behavior:smooth}}"
+  ].join("");
+  function watchPhotoFailure(image) {
+    if (image.dataset.failureWatched === "true") return;
+    image.dataset.failureWatched = "true";
+    const failed = () => {
+      const fallback2 = image.ownerDocument.createElement("div");
+      fallback2.className = "photo-fallback";
+      fallback2.setAttribute("role", "img");
+      fallback2.setAttribute("aria-label", `${image.alt || "Property photo"} unavailable`);
+      fallback2.textContent = "Photo unavailable";
+      image.replaceWith(fallback2);
+    };
+    image.addEventListener("load", () => image.classList.add("is-loaded"), { once: true });
+    image.addEventListener("error", failed, { once: true });
+    if (image.complete && image.naturalWidth > 0) image.classList.add("is-loaded");
+    else if (image.complete && image.getAttribute("src")) failed();
+  }
+  function buildListingGallery(doc, title, images) {
+    const count = images.length;
+    const section = doc.createElement("section");
+    section.className = "listing-gallery";
+    section.setAttribute("aria-label", `Photos of ${title}`);
+    section.dataset.count = String(count);
+    const track = doc.createElement("ul");
+    track.className = "listing-gallery__track";
+    track.setAttribute("role", "list");
+    track.tabIndex = 0;
+    track.setAttribute("aria-label", `${photosWord(count)} of ${title}. Swipe or scroll to see more.`);
+    for (const [index, image] of images.entries()) {
+      const item = doc.createElement("li");
+      item.className = "listing-gallery__item";
+      const link = doc.createElement("a");
+      link.className = "listing-gallery__open";
+      link.href = image.getAttribute("src") ?? "";
+      link.dataset.index = String(index);
+      if (!image.alt) image.alt = `Photo ${index + 1} of ${title}`;
+      const hint = doc.createElement("span");
+      hint.className = "ui-sr-only";
+      hint.textContent = ", open full size";
+      link.append(image, hint);
+      item.append(link);
+      track.append(item);
+    }
+    const counter = doc.createElement("p");
+    counter.className = "listing-gallery__count";
+    counter.setAttribute("aria-live", "polite");
+    counter.textContent = photosWord(count);
+    const all = doc.createElement("button");
+    all.type = "button";
+    all.className = "ui-button ui-button--secondary listing-gallery__all";
+    all.hidden = true;
+    all.textContent = `Show all ${photosWord(count)}`;
+    section.append(track, counter, all);
+    return section;
+  }
+  function enhanceListingGallery(gallery) {
+    if (gallery.classList.contains("is-enhanced")) return;
+    const doc = gallery.ownerDocument;
+    const view = doc.defaultView;
+    const track = gallery.querySelector(".listing-gallery__track");
+    if (!track || !view) return;
+    const links = [...track.querySelectorAll(".listing-gallery__open")];
+    const count = links.length;
+    if (count === 0) return;
+    gallery.classList.add("is-enhanced");
+    for (const image of track.querySelectorAll("img")) watchPhotoFailure(image);
+    const title = (gallery.getAttribute("aria-label") ?? "Photos").replace(/^Photos of /, "");
+    const counter = gallery.querySelector(".listing-gallery__count");
+    const all = gallery.querySelector(".listing-gallery__all");
+    const show = (index) => {
+      if (counter) counter.textContent = `Photo ${index + 1} of ${count}`;
+    };
+    show(0);
+    const observer = new view.IntersectionObserver((entries) => {
+      for (const entry of entries) if (entry.isIntersecting) show(links.indexOf(entry.target.querySelector("a")));
+    }, { root: track, threshold: 0.6 });
+    for (const item of track.children) observer.observe(item);
+    if (count > 5) {
+      const fifth = track.children[4];
+      if (fifth) fifth.dataset.more = `+${count - 5} more`;
+    }
+    if (all && count > 1) all.hidden = false;
+    let viewer = null;
+    const openViewer = (index, opener) => {
+      viewer ??= createViewer(doc, title, links.map((link) => ({ src: link.getAttribute("href") ?? "", alt: link.querySelector("img")?.alt || `Photo of ${title}` })));
+      viewer.open(index, opener);
+    };
+    for (const [index, link] of links.entries()) {
+      link.addEventListener("click", (event) => {
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        openViewer(index, link);
+      });
+    }
+    all?.addEventListener("click", () => openViewer(0, all));
+  }
+  function createViewer(doc, title, photos) {
+    const view = doc.defaultView;
+    const count = photos.length;
+    const dialog = doc.createElement("dialog");
+    dialog.className = "listing-viewer";
+    dialog.setAttribute("aria-label", `Photos of ${title}`);
+    dialog.setAttribute("closedby", "any");
+    const bar = doc.createElement("div");
+    bar.className = "listing-viewer__bar";
+    const counter = doc.createElement("p");
+    counter.className = "listing-viewer__count";
+    const close = doc.createElement("button");
+    close.type = "button";
+    close.className = "listing-viewer__close";
+    close.setAttribute("aria-label", "Close photos");
+    close.textContent = "\u2715";
+    bar.append(counter, close);
+    const track = doc.createElement("ul");
+    track.className = "listing-viewer__track";
+    track.setAttribute("role", "list");
+    for (const photo of photos) {
+      const item = doc.createElement("li");
+      item.className = "listing-viewer__item";
+      const image = doc.createElement("img");
+      image.src = photo.src;
+      image.alt = photo.alt;
+      image.referrerPolicy = "no-referrer";
+      image.decoding = "async";
+      image.loading = "lazy";
+      watchPhotoFailure(image);
+      item.append(image);
+      track.append(item);
+    }
+    const prev = doc.createElement("button");
+    prev.type = "button";
+    prev.className = "listing-viewer__prev";
+    prev.setAttribute("aria-label", "Previous photo");
+    prev.textContent = "\u2039";
+    const next = doc.createElement("button");
+    next.type = "button";
+    next.className = "listing-viewer__next";
+    next.setAttribute("aria-label", "Next photo");
+    next.textContent = "\u203A";
+    const announcer2 = doc.createElement("p");
+    announcer2.className = "ui-sr-only";
+    announcer2.setAttribute("aria-live", "polite");
+    dialog.append(bar, track, prev, next, announcer2);
+    doc.body.append(dialog);
+    let current = 0;
+    let opener = null;
+    let pendingIndex = null;
+    const SCROLL_SETTLE_TOLERANCE_PX = 2;
+    const clampIndex = (index) => Math.max(0, Math.min(count - 1, index));
+    const show = (index) => {
+      counter.textContent = `${index + 1} of ${count}`;
+      prev.setAttribute("aria-disabled", String(index === 0));
+      next.setAttribute("aria-disabled", String(index === count - 1));
+    };
+    const announce2 = () => {
+      announcer2.textContent = counter.textContent;
+    };
+    const settle2 = () => {
+      pendingIndex = null;
+      announce2();
+    };
+    const stepBase = () => pendingIndex ?? current;
+    track.addEventListener("scroll", () => {
+      current = clampIndex(Math.round(track.scrollLeft / Math.max(1, track.clientWidth)));
+      show(current);
+      if (pendingIndex !== null && Math.abs(track.scrollLeft - pendingIndex * track.clientWidth) < SCROLL_SETTLE_TOLERANCE_PX) settle2();
+    }, { passive: true });
+    track.addEventListener("scrollend", () => {
+      if (pendingIndex === null) announce2();
+    });
+    for (const gesture of ["pointerdown", "touchstart", "wheel"]) track.addEventListener(gesture, () => {
+      pendingIndex = null;
+    }, { passive: true });
+    const go = (index) => {
+      const target = clampIndex(index);
+      if (Math.abs(track.scrollLeft - target * track.clientWidth) < SCROLL_SETTLE_TOLERANCE_PX) {
+        pendingIndex = null;
+        current = target;
+        show(target);
+        announce2();
+        return;
+      }
+      pendingIndex = target;
+      show(target);
+      track.scrollTo({ left: target * track.clientWidth });
+    };
+    const stepTo = (index) => {
+      if (index >= 0 && index < count) go(index);
+    };
+    prev.addEventListener("click", () => stepTo(stepBase() - 1));
+    next.addEventListener("click", () => stepTo(stepBase() + 1));
+    close.addEventListener("click", () => dialog.close());
+    dialog.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowRight") {
+        event.preventDefault();
+        stepTo(stepBase() + 1);
+      } else if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        stepTo(stepBase() - 1);
+      } else if (event.key === "Home") {
+        event.preventDefault();
+        go(0);
+      } else if (event.key === "End") {
+        event.preventDefault();
+        go(count - 1);
+      }
+    });
+    dialog.addEventListener("click", (event) => {
+      const target = event.target;
+      if (target === dialog || target.classList.contains("listing-viewer__item") || target === track) dialog.close();
+    });
+    dialog.addEventListener("close", () => {
+      const from = opener;
+      opener = null;
+      if (from) view.setTimeout(() => from.focus({ preventScroll: true }), 0);
+    });
+    return {
+      dialog,
+      open(index, from) {
+        opener = from;
+        from.focus({ preventScroll: true });
+        dialog.showModal();
+        const previous = track.style.scrollBehavior;
+        track.style.scrollBehavior = "auto";
+        track.scrollLeft = index * track.clientWidth;
+        track.style.scrollBehavior = previous;
+        pendingIndex = null;
+        current = index;
+        show(index);
+        close.focus();
+      }
+    };
+  }
+
+  // apps/local-guest/src/shortlet-renderers.ts
+  var UNIT_PHOTOS_UNAVAILABLE = "No property photos are available yet.";
+  function record(value) {
+    return value !== null && typeof value === "object" && !Array.isArray(value) ? value : void 0;
+  }
+  function text(value) {
+    return typeof value === "string" && value.trim() !== "" ? value : void 0;
+  }
+  function list(value) {
+    return Array.isArray(value) ? value : [];
+  }
+  function texts(value) {
+    return list(value).flatMap((item) => {
+      const line = text(item);
+      return line === void 0 ? [] : [line];
+    });
+  }
+  function tiles(value) {
+    return list(value).flatMap((item) => {
+      const tile = record(item);
+      const icon2 = tile?.["icon"];
+      const line = text(tile?.["text"]);
+      return (icon2 === "bed" || icon2 === "bath" || icon2 === "users") && line !== void 0 ? [{ icon: icon2, text: line }] : [];
+    });
+  }
+  function fromKit(document2, html) {
+    const template = document2.createElement("template");
+    template.innerHTML = html;
+    return template.content;
+  }
+  function single(relationships, property) {
+    const relationship = relationships.find((candidate) => candidate.property === property);
+    return relationship?.kind === "single" ? relationship.child : void 0;
+  }
+  function children(relationships, property) {
+    const relationship = relationships.find((candidate) => candidate.property === property);
+    return relationship !== void 0 && relationship.kind !== "single" ? relationship.children : [];
+  }
+  function element(document2, tag, className) {
+    const node = document2.createElement(tag);
+    node.className = className;
+    return node;
+  }
+  function renderUnitDetail({ document: document2, relationships }) {
+    const root = element(document2, "div", "unit-detail-root");
+    const gallery = single(relationships, "gallery");
+    if (gallery) root.append(gallery);
+    const sheet = single(relationships, "sheet");
+    if (sheet) root.append(sheet);
+    for (const [property, className] of [["amenities", "unit-amenities"], ["supporting", "unit-supporting-info"]]) {
+      const nodes = children(relationships, property);
+      if (nodes.length === 0) continue;
+      const group = element(document2, "div", className);
+      group.append(...nodes);
+      root.append(group);
+    }
+    const actionBar = single(relationships, "actionBar");
+    if (actionBar) root.append(actionBar);
+    return root;
+  }
+  function renderUnitGallery(resourcePolicy) {
+    return ({ document: document2, properties }) => {
+      const title = text(properties["title"]) ?? "this apartment";
+      const images = list(properties["photos"]).flatMap((item) => {
+        const photo = record(item);
+        const url = text(photo?.["url"]);
+        const approved = url === void 0 ? void 0 : resourcePolicy?.({ kind: "image", url });
+        if (approved === void 0 || approved.trim() === "") return [];
+        const image = document2.createElement("img");
+        image.setAttribute("src", approved);
+        image.alt = text(photo?.["alt"]) ?? "";
+        return [image];
+      });
+      if (images.length > 0) return buildListingGallery(document2, title, images);
+      const fallback2 = element(document2, "div", "unit-gallery unit-gallery--fallback");
+      fallback2.setAttribute("role", "group");
+      fallback2.setAttribute("aria-label", "Property photos");
+      const missing = element(document2, "p", "unit-photo-missing");
+      missing.textContent = UNIT_PHOTOS_UNAVAILABLE;
+      fallback2.append(missing);
+      return fallback2;
+    };
+  }
+  function renderUnitDetailSheet({ document: document2, properties }) {
+    const sheet = element(document2, "section", "unit-detail-sheet");
+    sheet.setAttribute("aria-label", "Stay details");
+    const html = [];
+    if (properties["demo"] === true) html.push(demoListingChipHtml());
+    const where = text(properties["where"]);
+    if (where) html.push(unitLocationHtml(where));
+    const title = text(properties["title"]);
+    if (title) html.push(unitTitleHtml(title));
+    const facts = tiles(properties["tiles"]);
+    if (facts.length > 0) html.push(unitTilesHtml(facts));
+    const breakdown = record(properties["breakdown"]);
+    const total = text(breakdown?.["total"]);
+    if (breakdown && total) {
+      const totalLabel = text(breakdown["totalLabel"]);
+      const deposit = text(breakdown["deposit"]);
+      html.push(breakdownHtml({ total, ...totalLabel ? { totalLabel } : {}, ...deposit ? { deposit } : {} }));
+    }
+    const extended = texts(properties["extended"]);
+    const about = text(properties["about"]);
+    sheet.append(fromKit(document2, html.join("")));
+    if (extended.length > 0) {
+      const block = element(document2, "div", "unit-detail-extended");
+      for (const line of extended) {
+        const paragraph = element(document2, "p", "ui-money-metadata");
+        paragraph.textContent = line;
+        block.append(paragraph);
+      }
+      sheet.append(block);
+    }
+    if (about) sheet.append(fromKit(document2, unitAboutHtml(about)));
+    return sheet;
+  }
+  function renderUnitActionBar({ document: document2, properties, relationships }) {
+    const bar = element(document2, "div", "ui-action-bar unit-action-bar");
+    const total = text(properties["total"]);
+    const totalLabel = text(properties["totalLabel"]);
+    if (total || totalLabel) {
+      const sum = element(document2, "p", "ui-action-bar__sum");
+      if (total) {
+        const strong = document2.createElement("strong");
+        strong.textContent = total;
+        sum.append(strong);
+      }
+      if (totalLabel) {
+        const meta = element(document2, "span", "ui-money-metadata");
+        meta.textContent = totalLabel;
+        sum.append(meta);
+      }
+      bar.append(sum);
+    }
+    const actions = single(relationships, "child");
+    if (actions) {
+      if (actions.nodeType === 1) actions.classList.add("unit-actions");
+      bar.append(actions);
+    }
+    return bar;
+  }
+  function createShortletRenderers(options = {}) {
+    const catalogId = SHORTLET_DISCOVERY_CATALOG_ID;
+    return [
+      { catalogId, component: UNIT_DETAIL_COMPONENT, render: renderUnitDetail },
+      { catalogId, component: UNIT_GALLERY_COMPONENT, render: renderUnitGallery(options.resourcePolicy) },
+      { catalogId, component: UNIT_DETAIL_SHEET_COMPONENT, render: renderUnitDetailSheet },
+      { catalogId, component: UNIT_ACTION_BAR_COMPONENT, render: renderUnitActionBar }
+    ];
+  }
+
+  // apps/web-agent/src/commerce-catalogs.ts
+  var COMMERCE_CATALOG_NAMESPACE = "urn:chat-marketplace:commerce";
+  var COMMERCE_DISCOVERY_CATALOG_ID = `${COMMERCE_CATALOG_NAMESPACE}/discovery/v1`;
+  var COMMERCE_CART_CATALOG_ID = `${COMMERCE_CATALOG_NAMESPACE}/cart/v1`;
+  var COMMERCE_ORDER_CATALOG_ID = `${COMMERCE_CATALOG_NAMESPACE}/order/v1`;
+  function commerceCatalog(catalogId) {
+    const schema = structuredClone(createBasicCatalogV091Registration().schema);
+    schema["$id"] = catalogId;
+    schema["catalogId"] = catalogId;
+    return { catalogId, schema };
+  }
+  var COMMERCE_DISCOVERY_CATALOG = commerceCatalog(COMMERCE_DISCOVERY_CATALOG_ID);
+  var COMMERCE_CART_CATALOG = commerceCatalog(COMMERCE_CART_CATALOG_ID);
+  var COMMERCE_ORDER_CATALOG = commerceCatalog(COMMERCE_ORDER_CATALOG_ID);
+  var COMMERCE_CATALOGS = [COMMERCE_DISCOVERY_CATALOG, COMMERCE_CART_CATALOG, COMMERCE_ORDER_CATALOG];
+
+  // apps/local-guest/src/shortlet-runtime.ts
+  function createShortletWebRuntime(options = {}) {
+    const resourcePolicy = options.resourcePolicy ?? (() => void 0);
+    const commerceCatalogs = options.commerce === true ? COMMERCE_CATALOGS : [];
+    const created = createBasicWebRuntime({
+      additionalCatalogs: [SHORTLET_DISCOVERY_CATALOG, SHORTLET_BOOKING_CATALOG, ...commerceCatalogs],
+      additionalRenderers: [
+        ...createBasicCatalogRendererRegistrations({ catalogId: SHORTLET_DISCOVERY_CATALOG.catalogId, resourcePolicy }),
+        ...createBasicCatalogRendererRegistrations({ catalogId: SHORTLET_BOOKING_CATALOG.catalogId, resourcePolicy }),
+        ...commerceCatalogs.flatMap(({ catalogId }) => createBasicCatalogRendererRegistrations({ catalogId, resourcePolicy })),
+        // ADR 0102: the typed catalogue components use the same host image policy as Basic Image.
+        ...createShortletRenderers({ resourcePolicy })
+      ],
+      ...options.safety === void 0 ? {} : { runtime: { safety: options.safety } },
+      basic: { resourcePolicy },
+      ...options.onServerEvent === void 0 ? {} : { rendering: { onServerEvent: options.onServerEvent } }
+    });
+    if (!created.ok) throw new Error("Unable to create the Shortlet Weaver web runtime", { cause: created.error });
+    return created.value;
+  }
+
   // apps/local-guest/src/quick-replies.ts
   function isRecord3(value) {
     return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -10295,9 +10826,9 @@ Known schemas:
     const components = /* @__PURE__ */ new Map();
     for (const message of messages) {
       if (!isRecord4(message) || !isRecord4(message.updateComponents)) continue;
-      const list = message.updateComponents.components;
-      if (!Array.isArray(list)) continue;
-      for (const component of list) {
+      const list2 = message.updateComponents.components;
+      if (!Array.isArray(list2)) continue;
+      for (const component of list2) {
         if (!isRecord4(component) || typeof component.id !== "string" || typeof component.component !== "string") continue;
         components.set(component.id, component);
       }
@@ -10383,10 +10914,10 @@ Known schemas:
   }
 
   // apps/local-guest/src/guest-turn-recovery.ts
-  function turnEntriesSince(timeline, text) {
+  function turnEntriesSince(timeline, text2) {
     for (let index = timeline.length - 1; index >= 0; index -= 1) {
       const entry = timeline[index];
-      if (entry?.role === "user") return entry.text === text ? timeline.slice(index + 1) : void 0;
+      if (entry?.role === "user") return entry.text === text2 ? timeline.slice(index + 1) : void 0;
     }
     return void 0;
   }
@@ -10499,11 +11030,11 @@ Known schemas:
         }
         lastModeId = mode.id;
       },
-      politeText(text) {
-        if (held === void 0) return text;
+      politeText(text2) {
+        if (held === void 0) return text2;
         const switchText = held;
         held = void 0;
-        return text.trim() === "" ? switchText : `${switchText} ${text}`;
+        return text2.trim() === "" ? switchText : `${switchText} ${text2}`;
       },
       flush() {
         const switchText = held;
@@ -10638,305 +11169,6 @@ Known schemas:
     }
   }
 
-  // apps/web-agent/src/booking-presentation.ts
-  function formatBookingDateTime(iso) {
-    return formatWatDateTime(iso);
-  }
-  function formatBookingDeadline(iso) {
-    const dateTime = formatBookingDateTime(iso);
-    return dateTime === "time unavailable" ? "Payment deadline unavailable" : `Pay by ${dateTime}`;
-  }
-  var GUEST_PAYMENT_STATUS_COPY = {
-    ready: { label: "Payment required", detail: "Continue to the designated payment checkout. Payment has not succeeded and the booking is not confirmed.", progress: "payment" },
-    checkout_initiated: {
-      processing: { label: "Payment processing \xB7 Checking payment", detail: "We are checking the provider\u2019s payment confirmation. Do not submit another payment while this result is pending. The booking is not confirmed until payment is verified and a Reservation exists.", progress: "payment-processing" },
-      handoff: { label: "Payment handoff ready \xB7 Payment not yet verified", detail: "Continue the current payment attempt. Payment has not succeeded and your booking is not confirmed. Your booking details will be retained when you return. Do not start another payment while this attempt is pending.", progress: "payment" }
-    },
-    deposit_required: { label: `Payment required \xB7 ${GUEST_GLOSSARY.refundableSecurityDeposit}`, detail: `The stay payment is verified. A separate ${GUEST_GLOSSARY.refundableSecurityDeposit} payment is still required before a Reservation can exist.`, progress: "payment" },
-    compensation_pending: { label: "Payment requires review \xB7 Booking not confirmed", detail: "This payment needs review. Your booking is not confirmed. Do not submit another payment while this payment is under review." },
-    reconciliation_required: { label: "Payment requires review \xB7 Booking not confirmed", detail: "This payment needs review. Your booking is not confirmed. Do not submit another payment while this payment is under review." },
-    compensated: { label: "Payment review update available", detail: "The payment attempt is closed and no Reservation exists. Check the current booking details before taking another action." },
-    expired: { label: "Payment window expired \xB7 Booking not confirmed", detail: "The Payment Window expired. This payment action is no longer available; no Reservation exists." },
-    failed: { label: "Payment was not verified \xB7 Booking not confirmed", detail: "Payment was not verified. No Reservation was created. Check the current booking status before retrying." },
-    confirmed: { label: "Booking confirmed", detail: "Payment verified and Reservation confirmed.", progress: "confirmed" }
-  };
-
-  // apps/web-agent/src/discovery-a2ui.ts
-  function formatNgnKobo(kobo) {
-    return formatMoney(kobo);
-  }
-  var COMPARE_ATTRIBUTES = [
-    {
-      key: "price",
-      label: GUEST_GLOSSARY.allInStayTotal,
-      value: (unit) => unit.price.allInStayTotalKobo === null ? `Not yet quoted \xB7 Indicative nightly rate ${formatNgnKobo(unit.price.nightlyKobo)}` : formatNgnKobo(unit.price.allInStayTotalKobo)
-    },
-    {
-      key: "deposit",
-      label: GUEST_FACT_LABELS.refundableSecurityDeposit,
-      value: (unit) => unit.price.refundableSecurityDepositKobo > 0 ? formatNgnKobo(unit.price.refundableSecurityDepositKobo) : "None"
-    },
-    { key: "where", label: GUEST_FACT_LABELS.where, value: (unit) => `${unit.location.neighbourhood}, ${unit.location.city}` },
-    { key: "bedrooms", label: "Bedrooms", value: (unit) => unit.bedrooms === void 0 ? "Not provided" : String(unit.bedrooms) },
-    { key: "bathrooms", label: "Bathrooms", value: (unit) => String(unit.bathrooms) },
-    { key: "sleeps", label: "Sleeps", value: (unit) => String(unit.capacity) }
-  ];
-
-  // apps/local-guest/src/conversational-shell.ts
-  function createConversationShellState() {
-    return { historicalSummaries: [], focusedSurfaceOpen: false };
-  }
-  function replaceActiveSurface(state, next) {
-    const current = state.activeSurface;
-    const shouldRecordCurrent = current !== void 0 && current.surfaceId !== next.surfaceId;
-    const historicalSummary = shouldRecordCurrent ? {
-      surfaceId: current.surfaceId,
-      status: "superseded",
-      summary: current.summary
-    } : void 0;
-    return {
-      activeSurface: next,
-      historicalSummaries: historicalSummary === void 0 ? state.historicalSummaries : [...state.historicalSummaries, historicalSummary],
-      focusedSurfaceOpen: next.mode === "focused-surface" && next.status === "active"
-    };
-  }
-  function closeFocusedSurface(state) {
-    if (state.activeSurface?.mode !== "focused-surface") return state;
-    return { ...state, focusedSurfaceOpen: false };
-  }
-  function reopenFocusedSurface(state) {
-    if (state.activeSurface?.mode !== "focused-surface" || state.activeSurface.status === "deleted" || state.activeSurface.status === "superseded") return state;
-    return { ...state, focusedSurfaceOpen: true };
-  }
-  function markActiveSurfaceStatus(state, status) {
-    if (!state.activeSurface) return state;
-    return {
-      ...state,
-      activeSurface: { ...state.activeSurface, status },
-      focusedSurfaceOpen: false
-    };
-  }
-  function canUseSurfaceActions(status) {
-    return status === "active";
-  }
-  function formatGuestHistorySummary(summary, status) {
-    if (status === "expired") return /offer/i.test(summary) ? "Offer expired" : "Booking details expired";
-    if (status === "deleted") return "Details no longer available";
-    const search = /^Search updated\s*·\s*(.*)$/.exec(summary);
-    const activity = search ? `Searched ${search[1]}` : /^(Discovery results|All discovery results)$/.test(summary) ? "Viewed stays for your search" : summary.endsWith(" details") ? `Viewed ${summary.slice(0, -" details".length)}` : summary === "Request Draft" ? status === "superseded" ? "" : "Your request" : summary === "Request review" ? "Booking details reviewed" : summary === "Request outcome" ? "Booking request update" : summary.includes("Conditional Booking Offer") ? "Booking offer received" : summary === "Payment handoff" ? "Opened hosted checkout" : summary === "Reservation confirmed" ? "Stay confirmed" : /workspace|booking/i.test(summary) ? "Booking details updated" : summary;
-    if (status === "stale") return `${activity} \xB7 details may have changed`;
-    if (status === "fallback") return `${activity} \xB7 details unavailable`;
-    return activity;
-  }
-  function guestSurfaceHeading(summary) {
-    if (/search|discovery/i.test(summary)) return "Stays for your search";
-    if (/details$/i.test(summary) || /unit/i.test(summary)) return "Stay details";
-    if (/draft|request review/i.test(summary)) return "Your booking details";
-    if (/offer/i.test(summary)) return "Booking offer";
-    if (/payment|checkout/i.test(summary)) return "Hosted checkout";
-    if (/confirm|reservation/i.test(summary)) return "Booking confirmed";
-    if (/phone|email|contact/i.test(summary)) return "Your contact details";
-    return "Booking details";
-  }
-  function guestSurfaceStatusMessage(status) {
-    if (status === "active") return "";
-    if (status === "superseded") return "Earlier details \xB7 no longer current";
-    if (status === "stale") return "These details may have changed. Check the latest version before continuing.";
-    if (status === "expired") return "These booking details have expired. Check the latest status before continuing.";
-    if (status === "deleted") return "These details are no longer available.";
-    return "Some details could not be shown. Continue in the conversation for help.";
-  }
-  var GUEST_STATUS_HEADLINES = [
-    { prefix: "Payment was not verified", tone: "danger" },
-    { prefix: "Payment requires review", tone: "danger" },
-    { prefix: "Request declined", tone: "danger" },
-    { prefix: "Request expired", tone: "warning" },
-    { prefix: "Offer expired", tone: "warning" },
-    { prefix: "Offer accepted \xB7 Payment required", tone: "warning" },
-    { prefix: "Payment required", tone: "warning" },
-    { prefix: "Payment processing", tone: "warning" },
-    { prefix: "Offer accepted", tone: "success" },
-    { prefix: "Booking confirmed", tone: "success" },
-    { prefix: "Reservation confirmed", tone: "success" },
-    { prefix: "Reservation and Booking Contract are confirmed", tone: "success" },
-    { prefix: "Request sent", tone: "info" },
-    { prefix: "Offer available", tone: "info" }
-  ];
-  function guestStatusTone(text) {
-    const value = text.trim();
-    return GUEST_STATUS_HEADLINES.find((entry) => value.startsWith(entry.prefix))?.tone;
-  }
-  function fallbackSummary(surface) {
-    if (surface.status === "fallback") return surface.textFallback ?? surface.summary;
-    return guestSurfaceStatusMessage(surface.status) || surface.summary;
-  }
-
-  // apps/local-guest/src/guest-kit.ts
-  function formatWAT(iso) {
-    return formatBookingDeadline(iso).replace(/^Pay by /, "");
-  }
-  function minutesUntil(deadlineIso, now) {
-    return Math.max(
-      0,
-      Math.ceil((Date.parse(deadlineIso) - now.getTime()) / 6e4)
-    );
-  }
-  var CHECK_IN_LABEL = GUEST_FACT_LABELS.checkIn;
-  var CHECK_OUT_LABEL = GUEST_FACT_LABELS.checkOut;
-  function ticketDate(label, part, end) {
-    const time2 = part.datetime === void 0 ? `<time>${escapeHtml(part.date)}</time>` : `<time datetime="${escapeHtml(part.datetime)}">${escapeHtml(part.date)}</time>`;
-    return `<div class="ui-ticket__date${end ? " ui-ticket__date--end" : ""}"><span class="ui-ticket__label">${label}</span><span class="ui-ticket__day">${escapeHtml(part.day)}</span>${time2}${part.time === void 0 ? "" : `<span class="ui-ticket__time">${escapeHtml(part.time)}</span>`}</div>`;
-  }
-  function ticketHtml(parts) {
-    return `<section class="ui-ticket" aria-label="Your stay"><div><p class="ui-ticket__label">Your stay</p><h2 class="ui-ticket__name">${escapeHtml(parts.title)}</h2></div><div class="ui-ticket__dates">${ticketDate(CHECK_IN_LABEL, parts.checkIn, false)}<span class="ui-ticket__arrow" aria-hidden="true">\u2192</span>${ticketDate(CHECK_OUT_LABEL, parts.checkOut, true)}</div><p class="ui-ticket__foot">${escapeHtml(parts.foot)}</p></section>`;
-  }
-  function breakdownHtml(parts) {
-    const money = (value) => `<span class="ui-price-breakdown__value">${escapeHtml(value)}</span>`;
-    const total = parts.total === void 0 ? "" : `<div><p class="ui-price-breakdown__label">${escapeHtml(parts.totalLabel ?? GUEST_FACT_LABELS.allInStayTotal)}</p><p class="ui-money-total">${escapeHtml(parts.total)}</p></div>`;
-    const deposit = parts.deposit === void 0 ? "" : `<p class="ui-price-breakdown__row">${parts.depositCollected ? `${GUEST_GLOSSARY.refundableSecurityDeposit} collected` : GUEST_FACT_LABELS.refundableSecurityDeposit}: ${money(parts.deposit)}</p>`;
-    const due = parts.due === void 0 ? "" : `<p class="ui-price-breakdown__due">${GUEST_FACT_LABELS.amountDueNow}: ${money(parts.due)}</p>`;
-    const thisPayment = parts.thisPayment === void 0 ? "" : `<p class="ui-price-breakdown__due">${GUEST_FACT_LABELS.thisPayment}: ${money(parts.thisPayment)}</p>`;
-    const paid = parts.paid === void 0 ? "" : `<p class="ui-price-breakdown__paid">${GUEST_FACT_LABELS.amountPaid}: ${money(parts.paid)}</p>`;
-    const next = parts.next === void 0 ? "" : `<p class="ui-price-breakdown__row payment-current-component">${GUEST_FACT_LABELS.nextPayment}: ${money(parts.next)}</p>`;
-    return `<section class="ui-panel ui-price-breakdown" aria-label="Price breakdown">${parts.condition ? `<p class="ui-price-breakdown__condition">${escapeHtml(parts.condition)}</p>` : ""}${total}${deposit}${due}${thisPayment}${paid}${next}</section>`;
-  }
-  function unitTilesHtml(tiles) {
-    return `<ul class="ui-tiles" aria-label="Stay facts">${tiles.map((tile) => `<li class="ui-tiles__tile">${icon(tile.icon)}${escapeHtml(tile.text)}</li>`).join("")}</ul>`;
-  }
-  function unitAboutHtml(description) {
-    return `<h2 class="unit-detail-about-heading">${escapeHtml(UNIT_DETAIL_ABOUT_HEADING)}</h2><p class="unit-detail-description">${escapeHtml(description)}</p>`;
-  }
-  function deadlineBannerHtml(input) {
-    const minutes = minutesUntil(input.deadlineIso, input.now);
-    const remaining = `${minutes} ${minutes === 1 ? "minute" : "minutes"} left`;
-    const deadline = `${escapeHtml(input.label)} <time datetime="${escapeHtml(input.deadlineIso)}">${escapeHtml(formatWAT(input.deadlineIso))}</time>`;
-    return `<p class="ui-banner ui-banner--warning payment-deadline${input.countdown ? " offer-deadline" : ""}">${icon("clock")}<span>${input.countdown ? `<span class="waiting-deadline-time">${deadline}</span> \xB7 <span class="waiting-countdown">${remaining}</span>` : `${deadline} \xB7 ${remaining}`}${input.consequence ? `<br>${escapeHtml(input.consequence)}` : ""}</span></p>`;
-  }
-  function offerScreenHtml(content, ticket, breakdown) {
-    const form = (path, label, primary, surfaceId) => `<form method="post" action="${escapeHtml(path)}">${surfaceId === void 0 ? "" : `<input type="hidden" name="surfaceId" value="${escapeHtml(surfaceId)}">`}<button class="ui-button ui-button--${primary ? "primary" : "secondary"}" type="submit">${escapeHtml(label)}</button></form>`;
-    const live = content.state === "live";
-    const banner = live ? deadlineBannerHtml({
-      label: "Pay by",
-      deadlineIso: content.deadlineIso,
-      now: new Date(content.serverNow),
-      countdown: true,
-      consequence: content.consequence
-    }) : content.state === "expired" ? `<p class="ui-banner ui-banner--neutral offer-deadline">${icon("clock")}<span>The deadline was <time datetime="${escapeHtml(content.deadlineIso)}">${escapeHtml(formatWAT(content.deadlineIso))}</time><br>${escapeHtml(content.consequence)}</span></p>` : "";
-    const policies = live ? `<section class="ui-panel offer-policies" aria-label="Before you pay"><h2>Before you pay</h2><p>${escapeHtml(content.provider)}</p>${content.policies.map((section) => `<section><h3>${escapeHtml(section.heading)}</h3><ul>${section.items.map((text) => `<li>${escapeHtml(text)}</li>`).join("")}</ul></section>`).join("")}${content.notes.map((text) => `<p>${escapeHtml(text)}</p>`).join("")}</section>` : "";
-    const actions = content.accept ? `<div class="ui-action-bar offer-actions"><div><strong>${escapeHtml(content.amount)}</strong><span class="ui-price-breakdown__label">${GUEST_FACT_LABELS.amountDueNow}</span></div>${form(content.accept.path, GUEST_PAYMENT_COPY.accept, true, content.accept.surfaceId)}</div>` : `<div class="offer-actions request-actions">${form(content.conversationPath, "Back to your conversation", true)}${content.searchPath ? form(content.searchPath, "Find other stays", false) : ""}</div>`;
-    return `<section class="offer-screen" data-offer-state="${content.state}" data-server-now="${escapeHtml(content.serverNow)}"><header class="request-head offer-head" data-page="booking-record"><p class="ui-eyebrow">Conditional Booking Offer</p><h1>${escapeHtml(content.title)}</h1><span class="ui-status ui-status--${live ? "success" : content.state === "expired" || content.state === "closed" ? "danger" : "warning"}">${escapeHtml(content.status)}</span></header>${banner}${ticket}${live ? breakdown : ""}${policies}${content.steps.length ? `<section class="ui-panel"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>` : ""}${actions}</section>`;
-  }
-  function paymentLayoutHtml(input) {
-    const actions = input.actions === void 0 || input.actions === "" ? "" : `<div class="payment-actions ui-action-bar">${input.actions}</div>`;
-    return `<section class="payment-screen" data-payment-state="${escapeHtml(input.state)}"${input.serverNow === void 0 ? "" : ` data-server-now="${escapeHtml(input.serverNow)}"`}><header class="request-head payment-head" data-page="booking-record"><p class="ui-eyebrow">${escapeHtml(input.eyebrow)}</p><h1>${escapeHtml(input.title)}</h1>${input.status === void 0 ? "" : statusHtml(input.tone, input.status)}</header>${input.banner ?? ""}${input.ticket ?? ""}${input.breakdown ?? ""}${(input.sections ?? []).join("")}${actions}</section>`;
-  }
-  function paymentScreenHtml(content, ticket, breakdown, slots) {
-    const banner = content.deadlineIso === void 0 ? "" : deadlineBannerHtml({
-      label: "Pay by",
-      deadlineIso: content.deadlineIso,
-      now: new Date(content.serverNow),
-      ...slots.countdown ? { countdown: true } : {}
-    });
-    return paymentLayoutHtml({
-      state: content.state,
-      eyebrow: "Booking payment",
-      title: content.title,
-      tone: content.tone,
-      status: content.status,
-      banner,
-      ticket,
-      breakdown,
-      sections: [
-        ...content.schedule ? [`${content.schedule.currentPeriod === void 0 ? "" : `<p>${escapeHtml(content.schedule.currentPeriod)}</p>`}${paymentScheduleHtml(content.schedule)}`] : [],
-        `<p class="payment-explanation">${escapeHtml(content.explanation)}</p>`,
-        ...content.choice ? [paymentChoiceHtml(content.choice)] : slots.sections === void 0 ? [] : [slots.sections],
-        ...content.steps.length ? [
-          `<section class="ui-panel payment-steps"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>`
-        ] : []
-      ],
-      actions: content.choice ? "" : slots.actions ?? "",
-      serverNow: content.serverNow
-    });
-  }
-  function paymentChoiceHtml(input) {
-    const method = (value, label, help, checked = false) => `<label><input type="radio" name="method" value="${value}"${checked ? " checked" : ""} aria-labelledby="method-${value}-label" aria-describedby="method-${value}-help"><span class="ui-field"><strong id="method-${value}-label">${escapeHtml(label)}</strong><span id="method-${value}-help" class="ui-field__hint">${escapeHtml(help)}</span></span></label>`;
-    const methods = `<fieldset class="ui-segmented payment-choice-methods"><legend class="ui-sr-only">Payment method</legend>${method("card", GUEST_PAYMENT_COPY.card, GUEST_PAYMENT_COPY.cardHelp, true)}${input.providerTransfer ? method("bank_transfer", GUEST_PAYMENT_COPY.transfer, GUEST_PAYMENT_COPY.transferHelp) : ""}${input.manualAction ? method("manual_transfer", GUEST_PAYMENT_COPY.manual, GUEST_PAYMENT_COPY.manualHelp) : ""}</fieldset>`;
-    return `<form method="post" action="${escapeHtml(input.action)}" class="payment-choice-form"><section class="ui-panel payment-choice" aria-label="Choose how to pay"><h2>How would you like to pay?</h2>${methods}</section><div class="payment-actions ui-action-bar"><button class="ui-button ui-button--primary ui-button--block" type="submit">Continue to stay payment \xB7 ${escapeHtml(input.amount)}</button></div></form>`;
-  }
-  function stepsHtml(items) {
-    return `<ol class="ui-steps">${items.map((item, index) => `<li><span class="ui-steps__number">${index + 1}</span><span>${escapeHtml(item)}</span></li>`).join("")}</ol>`;
-  }
-  function confirmationExtensionHtml(extension) {
-    const outcome = extension.outcome === void 0 ? "" : `<p data-extension-outcome="${escapeHtml(extension.outcome)}">${escapeHtml(GUEST_EXTENSION_COPY[extension.outcome])}</p>`;
-    if (extension.requested) {
-      const rows = extensionFactRows(extension.requested.facts, formatNgnKobo, formatWAT(extension.requested.respondBy));
-      return `<section class="ui-panel" aria-labelledby="extension-requested-heading" data-extension-requested><h2 id="extension-requested-heading">${escapeHtml(GUEST_EXTENSION_COPY.heading)}</h2><p>${escapeHtml(GUEST_EXTENSION_COPY.requested)}</p>${extensionFactsDlHtml(rows)}</section>`;
-    }
-    const button = extension.offered ? `<div class="request-actions"><button class="ui-button ui-button--secondary ui-button--block" type="button" data-extension-open>${escapeHtml(GUEST_EXTENSION_COPY.action)}</button></div>` : "";
-    return `<section class="ui-panel" aria-labelledby="extension-heading" data-extension-step><h2 id="extension-heading">${escapeHtml(GUEST_EXTENSION_COPY.heading)}</h2>${outcome}${button}</section>`;
-  }
-  function extensionFactsDlHtml(rows) {
-    return `<dl class="ui-facts ui-facts--stacked">${rows.map((row) => `<dt>${escapeHtml(row.label)}</dt><dd data-extension-fact="${escapeHtml(row.key)}">${escapeHtml(row.value)}</dd>`).join("")}</dl>`;
-  }
-  function confirmationNoticeHtml(notice) {
-    if (notice.kind === "action") return `<div class="request-actions"><button class="ui-button ui-button--secondary ui-button--block" type="button" data-notice-open>${escapeHtml(GUEST_NOTICE_COPY.action)}</button></div>`;
-    return `<section class="ui-panel" aria-labelledby="notice-recorded-heading" data-notice-recorded><h2 id="notice-recorded-heading">${escapeHtml(GUEST_NOTICE_COPY.recordedHeading)}</h2><p>${escapeHtml(GUEST_NOTICE_COPY.recordedLead)}</p>${noticeFactsDlHtml(notice.facts)}</section>`;
-  }
-  function confirmationScreenHtml(content, ticket, breakdown) {
-    return `<section class="confirmed-screen"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h2>Reservation confirmed</h2>${statusHtml("success", "Stay payment verified")}</header>${ticket}${breakdown}${content.notice ? confirmationNoticeHtml(content.notice) : ""}${content.extension ? confirmationExtensionHtml(content.extension) : ""}<div class="confirmation-reference"><dl class="ui-facts ui-facts--stacked"><dt>Booking reference</dt><dd>${escapeHtml(content.bookingReference)}</dd></dl></div><section class="ui-panel request-next" aria-label="Before you arrive"><h2>Before you arrive</h2>${stepsHtml(content.steps)}<a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(content.conversationHref)}">Ask about arrival</a></section><div class="request-actions">${content.scheduleHref ? `<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(content.scheduleHref)}">View payment schedule</a>` : ""}</div><details class="ui-panel booking-details" id="booking-details"><summary class="ui-button ui-button--secondary ui-button--block">Full contract terms</summary><p>${escapeHtml(content.details)}</p></details></section>`;
-  }
-  function signInOfferHtml(content) {
-    return `<section class="ui-panel" data-sign-in-offer aria-labelledby="sign-in-offer-title"><h2 id="sign-in-offer-title">${escapeHtml(GUEST_ACCOUNT_COPY.offerTitle)}</h2><p>${escapeHtml(GUEST_ACCOUNT_COPY.offerIntro)}</p><form method="post" action="/account/sign-in"><div class="ui-field"><label class="ui-field__label" for="sign-in-offer-email">${escapeHtml(GUEST_ACCOUNT_COPY.emailLabel)}</label><input id="sign-in-offer-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" maxlength="254" required value="${escapeHtml(content.email)}"></div><input type="hidden" name="return" value="${escapeHtml(content.returnPath)}"><button class="ui-button ui-button--secondary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.offerButton)}</button></form></section>`;
-  }
-  function paymentScheduleHtml(schedule) {
-    const periods = schedule.periods.map((text) => `<li>${escapeHtml(text)}</li>`).join("");
-    return `<section class="ui-panel" aria-label="${escapeHtml(schedule.heading)}"><h2>${escapeHtml(schedule.heading)}</h2><p>${escapeHtml(schedule.firstPeriodOnly)}</p><ol>${periods}</ol></section>`;
-  }
-  function requestScreenHtml(content, ticket, breakdown, actionTotal) {
-    const form = (action, primary) => `<form method="post" action="${escapeHtml(action.path)}">${action.surfaceId === void 0 ? "" : `<input type="hidden" name="surfaceId" value="${escapeHtml(action.surfaceId)}">`}<button class="ui-button ui-button--${primary ? "primary" : "secondary"} ui-button--block" type="submit"${action.surfaceId === "" ? " disabled" : ""}>${escapeHtml(action.label)}</button></form>`;
-    const who = content.guests === void 0 ? "" : `<section class="ui-panel request-guests" aria-label="Who's staying"><h2>Who's staying</h2><dl class="ui-facts ui-facts--stacked"><dt>Guests</dt><dd>${escapeHtml(content.guests)}</dd>${content.selfBooking === void 0 ? "" : `<dt>You're booking for yourself</dt><dd>${content.selfBooking ? "Yes" : "No"}</dd>`}</dl>${content.changeHref === void 0 ? "" : `<a class="ui-link" href="${escapeHtml(content.changeHref)}">Change dates or guests${icon("arrow-right")}</a>`}</section>`;
-    const edit = content.edit;
-    const editor = edit === void 0 ? "" : `<section class="ui-panel request-edit"><h2>${GUEST_REQUEST_EDIT_COPY.heading}</h2>${edit.error ? `<p id="request-edit-error" class="ui-field__error" role="alert">${escapeHtml(edit.error)}</p>` : ""}<form class="ui-field" method="post" action="${escapeHtml(edit.route)}"><input type="hidden" name="surfaceId" value="${escapeHtml(content.primary.surfaceId ?? "")}"><details${edit.error ? " open" : ""}><summary class="ui-button ui-button--secondary">${GUEST_REQUEST_EDIT_COPY.dates}</summary><div class="ui-field"><label for="request-check-in">${GUEST_FACT_LABELS.checkIn}</label><input id="request-check-in" type="date" name="checkIn" value="${escapeHtml(edit.entered?.checkIn ?? edit.checkIn)}"${edit.error ? ' aria-invalid="true" aria-describedby="request-edit-error"' : ""} required></div><div class="ui-field"><label for="request-check-out">${GUEST_FACT_LABELS.checkOut}</label><input id="request-check-out" type="date" name="checkOut" value="${escapeHtml(edit.entered?.checkOut ?? edit.checkOut)}"${edit.error ? ' aria-invalid="true" aria-describedby="request-edit-error"' : ""} required></div></details><details${edit.error ? " open" : ""}><summary class="ui-button ui-button--secondary">${GUEST_REQUEST_EDIT_COPY.guests}</summary><div class="ui-field"><label for="request-party-size">${GUEST_REQUEST_EDIT_COPY.guestCount}</label><input id="request-party-size" type="number" name="partySize" value="${escapeHtml(edit.entered?.partySize ?? String(edit.partySize))}"${edit.error ? ' aria-invalid="true" aria-describedby="request-edit-error"' : ""} min="1" required></div></details><button class="ui-button ui-button--secondary ui-button--block" type="submit">${GUEST_REQUEST_EDIT_COPY.save}</button></form><a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(edit.contactHref)}">${GUEST_REQUEST_EDIT_COPY.phone}</a></section>`;
-    const banner = content.banner === void 0 ? "" : `<p class="ui-banner ui-banner--neutral">${icon("info")}<span>${escapeHtml(content.banner)}</span></p>`;
-    const deadline = content.deadline === void 0 ? "" : `<p class="request-deadline"><time class="waiting-deadline-time" datetime="${escapeHtml(content.deadline.iso)}">${escapeHtml(content.deadline.text)}</time><span class="waiting-countdown"></span></p>`;
-    const editable = content.state === "draft" || content.state === "review";
-    const sum = editable && actionTotal !== void 0 ? `<p class="ui-action-bar__sum"><strong>${escapeHtml(actionTotal)}</strong><span class="ui-money-metadata">${GUEST_GLOSSARY.allInStayTotal}</span></p>` : "";
-    return `<section class="request-screen" data-request-state="${content.state}"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">${GUEST_GLOSSARY.bookingRequest}</p><h2>${escapeHtml(content.title)}</h2>${statusHtml(content.tone, content.status)}</header>${banner}<div class="request-ticket">${ticket}</div>${who}${editor}<div class="request-breakdown">${breakdown}</div>${content.schedule === void 0 ? "" : paymentScheduleHtml(content.schedule)}${content.provider === void 0 ? "" : `<p class="request-provider">${escapeHtml(content.provider)}</p>`}${content.sentAt === void 0 ? "" : `<p class="ui-field__hint">${escapeHtml(content.sentAt)}</p>`}${deadline}<section class="ui-panel request-next"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>${content.notes.length ? `<div class="request-notes">${content.notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</div>` : ""}<div class="request-actions${editable ? " ui-action-bar" : ""}">${sum}${form(content.primary, true)}${content.secondary === void 0 ? "" : form(content.secondary, false)}</div></section>`;
-  }
-  function statusHtml(tone, text) {
-    return statusBadge(text, tone);
-  }
-  function demoListingChipHtml() {
-    return `<span class="ui-chip ui-chip--demo" data-demo-listing>${escapeHtml(GUEST_FACT_LABELS.demoListing)}</span>`;
-  }
-  function photoCountHtml(count) {
-    if (count === void 0 || !Number.isInteger(count) || count < 2) return "";
-    return `<span class="ui-stay-card__count">${icon("grid")}<span aria-hidden="true">1 / ${count}</span><span class="ui-sr-only">${count} photos</span></span>`;
-  }
-  function stayPhotoHtml(parts) {
-    return parts.photoSrc === void 0 ? `<div class="ui-stay-card__photo ui-stay-card__photo--empty" role="img" aria-label="Photos are not available for ${escapeHtml(parts.title)}">${icon("photo")}Photos not available</div>` : `<div class="ui-stay-card__media"><img class="ui-stay-card__photo" src="${escapeHtml(parts.photoSrc)}" alt="Photo of ${escapeHtml(parts.title)}" width="800" height="600" loading="lazy" decoding="async" referrerpolicy="no-referrer">${photoCountHtml(parts.photoCount)}</div>`;
-  }
-  function stayCardInnerHtml(parts) {
-    const href = escapeHtml(parts.href);
-    const facts = parts.facts.map(
-      (fact) => `<span class="ui-fact">${icon(fact.icon)}${escapeHtml(fact.text)}</span>`
-    ).join("");
-    const deposit = parts.deposit === void 0 ? "" : `<p class="ui-money-metadata">+ ${escapeHtml(parts.deposit)} ${GUEST_FACT_LABELS.refundableSecurityDeposit}</p>`;
-    return `${stayPhotoHtml(parts)}${parts.demoListing === true ? demoListingChipHtml() : ""}<p class="ui-stay-card__where">${icon("pin")}${escapeHtml(parts.where)}</p><h2 class="ui-stay-card__title"><a href="${href}">${escapeHtml(parts.title)}</a></h2><div class="ui-stay-card__facts" aria-label="Stay facts">${facts}</div><div class="ui-stay-card__total"><p class="ui-money-total">${escapeHtml(parts.total)}</p><p class="ui-money-metadata">${escapeHtml(parts.totalLabel)}</p>${deposit}</div><a class="ui-button ui-button--primary ui-button--block ui-stay-card__view" href="${href}">${GUEST_GLOSSARY.viewUnit}<span class="ui-sr-only">: ${escapeHtml(parts.title)}</span></a>`;
-  }
-  function resultRowPartsHtml(parts) {
-    const thumb = parts.photoSrc === void 0 ? icon("photo") : `<img src="${escapeHtml(parts.photoSrc)}" alt="" width="64" height="64" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
-    return `<a class="ui-result-row" href="${escapeHtml(parts.href)}"><span class="ui-result-row__thumb">${thumb}</span><span class="ui-result-row__body"><span class="ui-result-row__title">${escapeHtml(parts.title)}</span><span class="ui-result-row__price">${escapeHtml(parts.total)} <span>${escapeHtml(parts.totalLabel)}</span></span></span>${icon("chevron-right")}</a>`;
-  }
-  function noticeFactsDlHtml(facts) {
-    const rows = noticeFactRows(facts, formatNgnKobo);
-    const cells = rows.map((row) => {
-      const attribute = row.key === "newLastNight" ? ` data-new-last-night="${escapeHtml(row.raw)}"` : row.key === "refund" ? ` data-refund-kobo="${escapeHtml(row.raw)}"` : row.key === "owed" ? ` data-owed-kobo="${escapeHtml(row.raw)}"` : "";
-      return `<dt>${escapeHtml(row.label)}</dt><dd${attribute}>${escapeHtml(row.value)}</dd>`;
-    }).join("");
-    return `<dl class="ui-facts ui-facts--stacked">${cells}</dl>`;
-  }
-
   // apps/web-agent/src/booking-contract-a2ui.ts
   var NOTICE_OPEN_EVENT = "shortlet.assistant.open-notice";
   var EXTENSION_OPEN_EVENT = "shortlet.assistant.open-extension";
@@ -10950,9 +11182,9 @@ Known schemas:
     const document2 = options.mount.ownerDocument;
     const box = document2.createElement("div");
     box.className = "surface-fallback";
-    const text = document2.createElement("p");
-    text.textContent = options.surface.textFallback ?? fallbackSummary(options.surface);
-    box.appendChild(text);
+    const text2 = document2.createElement("p");
+    text2.textContent = options.surface.textFallback ?? fallbackSummary(options.surface);
+    box.appendChild(text2);
     if (options.surface.conventionalRoute) {
       const link = document2.createElement("a");
       link.href = options.surface.conventionalRoute;
@@ -10967,9 +11199,9 @@ Known schemas:
 
   // apps/local-guest/src/client.ts
   function requiredElement(id) {
-    const element = document.getElementById(id);
-    if (!element) throw new Error(`Missing guest shell element: ${id}`);
-    return element;
+    const element2 = document.getElementById(id);
+    if (!element2) throw new Error(`Missing guest shell element: ${id}`);
+    return element2;
   }
   var transcript = requiredElement("transcript");
   var workspaceRegion = requiredElement("workspace-region");
@@ -11066,179 +11298,8 @@ Known schemas:
     for (const gallery of mount.querySelectorAll(".listing-gallery"))
       enhanceListingGallery(gallery);
   }
-  var UNIT_TILE_FACTS = [
-    { icon: "bed", label: GUEST_FACT_LABELS.bedrooms },
-    { icon: "bath", label: GUEST_FACT_LABELS.bathrooms },
-    { icon: "users", label: GUEST_FACT_LABELS.sleeps }
-  ];
-  function organizeUnitDetail(mount) {
-    const root = mount.querySelector(
-      '[data-a2ui-component="Column"]'
-    );
-    if (!root) return;
-    const tileFacts = UNIT_TILE_FACTS.map((tile) => ({
-      ...tile,
-      fact: findFact([...root.children], tile.label)
-    }));
-    if (tileFacts.some((tile) => !tile.fact || tile.fact.value.trim() === ""))
-      return;
-    root.classList.add("unit-detail-root");
-    const demoCaption = [...root.children].find((child) => child.textContent?.trim() === GUEST_FACT_LABELS.demoListing);
-    if (demoCaption) {
-      const template = document.createElement("template");
-      template.innerHTML = demoListingChipHtml();
-      demoCaption.replaceWith(template.content);
-    }
-    const images = [];
-    for (const child of root.children) {
-      if (!(child instanceof HTMLImageElement)) break;
-      images.push(child);
-    }
-    const unitTitle = [...root.children].find(
-      (child) => child.tagName === "H2" && !isMoney(child.textContent ?? "")
-    )?.textContent?.trim() || "this apartment";
-    let gallery;
-    if (images.length > 0) {
-      gallery = buildListingGallery(document, unitTitle, images);
-    } else {
-      const noPhotos = root.firstElementChild;
-      if (noPhotos instanceof HTMLElement && noPhotos.matches('[data-a2ui-component="Text"]') && /no property photos/i.test(noPhotos.textContent ?? "")) {
-        gallery = document.createElement("div");
-        gallery.className = "unit-gallery unit-gallery--fallback";
-        gallery.setAttribute("role", "group");
-        gallery.setAttribute("aria-label", "Property photos");
-        noPhotos.classList.add("unit-photo-missing");
-        gallery.appendChild(noPhotos);
-      }
-    }
-    const children = [...root.children];
-    const title = children.find(
-      (child) => child.tagName === "H2" && !isMoney(child.textContent ?? "")
-    );
-    const amount = children.find(
-      (child) => child !== title && child.tagName === "H2" && isMoney(child.textContent ?? "")
-    );
-    const priceLabel = children.find(
-      (child) => isPriceLabel(child.textContent?.trim() ?? "")
-    );
-    const where = children.find(
-      (child) => child.tagName === "SMALL" && child !== priceLabel
-    );
-    const deposit = findFact(
-      children,
-      GUEST_FACT_LABELS.refundableSecurityDeposit
-    );
-    const aboutHeading = children.find(
-      (child) => child.textContent?.trim() === UNIT_DETAIL_ABOUT_HEADING
-    );
-    const amenitiesHeading = children.find(
-      (child) => child.textContent?.trim() === "Amenities"
-    );
-    const action = root.querySelector(
-      ':scope > [data-a2ui-component="Row"]'
-    );
-    const sheet = document.createElement("section");
-    sheet.className = "unit-detail-sheet";
-    sheet.setAttribute("aria-label", "Stay details");
-    if (where) {
-      where.classList.add("unit-detail-location");
-      where.insertAdjacentHTML("afterbegin", icon("pin"));
-      sheet.append(where);
-    }
-    if (title) sheet.append(title);
-    {
-      const template = document.createElement("template");
-      template.innerHTML = unitTilesHtml(
-        tileFacts.map((tile) => ({ icon: tile.icon, text: tile.fact.value }))
-      );
-      sheet.append(template.content);
-    }
-    if (amount) {
-      const template = document.createElement("template");
-      template.innerHTML = breakdownHtml({
-        total: amount.textContent?.trim() ?? "",
-        ...priceLabel ? { totalLabel: priceLabel.textContent?.trim() ?? "" } : {},
-        ...deposit ? { deposit: deposit.value } : {}
-      });
-      sheet.append(template.content);
-    }
-    const extendedFacts = [
-      findFact(children, GUEST_FACT_LABELS.monthlyPrice),
-      findFact(children, GUEST_FACT_LABELS.utilitiesIncluded)
-    ].filter((fact) => fact !== void 0);
-    if (extendedFacts.length > 0) {
-      const block = document.createElement("div");
-      block.className = "unit-detail-extended";
-      for (const fact of extendedFacts) {
-        const line = document.createElement("p");
-        line.className = "ui-money-metadata";
-        line.textContent = fact.element.textContent?.trim() ?? "";
-        block.append(line);
-      }
-      sheet.append(block);
-    }
-    if (aboutHeading) {
-      const description = aboutHeading.nextElementSibling;
-      const text = description?.textContent ?? "";
-      aboutHeading.remove();
-      description?.remove();
-      const template = document.createElement("template");
-      template.innerHTML = unitAboutHtml(text);
-      sheet.append(template.content);
-    }
-    for (const tile of tileFacts) tile.fact.element.remove();
-    priceLabel?.remove();
-    amount?.remove();
-    deposit?.element.remove();
-    for (const fact of extendedFacts) fact.element.remove();
-    const amenitiesNodes = amenitiesHeading ? [
-      amenitiesHeading,
-      ...amenitiesHeading.nextElementSibling ? [amenitiesHeading.nextElementSibling] : []
-    ] : [];
-    const supporting = [...root.children].filter(
-      (child) => child !== action && !amenitiesNodes.includes(child)
-    );
-    root.replaceChildren();
-    if (gallery) root.append(gallery);
-    root.append(sheet);
-    if (amenitiesNodes.length > 0) {
-      const amenities = document.createElement("div");
-      amenities.className = "unit-amenities";
-      amenities.append(...amenitiesNodes);
-      root.append(amenities);
-    }
-    if (supporting.length > 0) {
-      const support = document.createElement("div");
-      support.className = "unit-supporting-info";
-      support.append(...supporting);
-      root.append(support);
-    }
-    if (action) {
-      action.classList.add("unit-actions");
-      const bar = document.createElement("div");
-      bar.className = "ui-action-bar unit-action-bar";
-      const sum = document.createElement("p");
-      sum.className = "ui-action-bar__sum";
-      const total = amount?.textContent?.trim() ?? "";
-      const label = priceLabel?.textContent?.trim() ?? "";
-      if (total !== "") {
-        const strong = document.createElement("strong");
-        strong.textContent = total;
-        sum.append(strong);
-      }
-      if (label !== "") {
-        const meta = document.createElement("span");
-        meta.className = "ui-money-metadata";
-        meta.textContent = label;
-        sum.append(meta);
-      }
-      if (sum.childElementCount > 0) bar.append(sum);
-      bar.append(action);
-      root.append(bar);
-    }
-  }
-  function findFact(children, label) {
-    for (const child of children) {
+  function findFact(children2, label) {
+    for (const child of children2) {
       const value = guestFactValue(child.textContent ?? "", label);
       if (value !== void 0) return { element: child, value };
     }
@@ -11249,30 +11310,30 @@ Known schemas:
   }
   function replaceWithKitMarkup(root, html, consumed) {
     const present = consumed.filter(
-      (element) => element !== void 0 && element.parentElement === root
+      (element2) => element2 !== void 0 && element2.parentElement === root
     );
     const template = document.createElement("template");
     template.innerHTML = html;
     const markup = template.content.firstElementChild;
     if (present.length === 0 || markup === null) return;
     root.insertBefore(markup, present[0]);
-    for (const element of present) element.remove();
+    for (const element2 of present) element2.remove();
   }
   function organizeBookingTicket(mount) {
     const root = mount.querySelector(
       '[data-a2ui-component="Column"]'
     );
     if (!root) return;
-    const children = [...root.children];
-    const title = children.find(
+    const children2 = [...root.children];
+    const title = children2.find(
       (child) => child.tagName === "H3" && guestFactValue(
         child.textContent ?? "",
         GUEST_FACT_LABELS.allInStayTotal
       ) === void 0
     );
-    const checkIn = findFact(children, GUEST_FACT_LABELS.checkIn);
-    const checkOut = findFact(children, GUEST_FACT_LABELS.checkOut);
-    const stay = findFact(children, GUEST_FACT_LABELS.stay);
+    const checkIn = findFact(children2, GUEST_FACT_LABELS.checkIn);
+    const checkOut = findFact(children2, GUEST_FACT_LABELS.checkOut);
+    const stay = findFact(children2, GUEST_FACT_LABELS.stay);
     const checkInDay = checkIn === void 0 ? void 0 : dayNumeral(checkIn.value);
     const checkOutDay = checkOut === void 0 ? void 0 : dayNumeral(checkOut.value);
     if (title && checkIn && checkOut && stay && checkInDay && checkOutDay) {
@@ -11287,16 +11348,16 @@ Known schemas:
         [title, checkIn.element, checkOut.element, stay.element]
       );
     }
-    const total = findFact(children, GUEST_FACT_LABELS.allInStayTotal);
+    const total = findFact(children2, GUEST_FACT_LABELS.allInStayTotal);
     if (!total) return;
     const deposit = findFact(
-      children,
+      children2,
       GUEST_FACT_LABELS.refundableSecurityDeposit
     );
-    const due = findFact(children, GUEST_FACT_LABELS.amountDueNow);
-    const paid = findFact(children, GUEST_FACT_LABELS.amountPaid);
-    const next = findFact(children, GUEST_FACT_LABELS.nextPayment);
-    const condition = children.find(
+    const due = findFact(children2, GUEST_FACT_LABELS.amountDueNow);
+    const paid = findFact(children2, GUEST_FACT_LABELS.amountPaid);
+    const next = findFact(children2, GUEST_FACT_LABELS.nextPayment);
+    const condition = children2.find(
       (child) => child.textContent?.trim() === GUEST_FACT_LABELS.ifRequestAccepted
     );
     replaceWithKitMarkup(
@@ -11504,8 +11565,8 @@ Known schemas:
     }
     return ids;
   }
-  function factIcon(text) {
-    return text.includes("bedroom") ? "bed" : text.includes("bathroom") ? "bath" : "users";
+  function factIcon(text2) {
+    return text2.includes("bedroom") ? "bed" : text2.includes("bathroom") ? "bath" : "users";
   }
   function openStayFrom(link, viewButton) {
     if (!viewButton) return;
@@ -11521,51 +11582,51 @@ Known schemas:
     for (const [index, card] of [
       ...mount.querySelectorAll('[data-a2ui-component="Card"]')
     ].entries()) {
-      const list = card.parentElement;
-      if (list instanceof HTMLElement) {
-        list.classList.add("stay-grid");
-        list.setAttribute("role", "list");
-        list.setAttribute("aria-label", "Stay search results");
-        listElement = list;
+      const list2 = card.parentElement;
+      if (list2 instanceof HTMLElement) {
+        list2.classList.add("stay-grid");
+        list2.setAttribute("role", "list");
+        list2.setAttribute("aria-label", "Stay search results");
+        listElement = list2;
       }
       const body = card.querySelector(
         ':scope > [data-weaver-mount] > [data-a2ui-component="Column"], :scope > [data-a2ui-component="Column"]'
       );
       const unitId = unitIds[index];
       if (!body || unitId === void 0) continue;
-      const children = [...body.children];
-      const title = children.find(
+      const children2 = [...body.children];
+      const title = children2.find(
         (child) => child.tagName === "H3" && !isMoney(child.textContent ?? "")
       );
-      const where = findFact(children, GUEST_FACT_LABELS.where);
-      const factLine = children.find((child) => child.tagName === "P");
-      const priceLabel = children.find(
+      const where = findFact(children2, GUEST_FACT_LABELS.where);
+      const factLine = children2.find((child) => child.tagName === "P");
+      const priceLabel = children2.find(
         (child) => isPriceLabel(child.textContent?.trim() ?? "")
       );
-      const price = children.find(
+      const price = children2.find(
         (child) => child.tagName === "H3" && isMoney(child.textContent ?? "")
       );
       if (!title || !where || !factLine || !priceLabel || !price) continue;
       const deposit = findFact(
-        children,
+        children2,
         GUEST_FACT_LABELS.refundableSecurityDeposit
       );
-      const fit = findFact(children, GUEST_FACT_LABELS.fitReason);
-      const photos = findFact(children, GUEST_FACT_LABELS.photos);
+      const fit = findFact(children2, GUEST_FACT_LABELS.fitReason);
+      const photos = findFact(children2, GUEST_FACT_LABELS.photos);
       const photoCount = photos === void 0 ? void 0 : Number(photos.value);
-      const image = children.find(
+      const image = children2.find(
         (child) => child instanceof HTMLImageElement
       );
-      const buttons = children.filter(
+      const buttons = children2.filter(
         (child) => child instanceof HTMLButtonElement
       );
       const view = buttons[0];
       const parts = {
-        ...children.some((child) => child.textContent?.trim() === GUEST_FACT_LABELS.demoListing) ? { demoListing: true } : {},
+        ...children2.some((child) => child.textContent?.trim() === GUEST_FACT_LABELS.demoListing) ? { demoListing: true } : {},
         href: `/stays/${encodeURIComponent(unitId)}`,
         title: title.textContent?.trim() ?? "",
         where: where.value,
-        facts: (factLine.textContent ?? "").split(" \xB7 ").map((text) => text.trim()).filter(Boolean).map((text) => ({ icon: factIcon(text), text })),
+        facts: (factLine.textContent ?? "").split(" \xB7 ").map((text2) => text2.trim()).filter(Boolean).map((text2) => ({ icon: factIcon(text2), text: text2 })),
         total: price.textContent?.trim() ?? "",
         totalLabel: priceLabel.textContent?.trim() ?? "",
         ...deposit ? { deposit: deposit.value } : {},
@@ -11584,7 +11645,7 @@ Known schemas:
         image,
         ...buttons
       ]);
-      const extras = children.filter(
+      const extras = children2.filter(
         (child) => !known.has(child) && child.getAttribute("data-a2ui-component") !== "Divider"
       );
       const template = document.createElement("template");
@@ -11699,10 +11760,10 @@ Known schemas:
     table.setAttribute("role", "table");
     table.setAttribute("aria-label", "Compare stays");
     const line = (className) => {
-      const element = document.createElement("div");
-      element.className = `ui-compare__row compare-row ${className}`;
-      element.setAttribute("role", "row");
-      return element;
+      const element2 = document.createElement("div");
+      element2.className = `ui-compare__row compare-row ${className}`;
+      element2.setAttribute("role", "row");
+      return element2;
     };
     const cellsOf = (row) => [
       ...row.querySelectorAll(
@@ -11754,19 +11815,18 @@ Known schemas:
       button.classList.add("guest-action");
     for (const field2 of mount.querySelectorAll("input, textarea, select"))
       field2.classList.add("guest-field");
-    for (const text of mount.querySelectorAll(
+    for (const text2 of mount.querySelectorAll(
       '[data-a2ui-component="Text"]'
     )) {
-      const value = text.textContent?.trim() ?? "";
-      const isHeading = /^H[1-6]$/.test(text.tagName);
+      const value = text2.textContent?.trim() ?? "";
+      const isHeading = /^H[1-6]$/.test(text2.tagName);
       const tone = isHeading ? void 0 : guestStatusTone(value);
-      if (tone) text.classList.add("guest-status", `guest-status--${tone}`);
+      if (tone) text2.classList.add("guest-status", `guest-status--${tone}`);
       if (/^No stays match|^No current matches/i.test(value))
-        text.classList.add("empty-state-title");
+        text2.classList.add("empty-state-title");
     }
     if (kind === "discovery") decorateDiscoveryCards(mount);
     if (kind === "compare") decorateComparison(mount);
-    if (kind === "unit-detail") organizeUnitDetail(mount);
     if (kind === "booking" || kind === "request-draft" || kind === "payment") organizeBookingTicket(mount);
     if (activePayload?.requestScreen)
       organizeRequestScreen(mount, activePayload.requestScreen);
@@ -11779,12 +11839,12 @@ Known schemas:
     if (activePayload?.signInOffer)
       organizeSignInOffer(mount, activePayload.signInOffer);
   }
-  function isMoney(text) {
-    const value = text.trim();
+  function isMoney(text2) {
+    const value = text2.trim();
     return value.startsWith("\u20A6") || value.startsWith("NGN");
   }
-  function isPriceLabel(text) {
-    return text.startsWith(GUEST_GLOSSARY.allInStayTotal) || text.startsWith("Indicative nightly rate");
+  function isPriceLabel(text2) {
+    return text2.startsWith(GUEST_GLOSSARY.allInStayTotal) || text2.startsWith("Indicative nightly rate");
   }
   function isSafeInternalRoute(value) {
     if (typeof value !== "string" || value === "" || !value.startsWith("/") || value.startsWith("//") || value.includes("\\"))
@@ -12029,12 +12089,12 @@ Known schemas:
     }).catch(() => {
     });
   }
-  function announce(text, assertive = false) {
+  function announce(text2, assertive = false) {
     if (assertive) {
-      errorAnnouncer.textContent = text;
+      errorAnnouncer.textContent = text2;
       return;
     }
-    announcer.textContent = modeAnnouncements.politeText(text);
+    announcer.textContent = modeAnnouncements.politeText(text2);
   }
   function flushModeSwitchAnnouncement() {
     const alone = modeAnnouncements.flush();
@@ -12046,7 +12106,7 @@ Known schemas:
     const cutoff = Math.max(0, turns.length - RENDERED_TURN_WINDOW);
     turns.forEach((turn, index) => turn.classList.toggle("turn--deferred", index < cutoff));
   }
-  function addTurn(role, text) {
+  function addTurn(role, text2) {
     emptyState.hidden = true;
     verticalStarters.hidden = true;
     const turn = document.createElement("article");
@@ -12057,7 +12117,7 @@ Known schemas:
     );
     const bubble = document.createElement("div");
     bubble.className = "bubble";
-    bubble.textContent = text;
+    bubble.textContent = text2;
     turn.appendChild(bubble);
     appendToLane(turn);
     deferOlderTurns();
@@ -12066,8 +12126,8 @@ Known schemas:
       if (turn.isConnected) transcript.scrollTop = transcript.scrollHeight;
     });
   }
-  function addRetryTurn(text, retry) {
-    addTurn("assistant", text);
+  function addRetryTurn(text2, retry) {
+    addTurn("assistant", text2);
     const turn = activeLane.lastElementChild;
     if (!(turn instanceof HTMLElement)) return;
     const button = document.createElement("button");
@@ -12084,12 +12144,12 @@ Known schemas:
     );
     turn.appendChild(button);
   }
-  function addMarker(text, className) {
-    if (text === "") return;
+  function addMarker(text2, className) {
+    if (text2 === "") return;
     emptyState.hidden = true;
     const item = document.createElement("p");
     item.className = className;
-    item.textContent = text;
+    item.textContent = text2;
     appendToLane(item);
   }
   function addHistoricalSummary(summary) {
@@ -12098,8 +12158,8 @@ Known schemas:
       "historical-summary"
     );
   }
-  function addReceipt(text) {
-    addMarker(text, "historical-summary receipt-marker");
+  function addReceipt(text2) {
+    addMarker(text2, "historical-summary receipt-marker");
   }
   function addTimelineEntry(entry) {
     if (entry.role === "receipt") addReceipt(entry.text);
@@ -12232,25 +12292,25 @@ Known schemas:
     const deadline = document.createElement("p");
     deadline.className = "ui-banner ui-banner--neutral waiting-deadline";
     deadline.insertAdjacentHTML("afterbegin", icon("clock"));
-    const text = document.createElement("span");
+    const text2 = document.createElement("span");
     const absolute = document.createElement("span");
     absolute.className = "waiting-deadline-time";
     absolute.textContent = waiting.deadlineText;
     const countdown = document.createElement("span");
     countdown.className = "waiting-countdown";
-    text.append(absolute, " \xB7 ", countdown);
-    deadline.append(text);
+    text2.append(absolute, " \xB7 ", countdown);
+    deadline.append(text2);
     const nextLabel = document.createElement("h4");
     nextLabel.textContent = "What happens next";
     const steps = (items) => {
-      const element = document.createElement("ol");
-      element.className = "ui-steps";
+      const element2 = document.createElement("ol");
+      element2.className = "ui-steps";
       for (const item of items) {
         const entry = document.createElement("li");
         entry.textContent = item;
-        element.appendChild(entry);
+        element2.appendChild(entry);
       }
-      return element;
+      return element2;
     };
     panel.append(heading, deadline, nextLabel, steps(waiting.outcomes));
     for (const line of waiting.meanwhile) {
@@ -12431,7 +12491,7 @@ Known schemas:
     workspaceRegion.scrollTop = previousScroll;
     if (moveFocus) {
       activeWorkspace.scrollIntoView({ block: "start" });
-      const focusTarget = [".workspace-close", ".workspace-heading h2", ".weaver-mount h1", ".weaver-mount h2", ".weaver-mount h3", ".weaver-mount button"].map((selector) => activeWorkspace.querySelector(selector)).find((element) => element !== null);
+      const focusTarget = [".workspace-close", ".workspace-heading h2", ".weaver-mount h1", ".weaver-mount h2", ".weaver-mount h3", ".weaver-mount button"].map((selector) => activeWorkspace.querySelector(selector)).find((element2) => element2 !== null);
       if (focusTarget) {
         if (!focusTarget.matches("button, a, input, textarea, select, [tabindex]")) focusTarget.tabIndex = -1;
         focusTarget.classList.add("workspace-focus-target");
@@ -12471,8 +12531,8 @@ Known schemas:
   function renderJourney(journey) {
     if (!journey) return;
     if (journey.current === "confirmed") document.querySelector("[data-payment-notice]")?.remove();
-    const list = document.createElement("ol");
-    list.className = "ui-rail";
+    const list2 = document.createElement("ol");
+    list2.className = "ui-rail";
     let current;
     for (const step of journey.steps) {
       const item = document.createElement("li");
@@ -12489,11 +12549,11 @@ Known schemas:
         if (step.state === "current") item.setAttribute("aria-current", "step");
         current = item;
       }
-      list.appendChild(item);
+      list2.appendChild(item);
     }
-    journeyRail.replaceChildren(list);
+    journeyRail.replaceChildren(list2);
     journeyRail.hidden = false;
-    if (current) list.scrollLeft = Math.max(0, current.offsetLeft - list.offsetLeft - list.clientWidth / 2 + current.offsetWidth / 2);
+    if (current) list2.scrollLeft = Math.max(0, current.offsetLeft - list2.offsetLeft - list2.clientWidth / 2 + current.offsetWidth / 2);
   }
   var TASK_START_EVENT = "platform.task.start";
   var TASK_SWITCH_EVENT = "platform.task.switch";
@@ -12645,8 +12705,8 @@ Known schemas:
       renderTaskStepHeader(void 0);
       return;
     }
-    const list = document.createElement("ol");
-    list.className = "ui-task-rail";
+    const list2 = document.createElement("ol");
+    list2.className = "ui-task-rail";
     for (const task of tasks) {
       const item = document.createElement("li");
       const button = document.createElement("button");
@@ -12682,9 +12742,9 @@ Known schemas:
         void switchFromRail(task.taskId);
       });
       item.appendChild(button);
-      list.appendChild(item);
+      list2.appendChild(item);
     }
-    taskRail.replaceChildren(list);
+    taskRail.replaceChildren(list2);
     taskRail.hidden = false;
     renderTaskStepHeader(tasks);
   }
@@ -12814,15 +12874,15 @@ Known schemas:
     warning.className = "mode-sheet__warning";
     warning.setAttribute("role", "note");
     warning.textContent = GUEST_MODE_CHOOSER.openProposalWarning;
-    const list = document.createElement("div");
-    list.className = "mode-sheet__choices";
+    const list2 = document.createElement("div");
+    list2.className = "mode-sheet__choices";
     const close = document.createElement("button");
     close.type = "button";
     close.className = "ui-button ui-button--quiet mode-sheet__close";
     close.textContent = GUEST_MODE_CHOOSER.close;
     close.addEventListener("click", () => sheet.close());
     sheet.addEventListener("close", () => modeMark?.focus({ preventScroll: true }));
-    sheet.append(heading, warning, list, close);
+    sheet.append(heading, warning, list2, close);
     document.body.appendChild(sheet);
     modeSheet = sheet;
     return sheet;
@@ -12833,9 +12893,9 @@ Known schemas:
     if (heading) heading.textContent = GUEST_MODE_CHOOSER.conciergeLabel(appliedMode.label);
     const warning = sheet.querySelector(".mode-sheet__warning");
     if (warning) warning.hidden = !activeProposalOpen();
-    const list = sheet.querySelector(".mode-sheet__choices");
+    const list2 = sheet.querySelector(".mode-sheet__choices");
     const committed = committedChoice();
-    list?.replaceChildren(...modeChoices.map((choice) => modeChoiceLabel(choice, "mode-sheet", choice.domain === committed?.domain, () => void chooseInSheet(choice))));
+    list2?.replaceChildren(...modeChoices.map((choice) => modeChoiceLabel(choice, "mode-sheet", choice.domain === committed?.domain, () => void chooseInSheet(choice))));
     if (!sheet.open) sheet.showModal();
   }
   async function chooseInSheet(choice) {
@@ -12851,19 +12911,19 @@ Known schemas:
     syncModeMark();
     renderModeStrip();
   }
-  function startTurn(text) {
+  function startTurn(text2) {
     const start = startBeforeTurn(modeChoices, previewDomain, appliedMode.id);
     if (start === void 0) {
       previewDomain = void 0;
       withAgentMarkTransition(() => {
-        addTurn("user", text);
-        void sendTurn(text);
+        addTurn("user", text2);
+        void sendTurn(text2);
       });
       return;
     }
-    void commitPreviewThenSend(start, text);
+    void commitPreviewThenSend(start, text2);
   }
-  async function commitPreviewThenSend(start, text) {
+  async function commitPreviewThenSend(start, text2) {
     holdModeSwitchForFirstMessage = true;
     let ok;
     try {
@@ -12878,8 +12938,8 @@ Known schemas:
       return;
     }
     withAgentMarkTransition(() => {
-      addTurn("user", text);
-      void sendTurn(text);
+      addTurn("user", text2);
+      void sendTurn(text2);
     });
   }
   async function sendTaskEvent(name, context, origin = "server") {
@@ -13289,11 +13349,11 @@ Known schemas:
     if (agentDockChip) agentDockChip.textContent = next ? appliedMode.workspace.workingStatus : "";
     setAgentMark({ type: next ? "turn-started" : "turn-ended" });
   }
-  async function showLandedTurn(text) {
+  async function showLandedTurn(text2) {
     try {
       const response = await postJson(`/api/state?threadId=${encodeURIComponent(threadId)}`);
       if (!response.ok || !response.timeline) return false;
-      const entries = turnEntriesSince(response.timeline, text);
+      const entries = turnEntriesSince(response.timeline, text2);
       if (entries === void 0) return false;
       for (const entry of entries) addTimelineEntry(entry);
       await refreshServerState();
@@ -13302,7 +13362,7 @@ Known schemas:
       return false;
     }
   }
-  async function sendTurn(text) {
+  async function sendTurn(text2) {
     if (isLoading) return;
     setLoading(true);
     const cancel = new AbortController();
@@ -13319,24 +13379,24 @@ Known schemas:
     };
     turnCancel.addEventListener("click", stop);
     try {
-      if (renderResponse(await postJson("/api/turn", { threadId, text }, CLIENT_TURN_TIMEOUT_MS, cancel.signal))) {
+      if (renderResponse(await postJson("/api/turn", { threadId, text: text2 }, CLIENT_TURN_TIMEOUT_MS, cancel.signal))) {
         await refreshLaneRows();
-        if (composerInput.value.trim() === text) composerInput.value = "";
+        if (composerInput.value.trim() === text2) composerInput.value = "";
       }
     } catch {
       if (stoppedByGuest) {
-        if (await showLandedTurn(text)) {
-          if (composerInput.value.trim() === text) composerInput.value = "";
+        if (await showLandedTurn(text2)) {
+          if (composerInput.value.trim() === text2) composerInput.value = "";
         } else {
-          if (composerInput.value.trim() === "") composerInput.value = text;
+          if (composerInput.value.trim() === "") composerInput.value = text2;
           addTurn("assistant", GUEST_ASSISTANT_COPY.stoppedWaiting);
           announce(GUEST_ASSISTANT_COPY.stoppedWaiting);
         }
-      } else if (await showLandedTurn(text)) {
-        if (composerInput.value.trim() === text) composerInput.value = "";
+      } else if (await showLandedTurn(text2)) {
+        if (composerInput.value.trim() === text2) composerInput.value = "";
       } else {
         addRetryTurn("The concierge is temporarily unavailable. Your message is still in the composer; please try again.", () => {
-          void sendTurn(text);
+          void sendTurn(text2);
         });
         announce("The concierge is temporarily unavailable. Your message remains in the composer.", true);
       }
@@ -13488,16 +13548,16 @@ Known schemas:
     if (!(event.target instanceof Element)) return;
     const suggestion = event.target.closest(".prompt-suggestion[data-prompt]");
     if (!suggestion || !emptyState.contains(suggestion)) return;
-    const text = suggestion.dataset.prompt?.trim();
-    if (!text || isLoading) return;
-    startTurn(text);
+    const text2 = suggestion.dataset.prompt?.trim();
+    if (!text2 || isLoading) return;
+    startTurn(text2);
   });
   composerForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    const text = composerInput.value.trim();
-    if (text === "" || isLoading || taskEventInFlight) return;
+    const text2 = composerInput.value.trim();
+    if (text2 === "" || isLoading || taskEventInFlight) return;
     clearQuickReplies();
-    startTurn(text);
+    startTurn(text2);
   });
   async function restoreServerState() {
     try {
@@ -13535,12 +13595,12 @@ Known schemas:
       return null;
     }
   }
-  function committedWorkNote(work, text) {
+  function committedWorkNote(work, text2) {
     const note = document.createElement("div");
     note.className = "committed-work";
     note.dataset.kind = work.kind;
     const line = document.createElement("p");
-    line.textContent = text;
+    line.textContent = text2;
     const link = document.createElement("a");
     link.className = "contact-link";
     link.href = work.route;

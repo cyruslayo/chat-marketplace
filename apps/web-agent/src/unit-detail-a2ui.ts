@@ -1,13 +1,19 @@
 import {
-  A2UI_V091_BASIC_CATALOG_ID,
   type A2UIComponent,
   type A2UIServerMessage,
 } from "@cylayo/weaver-core";
 import { formatNgnKobo, type DiscoveryUnitProjection } from "./discovery-a2ui.js";
 import { unitDetailArtifactFromProjection, type UnitDetailArtifact } from "../../web/src/unit-detail-artifact.js";
-import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_JOURNEY, UNIT_DETAIL_ABOUT_HEADING, guestAmenityLabel, guestFact, guestInspectionDisclosure } from "./guest-content.js";
+import { GUEST_GLOSSARY, GUEST_JOURNEY, guestAmenityLabel, guestInspectionDisclosure } from "./guest-content.js";
 import { formatStayDates, nightsBetween, unitStayTotalLabel, unitTiles } from "./booking-presentation.js";
 import { extendedStayUnitFacts } from "./extended-stay-presentation.js";
+import {
+  SHORTLET_DISCOVERY_CATALOG_ID,
+  UNIT_ACTION_BAR_COMPONENT,
+  UNIT_DETAIL_COMPONENT,
+  UNIT_DETAIL_SHEET_COMPONENT,
+  UNIT_GALLERY_COMPONENT,
+} from "./shortlet-catalogs.js";
 
 export const REQUEST_TO_BOOK_EVENT = "shortlet.unit-detail.request-to-book";
 /** Issue 08: returns to the results of the same search; the server validates the discovery artifact id. */
@@ -27,6 +33,11 @@ export interface UnitDetailToA2UIInput {
   readonly action: UnitDetailActionContext;
 }
 
+/**
+ * Weaver catalogues issue 05 (ADR 0102): the unit detail as typed `shortlet-discovery/v1` components. The server
+ * decides every section, fact and display string (ADR 0077); the renderers only draw them, so the client never
+ * searches the rendered DOM for a fact and a missing fact can never leave the surface half built (ADR 0074).
+ */
 export function unitDetailArtifactToA2UI({ artifact, surfaceId, backToResults, demo = false }: {
   readonly artifact: UnitDetailArtifact;
   readonly surfaceId: string;
@@ -39,45 +50,52 @@ export function unitDetailArtifactToA2UI({ artifact, surfaceId, backToResults, d
   const action = artifact.actions.find((candidate) => candidate.type === "request-to-book");
   const prefix = "unit-detail";
   // ADR-0066: neighbourhood-level only, the same where line the standalone page shows.
-  const location = `${facts.neighbourhood}, ${facts.city} · exact address after payment`;
-  const tiles = unitTiles(facts.bedrooms, facts.bathrooms, facts.capacity);
+  const where = `${facts.neighbourhood}, ${facts.city} · exact address after payment`;
   const nights = nightsBetween(facts.checkIn, facts.checkOut);
   const quoted = facts.price.allInStayTotalKobo !== null;
-  const allInLabel = quoted ? unitStayTotalLabel(formatStayDates(facts.checkIn, facts.checkOut), nights) : "Indicative nightly rate";
-  const allInAmount = facts.price.allInStayTotalKobo ?? facts.price.nightlyKobo;
+  const totalLabel = quoted ? unitStayTotalLabel(formatStayDates(facts.checkIn, facts.checkOut), nights) : "Indicative nightly rate";
+  const total = formatNgnKobo(facts.price.allInStayTotalKobo ?? facts.price.nightlyKobo);
+  const deposit = facts.price.refundableSecurityDepositKobo > 0 ? formatNgnKobo(facts.price.refundableSecurityDepositKobo) : undefined;
+  // Demo-launch issue 12: the same monthly price and utilities lines the chat card and the standalone page show (ADR 0092).
+  const extended = extendedStayUnitFacts(facts.extendedStay);
   const inspectionDisclosure = guestInspectionDisclosure(facts.inspection);
   const amenityIds = facts.amenities.map((_, index) => `${prefix}-amenity-${index}`);
-  const inspectionId = inspectionDisclosure === undefined ? [] : [`${prefix}-inspection`];
-  const depositId = facts.price.refundableSecurityDepositKobo > 0 ? [`${prefix}-deposit`] : [];
-  const extendedIds = facts.extendedStay === undefined ? [] : [`${prefix}-monthly`, `${prefix}-utilities`];
-  const photoIds = facts.photos.map((_, index) => `${prefix}-photo-${index}`);
   const components: A2UIComponent[] = [
-    { id: "root", component: "Column", children: [
-      ...(photoIds.length > 0 ? photoIds : [`${prefix}-photo-unavailable`]),
-      ...(demo ? [`${prefix}-demo-listing`] : []),
-      `${prefix}-title`, `${prefix}-location`, `${prefix}-bedrooms`, `${prefix}-bathrooms`, `${prefix}-sleeps`,
-      `${prefix}-price-label`, `${prefix}-price`, ...extendedIds, ...depositId,
-      `${prefix}-about-heading`, `${prefix}-about`, `${prefix}-amenities-heading`, `${prefix}-amenities`,
-      ...inspectionId, `${prefix}-disclosure`, `${prefix}-actions`,
-    ] },
-    ...(demo ? [{ id: `${prefix}-demo-listing`, component: "Text" as const, text: GUEST_FACT_LABELS.demoListing, variant: "caption" as const }] : []),
-    { id: `${prefix}-title`, component: "Text", text: facts.title, variant: "h2" },
-    { id: `${prefix}-location`, component: "Text", text: location, variant: "caption" },
-    ...tiles.map((tile, index) => ({ id: `${prefix}-${["bedrooms", "bathrooms", "sleeps"][index]}`, component: "Text" as const, text: guestFact([GUEST_FACT_LABELS.bedrooms, GUEST_FACT_LABELS.bathrooms, GUEST_FACT_LABELS.sleeps][index]!, tile.text) })),
-    { id: `${prefix}-price-label`, component: "Text", text: allInLabel, variant: "caption" },
-    { id: `${prefix}-price`, component: "Text", text: formatNgnKobo(allInAmount), variant: "h2" },
-    // Demo-launch issue 12: the same monthly price and utilities lines the chat card and the standalone page show (ADR 0092).
-    ...extendedStayUnitFacts(facts.extendedStay).map((text, index) => ({ id: `${prefix}-${index === 0 ? "monthly" : "utilities"}`, component: "Text" as const, text, variant: "caption" as const })),
-    ...(facts.price.refundableSecurityDepositKobo > 0 ? [{ id: `${prefix}-deposit`, component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.refundableSecurityDeposit, formatNgnKobo(facts.price.refundableSecurityDepositKobo)), variant: "caption" as const }] : []),
-    { id: `${prefix}-about-heading`, component: "Text", text: UNIT_DETAIL_ABOUT_HEADING, variant: "h2" },
-    { id: `${prefix}-about`, component: "Text", text: facts.description },
+    {
+      id: "root",
+      component: UNIT_DETAIL_COMPONENT,
+      gallery: `${prefix}-gallery`,
+      sheet: `${prefix}-sheet`,
+      amenities: [`${prefix}-amenities-heading`, `${prefix}-amenities`],
+      supporting: [...(inspectionDisclosure ? [`${prefix}-inspection`] : []), `${prefix}-disclosure`],
+      actionBar: `${prefix}-action-bar`,
+    },
+    {
+      id: `${prefix}-gallery`,
+      component: UNIT_GALLERY_COMPONENT,
+      title: facts.title,
+      photos: facts.photos.map((url, index) => ({
+        url,
+        alt: `${facts.title} in ${facts.neighbourhood}, ${facts.city}${index === 0 ? " — main view" : ` — view ${index + 1}`}`,
+      })),
+    },
+    {
+      id: `${prefix}-sheet`,
+      component: UNIT_DETAIL_SHEET_COMPONENT,
+      where,
+      title: facts.title,
+      ...(demo ? { demo: true } : {}),
+      tiles: unitTiles(facts.bedrooms, facts.bathrooms, facts.capacity).map((tile) => ({ icon: tile.icon, text: tile.text })),
+      breakdown: { total, totalLabel, ...(deposit === undefined ? {} : { deposit }) },
+      ...(extended.length > 0 ? { extended: [...extended] } : {}),
+      ...(facts.description.trim() === "" ? {} : { about: facts.description }),
+    },
     { id: `${prefix}-amenities-heading`, component: "Text", text: "Amenities", variant: "h3" },
     { id: `${prefix}-amenities`, component: "Column", children: amenityIds },
     ...facts.amenities.map((amenity, index) => ({ id: amenityIds[index]!, component: "Text" as const, text: guestAmenityLabel(amenity) })),
-    ...photoIds.map((id, index) => ({ id, component: "Image" as const, url: facts.photos[index]!, description: `${facts.title} in ${facts.neighbourhood}, ${facts.city}${index === 0 ? " — main view" : ` — view ${index + 1}`}` })),
-    ...(photoIds.length === 0 ? [{ id: `${prefix}-photo-unavailable`, component: "Text" as const, text: "No property photos are available yet.", variant: "caption" as const }] : []),
     ...(inspectionDisclosure ? [{ id: `${prefix}-inspection`, component: "Text" as const, text: inspectionDisclosure, variant: "caption" as const }] : []),
     { id: `${prefix}-disclosure`, component: "Text", text: `Request to Book starts a request for Operator confirmation. Viewing this ${GUEST_GLOSSARY.unit} does not reserve dates or create a Reservation.`, variant: "caption" },
+    { id: `${prefix}-action-bar`, component: UNIT_ACTION_BAR_COMPONENT, total, totalLabel, child: `${prefix}-actions` },
     { id: `${prefix}-actions`, component: "Row", children: [...(action ? [`${prefix}-request-button`] : []), ...(backToResults ? [`${prefix}-back-button`] : [])] },
     ...(action ? [
       { id: `${prefix}-request-button`, component: "Button" as const, child: `${prefix}-request-label`, variant: "primary" as const, action: { event: { name: REQUEST_TO_BOOK_EVENT, context: { artifactId: action.artifactId, unitId: action.unitId, projectionVersion: action.projectionVersion } } }, accessibility: { label: `Request to Book ${facts.title}` } },
@@ -89,7 +107,7 @@ export function unitDetailArtifactToA2UI({ artifact, surfaceId, backToResults, d
     ] : []),
   ];
   return [
-    { version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } },
+    { version: "v0.9.1", createSurface: { surfaceId, catalogId: SHORTLET_DISCOVERY_CATALOG_ID } },
     { version: "v0.9.1", updateComponents: { surfaceId, components } },
   ];
 }

@@ -3,7 +3,7 @@ import { temporaryDatabasePath } from "./helpers/temporary-database.js";
 import assert from "node:assert/strict";
 import { approvedTestScope } from "./helpers/assistant-scope.js";
 import { Window } from "happy-dom";
-import { createBasicWebRuntime } from "@cylayo/weaver-web";
+import { createShortletWebRuntime } from "../apps/local-guest/src/shortlet-runtime.js";
 import type { A2UIServerMessage, A2UIClientActionMessage } from "@cylayo/weaver-core";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
@@ -23,13 +23,15 @@ function setupHarness() {
   const window = new Window();
   testWindows.push(window);
   const events: A2UIClientActionMessage["action"][] = [];
-  const created = createBasicWebRuntime({
-    rendering: {
+  // The guest browser's own runtime (ADR 0102): the shortlet catalogues and their typed renderers, as client.ts mounts them.
+  const created = {
+    ok: true as const,
+    value: createShortletWebRuntime({
       onServerEvent: (event) => {
         events.push(event.message.action);
       },
-    },
-  });
+    }),
+  };
   if (!created.ok) throw new Error("Weaver runtime creation failed");
 
   const asElement = (element: unknown): Element => element as Element;

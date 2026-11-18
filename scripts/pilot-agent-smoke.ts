@@ -614,16 +614,21 @@ async function anyRenderable(surfaces: readonly { readonly surfaceId: string; re
 }
 
 async function renderable(surfaceId: string, messages: readonly unknown[]): Promise<{ readonly ok: true } | { readonly ok: false; readonly failureClass: RenderFailureClass }> {
-  const [{ Window }, { createBasicWebRuntime }] = await Promise.all([import("happy-dom"), import("@cylayo/weaver-web")]);
+  const [{ Window }, { createShortletWebRuntime }] = await Promise.all([import("happy-dom"), import("../apps/local-guest/src/shortlet-runtime.js")]);
   const window = new Window();
   try {
-    const created = createBasicWebRuntime();
-    if (!created.ok) return { ok: false, failureClass: "WEAVER_FAILURE" };
+    // The guest browser's own runtime (ADR 0102): the shortlet catalogues and their typed renderers, as client.ts mounts them.
+    let web: ReturnType<typeof createShortletWebRuntime>;
+    try {
+      web = createShortletWebRuntime();
+    } catch {
+      return { ok: false, failureClass: "WEAVER_FAILURE" };
+    }
     for (const message of messages as readonly A2UIServerMessage[]) {
-      if (!created.value.runtime.process(message).ok) return { ok: false, failureClass: "A2UI_FAILURE" };
+      if (!web.runtime.process(message).ok) return { ok: false, failureClass: "A2UI_FAILURE" };
     }
     const target = window.document.createElement("div") as unknown as Element;
-    const mounted = created.value.mount({ surfaceId, target });
+    const mounted = web.mount({ surfaceId, target });
     return mounted.ok ? { ok: true } : { ok: false, failureClass: "WEAVER_FAILURE" };
   } catch {
     return { ok: false, failureClass: "A2UI_FAILURE" };

@@ -7,7 +7,6 @@ import { createShortletWebRuntime } from "./shortlet-runtime.js";
 import type { BasicWebRuntime } from "@cylayo/weaver-web";
 import { icon } from "../../web/src/ui-kit.js";
 import {
-  buildListingGallery,
   enhanceListingGallery,
   watchPhotoFailure,
 } from "./listing-gallery.js";
@@ -57,11 +56,8 @@ import {
   requestScreenHtml,
   resultRowPartsHtml,
   signInOfferHtml,
-  demoListingChipHtml,
   stayCardInnerHtml,
   ticketHtml,
-  unitAboutHtml,
-  unitTilesHtml,
   type SignInOfferContent,
   type StayCardParts,
 } from "./guest-kit.js";
@@ -326,208 +322,6 @@ function enhanceListingImages(mount: HTMLElement): void {
   // Guest gallery issue 01: the strip count, "Show all" and the full-screen viewer (presentation only, ADR 0072).
   for (const gallery of mount.querySelectorAll<HTMLElement>(".listing-gallery"))
     enhanceListingGallery(gallery);
-}
-
-const UNIT_TILE_FACTS = [
-  { icon: "bed", label: GUEST_FACT_LABELS.bedrooms },
-  { icon: "bath", label: GUEST_FACT_LABELS.bathrooms },
-  { icon: "users", label: GUEST_FACT_LABELS.sleeps },
-] as const;
-
-function organizeUnitDetail(mount: HTMLElement): void {
-  // Weaver adds a surface mount between our target and the Basic Catalog root.
-  const root = mount.querySelector<HTMLElement>(
-    '[data-a2ui-component="Column"]',
-  );
-  if (!root) return;
-  const tileFacts = UNIT_TILE_FACTS.map((tile) => ({
-    ...tile,
-    fact: findFact([...root.children], tile.label),
-  }));
-  // ADR-0080: incomplete presentation facts retain the complete Weaver fallback, rather than a partial sheet.
-  if (tileFacts.some((tile) => !tile.fact || tile.fact.value.trim() === ""))
-    return;
-  root.classList.add("unit-detail-root");
-  // ADR 0105: the demo chip is the kit's chip on the chat sheet too, as on the standalone page.
-  const demoCaption = [...root.children].find((child) => child.textContent?.trim() === GUEST_FACT_LABELS.demoListing);
-  if (demoCaption) {
-    const template = document.createElement("template");
-    template.innerHTML = demoListingChipHtml();
-    demoCaption.replaceWith(template.content);
-  }
-
-  // Guest gallery issue 01: the photos Weaver rendered become the shared listing gallery, as on the full page.
-  const images: HTMLImageElement[] = [];
-  for (const child of root.children) {
-    if (!(child instanceof HTMLImageElement)) break;
-    images.push(child);
-  }
-  const unitTitle =
-    [...root.children]
-      .find(
-        (child) => child.tagName === "H2" && !isMoney(child.textContent ?? ""),
-      )
-      ?.textContent?.trim() || "this apartment";
-  let gallery: HTMLElement | undefined;
-  if (images.length > 0) {
-    gallery = buildListingGallery(document, unitTitle, images);
-  } else {
-    const noPhotos = root.firstElementChild;
-    if (
-      noPhotos instanceof HTMLElement &&
-      noPhotos.matches('[data-a2ui-component="Text"]') &&
-      /no property photos/i.test(noPhotos.textContent ?? "")
-    ) {
-      gallery = document.createElement("div");
-      gallery.className = "unit-gallery unit-gallery--fallback";
-      gallery.setAttribute("role", "group");
-      gallery.setAttribute("aria-label", "Property photos");
-      noPhotos.classList.add("unit-photo-missing");
-      gallery.appendChild(noPhotos);
-    }
-  }
-
-  const children = [...root.children];
-  const title = children.find(
-    (child) => child.tagName === "H2" && !isMoney(child.textContent ?? ""),
-  );
-  const amount = children.find(
-    (child) =>
-      child !== title &&
-      child.tagName === "H2" &&
-      isMoney(child.textContent ?? ""),
-  );
-  const priceLabel = children.find((child) =>
-    isPriceLabel(child.textContent?.trim() ?? ""),
-  );
-  const where = children.find(
-    (child) => child.tagName === "SMALL" && child !== priceLabel,
-  );
-  const deposit = findFact(
-    children,
-    GUEST_FACT_LABELS.refundableSecurityDeposit,
-  );
-  const aboutHeading = children.find(
-    (child) => child.textContent?.trim() === UNIT_DETAIL_ABOUT_HEADING,
-  );
-  const amenitiesHeading = children.find(
-    (child) => child.textContent?.trim() === "Amenities",
-  );
-  const action = root.querySelector<HTMLElement>(
-    ':scope > [data-a2ui-component="Row"]',
-  );
-
-  // Issue 06: the sheet is the same DOM the standalone page renders: where, serif title, facility tiles, price, about.
-  const sheet = document.createElement("section");
-  sheet.className = "unit-detail-sheet";
-  sheet.setAttribute("aria-label", "Stay details");
-  if (where) {
-    where.classList.add("unit-detail-location");
-    where.insertAdjacentHTML("afterbegin", icon("pin"));
-    sheet.append(where);
-  }
-  if (title) sheet.append(title);
-  {
-    const template = document.createElement("template");
-    template.innerHTML = unitTilesHtml(
-      tileFacts.map((tile) => ({ icon: tile.icon, text: tile.fact!.value })),
-    );
-    sheet.append(template.content);
-  }
-  if (amount) {
-    const template = document.createElement("template");
-    template.innerHTML = breakdownHtml({
-      total: amount.textContent?.trim() ?? "",
-      ...(priceLabel
-        ? { totalLabel: priceLabel.textContent?.trim() ?? "" }
-        : {}),
-      ...(deposit ? { deposit: deposit.value } : {}),
-    });
-    sheet.append(template.content);
-  }
-  // Demo-launch issue 12 (ADR 0092): an Extended Stay's monthly price and utilities lines, as the chat card shows them.
-  // They sit under the price, before the description, as on the standalone page.
-  const extendedFacts = [
-    findFact(children, GUEST_FACT_LABELS.monthlyPrice),
-    findFact(children, GUEST_FACT_LABELS.utilitiesIncluded),
-  ].filter((fact): fact is { readonly element: Element; readonly value: string } => fact !== undefined);
-  if (extendedFacts.length > 0) {
-    const block = document.createElement("div");
-    block.className = "unit-detail-extended";
-    for (const fact of extendedFacts) {
-      const line = document.createElement("p");
-      line.className = "ui-money-metadata";
-      line.textContent = fact.element.textContent?.trim() ?? "";
-      block.append(line);
-    }
-    sheet.append(block);
-  }
-  if (aboutHeading) {
-    const description = aboutHeading.nextElementSibling;
-    const text = description?.textContent ?? "";
-    aboutHeading.remove();
-    description?.remove();
-    const template = document.createElement("template");
-    template.innerHTML = unitAboutHtml(text);
-    sheet.append(template.content);
-  }
-  // Nothing partial: the facts, price and deposit elements became the sheet's kit markup and are removed.
-  for (const tile of tileFacts) tile.fact!.element.remove();
-  priceLabel?.remove();
-  amount?.remove();
-  deposit?.element.remove();
-  for (const fact of extendedFacts) fact.element.remove();
-
-  const amenitiesNodes = amenitiesHeading
-    ? [
-        amenitiesHeading,
-        ...(amenitiesHeading.nextElementSibling
-          ? [amenitiesHeading.nextElementSibling]
-          : []),
-      ]
-    : [];
-  const supporting = [...root.children].filter(
-    (child) => child !== action && !amenitiesNodes.includes(child),
-  );
-
-  root.replaceChildren();
-  if (gallery) root.append(gallery);
-  root.append(sheet);
-  if (amenitiesNodes.length > 0) {
-    const amenities = document.createElement("div");
-    amenities.className = "unit-amenities";
-    amenities.append(...amenitiesNodes);
-    root.append(amenities);
-  }
-  if (supporting.length > 0) {
-    const support = document.createElement("div");
-    support.className = "unit-supporting-info";
-    support.append(...supporting);
-    root.append(support);
-  }
-  if (action) {
-    action.classList.add("unit-actions");
-    const bar = document.createElement("div");
-    bar.className = "ui-action-bar unit-action-bar";
-    const sum = document.createElement("p");
-    sum.className = "ui-action-bar__sum";
-    const total = amount?.textContent?.trim() ?? "";
-    const label = priceLabel?.textContent?.trim() ?? "";
-    if (total !== "") {
-      const strong = document.createElement("strong");
-      strong.textContent = total;
-      sum.append(strong);
-    }
-    if (label !== "") {
-      const meta = document.createElement("span");
-      meta.className = "ui-money-metadata";
-      meta.textContent = label;
-      sum.append(meta);
-    }
-    if (sum.childElementCount > 0) bar.append(sum);
-    bar.append(action);
-    root.append(bar);
-  }
 }
 
 /** The first child whose text is the fact `label`, with its value: facts are found only through the shared label table. */
@@ -1189,7 +983,6 @@ function enhanceSurfacePresentation(mount: HTMLElement, kind: string): void {
   }
   if (kind === "discovery") decorateDiscoveryCards(mount);
   if (kind === "compare") decorateComparison(mount);
-  if (kind === "unit-detail") organizeUnitDetail(mount);
   if (kind === "booking" || kind === "request-draft" || kind === "payment") organizeBookingTicket(mount);
   if (activePayload?.requestScreen)
     organizeRequestScreen(mount, activePayload.requestScreen);

@@ -223,6 +223,16 @@ export function unitIndicativePriceHtml(nightlyKobo: number): string {
   return `<div class="unit-detail-price"><p class="ui-field__hint">Price per night (indicative)</p><p class="ui-money-total">${formatNgnKobo(nightlyKobo)} <span class="ui-money-metadata">per night · dates not yet quoted</span></p></div>`;
 }
 
+/** The unit sheet's neighbourhood-level where line (ADR 0066), one markup source for the page and the chat sheet. */
+export function unitLocationHtml(where: string): string {
+  return `<p class="unit-detail-location">${icon("pin")}${escapeHtml(where)}</p>`;
+}
+
+/** Weaver catalogues issue 05: the chat sheet's apartment title (the standalone page's title is its `h1`). */
+export function unitTitleHtml(title: string): string {
+  return `<h2 class="unit-detail-title">${escapeHtml(title)}</h2>`;
+}
+
 /** Issue 06: the unit sheet's "About" section (heading plus description), one markup source for both surfaces. */
 export function unitAboutHtml(description: string): string {
   return `<h2 class="unit-detail-about-heading">${escapeHtml(UNIT_DETAIL_ABOUT_HEADING)}</h2><p class="unit-detail-description">${escapeHtml(description)}</p>`;

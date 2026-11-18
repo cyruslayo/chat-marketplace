@@ -8,24 +8,11 @@ import { unitDetailArtifactToA2UI, unitTiles } from "../apps/web-agent/src/index
 import { formatNgnKobo } from "../apps/web-agent/src/discovery-a2ui.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { renderConventionalUnitDetailHtml } from "../apps/local-guest/src/guest-server.js";
-import { unitDetailArtifactFromProjection } from "../apps/web/src/index.js";
-import { StayDateRange, UnitRepository, seedIssue01Units, toDiscoveryProjection } from "../domains/shortlet/src/index.js";
+import { quotedUnitDetailArtifact } from "./helpers/unit-detail-fixture.js";
 
 /** The chargeable Old Ikoyi fixture Unit, quoted for 1–3 Oct 2026, as the chat surface receives it. */
 function quotedArtifact(bedrooms: number | undefined) {
-  const repository = new UnitRepository();
-  seedIssue01Units(repository);
-  const unit = repository.findById("unit-lagos-001");
-  assert.ok(unit);
-  repository.save({ ...unit, bedrooms, photoUrls: ["https://images.example/living-room.jpg", "https://images.example/bedroom.jpg"] });
-  const projection = toDiscoveryProjection(repository.findById("unit-lagos-001")!, new StayDateRange("2026-10-01", "2026-10-03", new Date("2026-09-21T10:00:00.000Z")));
-  return unitDetailArtifactFromProjection({
-    unit: projection,
-    checkIn: "2026-10-01",
-    checkOut: "2026-10-03",
-    projectionVersion: 4,
-    viewer: { id: "guest-1", role: "guest", tenantId: "tenant-1" },
-  });
+  return quotedUnitDetailArtifact({ bedrooms });
 }
 
 function componentsOf(messages: readonly unknown[]): readonly A2UIComponent[] {
@@ -34,15 +21,26 @@ function componentsOf(messages: readonly unknown[]): readonly A2UIComponent[] {
     : []);
 }
 
+interface SheetProps {
+  readonly tiles?: readonly { readonly icon: string; readonly text: string }[];
+  readonly breakdown?: { readonly total: string; readonly totalLabel: string; readonly deposit?: string };
+}
+
+function sheetOf(components: readonly A2UIComponent[]): SheetProps {
+  const sheet = components.find((component) => component.component === "UnitDetailSheet");
+  assert.ok(sheet, "the unit detail surface has a UnitDetailSheet");
+  return sheet as SheetProps;
+}
+
 test("AC2: with a quote the price block shows the All-In Stay Total for the dates before the deposit; without one it shows only the labelled indicative nightly rate", () => {
   // Quoted: the chat's builder prices the stay for its dates, and the deposit follows the total (ADR 0015).
+  // Weaver catalogues issue 05: the price block is the sheet's typed breakdown; breakdownHtml draws the label, the
+  // total and then the separate deposit in that fixed order.
   const components = componentsOf(unitDetailArtifactToA2UI({ artifact: quotedArtifact(2), surfaceId: "unit-detail-ac2" }));
-  const labelIndex = components.findIndex((component) => component.id === "unit-detail-price-label");
-  const priceIndex = components.findIndex((component) => component.id === "unit-detail-price");
-  const depositIndex = components.findIndex((component) => component.id === "unit-detail-deposit");
-  assert.ok(labelIndex >= 0 && priceIndex === labelIndex + 1, "the total's label leads its amount");
-  assert.equal(components[labelIndex]!.text, "All-In Stay Total · 1–3 Oct 2026 · 2 nights");
-  assert.ok(depositIndex > priceIndex, "the All-In Stay Total precedes the separate deposit");
+  const sheet = sheetOf(components);
+  assert.deepEqual(Object.keys(sheet.breakdown ?? {}), ["total", "totalLabel", "deposit"], "the total, its label and the separate deposit");
+  assert.equal(sheet.breakdown?.totalLabel, "All-In Stay Total · 1–3 Oct 2026 · 2 nights");
+  assert.ok(sheet.breakdown?.total.startsWith("₦") && sheet.breakdown.deposit?.startsWith("₦"), "both amounts are server-formatted naira");
   assert.doesNotMatch(JSON.stringify(components), /Total to complete booking|Indicative nightly rate/, "no second amount line and no un-quoted rate on a quoted stay");
 
   // Un-quoted: the public page shows only the labelled indicative nightly rate (ADR 0015).
@@ -69,9 +67,11 @@ test("AC3: the tiles show bedrooms, bathrooms and capacity from the unit record,
   ]);
   assert.deepEqual(unitTiles(undefined, 1, 2).map((tile) => tile.text), ["Not provided", "1 bathroom", "Sleeps 2"]);
   const missingBedroomComponents = componentsOf(unitDetailArtifactToA2UI({ artifact: quotedArtifact(undefined), surfaceId: "unit-detail-ac3" }));
-  assert.equal(missingBedroomComponents.find((component) => component.id === "unit-detail-bedrooms")?.text, "Bedrooms: Not provided");
-  assert.equal(missingBedroomComponents.find((component) => component.id === "unit-detail-bathrooms")?.text, "Bathrooms: 2 bathrooms");
-  assert.equal(missingBedroomComponents.find((component) => component.id === "unit-detail-sleeps")?.text, "Sleeps: Sleeps 4");
+  assert.deepEqual(sheetOf(missingBedroomComponents).tiles, [
+    { icon: "bed", text: "Not provided" },
+    { icon: "bath", text: "2 bathrooms" },
+    { icon: "users", text: "Sleeps 4" },
+  ], "the chat sheet's tiles are the same unitTiles the page renders");
 
   const directory = mkdtempSync(join(tmpdir(), "unit-detail-ac3-"));
   const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite") });

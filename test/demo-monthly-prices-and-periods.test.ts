@@ -36,6 +36,14 @@ function texts(messages: readonly A2UIServerMessage[]): readonly string[] {
     .filter((text): text is string => typeof text === "string");
 }
 
+/** Weaver catalogues issue 05: the chat unit detail carries its facts as typed `UnitDetailSheet` props, not Texts. */
+function detailSheet(messages: readonly A2UIServerMessage[]): { readonly demo?: boolean; readonly extended?: readonly string[] } {
+  const sheet = messages.flatMap((message) => ("updateComponents" in message ? message.updateComponents.components : []))
+    .find((component: A2UIComponent) => component.component === "UnitDetailSheet");
+  assert.ok(sheet, "the unit detail surface has a UnitDetailSheet");
+  return sheet as { readonly demo?: boolean; readonly extended?: readonly string[] };
+}
+
 type PeriodQuote = ReturnType<typeof createStayQuote> & { readonly billingPeriods: readonly BillingPeriodQuote[] };
 
 function periodQuote(unit: Unit, checkOut: string): PeriodQuote {
@@ -78,7 +86,7 @@ test("AC1: the unit detail shows the same monthly price and utilities as the car
   const card = texts(discoveryArtifactToA2UI({ artifact, surfaceId: "ac1-card-same" }));
   const result = artifact.facts.results[0]!;
   const detail = unitDetailArtifactFromProjection({ unit: result, checkIn: CHECK_IN, checkOut: CHECK_OUT_30, projectionVersion: 1, viewer: GUEST });
-  const chat = texts(unitDetailArtifactToA2UI({ artifact: detail, surfaceId: "ac1-detail" }));
+  const chat = detailSheet(unitDetailArtifactToA2UI({ artifact: detail, surfaceId: "ac1-detail" })).extended ?? [];
   const monthly = card.find((text) => text.startsWith(`${GUEST_FACT_LABELS.monthlyPrice}: `));
   const utilities = card.find((text) => text.startsWith(`${GUEST_FACT_LABELS.utilitiesIncluded}: `));
   assert.ok(monthly && utilities, "card facts exist");
@@ -144,9 +152,10 @@ test("AC6: the chat and the standalone unit detail show the same demo listing ch
   const unit = extendedStayUnit({ claimsThrough: CLAIMS_THROUGH, marginBasisPoints: 1234 });
   const artifact = discoveryFor([unit]).search({ checkIn: CHECK_IN, checkOut: CHECK_OUT_30, partySize: 1 });
   const detail = unitDetailArtifactFromProjection({ unit: artifact.facts.results[0]!, checkIn: CHECK_IN, checkOut: CHECK_OUT_30, projectionVersion: 1, viewer: GUEST });
-  const chat = texts(unitDetailArtifactToA2UI({ artifact: detail, surfaceId: "ac6", demo: true }));
-  assert.ok(chat.includes(GUEST_FACT_LABELS.demoListing), "demo chip");
-  assert.ok(chat.some((text) => text.startsWith(`${GUEST_FACT_LABELS.monthlyPrice}: `)), "monthly price");
+  const chat = detailSheet(unitDetailArtifactToA2UI({ artifact: detail, surfaceId: "ac6", demo: true }));
+  // The renderer draws the kit's demo chip (GUEST_FACT_LABELS.demoListing) from this prop, as the page does.
+  assert.equal(chat.demo, true, "demo chip");
+  assert.ok((chat.extended ?? []).some((text) => text.startsWith(`${GUEST_FACT_LABELS.monthlyPrice}: `)), "monthly price");
 });
 
 // Round 2 (orchestrator review): the standalone unit detail page shows the same monthly price and utilities as chat.

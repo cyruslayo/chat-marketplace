@@ -7,7 +7,7 @@
 import { execSync } from "node:child_process";
 import assert from "node:assert/strict";
 import { Window } from "happy-dom";
-import { createBasicWebRuntime } from "@cylayo/weaver-web";
+import { createShortletWebRuntime } from "../apps/local-guest/src/shortlet-runtime.js";
 import type { A2UIServerMessage, A2UIClientActionMessage } from "@cylayo/weaver-core";
 import { startLocalGuestServer } from "../apps/local-guest/src/guest-server.js";
 
@@ -66,14 +66,14 @@ async function runAssistantHttpWeaverE2e() {
 
     // 2. Mount discovery surface in Weaver web runtime
     const window = new Window();
-    const runtimeRes = createBasicWebRuntime();
-    assert.equal(runtimeRes.ok, true);
+    // The guest browser's own runtime (ADR 0102): the shortlet catalogues and their typed renderers.
+    const web = createShortletWebRuntime();
     for (const msg of discoverySurface.a2uiMessages as readonly A2UIServerMessage[]) {
-      const proc = runtimeRes.value.runtime.process(msg);
+      const proc = web.runtime.process(msg);
       assert.equal(proc.ok, true);
     }
     const mountTarget = window.document.createElement("div") as unknown as Element;
-    const mountRes = runtimeRes.value.mount({ surfaceId: discoverySurface.surfaceId, target: mountTarget });
+    const mountRes = web.mount({ surfaceId: discoverySurface.surfaceId, target: mountTarget });
     assert.equal(mountRes.ok, true);
     assert.ok(mountTarget.innerHTML.includes("Luxury 2-Bedroom Apartment in Old Ikoyi"));
 
@@ -188,11 +188,11 @@ async function runAssistantHttpWeaverE2e() {
 
     // Mount Booking Contract surface in Weaver web runtime
     for (const msg of bookingSurface.a2uiMessages as readonly A2UIServerMessage[]) {
-      const proc = runtimeRes.value.runtime.process(msg);
+      const proc = web.runtime.process(msg);
       assert.equal(proc.ok, true);
     }
     const contractMountTarget = window.document.createElement("div") as unknown as Element;
-    const contractMountRes = runtimeRes.value.mount({ surfaceId: bookingSurface.surfaceId, target: contractMountTarget });
+    const contractMountRes = web.mount({ surfaceId: bookingSurface.surfaceId, target: contractMountTarget });
     assert.equal(contractMountRes.ok, true);
     assert.ok(contractMountTarget.innerHTML.includes("Booking confirmed"));
 

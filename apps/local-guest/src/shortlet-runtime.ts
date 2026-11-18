@@ -10,7 +10,7 @@ import {
   SHORTLET_DISCOVERY_CATALOG,
 } from "../../web-agent/src/shortlet-catalogs.js";
 import { createBasicCatalogRendererRegistrations } from "@cylayo/weaver-web";
-import { SHORTLET_RENDERERS } from "./shortlet-renderers.js";
+import { createShortletRenderers } from "./shortlet-renderers.js";
 import { COMMERCE_CATALOGS } from "../../web-agent/src/commerce-catalogs.js";
 
 export interface ShortletWebRuntimeOptions {
@@ -34,7 +34,8 @@ export function createShortletWebRuntime(options: ShortletWebRuntimeOptions = {}
       ...createBasicCatalogRendererRegistrations({ catalogId: SHORTLET_DISCOVERY_CATALOG.catalogId, resourcePolicy }),
       ...createBasicCatalogRendererRegistrations({ catalogId: SHORTLET_BOOKING_CATALOG.catalogId, resourcePolicy }),
       ...commerceCatalogs.flatMap(({ catalogId }) => createBasicCatalogRendererRegistrations({ catalogId, resourcePolicy })),
-      ...SHORTLET_RENDERERS,
+      // ADR 0102: the typed catalogue components use the same host image policy as Basic Image.
+      ...createShortletRenderers({ resourcePolicy }),
     ],
     ...(options.safety === undefined ? {} : { runtime: { safety: options.safety } }),
     basic: { resourcePolicy },

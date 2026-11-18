@@ -14,6 +14,8 @@ import { SHORTLET_BOOKING_CATALOG, SHORTLET_BOOKING_CATALOG_ID, SHORTLET_DISCOVE
 import { createShortletWebRuntime } from "../apps/local-guest/src/shortlet-runtime.js";
 import { validateShortletMessages } from "../apps/web-agent/src/validate-shortlet-messages.js";
 import { guestAction, restartFixture, stages } from "./helpers/guest-restart.js";
+import { unitDetailArtifactToA2UI } from "../apps/web-agent/src/unit-detail-a2ui.js";
+import { quotedUnitDetailArtifact } from "./helpers/unit-detail-fixture.js";
 
 function surface(catalogId: string, surfaceId: string, text: string): readonly A2UIServerMessage[] {
   return [
@@ -47,7 +49,11 @@ test("AC1 - catalogue ids are exported from the one namespace constant", async (
 
 test("AC2 - shortlet catalogues preserve all Basic schemas and render Basic surfaces identically", () => {
   const basic = createBasicCatalogV091Registration();
-  assert.deepEqual(SHORTLET_DISCOVERY_CATALOG.schema.components, basic.schema.components);
+  const basicComponents = basic.schema.components as Record<string, unknown>;
+  // Weaver catalogues issue 05: discovery adds typed components on top of every unchanged Basic component.
+  const discoveryComponents = SHORTLET_DISCOVERY_CATALOG.schema.components as Record<string, unknown>;
+  for (const [name, schema] of Object.entries(basicComponents)) assert.deepEqual(discoveryComponents[name], schema, `Basic ${name} is unchanged`);
+  assert.deepEqual(Object.keys(discoveryComponents).filter((name) => !(name in basicComponents)), ["UnitDetail", "UnitGallery", "UnitDetailSheet", "UnitActionBar"]);
   assert.deepEqual(SHORTLET_BOOKING_CATALOG.schema.components, basic.schema.components);
   for (const catalogId of [SHORTLET_DISCOVERY_CATALOG_ID, SHORTLET_BOOKING_CATALOG_ID]) {
     const runtime = createShortletWebRuntime();
@@ -116,6 +122,28 @@ test("AC4 - unknown components and malformed custom component properties fail cl
     const target = new Window().document.createElement("div");
     assert.equal(createShortletWebRuntime().mount({ surfaceId, target: target as unknown as Element }).ok, false);
     assert.equal(target.childNodes.length, 0);
+  }
+});
+
+test("Weaver catalogues 05 AC5 - the unit detail validates on shortlet-discovery/v1 and invalid UnitDetailSheet props are rejected", () => {
+  const messages = unitDetailArtifactToA2UI({ artifact: quotedUnitDetailArtifact(), surfaceId: "unit-detail-ac5" });
+  assert.deepEqual(validateShortletMessages(messages), { ok: true });
+  const sheet = { id: "sheet", component: "UnitDetailSheet", where: "Ikoyi, Lagos", title: "Flat", tiles: [{ icon: "bed", text: "2 bedrooms" }] };
+  for (const [index, invalid] of [
+    { ...sheet, html: "<b>raw</b>" },
+    { ...sheet, tiles: [{ icon: "pool", text: "Pool" }] },
+    { ...sheet, tiles: [] },
+    { ...sheet, title: "" },
+    { ...sheet, where: undefined },
+    { ...sheet, breakdown: { total: "₦1", totalLabel: "All-In Stay Total", discount: "₦1" } },
+    { ...sheet, breakdown: { totalLabel: "All-In Stay Total" } },
+  ].entries()) {
+    const surfaceId = `unit-detail-invalid-${index}`;
+    const result = validateShortletMessages([
+      { version: "v0.9.1", createSurface: { surfaceId, catalogId: SHORTLET_DISCOVERY_CATALOG_ID } },
+      { version: "v0.9.1", updateComponents: { surfaceId, components: [JSON.parse(JSON.stringify({ ...invalid, id: "root" }))] } },
+    ]);
+    assert.equal(result.ok, false, `invalid sheet ${index} is rejected`);
   }
 });
 

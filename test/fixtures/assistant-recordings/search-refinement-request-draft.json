@@ -546,8 +546,12 @@
         {
           "surfaceId": "thread-g-d1a0000401:unit:detail",
           "componentTypes": [
-            "Column",
+            "UnitDetail",
+            "UnitGallery",
+            "UnitDetailSheet",
             "Text",
+            "Column",
+            "UnitActionBar",
             "Row",
             "Button"
           ]

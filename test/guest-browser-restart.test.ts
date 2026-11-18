@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Window } from "happy-dom";
-import { createBasicWebRuntime } from "@cylayo/weaver-web";
+import { createShortletWebRuntime } from "../apps/local-guest/src/shortlet-runtime.js";
 import {
   startLocalGuestServer,
   type GuestSurfacePayload,
@@ -37,13 +37,15 @@ interface BrowserHarness {
 function createBrowserHarness(): BrowserHarness {
   const window = new Window();
   const events: A2UIClientActionMessage["action"][] = [];
-  const created = createBasicWebRuntime({
-    rendering: {
+  // The guest browser's own runtime (ADR 0102): the shortlet catalogues and their typed renderers, as client.ts mounts them.
+  const created = {
+    ok: true as const,
+    value: createShortletWebRuntime({
       onServerEvent: (event) => {
         events.push(event.message.action);
       },
-    },
-  });
+    }),
+  };
   if (!created.ok) throw new Error("Weaver runtime failed to create");
   const asElement = (element: unknown): Element => element as Element;
   return {

@@ -79,14 +79,16 @@ test("AC15/AC17 — failed media leaves critical listing text and Request to Boo
 test("AC16 — Unit detail presents all stored photos in order", () => {
   const artifact = artifactWithPhotos(PHOTO_URLS);
   const unit = artifact.facts.results[0]!;
-  const images = components(unitDetailToA2UI({
+  // Weaver catalogues issue 05: the photos are the typed UnitGallery's ordered list.
+  const gallery = components(unitDetailToA2UI({
     unit,
     checkIn: "2026-10-01",
     checkOut: "2026-10-03",
     surfaceId: "photo-detail-all",
     action: { artifactId: artifact.id, unitId: unit.id, projectionVersion: artifact.projectionVersion },
-  })).filter((component) => component.component === "Image");
-  assert.deepEqual(images.map((image) => image.url), PHOTO_URLS);
+  })).find((component) => component.component === "UnitGallery") as { readonly photos: readonly { readonly url: string }[] } | undefined;
+  assert.ok(gallery, "the unit detail has a UnitGallery");
+  assert.deepEqual(gallery.photos.map((photo) => photo.url), PHOTO_URLS);
 });
 
 test("AC14/AC15 — Unit detail presents description and bathroom count", () => {
