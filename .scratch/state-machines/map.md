@@ -97,3 +97,10 @@ PRD: `PRD.md`. Line numbers come from a sweep of an earlier checkout and are app
 | `agentMarkState` | Reducer (explicit) |
 | `shellState.focusedSurfaceOpen` and surface status | Uses the `conversational-shell.ts` union |
 | `data-state`, `data-status`, `data-mode`, `data-focused`, `data-waiting`, `data-expanded`, `data-empty`, `data-page-hidden` | DOM attributes used as state |
+
+## Batch gate (2026-11-18, commit 88080c4)
+
+- `npm run check`: exit 0.
+- `npm run test:workers`: 30 of 30 files and 197 of 197 tests pass on the re-run. The first run failed `landing-assets.spec.ts` AC3 after the orchestrator restored line-ending-only `dist` files following the build. It passed solo and in the full re-run; this is not a code defect.
+- `npm test`: Phase 1 had 453 files concurrent. Phase 2 had 51 browser files: 49 passed, 2 failed. Failures were `commerce-store-pages.real-browser` and `commerce-surfaces-chromium`, both on the known accepted list, and `back-office-owner-overpayment` and `model-quota-host-recovery`, both known load flakes. The two flakes pass solo (5 of 5, 12 of 12).
+- Also committed `apps/local-guest/dist/client.js`, regenerated because the issue 09 copy map is now in the bundle.
