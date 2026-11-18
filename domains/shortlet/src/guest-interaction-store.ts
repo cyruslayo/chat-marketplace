@@ -5,6 +5,7 @@ import { normalizeContactEmail } from "../../../packages/platform-core/src/accou
 import { redactLaneText } from "../../../packages/platform-core/src/redaction.js";
 import { readLaneTimeline, type LaneRestoreResult } from "../../../packages/platform-core/src/lane-restore.js";
 import { THREAD_SESSION_SCHEMA } from "../../../packages/platform-core/src/thread-schema.js";
+import type { CardCheckoutSessionStatus } from "./card-payment.js";
 
 /**
  * Durable Guest booking interaction store (ADR-0070/0071/0074/0075/0079).
@@ -142,7 +143,7 @@ export interface DurableCardCheckoutSession {
   /** The approved Paystack checkout address the server received for this attempt (issue 66). Absent when none is stored. */
   readonly checkoutUrl?: string;
   readonly expiresAt: string;
-  readonly status: "initiated" | "completed" | "expired" | "failed";
+  readonly status: CardCheckoutSessionStatus;
 }
 
 export interface DurableLivePaymentAttempt {
@@ -375,7 +376,7 @@ function requiredPurpose(value: unknown): "stay" | "security_deposit" {
  * Issue 15: maps only the four known card checkout statuses (union in card-payment.ts). An unknown stored value fails
  * closed. The message carries no ids or row data (ADR 0075).
  */
-function checkoutSessionStatus(value: unknown): DurableCardCheckoutSession["status"] {
+function checkoutSessionStatus(value: unknown): CardCheckoutSessionStatus {
   if (value === "initiated" || value === "completed" || value === "expired" || value === "failed") return value;
   throw new Error("Unknown card checkout session status");
 }

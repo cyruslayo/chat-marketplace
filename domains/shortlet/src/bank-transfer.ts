@@ -23,6 +23,22 @@ import {
   type SecurityDepositCollectionCapabilityProvider,
 } from "./security-deposit.js";
 import type { SecurityDepositAccountingRepository } from "./security-deposit-accounting.js";
+import type { TransitionTable } from "../../../packages/platform-core/src/state-transition.js";
+
+/** Issue 06: the bank transfer session statuses (persisted; never renamed). */
+export const BANK_TRANSFER_SESSION_STATUSES = ["initiated", "processing_in_grace", "completed", "expired", "refunded"] as const;
+export type BankTransferSessionStatus = (typeof BANK_TRANSFER_SESSION_STATUSES)[number];
+/**
+ * Issue 06: the moves the session makes today (every write goes through #put). Start creates initiated, a creation
+ * rather than a move. resolveExpiry is the only route to expired; #lateRefund is the only route to refunded.
+ */
+export const BANK_TRANSFER_SESSION_TRANSITIONS = {
+  initiated: ["processing_in_grace", "completed", "expired", "refunded"],
+  processing_in_grace: ["processing_in_grace", "completed", "expired", "refunded"],
+  completed: ["expired"], // issue 17: latent, tightened there (resolveExpiry admits completed)
+  expired: ["refunded"], // ADR 0045: a success after the expiry is refunded in full
+  refunded: [],
+} as const satisfies TransitionTable<BankTransferSessionStatus>;
 
 export interface BankTransferCheckoutSession {
   readonly checkoutId: string;
@@ -36,12 +52,7 @@ export interface BankTransferCheckoutSession {
   readonly currency: "NGN";
   readonly expiresAt: string;
   readonly graceEndsAt: string;
-  status:
-    | "initiated"
-    | "processing_in_grace"
-    | "completed"
-    | "expired"
-    | "refunded";
+  status: BankTransferSessionStatus;
   readonly processingStartedAt?: string;
 }
 
@@ -646,6 +657,7 @@ export class BankTransferPaymentManager {
     const now = clock();
     if (now.getTime() < new Date(session.graceEndsAt).getTime())
       throw new Error("Payment release deadline has not been reached");
+    // issue 17: latent, tightened there. This deny-list admits a completed session to expired (BANK_TRANSFER_SESSION_TRANSITIONS).
     if (session.status === "expired" || session.status === "refunded")
       return { ...session };
     this.#calendar?.releasePaymentPending?.(offer.inventoryCommitmentId, {

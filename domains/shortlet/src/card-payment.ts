@@ -8,6 +8,7 @@ import type { GuestConductPolicySnapshot } from "./guest-conduct.js";
 import type { SecurityDepositPolicySnapshot } from "./security-deposit.js";
 import type { SecurityDepositAccountingRepository } from "./security-deposit-accounting.js";
 import type { ExtendedStayPolicy } from "./extended-stay.js";
+import type { TransitionTable } from "../../../packages/platform-core/src/state-transition.js";
 import { StayDateRange, isEligibleExtendedStayUnit, isEligibleUnit, type Unit } from "./browse.js";
 import { stayAmountDueNowKobo } from "./quote.js";
 
@@ -71,6 +72,20 @@ function assertNoRawCardCredentials(payload: Record<string, unknown>): void {
   }
 }
 
+/** Issue 06: the card checkout session statuses (persisted; never renamed). */
+export const CARD_CHECKOUT_SESSION_STATUSES = ["initiated", "completed", "expired", "failed"] as const;
+export type CardCheckoutSessionStatus = (typeof CARD_CHECKOUT_SESSION_STATUSES)[number];
+/**
+ * Issue 06: the moves the card session makes today, from the write sites (session.status = "completed" on verify).
+ * Start creates initiated, a creation rather than a move. expired and failed are never written (issue 25, owner question 2).
+ */
+export const CARD_CHECKOUT_SESSION_TRANSITIONS = {
+  initiated: ["completed"],
+  completed: [],
+  expired: [],
+  failed: [],
+} as const satisfies TransitionTable<CardCheckoutSessionStatus>;
+
 export interface CardCheckoutSession {
   readonly checkoutId: string;
   readonly offerId: string;
@@ -83,7 +98,7 @@ export interface CardCheckoutSession {
   readonly contactEmail: string;
   readonly providerEnvironment?: "test" | "live";
   readonly expiresAt: string;
-  status: "initiated" | "completed" | "expired" | "failed";
+  status: CardCheckoutSessionStatus;
 }
 
 export interface BookingContract {
