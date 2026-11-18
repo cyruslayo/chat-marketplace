@@ -130,10 +130,13 @@ export interface ShortletTaskInputs {
   readonly offerId: boolean;
   readonly requestOrDraft: boolean;
   readonly staySelected: boolean;
+  /** The same fact `sentStage` reads: the held offer's status is accepted (issue 18, D3). */
+  readonly offerAccepted: boolean;
 }
 
-export function shortletTaskStatus(inputs: ShortletTaskInputs): "confirmed" | "offer" | "request" | "stay" | "search" {
+export function shortletTaskStatus(inputs: ShortletTaskInputs): "confirmed" | "payment" | "offer" | "request" | "stay" | "search" {
   if (inputs.contractOrReservation) return "confirmed";
+  if (inputs.offerId && inputs.offerAccepted) return "payment";
   if (inputs.offerId) return "offer";
   if (inputs.requestOrDraft) return "request";
   if (inputs.staySelected) return "stay";

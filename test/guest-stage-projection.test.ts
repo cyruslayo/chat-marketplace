@@ -7,6 +7,7 @@ import {
   stagingJourneyFixture, successOf, tap, typedTurn, type Surface,
 } from "./helpers/assistant-stage-journey.js";
 import { scriptedPlanner, type DatedFixture } from "./helpers/guest-date-fixtures.js";
+import { GUEST_JOURNEY } from "../apps/web-agent/src/guest-content.js";
 import {
   dateShowBackStage, inferActiveStage, journeyRailStep, journeyTailStep, persistedActiveStage, restoreStage, sentStage, shortletTaskStatus,
   stageForGuestThread, stageForSurfaceId, timelineCopyKey,
@@ -178,9 +179,9 @@ const PINNED: Readonly<Record<string, StageObservation>> = {
     vagueTimeline: "The current booking information is ready below.",
     criteriaLock: "CRITERIA_LOCKED: A Conditional Booking Offer can't be changed. You can choose not to accept it at no cost and search again with new details. Nothing has been changed.",
   },
-  // Disagreement D3: an accepted offer on the payment surface: the rail says pay, the task rail says Offer, and sentStageFor says payment.
+  // D3 (fixed in issue 18): an accepted offer on the payment surface: the rail says pay, the task rail now says Pay, and sentStageFor says payment.
   "payment-surface": {
-    journey: "pay", taskStatus: "Offer", persistedStage: "payment", surfaceId: "thread-g-d1a00161:payment:ready:offer-<uuid>",
+    journey: "pay", taskStatus: "Pay", persistedStage: "payment", surfaceId: "thread-g-d1a00161:payment:ready:offer-<uuid>",
     vagueReply: "Your payment step is in your stay details. I can also answer questions about Serene 1-Bedroom Suite in Lekki Phase 1, such as parking or Wi-Fi.",
     vagueTimeline: "The current booking information is ready below.",
     criteriaLock: "CRITERIA_LOCKED: An accepted offer can't be changed from this conversation. Nothing has been changed.",
@@ -197,6 +198,13 @@ test("AC1: The characterisation matrix passes unchanged before and after the ref
   const rows: Record<string, StageObservation> = {};
   for (const state of STATES) rows[state.name] = await matrixRow(state.name);
   assert.deepEqual(rows, PINNED);
+});
+
+test("AC1: The guest sees the payment step on the task rail for an accepted offer on the payment surface, matching the journey rail", async () => {
+  // Issue 18, D3: the task rail's step is the journey rail's canonical "Pay" label, read on a cold restore with the assistant enabled.
+  const row = await matrixRow("payment-surface");
+  assert.equal(row.journey, "pay");
+  assert.equal(row.taskStatus, GUEST_JOURNEY.pay);
 });
 
 // AC2: each derivation site calls a pure function from guest-stage.ts. The pure functions below are checked against the same thread
@@ -267,12 +275,20 @@ test("AC2: dateShowBackStage shows the draft copy only while a draft is open wit
 });
 
 test("AC2: shortletTaskStatus gives each matrix row's task-rail step", () => {
-  const stayed = { contractOrReservation: false, offerId: false, requestOrDraft: false, staySelected: true };
+  const stayed = { contractOrReservation: false, offerId: false, requestOrDraft: false, staySelected: true, offerAccepted: false };
   assert.equal(shortletTaskStatus(stayed), "stay", "matrix row: discovery and unit");
   assert.equal(shortletTaskStatus({ ...stayed, requestOrDraft: true }), "request", "matrix rows: draft and draft after a new search");
-  assert.equal(shortletTaskStatus({ ...stayed, requestOrDraft: true, offerId: true }), "offer", "matrix rows: offer issued and payment surface");
+  assert.equal(shortletTaskStatus({ ...stayed, requestOrDraft: true, offerId: true }), "offer", "matrix row: offer issued");
+  assert.equal(shortletTaskStatus({ ...stayed, requestOrDraft: true, offerId: true, offerAccepted: true }), "payment", "matrix row: payment surface (D3)");
   assert.equal(shortletTaskStatus({ ...stayed, requestOrDraft: true, offerId: true, contractOrReservation: true }), "confirmed", "matrix row: booking confirmed");
-  assert.equal(shortletTaskStatus({ contractOrReservation: false, offerId: false, requestOrDraft: false, staySelected: false }), "search", "fails closed to search");
+  assert.equal(shortletTaskStatus({ contractOrReservation: false, offerId: false, requestOrDraft: false, staySelected: false, offerAccepted: false }), "search", "fails closed to search");
+});
+
+test("AC2: shortletTaskStatus gives the payment step only for an accepted offer with no booking", () => {
+  const issued = { contractOrReservation: false, offerId: true, requestOrDraft: true, staySelected: true, offerAccepted: false };
+  assert.equal(shortletTaskStatus(issued), "offer", "an issued offer is still the offer step");
+  assert.equal(shortletTaskStatus({ ...issued, offerAccepted: true }), "payment", "an accepted offer is the payment step, as the journey rail's pay");
+  assert.equal(shortletTaskStatus({ ...issued, offerAccepted: true, contractOrReservation: true }), "confirmed", "a booking still wins over payment");
 });
 
 test("AC2: sentStage gives each sent matrix row its stage, and reads the offer only when one is held", () => {

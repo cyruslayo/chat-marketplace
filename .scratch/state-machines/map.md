@@ -23,7 +23,7 @@ PRD: `PRD.md`. Line numbers come from a sweep of an earlier checkout and are app
 | 15 | C | Unknown card-session status fails closed | resolved | - |
 | 16 | C | Stale `draftId` cleared on a new search (merged into 18) | resolved | 10 |
 | 17 | C | Allow-list hardening: `resolveExpiry`, `commitAmendment`, surface from-state | ready-for-agent | 05, 06, 07, 08 |
-| 18 | C | One guest stage everywhere: collapse each matrix disagreement | ready-for-agent | 10, 11, 13, 16 |
+| 18 | C | One guest stage everywhere: collapse each matrix disagreement | resolved | 10, 11, 13, 16 |
 | 19 | C | Draft-replacement card restored after a cold restore | ready-for-agent | 10 |
 | 20 | D | Pending-action card re-rendered after a cold restore? | to write | - |
 | 21 | D | Turn recovery: redacted server text vs raw client text | to write | - |
@@ -95,3 +95,4 @@ PRD: `PRD.md`. Line numbers come from a sweep of an earlier checkout and are app
 | `agentMarkState` | Reducer (explicit) |
 | `shellState.focusedSurfaceOpen` and surface status | Uses the `conversational-shell.ts` union |
 | `data-state`, `data-status`, `data-mode`, `data-focused`, `data-waiting`, `data-expanded`, `data-empty`, `data-page-hidden` | DOM attributes used as state |
+| 28 | D | Owner decision: after a new search that follows a draft, the task rail still says Request (D1). Needs a persisted discriminator and wording | needs-info | - |
