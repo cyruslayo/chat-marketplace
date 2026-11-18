@@ -320,3 +320,11 @@ test("AC2: restoreStage gives each matrix row's restore branch, and none without
   assert.equal(restoreStage({ ...none, activeStage: "payment" }), null);
   assert.equal(restoreStage({ ...none, activeStage: "request" }), null);
 });
+
+test("AC4 (issue 19): a held draft replacement restores its own branch, and the matrix rows are unchanged without it", () => {
+  const none = { activeStage: null, unitDetail: false, discoveryArtifact: false, draftId: false, requestId: false, offerId: false };
+  assert.equal(restoreStage({ ...none, activeStage: "draft_replacement", draftId: true, pendingDraftReplacement: true }), "draft_replacement", "replacement card held");
+  // Without a held replacement the stage restores nothing, and the draft row keeps its branch.
+  assert.equal(restoreStage({ ...none, activeStage: "draft_replacement", draftId: true }), null, "no replacement held: fails closed");
+  assert.equal(restoreStage({ ...none, activeStage: "request", draftId: true, pendingDraftReplacement: true }), "draft", "a draft on screen keeps the draft row");
+});

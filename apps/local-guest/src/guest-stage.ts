@@ -213,9 +213,11 @@ export interface RestoreStageInputs {
   readonly draftId: boolean;
   readonly requestId: boolean;
   readonly offerId: boolean;
+  /** Issue 19: a pending Request Draft replacement is held. Optional, so the issue 10 matrix is unchanged without it. */
+  readonly pendingDraftReplacement?: boolean;
 }
 
-export type RestoreBranch = "unit" | "draft" | "request" | "offer" | "payment" | "booking" | "discovery";
+export type RestoreBranch = "unit" | "draft" | "request" | "offer" | "payment" | "booking" | "discovery" | "draft_replacement";
 
 export function restoreStage(inputs: RestoreStageInputs): RestoreBranch | null {
   if (inputs.activeStage === UNIT_STAGE && inputs.unitDetail && inputs.discoveryArtifact) return "unit";
@@ -225,5 +227,7 @@ export function restoreStage(inputs: RestoreStageInputs): RestoreBranch | null {
   if (inputs.activeStage === PAYMENT_STAGE && inputs.offerId) return "payment";
   if (inputs.activeStage === BOOKING_STAGE) return "booking";
   if (inputs.activeStage === DISCOVERY_STAGE && inputs.discoveryArtifact) return "discovery";
+  // Issue 19 (ADR 0074, ADR 0106): the replacement card's persisted stage. Only this stage can match it, so no earlier branch shadows it.
+  if (inputs.activeStage === DRAFT_REPLACEMENT_STAGE && inputs.pendingDraftReplacement) return "draft_replacement";
   return null;
 }
