@@ -1,6 +1,6 @@
 # `packages/surface-kit`: components, manifests and composition
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: none
 Requested: 18 Nov 2026
@@ -90,3 +90,22 @@ Also add:
 | 0077 | The library holds no copy (definitions take copy through props) | README rule; enforced per component from phase 2 |
 
 ## Comments
+
+- Commands run (worktree `chat-marketplace-surface-kit`, branch `feat/surface-kit-phase-1`, every command with `env -u LLM_API_KEY`):
+  - `npx tsx --test test/surface-kit.test.ts test/surface-kit-boundary.test.ts test/weaver-dependency-boundary.test.ts`: 14 tests, 14 pass, 0 fail.
+  - Affected scanners that sweep `packages/*/src`: `npx tsx --test test/commerce-ops-import-boundary.test.ts test/guest-identity-assurance.test.ts test/pilot-database-handle.test.ts test/redact-platform-ids-generators.test.ts test/asset-loader.test.ts`: 78 tests, 78 pass, 0 fail.
+  - `npm run check`: clean (all four `tsc` runs and the Worker bundle guard).
+- Process note: the tests and the source were written in the same pass, so there was no separate red run before the code existed.
+- Decisions inside the issue text (none invents a catalogue id, copy or action name):
+  - `composeCatalogueSchema` returns a `ComposedCatalogue` (`{ manifest, schema, components }`) rather than a bare schema, so issue 02's adapter needs no second pass. `ComposedCatalogue.components` carries the erased `AnySurfaceComponent` (props type erased, `html(props: never)`), because a typed `SurfaceComponentDefinition<ProbeCardProps>` is not assignable to `<never>` (the fixtures are invariant).
+  - The base schema's `$defs.anyComponent` is a `oneOf` of `#/components/<Name>` refs. Composing also appends each alias there, otherwise issue 02's AC1/AC2 could not pass. An empty manifest leaves it untouched (AC3 holds).
+  - A component's own `$defs` are hoisted to the catalogue root (a clash with a different definition throws). Every `$ref` in a composed component must resolve to `common_types.json#/$defs/<Name>` (checked against the base's common types) or to a root `$defs` entry, otherwise compose throws. ProbeCard needs only `common_types.json#/$defs/Action`.
+  - `component` and `id` are never slots. The library imports no `node:*` module and no `import.meta.url`, so it can ship in the Worker bundle and the client.
+  - `findGlossaryTerms` returns `{ pointer, kind, value, term }` hits; a term matches a whole camelCase/kebab word, so `kobo` matches `nightlyKobo` but not `koboldy`.
+- Early files for issue 02: `test/fixtures/surface-kit/probe-card.ts` (the ProbeCard component, tier 2, 1.0.0) was added here as the AC4 fixture. Issue 02 adds its manifest, renderer and the runtime tests. `primaryActionLabel` is a required prop because the component holds no copy (ADR 0077).
+- Shared helper: `test/helpers/source-files.ts` is the source walker extracted from `test/weaver-dependency-boundary.test.ts` (which now imports it). The boundary tests also use `specifiersIn` from `test/helpers/import-closure.ts`.
+- Definition of Done: AC1–AC7 each have a dedicated named test (AC7 has a second negative test of the scanner, DoD 2). No injected dependency is unused. No policy string was invented. The ADR table is in the PRD; ADR 0108, 0081, 0073 and 0077 are reflected in the code and README.
+
+## Answer
+
+`packages/surface-kit/src` now exports `defineSurfaceComponent`, `defineCatalogueManifest`, `composeCatalogueSchema`, `catalogueIds`, `findGlossaryTerms` and the types, with a README and a boundary test. Nothing at run time uses it yet.

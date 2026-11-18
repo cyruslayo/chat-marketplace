@@ -22,7 +22,7 @@ Work top to bottom. The frontier is the first issue that is open, unblocked and 
 
 | # | Issue | Type | Status | Blocked by |
 | --- | --- | --- | --- | --- |
-| 01 | [`packages/surface-kit`: components, manifests and composition](issues/01-surface-kit-components-manifests-composition.md) | task | ready-for-agent | none |
+| 01 | [`packages/surface-kit`: components, manifests and composition](issues/01-surface-kit-components-manifests-composition.md) | task | resolved | none |
 | 02 | [Weaver adapters and the ProbeCard alias proof](issues/02-weaver-adapters-and-probe-card.md) | task | ready-for-agent | 01 |
 | 03 | [Shortlet catalogues as manifests, byte-identical](issues/03-shortlet-catalogues-as-manifests.md) | task | ready-for-agent | 02 |
 | 04 | [One registration source; retire the `{ commerce }` flag](issues/04-one-registration-source.md) | task | ready-for-agent | 03 |
@@ -54,3 +54,4 @@ Work top to bottom. The frontier is the first issue that is open, unblocked and 
 ## Context pointers
 
 (Append one line per resolved issue: what landed and where.)
+- 01: the Weaver-free library `packages/surface-kit/src` (define, compose, `catalogueIds`, `findGlossaryTerms`), its README, `test/surface-kit*.test.ts`, and the test-only `test/fixtures/surface-kit/probe-card.ts`.

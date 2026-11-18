@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { access, lstat, mkdir, readFile, readdir, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { sourceFiles } from "./helpers/source-files.js";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 const authoritativeRoots = [
@@ -13,28 +14,6 @@ const authoritativeRoots = [
 ];
 const legacyWeaverImport = /(?:\b(?:import|export)\s+(?:[^"']*?\s+from\s+)?|\b(?:import|require)\s*\()\s*["']@weaver\/(?:core|web)["']/;
 const anyWeaverImport = /(?:\b(?:import|export)\s+(?:[^"']*?\s+from\s+)?|\b(?:import|require)\s*\()\s*["']@(?:cylayo\/weaver-(?:core|web)|weaver\/(?:core|web))["']/;
-
-async function sourceFiles(directory: string, ancestors: readonly string[] = []): Promise<string[]> {
-  const canonical = await realpath(directory);
-  if (ancestors.includes(canonical)) return [];
-  const nextAncestors = [...ancestors, canonical];
-  const entries = await readdir(directory, { withFileTypes: true });
-  const files = await Promise.all(entries.map(async (entry) => {
-    if (entry.name === "node_modules") return [];
-    const entryPath = path.join(directory, entry.name);
-    const entryStat = await lstat(entryPath);
-    if (entryStat.isSymbolicLink()) {
-      const targetStat = await stat(entryPath);
-      if (targetStat.isDirectory()) return sourceFiles(entryPath, nextAncestors);
-      if (targetStat.isFile()) return [entryPath];
-      throw new Error(`Unsupported source link target: ${entryPath}`);
-    }
-    if (entry.isDirectory()) return sourceFiles(entryPath, nextAncestors);
-    if (entry.isFile()) return [entryPath];
-    throw new Error(`Unsupported source entry: ${entryPath}`);
-  }));
-  return files.flat();
-}
 
 test("AC1 — package.json pins both Weaver 0.3.1 dependencies and the lockfile resolves registry integrity", async () => {
   const manifest = JSON.parse(await readFile(path.join(repositoryRoot, "package.json"), "utf8")) as {
