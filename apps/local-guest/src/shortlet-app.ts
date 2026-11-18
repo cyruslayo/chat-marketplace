@@ -3056,6 +3056,7 @@ export class LocalGuestApp {
       draftId: Boolean(projection.draftId),
       requestId: Boolean(projection.requestId),
       offerId: Boolean(projection.offerId),
+      pendingDraftReplacement: Boolean(projection.pendingDraftReplacement),
     });
     try {
       // Each guard repeats the fact it narrows: restoreStage already established it, so the test is always true for its branch.
@@ -3117,6 +3118,17 @@ export class LocalGuestApp {
             surfaceId: draftSurfaceId,
           }),
         };
+      }
+      // Issue 19 (ADR 0074, ADR 0106): the replacement card comes back under the surface id it was proposed with (never re-minted),
+      // and only for the Request Draft it was quoted against. Accept and keep re-check that binding when the guest acts.
+      if (
+        branch === "draft_replacement" &&
+        projection.pendingDraftReplacement &&
+        projection.pendingDraftReplacement.basedOnDraftId === projection.draftId &&
+        !projection.requestId &&
+        !projection.offerId
+      ) {
+        return this.#draftReplacementCard(thread, projection.pendingDraftReplacement);
       }
       if (branch === "request" && projection.requestId) {
         const artifact = environment.bookingRequestApp.getArtifact(
@@ -5071,25 +5083,42 @@ export class LocalGuestApp {
   ): GuestTurnResult {
     const draftId = thread.draftId;
     if (!draftId) throw new Error("No Request Draft is active");
-    const current = this.#draftArtifact(thread, "draft").facts;
     const surfaceId = `thread-${thread.threadId}:request:replacement:${draftId}`;
     const basedOn = JSON.stringify([draftId, change.unitId, change.proposed]);
     this.#supersede(thread, DRAFT_REPLACEMENT_STAGE);
     thread.activeSurfaces.set(DRAFT_REPLACEMENT_STAGE, surfaceId);
-    thread.pendingDraftReplacement = {
+    const pending: PendingDraftReplacement = {
       ...change,
       basedOnDraftId: draftId,
       basedOn,
       surfaceId,
     };
+    thread.pendingDraftReplacement = pending;
     this.#emitTransition(thread, "request_draft.replacement_proposed", {
       aggregateType: "request_draft",
       aggregateId: draftId,
       surfaceId,
     });
+    return {
+      ok: true,
+      messages: [message],
+      surfaces: [this.#draftReplacementCard(thread, pending)],
+    };
+  }
+
+  /**
+   * Issue 19 (ADR 0074, ADR 0106): the replacement card as the live proposal renders it. A cold restore rebuilds it through this
+   * same function, under the stored `pending.surfaceId`, so the two never differ.
+   */
+  #draftReplacementCard(
+    thread: GuestThreadState,
+    pending: PendingDraftReplacement,
+  ): GuestSurfacePayload {
+    const draftId = pending.basedOnDraftId;
+    const current = this.#draftArtifact(thread, "draft").facts;
     const proposal = {
       draftId,
-      basedOn,
+      basedOn: pending.basedOn,
       unitTitle: current.unitTitle,
       current: {
         checkIn: current.checkIn,
@@ -5100,21 +5129,16 @@ export class LocalGuestApp {
         refundableSecurityDepositKobo: current.refundableSecurityDepositKobo,
         amountDueNowKobo: current.amountDueNowKobo,
       },
-      proposed: change.proposed,
+      proposed: pending.proposed,
     };
+    const { surfaceId } = pending;
     return {
-      ok: true,
-      messages: [message],
-      surfaces: [
-        {
-          surfaceId,
-          mode: "focused-surface",
-          summary: "Change Request Draft",
-          conventionalRoute: conventionalRequestDraftRoute(draftId),
-          textFallback: draftReplacementFallback(proposal),
-          a2uiMessages: draftReplacementToA2UI({ proposal, surfaceId }),
-        },
-      ],
+      surfaceId,
+      mode: "focused-surface",
+      summary: "Change Request Draft",
+      conventionalRoute: conventionalRequestDraftRoute(draftId),
+      textFallback: draftReplacementFallback(proposal),
+      a2uiMessages: draftReplacementToA2UI({ proposal, surfaceId }),
     };
   }
 
