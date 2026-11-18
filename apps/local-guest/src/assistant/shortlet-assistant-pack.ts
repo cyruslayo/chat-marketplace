@@ -1646,10 +1646,11 @@ export function executeAssistantTool(
 }
 
 /** The shortlet task's current step for the shell rail, reusing the journey rail's canonical step names. */
-function shortletTaskSummary(taskState: AssistantTaskState): AssistantTaskSummary {
+function shortletTaskSummary(taskState: AssistantTaskState, environment: LocalGuestEnvironment): AssistantTaskSummary {
   // guest-stage.ts `shortletTaskStatus` picks the step; the labels are the journey rail's canonical names.
   const steps: Readonly<Record<ReturnType<typeof shortletTaskStatus>, string>> = {
     confirmed: GUEST_JOURNEY.confirmed,
+    payment: GUEST_JOURNEY.pay,
     offer: GUEST_JOURNEY.offer,
     request: GUEST_JOURNEY.request,
     stay: GUEST_JOURNEY.stay,
@@ -1660,6 +1661,7 @@ function shortletTaskSummary(taskState: AssistantTaskState): AssistantTaskSummar
     offerId: Boolean(taskState.currentOfferId),
     requestOrDraft: Boolean(taskState.currentBookingRequestId || taskState.currentDraftId),
     staySelected: taskState.shortlist.length > 0 || Boolean(taskState.selectedStayRef),
+    offerAccepted: railOfferAccepted(taskState, environment),
   })];
   return { label: "Stay", status };
 }
@@ -1828,6 +1830,20 @@ function sentStageFor(taskState: AssistantTaskState, environment: LocalGuestEnvi
 }
 
 /**
+ * The task rail's offer-accepted fact (issue 18, D3), read as `sentStage` reads it: only when an offer is held and no booking exists. A read
+ * that fails is not accepted, so the rail keeps the Offer step instead of failing the whole task rail (fail closed).
+ */
+function railOfferAccepted(taskState: AssistantTaskState, environment: LocalGuestEnvironment): boolean {
+  const offerId = taskState.currentOfferId;
+  if (offerId === undefined || taskState.currentContractId || taskState.currentReservationId) return false;
+  try {
+    return environment.conditionalOfferApp.getArtifact(offerId, environment.guestPrincipal()).facts.status === "accepted";
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Issue 11 (ADR 0005, 0077, 0080, 0106): the stage reply for a vague turn after a stay is sent. The unit is the sent request's Unit, or the
  * selected stay's when no request is held. Undefined before anything is sent, so the turn keeps the fixed clarification.
  */
@@ -1916,7 +1932,7 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     parseState: (value) => parseShortletTaskState(value),
     stateSummary: (state) => {
       const parsed = parseShortletTaskState(state);
-      return parsed === undefined ? undefined : shortletTaskSummary(parsed);
+      return parsed === undefined ? undefined : shortletTaskSummary(parsed, environment);
     },
     scopeFacts: (state) => ({ hasShortlist: state.shortlist.length > 0, hasSelectedStay: Boolean(state.selectedStayRef), hasOffer: Boolean(state.currentOfferId) }),
     // ADR 0074: the open proposal is at risk when the search no longer holds the stay it names. Issue 03f decides the tier.
@@ -2031,7 +2047,7 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
       return project(result) as Record<string, unknown>;
     },
     projectStateSummary: (state, limits) => ({ city: state.stayIntent.location === "Lagos" || state.stayIntent.location === "Abuja" ? state.stayIntent.location : null, hasShortlist: state.shortlist.length > 0, shortlistRefs: state.shortlist.slice(0, limits.maxItems).map((stay) => stay.stayRef), selectedStayRef: state.selectedStayRef ?? null, checkIn: state.stayIntent.checkIn ?? null, checkOut: state.stayIntent.checkOut ?? null, nights: state.stayIntent.nights ?? null, partySize: state.stayIntent.partySize ?? null, hasSelectedStay: Boolean(state.selectedStayRef), hasPendingAction: Boolean(state.pendingAction), openQuestion: state.openQuestion ?? null }),
-    taskSummary: shortletTaskSummary,
+    taskSummary: (state) => shortletTaskSummary(state, environment),
     renderReply: (plan, results, text, taskState) => renderShortletReply(plan, results, text, environment.clock(), taskState),
     // ADR 0106: a booking status with no active booking is reported as its own control outcome.
     replyControlOutcome: (results) => results.some((result) => result.name === "get_booking_status" && result.result.status === "no_active_booking")

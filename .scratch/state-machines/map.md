@@ -17,14 +17,14 @@ PRD: `PRD.md`. Line numbers come from a sweep of an earlier checkout and are app
 | 09 | B | Exhaustive `satisfies Record` copy maps in web-agent presentation | resolved | 01 |
 | 10 | B | `deriveGuestStage` projection that keeps today's per-site results, plus a matrix | resolved | 01 |
 | 11 | C | Deposit payment in processing restores as processing | resolved | - |
-| 12 | C | Unknown payment status no longer says "Booking confirmed" | ready-for-agent | 09 |
+| 12 | C | Unknown payment status no longer says "Booking confirmed" | resolved | 09 |
 | 13 | C | Stale or revoked offer does not restore as active | resolved | - |
 | 14 | C | Expired confirmation is cleared, so the guest is not stuck | resolved | - |
 | 15 | C | Unknown card-session status fails closed | resolved | - |
 | 16 | C | Stale `draftId` cleared on a new search (merged into 18) | resolved | 10 |
 | 17 | C | Allow-list hardening: `resolveExpiry`, `commitAmendment`, surface from-state | resolved | 05, 06, 07, 08 |
-| 18 | C | One guest stage everywhere: collapse each matrix disagreement | ready-for-agent | 10, 11, 13, 16 |
-| 19 | C | Draft-replacement card restored after a cold restore | ready-for-agent | 10 |
+| 18 | C | One guest stage everywhere: collapse each matrix disagreement | resolved | 10, 11, 13, 16 |
+| 19 | C | Draft-replacement card restored after a cold restore | resolved | 10 |
 | 20 | D | Pending-action card re-rendered after a cold restore? | to write | - |
 | 21 | D | Turn recovery: redacted server text vs raw client text | to write | - |
 | 22 | D | Client in-flight flags (`isLoading` vs `eventInFlight`), `THREAD_BUSY` | to write | - |
@@ -33,6 +33,7 @@ PRD: `PRD.md`. Line numbers come from a sweep of an earlier checkout and are app
 | 25 | D | Owner decision: keep or remove each never-written state (offer `revoked`; card session `failed`/`expired`; journey `failed`/`expired`; check-in `active`/`human_owned`/`closed`; overstay `resolved`) | needs-info | - |
 | 26 | D | Draft replacement can pass an undefined self-booking attestation into `createDraft` (made visible by issue 04 cast in `shortlet-app.ts`); confirm whether reachable | to write | - |
 | 27 | C | Guard the unguarded payment-journey stage writes (owner decisions per pair, incl. deposit retry returning to stay_payment_active) | needs-info | - |
+| 28 | D | Owner decision: after a new search that follows a draft, the task rail still says Request (D1). Needs a persisted discriminator and wording | needs-info | - |
 
 ## Seed inventory (for issue 01)
 
