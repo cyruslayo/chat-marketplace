@@ -15,7 +15,7 @@ PRD: `PRD.md`. Line numbers come from a sweep of an earlier checkout and are app
 | 07 | B | BookingPaymentJourney stage table and one `#setStage` | resolved | 03 |
 | 08 | B | One `SurfaceLifecycleStatus` (re-export from platform-core) | resolved | 01 |
 | 09 | B | Exhaustive `satisfies Record` copy maps in web-agent presentation | resolved | 01 |
-| 10 | B | `deriveGuestStage` projection that keeps today's per-site results, plus a matrix | ready-for-agent | 01 |
+| 10 | B | `deriveGuestStage` projection that keeps today's per-site results, plus a matrix | resolved | 01 |
 | 11 | C | Deposit payment in processing restores as processing | resolved | - |
 | 12 | C | Unknown payment status no longer says "Booking confirmed" | to write | 09 |
 | 13 | C | Stale or revoked offer does not restore as active | resolved | - |
