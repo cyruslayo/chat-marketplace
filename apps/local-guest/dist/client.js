@@ -10646,6 +10646,20 @@ Known schemas:
     const dateTime = formatBookingDateTime(iso);
     return dateTime === "time unavailable" ? "Payment deadline unavailable" : `Pay by ${dateTime}`;
   }
+  var GUEST_PAYMENT_STATUS_COPY = {
+    ready: { label: "Payment required", detail: "Continue to the designated payment checkout. Payment has not succeeded and the booking is not confirmed.", progress: "payment" },
+    checkout_initiated: {
+      processing: { label: "Payment processing \xB7 Checking payment", detail: "We are checking the provider\u2019s payment confirmation. Do not submit another payment while this result is pending. The booking is not confirmed until payment is verified and a Reservation exists.", progress: "payment-processing" },
+      handoff: { label: "Payment handoff ready \xB7 Payment not yet verified", detail: "Continue the current payment attempt. Payment has not succeeded and your booking is not confirmed. Your booking details will be retained when you return. Do not start another payment while this attempt is pending.", progress: "payment" }
+    },
+    deposit_required: { label: `Payment required \xB7 ${GUEST_GLOSSARY.refundableSecurityDeposit}`, detail: `The stay payment is verified. A separate ${GUEST_GLOSSARY.refundableSecurityDeposit} payment is still required before a Reservation can exist.`, progress: "payment" },
+    compensation_pending: { label: "Payment requires review \xB7 Booking not confirmed", detail: "This payment needs review. Your booking is not confirmed. Do not submit another payment while this payment is under review." },
+    reconciliation_required: { label: "Payment requires review \xB7 Booking not confirmed", detail: "This payment needs review. Your booking is not confirmed. Do not submit another payment while this payment is under review." },
+    compensated: { label: "Payment review update available", detail: "The payment attempt is closed and no Reservation exists. Check the current booking details before taking another action." },
+    expired: { label: "Payment window expired \xB7 Booking not confirmed", detail: "The Payment Window expired. This payment action is no longer available; no Reservation exists." },
+    failed: { label: "Payment was not verified \xB7 Booking not confirmed", detail: "Payment was not verified. No Reservation was created. Check the current booking status before retrying." },
+    confirmed: { label: "Booking confirmed", detail: "Payment verified and Reservation confirmed.", progress: "confirmed" }
+  };
 
   // apps/web-agent/src/discovery-a2ui.ts
   function formatNgnKobo(kobo) {
