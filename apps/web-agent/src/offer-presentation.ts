@@ -10,6 +10,15 @@ import {
   guestWaitingCopy,
 } from "./guest-content.js";
 
+/** Issue 09: the screen state of each offer status (ADR-0074 fail closed: an unknown offer is closed). */
+const OFFER_SCREEN_STATE = {
+  issued: "live",
+  accepted: "accepted",
+  expired: "expired",
+  stale: "closed",
+  revoked: "closed",
+} satisfies Record<ConditionalOfferArtifact["facts"]["status"], OfferScreenContent["state"]>;
+
 /** Presentation only: eligibility and expiry have already been projected by the application (ADR-0077). */
 export interface OfferScreenContent {
   readonly state: "live" | "expired" | "accepted" | "closed";
@@ -38,14 +47,8 @@ export function offerScreenContent(
   amount: string,
 ): OfferScreenContent {
   const facts = artifact.facts;
-  const state =
-    facts.status === "issued"
-      ? "live"
-      : facts.status === "expired"
-        ? "expired"
-        : facts.status === "accepted"
-          ? "accepted"
-          : "closed";
+  // Issue 09: one state per offer status. stale and revoked show as closed; a runtime value outside the union also does.
+  const state = OFFER_SCREEN_STATE[facts.status] ?? "closed";
   const copy = guestWaitingCopy("offer-payment-window", facts.operatorName);
   return {
     state,
