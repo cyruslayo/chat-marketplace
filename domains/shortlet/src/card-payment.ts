@@ -8,7 +8,6 @@ import type { GuestConductPolicySnapshot } from "./guest-conduct.js";
 import type { SecurityDepositPolicySnapshot } from "./security-deposit.js";
 import type { SecurityDepositAccountingRepository } from "./security-deposit-accounting.js";
 import type { ExtendedStayPolicy } from "./extended-stay.js";
-import type { TransitionTable } from "../../../packages/platform-core/src/state-transition.js";
 import { StayDateRange, isEligibleExtendedStayUnit, isEligibleUnit, type Unit } from "./browse.js";
 import { stayAmountDueNowKobo } from "./quote.js";
 

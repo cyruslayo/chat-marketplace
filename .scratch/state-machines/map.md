@@ -9,12 +9,12 @@ PRD: `PRD.md`. Line numbers come from a sweep of an earlier checkout and are app
 | 01 | A | State-machine map for agents (`docs/agents/state-machines.md`) | resolved | - |
 | 02 | A | Ratchet test keeps the map current | resolved | 01 |
 | 03 | B | `canTransition` predicate in platform-core | resolved | - |
-| 04 | B | BookingRequest: typed records (no `any`), exported status union, one delivered/deadline predicate | ready-for-agent | 03 |
-| 05 | B | ConditionalOffer and Reservation unions and tables | ready-for-agent | 03 |
-| 06 | B | Card session, bank transfer session, manual transfer, live attempt tables | ready-for-agent | 03 |
-| 07 | B | BookingPaymentJourney stage table and one `#setStage` | ready-for-agent | 03 |
-| 08 | B | One `SurfaceLifecycleStatus` (re-export from platform-core) | ready-for-agent | 01 |
-| 09 | B | Exhaustive `satisfies Record` copy maps in web-agent presentation | ready-for-agent | 01 |
+| 04 | B | BookingRequest: typed records (no `any`), exported status union, one delivered/deadline predicate | resolved | 03 |
+| 05 | B | ConditionalOffer and Reservation unions and tables | resolved | 03 |
+| 06 | B | Card session, bank transfer session, manual transfer, live attempt tables | resolved | 03 |
+| 07 | B | BookingPaymentJourney stage table and one `#setStage` | resolved | 03 |
+| 08 | B | One `SurfaceLifecycleStatus` (re-export from platform-core) | resolved | 01 |
+| 09 | B | Exhaustive `satisfies Record` copy maps in web-agent presentation | resolved | 01 |
 | 10 | B | `deriveGuestStage` projection that keeps today's per-site results, plus a matrix | ready-for-agent | 01 |
 | 11 | C | Deposit payment in processing restores as processing | resolved | - |
 | 12 | C | Unknown payment status no longer says "Booking confirmed" | to write | 09 |
@@ -31,6 +31,7 @@ PRD: `PRD.md`. Line numbers come from a sweep of an earlier checkout and are app
 | 23 | D | Offer page reload loop at the deadline | to write | - |
 | 24 | D | Deposit-claim day 14/45/90 steps have no from-state check | to write | - |
 | 25 | D | Owner decision: keep or remove each never-written state (offer `revoked`; card session `failed`/`expired`; journey `failed`/`expired`; check-in `active`/`human_owned`/`closed`; overstay `resolved`) | needs-info | - |
+| 26 | D | Draft replacement can pass an undefined self-booking attestation into `createDraft` (made visible by issue 04 cast in `shortlet-app.ts`); confirm whether reachable | to write | - |
 
 ## Seed inventory (for issue 01)
 
