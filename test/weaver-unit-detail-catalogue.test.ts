@@ -67,7 +67,7 @@ test("AC4: a unit missing a tile fact still renders every fact it has, and the s
     "unit-detail-sheet",
     "unit-amenities",
     "unit-supporting-info",
-    "ui-action-bar unit-action-bar",
+    "ui-action-bar ui-action-bar--sticky unit-action-bar",
   ], "every section is present, in order");
   const tiles = [...target.querySelectorAll(".unit-detail-sheet .ui-tiles__tile")].map((tile) => tile.textContent);
   assert.deepEqual(tiles, ["Not provided", `${artifact.facts.bathrooms} bathrooms`, `Sleeps ${artifact.facts.capacity}`]);

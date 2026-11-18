@@ -9,7 +9,8 @@ import {
 import { ConditionalOfferApplication } from "./conditional-offer-application.js";
 import { confirmationTokenDigest } from "../../../domains/shortlet/src/index.js";
 
-export const CONDITIONAL_OFFER_ACCEPT_EVENT = "shortlet.conditional-offer.accept";
+export { CONDITIONAL_OFFER_ACCEPT_EVENT } from "./conditional-offer-events.js";
+import { CONDITIONAL_OFFER_ACCEPT_EVENT } from "./conditional-offer-events.js";
 
 type ConditionalOfferActionContext = {
   readonly artifactId: string;

@@ -49,17 +49,23 @@ function renderAlias(definition: AnySurfaceComponent, input: WebComponentRenderI
 
 /**
  * The renderer registrations for one composed catalogue: the Basic renderers under the catalogue id, plus one renderer
- * per alias. An alias renderer is a thin adapter over the component's one kit `html(props)` helper, so the chat and the
- * no-JS page render the same markup.
+ * per alias. An alias with a host renderer (issue-02 Follow-up C, owner decision D35) uses it — the trusted DOM renderer
+ * bound to the host's resource policy, threaded through from the runtime factory — and any other alias falls back to the
+ * thin adapter over its component's one kit `html(props)` helper, so the chat and the no-JS page render the same markup.
  */
-export function rendererRegistrationsFor(composed: ComposedCatalogue, resourcePolicy: BasicResourcePolicy): RendererRegistration[] {
+export function rendererRegistrationsFor(
+  composed: ComposedCatalogue,
+  resourcePolicy: BasicResourcePolicy,
+  hostRenderers: readonly RendererRegistration[] = [],
+): RendererRegistration[] {
   const catalogId = composed.manifest.id;
+  const trusted = new Map(hostRenderers.filter((renderer) => renderer.catalogId === catalogId).map((renderer) => [renderer.component, renderer.render]));
   return [
     ...createBasicCatalogRendererRegistrations({ catalogId, resourcePolicy }),
     ...composed.components.map(({ alias, definition }): RendererRegistration => ({
       catalogId,
       component: alias,
-      render: (input) => renderAlias(definition, input),
+      render: trusted.get(alias) ?? ((input) => renderAlias(definition, input)),
     })),
   ];
 }

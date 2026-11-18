@@ -6,6 +6,9 @@ import { canTransition, type TransitionTable } from "./state-transition.js";
  * The catalogue ids the shortlet pack registers today. Kept as the default so a manager
  * constructed without a registry keeps accepting them; hosts register packs explicitly
  * (ADR 0099 rule 4, slice 12).
+ *
+ * These short ids are not the URN ids the Weaver runtime accepts; a host registers the URN ids with `catalogueIds(composed)`
+ * from the surface kit. Retiring the short ids is ADR 0108 phase 3.
  */
 export const APPROVED_CATALOGUES: readonly string[] = Object.freeze([
   "common/v1",

@@ -4809,14 +4809,6 @@
     };
   }
 
-  // ../chat-marketplace-weaver-031/node_modules/@cylayo/weaver-core/dist/catalog/definition.js
-  function defineCatalog(schema) {
-    return {
-      catalogId: schema.catalogId,
-      schema
-    };
-  }
-
   // ../chat-marketplace-weaver-031/node_modules/@cylayo/weaver-core/dist/catalog/schema.js
   var A2UI_CATALOG_SCHEMA = {
     $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -9487,185 +9479,203 @@ Known schemas:
     return { ok: true, value: facade };
   }
 
-  // apps/web-agent/src/shortlet-catalogs.ts
-  var SHORTLET_CATALOG_NAMESPACE = "urn:chat-marketplace:shortlet";
-  var SHORTLET_DISCOVERY_CATALOG_ID = `${SHORTLET_CATALOG_NAMESPACE}/discovery/v1`;
-  var SHORTLET_BOOKING_CATALOG_ID = `${SHORTLET_CATALOG_NAMESPACE}/booking/v1`;
+  // packages/surface-kit/src/json.ts
   function isJsonObject(value) {
     return typeof value === "object" && value !== null && !Array.isArray(value);
   }
-  function asCatalogSchema(schema, catalogId) {
-    const defs = schema["$defs"];
-    if (schema["$schema"] !== "https://json-schema.org/draft/2020-12/schema" || schema["catalogId"] !== catalogId || !isJsonObject(schema["components"]) || !isJsonObject(defs) || !isJsonObject(defs["theme"])) {
-      throw new TypeError(`Catalogue ${catalogId} is not an A2UI v0.9.1 catalogue document`);
+  function isJsonValue4(value) {
+    if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+    if (typeof value === "number") return Number.isFinite(value);
+    if (Array.isArray(value)) return value.every(isJsonValue4);
+    if (typeof value === "object") {
+      const proto = Object.getPrototypeOf(value);
+      if (proto !== Object.prototype && proto !== null) return false;
+      return Object.values(value).every(isJsonValue4);
     }
+    return false;
+  }
+  function cloneJson2(value) {
+    if (Array.isArray(value)) return value.map((item) => cloneJson2(item));
+    if (isJsonObject(value)) {
+      const copy = {};
+      for (const [key3, item] of Object.entries(value)) copy[key3] = cloneJson2(item);
+      return copy;
+    }
+    return value;
+  }
+  function deepFreeze2(value) {
+    if (typeof value === "object" && value !== null && !Object.isFrozen(value)) {
+      Object.freeze(value);
+      for (const item of Object.values(value)) deepFreeze2(item);
+    }
+    return value;
+  }
+
+  // packages/surface-kit/src/define.ts
+  var SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+  var MANIFEST_ID = /^urn:chat-marketplace:[a-z][a-z0-9-]*\/[a-z][a-z0-9-]*\/v[1-9][0-9]*$/;
+  var PASCAL_CASE = /^[A-Z][A-Za-z0-9]*$/;
+  var COMMON_TYPES_REF = /^common_types\.json#\/\$defs\/[A-Za-z][A-Za-z0-9]*$/;
+  var LOCAL_REF = /^#\/\$defs\/[A-Za-z][A-Za-z0-9]*$/;
+  var STRUCTURAL_PROPERTIES = /* @__PURE__ */ new Set(["component", "id"]);
+  function collectRefs(value, found) {
+    if (Array.isArray(value)) {
+      for (const item of value) collectRefs(item, found);
+    } else if (isJsonObject(value)) {
+      for (const [key3, item] of Object.entries(value)) {
+        if (key3 === "$ref" && typeof item === "string") found.push(item);
+        else collectRefs(item, found);
+      }
+    }
+  }
+  function stringArray(value) {
+    return Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
+  }
+  function defineSurfaceComponent(input) {
+    const { name, version, schema } = input;
+    if (!PASCAL_CASE.test(name)) throw new Error(`Surface Component name must be PascalCase: ${name}`);
+    if (!SEMVER.test(version)) throw new Error(`Surface Component ${name}: version must be <major>.<minor>.<patch>, got ${version}`);
+    if (schema["additionalProperties"] !== false) {
+      throw new Error(`Surface Component ${name}: schema must set additionalProperties to false (ADR 0073)`);
+    }
+    const properties = schema["properties"];
+    if (!isJsonObject(properties) || !isJsonObject(properties["component"])) {
+      throw new Error(`Surface Component ${name}: schema must declare a component property`);
+    }
+    if (!isJsonObject(properties["id"])) throw new Error(`Surface Component ${name}: schema must declare an id property`);
+    const refs = [];
+    collectRefs(schema, refs);
+    for (const ref of refs) {
+      if (!COMMON_TYPES_REF.test(ref) && !LOCAL_REF.test(ref)) {
+        throw new Error(`Surface Component ${name}: $ref ${ref} is outside common_types.json#/$defs and local #/$defs`);
+      }
+    }
+    for (const fixture of [...input.fixtures.valid, ...input.fixtures.invalid]) {
+      if (!isJsonValue4(fixture)) throw new Error(`Surface Component ${name}: every fixture must be valid JSON`);
+    }
+    const required2 = new Set(stringArray(schema["required"]));
+    const slots = Object.keys(properties).filter((key3) => !required2.has(key3) && !STRUCTURAL_PROPERTIES.has(key3));
+    return deepFreeze2({
+      ...input,
+      schema: cloneJson2(schema),
+      fixtures: { valid: [...input.fixtures.valid], invalid: [...input.fixtures.invalid] },
+      slots,
+      major: Number(version.split(".")[0])
+    });
+  }
+  function defineCatalogueManifest(input) {
+    if (!MANIFEST_ID.test(input.id)) throw new Error(`Catalogue manifest id is malformed: ${input.id}`);
+    for (const [alias, entry] of Object.entries(input.components)) {
+      if (!PASCAL_CASE.test(alias)) throw new Error(`Alias must be PascalCase: ${alias}`);
+      if (alias === "Surface" || alias.toLowerCase().startsWith("a2ui")) {
+        throw new Error(`Alias ${alias} is reserved by A2UI`);
+      }
+      if (entry.major !== entry.component.major) {
+        throw new Error(`Alias ${alias}: pinned major ${entry.major} differs from component ${entry.component.name} major ${entry.component.major}`);
+      }
+      for (const slot of Object.keys(entry.slots ?? {})) {
+        if (!entry.component.slots.includes(slot)) {
+          throw new Error(`Alias ${alias}: ${slot} is not an optional property of ${entry.component.name}`);
+        }
+      }
+    }
+    if (new Set(input.actions).size !== input.actions.length) throw new Error("Catalogue manifest actions contain a duplicate");
+    const components = {};
+    for (const [alias, entry] of Object.entries(input.components)) {
+      components[alias] = Object.freeze({
+        ...entry,
+        ...entry.slots === void 0 ? {} : { slots: Object.freeze({ ...entry.slots }) }
+      });
+    }
+    return Object.freeze({ ...input, components: Object.freeze(components), actions: Object.freeze([...input.actions]) });
+  }
+
+  // packages/surface-kit/src/compose.ts
+  var COMMON_TYPES_PREFIX = "common_types.json#/$defs/";
+  var LOCAL_PREFIX = "#/$defs/";
+  function objectAt(value, label) {
+    if (!isJsonObject(value)) throw new Error(`Base catalogue schema has no ${label}`);
+    return value;
+  }
+  function commonTypeNames(root) {
+    const defs = isJsonObject(root["$defs"]) ? root["$defs"] : void 0;
+    const commonTypes = defs === void 0 ? void 0 : defs["commonTypes"];
+    const commonDefs = isJsonObject(commonTypes) ? commonTypes["$defs"] : void 0;
+    return new Set(isJsonObject(commonDefs) ? Object.keys(commonDefs) : []);
+  }
+  function composeCatalogueSchema(manifest, baseSchema) {
+    const schema = cloneJson2(baseSchema);
+    schema["$id"] = manifest.id;
+    schema["catalogId"] = manifest.id;
+    const aliases = Object.entries(manifest.components);
+    if (aliases.length === 0) return { manifest, schema, components: [] };
+    const components = objectAt(schema["components"], "components");
+    const rootDefs = objectAt(schema["$defs"], "$defs");
+    const known = commonTypeNames(schema);
+    const anyComponent = objectAt(rootDefs["anyComponent"], "$defs.anyComponent");
+    const union = anyComponent["oneOf"];
+    if (!Array.isArray(union)) throw new Error("Base catalogue schema has no $defs.anyComponent.oneOf");
+    const unionRefs = [...union];
+    const composed = [];
+    for (const [alias, entry] of aliases) {
+      if (alias in components) throw new Error(`Alias ${alias} collides with a component in the base catalogue`);
+      const piece = cloneJson2(entry.component.schema);
+      const properties = { ...objectAt(piece["properties"], "component properties") };
+      properties["component"] = { const: alias };
+      let required2 = Array.isArray(piece["required"]) ? [...piece["required"]] : [];
+      for (const [slot, choice] of Object.entries(entry.slots ?? {})) {
+        if (choice === "absent") {
+          delete properties[slot];
+          required2 = required2.filter((name) => name !== slot);
+        } else if (choice === "required" && !required2.includes(slot)) {
+          required2.push(slot);
+        }
+      }
+      piece["properties"] = properties;
+      piece["required"] = required2;
+      const ownDefs = piece["$defs"];
+      delete piece["$defs"];
+      if (isJsonObject(ownDefs)) {
+        for (const [name, def] of Object.entries(ownDefs)) {
+          const existing = rootDefs[name];
+          if (existing !== void 0 && JSON.stringify(existing) !== JSON.stringify(def)) {
+            throw new Error(`Alias ${alias}: $defs.${name} clashes with a different definition already in the catalogue`);
+          }
+          rootDefs[name] = cloneJson2(def);
+        }
+      }
+      const refs = [];
+      collectRefs(piece, refs);
+      for (const ref of refs) {
+        const missing = ref.startsWith(COMMON_TYPES_PREFIX) ? !known.has(ref.slice(COMMON_TYPES_PREFIX.length)) : ref.startsWith(LOCAL_PREFIX) ? rootDefs[ref.slice(LOCAL_PREFIX.length)] === void 0 : true;
+        if (missing) throw new Error(`Alias ${alias}: $ref ${ref} does not resolve in the composed catalogue`);
+      }
+      components[alias] = piece;
+      unionRefs.push({ $ref: `#/components/${alias}` });
+      composed.push({ alias, definition: entry.component });
+    }
+    anyComponent["oneOf"] = unionRefs;
+    return { manifest, schema, components: composed };
+  }
+  function catalogueIds(composed) {
+    const ids = composed.map((catalogue) => catalogue.manifest.id);
+    const duplicate = ids.find((id, index) => ids.indexOf(id) !== index);
+    if (duplicate !== void 0) throw new Error(`Duplicate catalogue id: ${duplicate}`);
+    return ids;
+  }
+
+  // apps/web-agent/src/catalogues/weaver-catalogues.ts
+  function asWeaverSchema(schema) {
     return schema;
   }
-  var UNIT_DETAIL_COMPONENT = "UnitDetail";
-  var UNIT_GALLERY_COMPONENT = "UnitGallery";
-  var UNIT_DETAIL_SHEET_COMPONENT = "UnitDetailSheet";
-  var UNIT_ACTION_BAR_COMPONENT = "UnitActionBar";
-  var STAY_CARD_COMPONENT = "StayCard";
-  var STAY_RESULTS_COMPONENT = "StayResults";
-  var STAY_COMPARISON_COMPONENT = "StayComparison";
-  var STAY_TICKET_COMPONENT = "StayTicket";
-  var PRICE_BREAKDOWN_COMPONENT = "PriceBreakdown";
-  var COMPONENT_ID = { $ref: "common_types.json#/$defs/ComponentId" };
-  var CHILD_LIST = { $ref: "common_types.json#/$defs/ChildList" };
-  var TEXT = { type: "string", minLength: 1 };
-  function componentSchema(component, properties, required2) {
-    return {
-      type: "object",
-      properties: {
-        id: { type: "string" },
-        accessibility: { $ref: "common_types.json#/$defs/AccessibilityAttributes" },
-        weight: { type: "number" },
-        component: { const: component },
-        ...properties
-      },
-      required: ["id", "component", ...required2],
-      additionalProperties: false
-    };
+  function catalogRegistrationFor(composed) {
+    return { catalogId: composed.manifest.id, schema: asWeaverSchema(composed.schema) };
   }
-  var TILE = {
-    type: "object",
-    properties: { icon: { enum: ["bed", "bath", "users"] }, text: TEXT },
-    required: ["icon", "text"],
-    additionalProperties: false
-  };
-  var UNIT_BREAKDOWN = {
-    type: "object",
-    properties: { total: TEXT, totalLabel: TEXT, deposit: TEXT },
-    required: ["total", "totalLabel"],
-    additionalProperties: false
-  };
-  var RESULT_ROW = {
-    type: "object",
-    properties: { unitId: TEXT, title: TEXT, total: TEXT, totalLabel: TEXT, photoUrl: TEXT },
-    required: ["unitId", "title", "total", "totalLabel"],
-    additionalProperties: false
-  };
-  var COMPARE_CELL = {
-    type: "object",
-    properties: { value: { type: "string" }, unit: TEXT },
-    required: ["value"],
-    additionalProperties: false
-  };
-  var COMPARE_ROW = {
-    type: "object",
-    properties: { key: TEXT, cells: { type: "array", items: COMPARE_CELL, minItems: 1 } },
-    required: ["key", "cells"],
-    additionalProperties: false
-  };
-  var PHOTO = {
-    type: "object",
-    properties: { url: TEXT, alt: TEXT },
-    required: ["url", "alt"],
-    additionalProperties: false
-  };
-  var DISCOVERY_COMPONENTS = {
-    // The surface root: the unit detail's sections in their fixed order, so the client never searches the DOM for them.
-    [UNIT_DETAIL_COMPONENT]: componentSchema(UNIT_DETAIL_COMPONENT, {
-      gallery: COMPONENT_ID,
-      sheet: COMPONENT_ID,
-      amenities: CHILD_LIST,
-      supporting: CHILD_LIST,
-      actionBar: COMPONENT_ID
-    }, ["gallery", "sheet", "amenities", "supporting", "actionBar"]),
-    [UNIT_GALLERY_COMPONENT]: componentSchema(UNIT_GALLERY_COMPONENT, {
-      title: TEXT,
-      photos: { type: "array", items: PHOTO }
-    }, ["title", "photos"]),
-    [UNIT_DETAIL_SHEET_COMPONENT]: componentSchema(UNIT_DETAIL_SHEET_COMPONENT, {
-      where: TEXT,
-      title: TEXT,
-      demo: { type: "boolean" },
-      tiles: { type: "array", items: TILE, minItems: 1 },
-      breakdown: UNIT_BREAKDOWN,
-      extended: { type: "array", items: TEXT },
-      about: TEXT
-    }, ["where", "title", "tiles"]),
-    [UNIT_ACTION_BAR_COMPONENT]: componentSchema(UNIT_ACTION_BAR_COMPONENT, {
-      total: TEXT,
-      totalLabel: TEXT,
-      child: COMPONENT_ID
-    }, ["child"]),
-    // Weaver catalogues issue 06: one search result, the search page's `.ui-stay-card`. `view` and `compare` are the Basic
-    // Buttons that carry the allow-listed discovery events; `fit` and `notes` are Basic caption Texts the server words.
-    [STAY_CARD_COMPONENT]: componentSchema(STAY_CARD_COMPONENT, {
-      unitId: TEXT,
-      title: TEXT,
-      where: TEXT,
-      demo: { type: "boolean" },
-      facts: { type: "array", items: TILE, minItems: 1 },
-      total: TEXT,
-      totalLabel: TEXT,
-      deposit: TEXT,
-      photoUrl: TEXT,
-      photoCount: { type: "integer", minimum: 0 },
-      view: COMPONENT_ID,
-      compare: COMPONENT_ID,
-      fit: COMPONENT_ID,
-      notes: CHILD_LIST
-    }, ["unitId", "title", "where", "facts", "total", "totalLabel"]),
-    // The result list: the phone result rows (each opening its own card by unitId), "See both side by side" for exactly
-    // two results, and the grid of StayCards.
-    [STAY_RESULTS_COMPONENT]: componentSchema(STAY_RESULTS_COMPONENT, {
-      rows: { type: "array", items: RESULT_ROW, minItems: 1 },
-      cards: CHILD_LIST
-    }, ["rows", "cards"]),
-    // Weaver catalogues issue 07: the side-by-side table, stays as columns and one row per attribute. `actions` are the
-    // Basic View Buttons, one per stay in head order. The builder guarantees every row has one cell per head.
-    [STAY_COMPARISON_COMPONENT]: componentSchema(STAY_COMPARISON_COMPONENT, {
-      heads: { type: "array", items: TEXT, minItems: 1 },
-      rows: { type: "array", items: COMPARE_ROW, minItems: 1 },
-      actions: CHILD_LIST
-    }, ["heads", "rows"])
-  };
-  var TICKET_DATE = {
-    type: "object",
-    properties: { day: TEXT, date: TEXT, datetime: TEXT },
-    required: ["day", "date"],
-    additionalProperties: false
-  };
-  var BOOKING_COMPONENTS = {
-    [STAY_TICKET_COMPONENT]: componentSchema(STAY_TICKET_COMPONENT, {
-      title: TEXT,
-      checkIn: TICKET_DATE,
-      checkOut: TICKET_DATE,
-      foot: TEXT
-    }, ["title", "checkIn", "checkOut", "foot"]),
-    [PRICE_BREAKDOWN_COMPONENT]: componentSchema(PRICE_BREAKDOWN_COMPONENT, {
-      condition: TEXT,
-      total: TEXT,
-      totalLabel: TEXT,
-      deposit: TEXT,
-      depositCollected: { type: "boolean" },
-      due: TEXT,
-      thisPayment: TEXT,
-      paid: TEXT,
-      next: TEXT
-    }, [])
-  };
-  function withComponents(schema, components) {
-    const table = schema["components"];
-    const anyComponent = schema["$defs"]["anyComponent"];
-    const oneOf = anyComponent["oneOf"];
-    for (const [name, component] of Object.entries(components)) {
-      table[name] = structuredClone(component);
-      oneOf.push({ $ref: `#/components/${name}` });
-    }
-    return schema;
-  }
-  function shortletCatalog(catalogId, components = {}) {
+  function composeWeaverCatalogue(manifest) {
     const basic = createBasicCatalogV091Registration();
-    const schema = structuredClone(basic.schema);
-    schema["$id"] = catalogId;
-    schema["catalogId"] = catalogId;
-    return defineCatalog(asCatalogSchema(withComponents(schema, components), catalogId));
+    const composed = composeCatalogueSchema(manifest, basic.schema);
+    return { composed, registration: catalogRegistrationFor(composed) };
   }
-  var SHORTLET_DISCOVERY_CATALOG = shortletCatalog(SHORTLET_DISCOVERY_CATALOG_ID, DISCOVERY_COMPONENTS);
-  var SHORTLET_BOOKING_CATALOG = shortletCatalog(SHORTLET_BOOKING_CATALOG_ID, BOOKING_COMPONENTS);
 
   // apps/web/src/ui-kit.ts
   function escapeHtml(value) {
@@ -9735,6 +9745,377 @@ Known schemas:
   }
   function statusBadge(label, tone) {
     return `<span class="ui-status ui-status--${tone}">${escapeHtml(label)}</span>`;
+  }
+
+  // apps/web-agent/src/discovery-actions.ts
+  var VIEW_UNIT_EVENT = "shortlet.discovery.view-unit";
+  var SEE_ALL_DISCOVERY_EVENT = "shortlet.discovery.see-all";
+  var COMPARE_UNIT_EVENT = "shortlet.discovery.compare";
+  var COMPARE_BACK_EVENT = "shortlet.discovery.compare.back-to-results";
+
+  // apps/web-agent/src/unit-detail-actions.ts
+  var REQUEST_TO_BOOK_EVENT = "shortlet.unit-detail.request-to-book";
+  var BACK_TO_RESULTS_EVENT = "shortlet.unit-detail.back-to-results";
+
+  // apps/web-agent/src/request-draft-actions.ts
+  var REQUEST_DRAFT_REVIEW_EVENT = "shortlet.request-draft.review";
+  var REQUEST_DRAFT_SUBMIT_EVENT = "shortlet.request-draft.submit";
+
+  // apps/web-agent/src/draft-replacement-actions.ts
+  var DRAFT_REPLACEMENT_ACCEPT_EVENT = "shortlet.request-draft.replacement.accept";
+  var DRAFT_REPLACEMENT_KEEP_EVENT = "shortlet.request-draft.replacement.keep";
+
+  // apps/web-agent/src/booking-contract-actions.ts
+  var NOTICE_OPEN_EVENT = "shortlet.assistant.open-notice";
+  var EXTENSION_OPEN_EVENT = "shortlet.assistant.open-extension";
+
+  // apps/web/src/bank-transfer-events.ts
+  var BANK_TRANSFER_INITIALIZE_EVENT = "shortlet.bank-transfer.initialize";
+
+  // apps/web/src/card-payment-events.ts
+  var CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT = "shortlet.card-payment.initialize-checkout";
+  var CARD_PAYMENT_VERIFY_RETURN_EVENT = "shortlet.card-payment.verify-return";
+
+  // apps/web/src/conditional-offer-events.ts
+  var CONDITIONAL_OFFER_ACCEPT_EVENT = "shortlet.conditional-offer.accept";
+
+  // apps/web-agent/src/shortlet-catalogs.ts
+  var SHORTLET_CATALOG_NAMESPACE = "urn:chat-marketplace:shortlet";
+  var SHORTLET_DISCOVERY_CATALOG_ID = `${SHORTLET_CATALOG_NAMESPACE}/discovery/v1`;
+  var SHORTLET_BOOKING_CATALOG_ID = `${SHORTLET_CATALOG_NAMESPACE}/booking/v1`;
+  var UNIT_DETAIL_COMPONENT = "UnitDetail";
+  var UNIT_GALLERY_COMPONENT = "UnitGallery";
+  var UNIT_DETAIL_SHEET_COMPONENT = "UnitDetailSheet";
+  var UNIT_ACTION_BAR_COMPONENT = "UnitActionBar";
+  var STAY_CARD_COMPONENT = "StayCard";
+  var STAY_RESULTS_COMPONENT = "StayResults";
+  var STAY_COMPARISON_COMPONENT = "StayComparison";
+  var STAY_TICKET_COMPONENT = "StayTicket";
+  var PRICE_BREAKDOWN_COMPONENT = "PriceBreakdown";
+  var COMPONENT_ID = { $ref: "common_types.json#/$defs/ComponentId" };
+  var CHILD_LIST = { $ref: "common_types.json#/$defs/ChildList" };
+  var TEXT = { type: "string", minLength: 1 };
+  function componentSchema(component, properties, required2) {
+    return {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        accessibility: { $ref: "common_types.json#/$defs/AccessibilityAttributes" },
+        weight: { type: "number" },
+        component: { const: component },
+        ...properties
+      },
+      required: ["id", "component", ...required2],
+      additionalProperties: false
+    };
+  }
+  var TILE = {
+    type: "object",
+    properties: { icon: { enum: ["bed", "bath", "users"] }, text: TEXT },
+    required: ["icon", "text"],
+    additionalProperties: false
+  };
+  var UNIT_BREAKDOWN = {
+    type: "object",
+    properties: { total: TEXT, totalLabel: TEXT, deposit: TEXT },
+    required: ["total", "totalLabel"],
+    additionalProperties: false
+  };
+  var RESULT_ROW = {
+    type: "object",
+    properties: { unitId: TEXT, title: TEXT, total: TEXT, totalLabel: TEXT, photoUrl: TEXT },
+    required: ["unitId", "title", "total", "totalLabel"],
+    additionalProperties: false
+  };
+  var COMPARE_CELL = {
+    type: "object",
+    properties: { value: { type: "string" }, unit: TEXT },
+    required: ["value"],
+    additionalProperties: false
+  };
+  var COMPARE_ROW = {
+    type: "object",
+    properties: { key: TEXT, cells: { type: "array", items: COMPARE_CELL, minItems: 1 } },
+    required: ["key", "cells"],
+    additionalProperties: false
+  };
+  var PHOTO = {
+    type: "object",
+    properties: { url: TEXT, alt: TEXT },
+    required: ["url", "alt"],
+    additionalProperties: false
+  };
+  var TICKET_DATE = {
+    type: "object",
+    properties: { day: TEXT, date: TEXT, datetime: TEXT },
+    required: ["day", "date"],
+    additionalProperties: false
+  };
+  function ticketDateText(date2) {
+    return [`${date2.day} ${date2.date}`, date2.datetime].filter((part) => part !== void 0).join(" ");
+  }
+  function shortletComponent(name, required2, properties, html, text2, fixtures) {
+    return defineSurfaceComponent({
+      name,
+      version: "1.0.0",
+      tier: 3,
+      schema: componentSchema(name, properties, required2),
+      html,
+      text: text2,
+      fixtures
+    });
+  }
+  var UNIT_DETAIL = shortletComponent(
+    UNIT_DETAIL_COMPONENT,
+    ["gallery", "sheet", "amenities", "supporting", "actionBar"],
+    { gallery: COMPONENT_ID, sheet: COMPONENT_ID, amenities: CHILD_LIST, supporting: CHILD_LIST, actionBar: COMPONENT_ID },
+    () => `<div class="unit-detail-root"></div>`,
+    () => "",
+    {
+      valid: [
+        { id: "unit-detail", component: "UnitDetail", gallery: "gallery", sheet: "sheet", amenities: ["a1"], supporting: [], actionBar: "action-bar" }
+      ],
+      invalid: [
+        { id: "unit-detail", component: "UnitDetail", gallery: "gallery", sheet: "sheet", amenities: ["a1"], supporting: [], actionBar: "action-bar", extra: 1 },
+        { id: "unit-detail", component: "UnitDetail", gallery: "gallery", sheet: "sheet", amenities: [], supporting: [], actionBar: "action-bar" }
+      ]
+    }
+  );
+  var UNIT_GALLERY = shortletComponent(
+    UNIT_GALLERY_COMPONENT,
+    ["title", "photos"],
+    { title: TEXT, photos: { type: "array", items: PHOTO } },
+    (props) => `<div class="unit-gallery" role="group">${props.photos.map((photo) => `<img src="${escapeHtml(photo.url)}" alt="${escapeHtml(photo.alt)}">`).join("")}</div>`,
+    (props) => [props.title, ...props.photos.map((photo) => photo.alt)].join("\n"),
+    {
+      valid: [
+        { id: "gallery", component: "UnitGallery", title: "Photos", photos: [{ url: "https://example.test/a.jpg", alt: "Living room" }] }
+      ],
+      invalid: [
+        { id: "gallery", component: "UnitGallery", title: "Photos", photos: [{ url: "https://example.test/a.jpg", alt: "Living room" }], extra: 1 },
+        { id: "gallery", component: "UnitGallery", title: "Photos", photos: [] }
+      ]
+    }
+  );
+  var UNIT_DETAIL_SHEET = shortletComponent(
+    UNIT_DETAIL_SHEET_COMPONENT,
+    ["where", "title", "tiles"],
+    { where: TEXT, title: TEXT, demo: { type: "boolean" }, tiles: { type: "array", items: TILE, minItems: 1 }, breakdown: UNIT_BREAKDOWN, extended: { type: "array", items: TEXT }, about: TEXT },
+    (props) => `<section class="unit-detail-sheet"><p class="unit-detail-location">${escapeHtml(props.where)}</p><h2 class="unit-detail-title">${escapeHtml(props.title)}</h2><ul class="ui-tiles">${props.tiles.map((tile) => `<li class="ui-tiles__tile">${escapeHtml(tile.text)}</li>`).join("")}</ul>${props.breakdown === void 0 ? "" : `<p class="ui-money-total">${escapeHtml(props.breakdown.total)}</p>`}${(props.extended ?? []).map((entry) => `<p class="ui-money-metadata">${escapeHtml(entry)}</p>`).join("")}${props.about === void 0 ? "" : `<p class="unit-detail-description">${escapeHtml(props.about)}</p>`}</section>`,
+    (props) => [
+      props.where,
+      props.title,
+      ...props.tiles.map((tile) => tile.text),
+      props.breakdown === void 0 ? void 0 : [props.breakdown.total, props.breakdown.totalLabel, props.breakdown.deposit].filter((part) => part !== void 0).join(" "),
+      ...props.extended ?? [],
+      props.about
+    ].filter((part) => part !== void 0 && part !== "").join("\n"),
+    {
+      valid: [
+        { id: "sheet", component: "UnitDetailSheet", where: "Ikoyi, Lagos", title: "Sunny flat", tiles: [{ icon: "bed", text: "2 bedrooms" }] },
+        { id: "sheet-full", component: "UnitDetailSheet", where: "Ikoyi, Lagos", title: "Sunny flat", demo: true, tiles: [{ icon: "bed", text: "2 bedrooms" }], breakdown: { total: "NGN 80,000", totalLabel: "total", deposit: "NGN 40,000" }, extended: ["Utilities included"], about: "A bright flat." }
+      ],
+      invalid: [
+        { id: "sheet", component: "UnitDetailSheet", where: "Ikoyi, Lagos", title: "Sunny flat", tiles: [{ icon: "bed", text: "2 bedrooms" }], extra: 1 },
+        { id: "sheet", component: "UnitDetailSheet", where: "Ikoyi, Lagos", title: "Sunny flat", tiles: [] }
+      ]
+    }
+  );
+  var UNIT_ACTION_BAR = shortletComponent(
+    UNIT_ACTION_BAR_COMPONENT,
+    ["child"],
+    { total: TEXT, totalLabel: TEXT, child: COMPONENT_ID },
+    (props) => `<div class="ui-action-bar unit-action-bar"><p class="ui-action-bar__sum">${escapeHtml(props.total ?? "")} ${escapeHtml(props.totalLabel ?? "")}</p></div>`,
+    (props) => [props.total, props.totalLabel].filter((part) => part !== void 0).join(" "),
+    {
+      valid: [
+        { id: "action-bar", component: "UnitActionBar", total: "NGN 80,000", totalLabel: "total", child: "actions" }
+      ],
+      invalid: [
+        { id: "action-bar", component: "UnitActionBar", total: "NGN 80,000", totalLabel: "total", child: "actions", extra: 1 },
+        { id: "action-bar", component: "UnitActionBar", child: "actions", total: 8e4 }
+      ]
+    }
+  );
+  var STAY_CARD = shortletComponent(
+    STAY_CARD_COMPONENT,
+    ["unitId", "title", "where", "facts", "total", "totalLabel"],
+    {
+      unitId: TEXT,
+      title: TEXT,
+      where: TEXT,
+      demo: { type: "boolean" },
+      facts: { type: "array", items: TILE, minItems: 1 },
+      total: TEXT,
+      totalLabel: TEXT,
+      deposit: TEXT,
+      photoUrl: TEXT,
+      photoCount: { type: "integer", minimum: 0 },
+      view: COMPONENT_ID,
+      compare: COMPONENT_ID,
+      fit: COMPONENT_ID,
+      notes: CHILD_LIST
+    },
+    (props) => `<article class="stay-card ui-stay-card"><h2 class="ui-stay-card__title">${escapeHtml(props.title)}</h2><p>${escapeHtml(props.where)}</p><p class="ui-stay-card__price">${escapeHtml(props.total)} ${escapeHtml(props.totalLabel)}</p></article>`,
+    (props) => [props.title, props.where, ...props.facts.map((fact) => fact.text), props.total, props.totalLabel, props.deposit].filter((part) => part !== void 0).join("\n"),
+    {
+      valid: [
+        { id: "stay-card", component: "StayCard", unitId: "unit-1", title: "Sunny flat", where: "Ikoyi, Lagos", facts: [{ icon: "bed", text: "2 bedrooms" }], total: "NGN 80,000", totalLabel: "total", view: "view", compare: "compare", fit: "fit", notes: [] }
+      ],
+      invalid: [
+        { id: "stay-card", component: "StayCard", unitId: "unit-1", title: "Sunny flat", where: "Ikoyi, Lagos", facts: [{ icon: "bed", text: "2 bedrooms" }], total: "NGN 80,000", totalLabel: "total", view: "view", compare: "compare", fit: "fit", notes: [], extra: 1 },
+        { id: "stay-card", component: "StayCard", unitId: "unit-1", title: "Sunny flat", where: "Ikoyi, Lagos", facts: [], total: "NGN 80,000", totalLabel: "total", view: "view", compare: "compare", fit: "fit", notes: [] }
+      ]
+    }
+  );
+  var STAY_RESULTS = shortletComponent(
+    STAY_RESULTS_COMPONENT,
+    ["rows", "cards"],
+    { rows: { type: "array", items: RESULT_ROW, minItems: 1 }, cards: CHILD_LIST },
+    (props) => `<div class="stay-results"><div class="ui-result-rows">${props.rows.map((row) => `<a class="ui-result-row" href="/stays/${escapeHtml(row.unitId)}"><span class="ui-result-row__body"><span class="ui-result-row__title">${escapeHtml(row.title)}</span><span class="ui-result-row__price">${escapeHtml(row.total)} ${escapeHtml(row.totalLabel)}</span></span></a>`).join("")}</div></div>`,
+    (props) => props.rows.map((row) => [row.title, row.total, row.totalLabel].join(" ")).join("\n"),
+    {
+      valid: [
+        { id: "stay-results", component: "StayResults", rows: [{ unitId: "unit-1", title: "Sunny flat", total: "NGN 80,000", totalLabel: "total" }], cards: ["card-1"] }
+      ],
+      invalid: [
+        { id: "stay-results", component: "StayResults", rows: [{ unitId: "unit-1", title: "Sunny flat", total: "NGN 80,000", totalLabel: "total" }], cards: ["card-1"], extra: 1 },
+        { id: "stay-results", component: "StayResults", rows: [], cards: ["card-1"] }
+      ]
+    }
+  );
+  var STAY_COMPARISON = shortletComponent(
+    STAY_COMPARISON_COMPONENT,
+    ["heads", "rows"],
+    { heads: { type: "array", items: TEXT, minItems: 1 }, rows: { type: "array", items: COMPARE_ROW, minItems: 1 }, actions: CHILD_LIST },
+    (props) => `<div class="ui-compare" role="table"><div role="row">${props.heads.map((head) => `<span role="columnheader">${escapeHtml(head)}</span>`).join("")}</div>${props.rows.map((row) => `<div role="row"><span role="rowheader">${escapeHtml(row.key)}</span>${row.cells.map((cell) => `<span role="cell">${escapeHtml(cell.value)}</span>`).join("")}</div>`).join("")}</div>`,
+    (props) => [props.heads.join(" "), ...props.rows.map((row) => [row.key, ...row.cells.map((cell) => cell.value)].join(" "))].join("\n"),
+    {
+      valid: [
+        { id: "stay-comparison", component: "StayComparison", heads: ["Stay"], rows: [{ key: "Total", cells: [{ value: "NGN 80,000" }] }], actions: ["view-1"] }
+      ],
+      invalid: [
+        { id: "stay-comparison", component: "StayComparison", heads: ["Stay"], rows: [{ key: "Total", cells: [{ value: "NGN 80,000" }] }], actions: ["view-1"], extra: 1 },
+        { id: "stay-comparison", component: "StayComparison", heads: [], rows: [{ key: "Total", cells: [{ value: "NGN 80,000" }] }], actions: ["view-1"] }
+      ]
+    }
+  );
+  var STAY_TICKET = shortletComponent(
+    STAY_TICKET_COMPONENT,
+    ["title", "checkIn", "checkOut", "foot"],
+    { title: TEXT, checkIn: TICKET_DATE, checkOut: TICKET_DATE, foot: TEXT },
+    (props) => `<section class="ui-ticket"><h2 class="ui-ticket__name">${escapeHtml(props.title)}</h2><div class="ui-ticket__dates">${escapeHtml(ticketDateText(props.checkIn))} \u2192 ${escapeHtml(ticketDateText(props.checkOut))}</div><p class="ui-ticket__foot">${escapeHtml(props.foot)}</p></section>`,
+    (props) => [props.title, ticketDateText(props.checkIn), ticketDateText(props.checkOut), props.foot].join("\n"),
+    {
+      valid: [
+        { id: "stay-ticket", component: "StayTicket", title: "Sunny flat", checkIn: { day: "Thu", date: "10 Sept" }, checkOut: { day: "Sun", date: "13 Sept" }, foot: "3 nights" }
+      ],
+      invalid: [
+        { id: "stay-ticket", component: "StayTicket", title: "Sunny flat", checkIn: { day: "Thu", date: "10 Sept" }, checkOut: { day: "Sun", date: "13 Sept" }, foot: "3 nights", extra: 1 },
+        { id: "stay-ticket", component: "StayTicket", title: "Sunny flat", checkIn: {}, checkOut: { day: "Sun", date: "13 Sept" }, foot: "3 nights" }
+      ]
+    }
+  );
+  var PRICE_BREAKDOWN = shortletComponent(
+    PRICE_BREAKDOWN_COMPONENT,
+    [],
+    { condition: TEXT, total: TEXT, totalLabel: TEXT, deposit: TEXT, depositCollected: { type: "boolean" }, due: TEXT, thisPayment: TEXT, paid: TEXT, next: TEXT },
+    (props) => `<div class="ui-price-breakdown">${[props.condition, props.total, props.totalLabel, props.deposit, props.due, props.thisPayment, props.paid, props.next].filter((part) => part !== void 0).map((part) => `<p>${escapeHtml(part)}</p>`).join("")}</div>`,
+    (props) => [props.condition, props.total, props.totalLabel, props.deposit, props.due, props.thisPayment, props.paid, props.next].filter((part) => part !== void 0).join("\n"),
+    {
+      valid: [
+        { id: "price-breakdown", component: "PriceBreakdown", total: "NGN 80,000", totalLabel: "total", deposit: "NGN 40,000", due: "NGN 40,000" }
+      ],
+      invalid: [
+        { id: "price-breakdown", component: "PriceBreakdown", total: "NGN 80,000", totalLabel: "total", deposit: "NGN 40,000", due: "NGN 40,000", extra: 1 },
+        { id: "price-breakdown", component: "PriceBreakdown", total: 8e4 }
+      ]
+    }
+  );
+  var SHORTLET_DISCOVERY_MANIFEST = defineCatalogueManifest({
+    id: SHORTLET_DISCOVERY_CATALOG_ID,
+    owner: "shortlet",
+    base: "basic/v0.9.1",
+    components: {
+      [UNIT_DETAIL_COMPONENT]: { major: UNIT_DETAIL.major, component: UNIT_DETAIL },
+      [UNIT_GALLERY_COMPONENT]: { major: UNIT_GALLERY.major, component: UNIT_GALLERY },
+      [UNIT_DETAIL_SHEET_COMPONENT]: { major: UNIT_DETAIL_SHEET.major, component: UNIT_DETAIL_SHEET },
+      [UNIT_ACTION_BAR_COMPONENT]: { major: UNIT_ACTION_BAR.major, component: UNIT_ACTION_BAR },
+      [STAY_CARD_COMPONENT]: { major: STAY_CARD.major, component: STAY_CARD },
+      [STAY_RESULTS_COMPONENT]: { major: STAY_RESULTS.major, component: STAY_RESULTS },
+      [STAY_COMPARISON_COMPONENT]: { major: STAY_COMPARISON.major, component: STAY_COMPARISON }
+    },
+    actions: [VIEW_UNIT_EVENT, SEE_ALL_DISCOVERY_EVENT, COMPARE_UNIT_EVENT, COMPARE_BACK_EVENT, REQUEST_TO_BOOK_EVENT, BACK_TO_RESULTS_EVENT]
+  });
+  var SHORTLET_BOOKING_MANIFEST = defineCatalogueManifest({
+    id: SHORTLET_BOOKING_CATALOG_ID,
+    owner: "shortlet",
+    base: "basic/v0.9.1",
+    components: {
+      [STAY_TICKET_COMPONENT]: { major: STAY_TICKET.major, component: STAY_TICKET },
+      [PRICE_BREAKDOWN_COMPONENT]: { major: PRICE_BREAKDOWN.major, component: PRICE_BREAKDOWN }
+    },
+    actions: [
+      REQUEST_DRAFT_REVIEW_EVENT,
+      REQUEST_DRAFT_SUBMIT_EVENT,
+      DRAFT_REPLACEMENT_ACCEPT_EVENT,
+      DRAFT_REPLACEMENT_KEEP_EVENT,
+      CONDITIONAL_OFFER_ACCEPT_EVENT,
+      BANK_TRANSFER_INITIALIZE_EVENT,
+      CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT,
+      CARD_PAYMENT_VERIFY_RETURN_EVENT,
+      NOTICE_OPEN_EVENT,
+      EXTENSION_OPEN_EVENT
+    ]
+  });
+  var DISCOVERY = composeWeaverCatalogue(SHORTLET_DISCOVERY_MANIFEST);
+  var BOOKING = composeWeaverCatalogue(SHORTLET_BOOKING_MANIFEST);
+  var SHORTLET_DISCOVERY_CATALOG = DISCOVERY.registration;
+  var SHORTLET_BOOKING_CATALOG = BOOKING.registration;
+  var SHORTLET_COMPOSED_CATALOGUES = [DISCOVERY.composed, BOOKING.composed];
+
+  // apps/local-guest/src/catalogue-renderers.ts
+  function carriesExecutableMarkup(content) {
+    if (content.querySelector("script, iframe, object, embed") !== null) return true;
+    for (const element2 of content.querySelectorAll("*")) {
+      for (const attribute of element2.getAttributeNames()) {
+        if (attribute.toLowerCase().startsWith("on")) return true;
+        if (/^\s*javascript:/i.test(element2.getAttribute(attribute) ?? "")) return true;
+      }
+    }
+    return false;
+  }
+  function renderAlias(definition, input) {
+    const props = input.properties;
+    const template = input.document.createElement("template");
+    template.innerHTML = definition.html(props);
+    if (carriesExecutableMarkup(template.content)) {
+      const fallback2 = input.document.createElement("p");
+      fallback2.textContent = definition.text(props);
+      return fallback2;
+    }
+    const root = template.content.firstElementChild;
+    if (root === null) return input.document.createTextNode(definition.text(props));
+    for (const marked of root.querySelectorAll("[data-surface-action]")) {
+      const actionProperty = marked.getAttribute("data-surface-action");
+      if (actionProperty === null || actionProperty === "") continue;
+      marked.addEventListener("click", () => {
+        input.interactions.dispatchAction(actionProperty);
+      });
+    }
+    return root;
+  }
+  function rendererRegistrationsFor(composed, resourcePolicy, hostRenderers = []) {
+    const catalogId = composed.manifest.id;
+    const trusted = new Map(hostRenderers.filter((renderer) => renderer.catalogId === catalogId).map((renderer) => [renderer.component, renderer.render]));
+    return [
+      ...createBasicCatalogRendererRegistrations({ catalogId, resourcePolicy }),
+      ...composed.components.map(({ alias, definition }) => ({
+        catalogId,
+        component: alias,
+        render: trusted.get(alias) ?? ((input) => renderAlias(definition, input))
+      }))
+    ];
   }
 
   // apps/web-agent/src/guest-content.ts
@@ -10261,9 +10642,9 @@ Known schemas:
   var COMPOSER_KEYS = ["label", "ariaLabel", "placeholder", "hint", "inputMode"];
   var WORKSPACE_KEYS = ["regionLabel", "reopenLabel", "returnedAnnouncement", "readyAnnouncement", "workingStatus"];
   var CRITERIA_KEYS = ["regionLabel", "editLabel"];
-  function deepFreeze2(value) {
+  function deepFreeze3(value) {
     if (typeof value !== "object" || value === null) return;
-    for (const child of Object.values(value)) deepFreeze2(child);
+    for (const child of Object.values(value)) deepFreeze3(child);
     Object.freeze(value);
   }
   var STAYS_PRESENTATION = {
@@ -10295,7 +10676,7 @@ Known schemas:
     },
     criteria: { regionLabel: "Your search", editLabel: "Edit search" }
   };
-  deepFreeze2(STAYS_PRESENTATION);
+  deepFreeze3(STAYS_PRESENTATION);
   var GUEST_MODES = Object.freeze({ stays: STAYS_PRESENTATION });
   function isPlainRecord(value) {
     if (typeof value !== "object" || value === null) return false;
@@ -10393,7 +10774,7 @@ Known schemas:
       workspace: { regionLabel, reopenLabel, returnedAnnouncement, readyAnnouncement, workingStatus: workingStatus2 },
       ...criteria === void 0 ? {} : { criteria }
     };
-    deepFreeze2(presentation);
+    deepFreeze3(presentation);
     return presentation;
   }
   var GUEST_NOTICE_COPY = Object.freeze({
@@ -11399,41 +11780,26 @@ Known schemas:
     ];
   }
 
-  // apps/web-agent/src/commerce-catalogs.ts
-  var COMMERCE_CATALOG_NAMESPACE = "urn:chat-marketplace:commerce";
-  var COMMERCE_DISCOVERY_CATALOG_ID = `${COMMERCE_CATALOG_NAMESPACE}/discovery/v1`;
-  var COMMERCE_CART_CATALOG_ID = `${COMMERCE_CATALOG_NAMESPACE}/cart/v1`;
-  var COMMERCE_ORDER_CATALOG_ID = `${COMMERCE_CATALOG_NAMESPACE}/order/v1`;
-  function commerceCatalog(catalogId) {
-    const schema = structuredClone(createBasicCatalogV091Registration().schema);
-    schema["$id"] = catalogId;
-    schema["catalogId"] = catalogId;
-    return { catalogId, schema };
-  }
-  var COMMERCE_DISCOVERY_CATALOG = commerceCatalog(COMMERCE_DISCOVERY_CATALOG_ID);
-  var COMMERCE_CART_CATALOG = commerceCatalog(COMMERCE_CART_CATALOG_ID);
-  var COMMERCE_ORDER_CATALOG = commerceCatalog(COMMERCE_ORDER_CATALOG_ID);
-  var COMMERCE_CATALOGS = [COMMERCE_DISCOVERY_CATALOG, COMMERCE_CART_CATALOG, COMMERCE_ORDER_CATALOG];
-
   // apps/local-guest/src/shortlet-runtime.ts
-  function createShortletWebRuntime(options = {}) {
+  function createGuestWebRuntime(options) {
+    catalogueIds(options.catalogues);
     const resourcePolicy = options.resourcePolicy ?? (() => void 0);
-    const commerceCatalogs = options.commerce === true ? COMMERCE_CATALOGS : [];
+    const hostRenderers = createShortletRenderers({
+      resourcePolicy,
+      ...options.onCompareBoth === void 0 ? {} : { onCompareBoth: options.onCompareBoth }
+    });
     const created = createBasicWebRuntime({
-      additionalCatalogs: [SHORTLET_DISCOVERY_CATALOG, SHORTLET_BOOKING_CATALOG, ...commerceCatalogs],
-      additionalRenderers: [
-        ...createBasicCatalogRendererRegistrations({ catalogId: SHORTLET_DISCOVERY_CATALOG.catalogId, resourcePolicy }),
-        ...createBasicCatalogRendererRegistrations({ catalogId: SHORTLET_BOOKING_CATALOG.catalogId, resourcePolicy }),
-        ...commerceCatalogs.flatMap(({ catalogId }) => createBasicCatalogRendererRegistrations({ catalogId, resourcePolicy })),
-        // ADR 0102: the typed catalogue components use the same host image policy as Basic Image.
-        ...createShortletRenderers({ resourcePolicy, ...options.onCompareBoth === void 0 ? {} : { onCompareBoth: options.onCompareBoth } })
-      ],
+      additionalCatalogs: options.catalogues.map(catalogRegistrationFor),
+      additionalRenderers: options.catalogues.flatMap((composed) => rendererRegistrationsFor(composed, resourcePolicy, hostRenderers)),
       ...options.safety === void 0 ? {} : { runtime: { safety: options.safety } },
       basic: { resourcePolicy },
       ...options.onServerEvent === void 0 ? {} : { rendering: { onServerEvent: options.onServerEvent } }
     });
-    if (!created.ok) throw new Error("Unable to create the Shortlet Weaver web runtime", { cause: created.error });
+    if (!created.ok) throw new Error("Unable to create the guest Weaver web runtime", { cause: created.error });
     return created.value;
+  }
+  function createShortletWebRuntime(options = {}) {
+    return createGuestWebRuntime({ ...options, catalogues: SHORTLET_COMPOSED_CATALOGUES });
   }
 
   // apps/local-guest/src/quick-replies.ts
@@ -11850,10 +12216,6 @@ Known schemas:
         return current === "listening" ? "idle" : current;
     }
   }
-
-  // apps/web-agent/src/booking-contract-a2ui.ts
-  var NOTICE_OPEN_EVENT = "shortlet.assistant.open-notice";
-  var EXTENSION_OPEN_EVENT = "shortlet.assistant.open-extension";
 
   // apps/local-guest/src/guest-surface-fallback.ts
   function mountGuestSurfaceOrFallback(options) {

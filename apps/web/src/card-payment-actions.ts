@@ -4,8 +4,8 @@ import { resolveAction } from "../../../packages/platform-core/src/index.js";
 import { CARD_PAYMENT_ARTIFACT_KIND, CARD_PAYMENT_SCHEMA_VERSION, type CardPaymentArtifact } from "./card-payment-artifact.js";
 import type { CardPaymentApplication } from "./card-payment-application.js";
 
-export const CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT = "shortlet.card-payment.initialize-checkout";
-export const CARD_PAYMENT_VERIFY_RETURN_EVENT = "shortlet.card-payment.verify-return";
+export { CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT, CARD_PAYMENT_VERIFY_RETURN_EVENT } from "./card-payment-events.js";
+import { CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT, CARD_PAYMENT_VERIFY_RETURN_EVENT } from "./card-payment-events.js";
 
 type Context = {
   readonly artifactId: string;

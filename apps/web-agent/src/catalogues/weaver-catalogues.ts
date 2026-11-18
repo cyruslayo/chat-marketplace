@@ -4,12 +4,16 @@ import {
   type JsonObject as WeaverJsonObject,
 } from "@cylayo/weaver-core";
 import {
+  catalogueIds,
   composeCatalogueSchema,
   defineCatalogueManifest,
   type CatalogueManifest,
   type ComposedCatalogue,
   type JsonObject,
 } from "../../../../packages/surface-kit/src/index.js";
+
+export { catalogueIds };
+export type { ComposedCatalogue };
 
 /**
  * The schema adapter between the Weaver-free surface-kit and Weaver 0.2.1 (ADR 0108 decision 5, ADR 0081). One of the
@@ -25,11 +29,16 @@ function asWeaverSchema(schema: JsonObject): WeaverJsonObject {
   return schema as WeaverJsonObject;
 }
 
+/** The Weaver registration for a composed catalogue: its id and its one self-contained schema. */
+export function catalogRegistrationFor(composed: ComposedCatalogue): CatalogRegistration {
+  return { catalogId: composed.manifest.id, schema: asWeaverSchema(composed.schema) };
+}
+
 /** Composes a manifest over the Weaver Basic Catalog (A2UI v0.9.1) and returns the library result and the Weaver registration. */
 export function composeWeaverCatalogue(manifest: CatalogueManifest): WeaverCatalogue {
   const basic = createBasicCatalogV091Registration();
   const composed = composeCatalogueSchema(manifest, basic.schema as JsonObject);
-  return { composed, registration: { catalogId: manifest.id, schema: asWeaverSchema(composed.schema) } };
+  return { composed, registration: catalogRegistrationFor(composed) };
 }
 
 /**

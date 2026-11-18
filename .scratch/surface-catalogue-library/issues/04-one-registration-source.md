@@ -1,6 +1,6 @@
 # One registration source; retire the `{ commerce }` flag
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 03
 Requested: 18 Nov 2026
@@ -48,3 +48,18 @@ ADR 0108 decision 4 and ADR 0107 decision 10 say the catalogue set is the set of
 
 - Affected tests: `test/commerce-switch-catalogues.test.ts`, `test/platform-core-catalogue-registry.test.ts`, `test/weaver-web-host.test.ts`, `test/shortlet-catalog-validation.test.ts`, `test/surface-kit*.test.ts`, and `test/weaver-failure-chromium.test.ts` (real Chrome, solo, because `dist/client.js` is rebuilt).
 - `test/apartment-commerce-free-closure.test.ts` must stay green. `shortlet-runtime.ts` currently imports `commerce-catalogs.ts` statically, and after this issue it should not. Run it.
+
+- Commands run (worktree `chat-marketplace-surface-kit`, every command with `env -u LLM_API_KEY`):
+  - `npm run build` (rebuilds `apps/local-guest/dist/client.js`); only `dist/client.js` is staged. The build also rewrote line endings in `dist/gallery.js`, `landing.js`, `offer.js`, `payment.js` and `apps/cloudflare/public/_headers`; those are not staged (AGENTS.md).
+  - `npx tsx --test test/guest-web-runtime.test.ts test/commerce-switch-catalogues.test.ts test/commerce-agent-tools.test.ts test/platform-core-catalogue-registry.test.ts test/weaver-web-host.test.ts test/shortlet-catalog-validation.test.ts test/surface-kit.test.ts test/surface-kit-boundary.test.ts test/surface-kit-weaver.test.ts test/shortlet-catalogue-manifests.test.ts test/apartment-commerce-free-closure.test.ts test/local-guest-weaver-demo.test.ts`: 81 tests, 81 pass, 0 fail.
+  - `npx tsx --test test/weaver-failure-chromium.test.ts` (real Chrome, solo, after the rebuild): 1 test, 1 pass, 0 skipped.
+  - `npm run check`: clean.
+- `test/commerce-agent-tools.test.ts` was not in the issue's list but passed `{ commerce: true }` twice (AC3 and the scripted-assistant test), so it moved to `createGuestWebRuntime({ catalogues: [...SHORTLET_COMPOSED_CATALOGUES, ...COMMERCE_CATALOGS.map(basicEquivalentCatalogue)] })` with expectations unchanged. `test/commerce-switch-catalogues.test.ts` was edited the same way; its "commerce off" tests use `createShortletWebRuntime()`. Test edits only: `commerce-catalogs.ts` is unchanged (`git diff 69c9ac4` is empty).
+- `shortlet-runtime.ts` no longer imports `commerce-catalogs.ts` (`test/apartment-commerce-free-closure.test.ts` passes). The module imports `catalogRegistrationFor`, `catalogueIds` and the `ComposedCatalogue` type through `apps/web-agent/src/catalogues/weaver-catalogues.ts` (new exports there), so it does not pair `surface-kit` with Weaver itself and the issue 02 AC7 scan still finds only the two adapters.
+- `apps/local-guest/src/shortlet-renderers.ts` (`SHORTLET_RENDERERS`, an empty list) is no longer used: the factory takes renderers only from the composed catalogues, and the typed renderers of weaver-catalogues 04–07 now arrive as aliases in the manifests. The file is left in place, unreferenced. Delete it when phase 2 confirms nothing needs it; no other source imported it.
+- `APPROVED_CATALOGUES` in `packages/platform-core/src/surface.ts` is unchanged apart from a comment that points to ADR 0108 phase 3 (PRD "Legacy short ids").
+- Definition of Done: AC1–AC5 each have a dedicated named test with failure paths (duplicate id, unregistered catalogue, commerce refused when not passed, removed option, unknown id); AC6 is the existing `weaver-failure-chromium` and `weaver-web-host` runs. No invented policy string, id, copy or action name. ADR 0108 (decision 4), 0107 decision 10, 0104, 0074 and 0079 are reflected.
+
+## Answer
+
+`createGuestWebRuntime({ catalogues })` is the one source of Weaver registrations (catalogues and renderers); `createShortletWebRuntime` is now `createGuestWebRuntime` over `SHORTLET_COMPOSED_CATALOGUES`, and the `{ commerce }` flag is gone. `catalogueIds(SHORTLET_COMPOSED_CATALOGUES)` gives a platform `CatalogueRegistry` the same id set the runtime accepts. `dist/client.js` is rebuilt and the real-Chrome fallback test passes.

@@ -12,9 +12,9 @@ import { BACK_TO_RESULTS_EVENT, REQUEST_TO_BOOK_EVENT } from "./unit-detail-acti
 import { REQUEST_DRAFT_REVIEW_EVENT, REQUEST_DRAFT_SUBMIT_EVENT } from "./request-draft-actions.js";
 import { DRAFT_REPLACEMENT_ACCEPT_EVENT, DRAFT_REPLACEMENT_KEEP_EVENT } from "./draft-replacement-actions.js";
 import { EXTENSION_OPEN_EVENT, NOTICE_OPEN_EVENT } from "./booking-contract-actions.js";
-import { BANK_TRANSFER_INITIALIZE_EVENT } from "../../web/src/bank-transfer-actions.js";
-import { CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT, CARD_PAYMENT_VERIFY_RETURN_EVENT } from "../../web/src/card-payment-actions.js";
-import { CONDITIONAL_OFFER_ACCEPT_EVENT } from "../../web/src/conditional-offer-actions.js";
+import { BANK_TRANSFER_INITIALIZE_EVENT } from "../../web/src/bank-transfer-events.js";
+import { CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT, CARD_PAYMENT_VERIFY_RETURN_EVENT } from "../../web/src/card-payment-events.js";
+import { CONDITIONAL_OFFER_ACCEPT_EVENT } from "../../web/src/conditional-offer-events.js";
 
 /** Owner-approved platform URN namespace; it claims no public domain. */
 export const SHORTLET_CATALOG_NAMESPACE = "urn:chat-marketplace:shortlet";

@@ -25,7 +25,7 @@ Work top to bottom. The frontier is the first issue that is open, unblocked and 
 | 01 | [`packages/surface-kit`: components, manifests and composition](issues/01-surface-kit-components-manifests-composition.md) | task | resolved | none |
 | 02 | [Weaver adapters and the ProbeCard alias proof](issues/02-weaver-adapters-and-probe-card.md) | task | resolved | 01 |
 | 03 | [Shortlet catalogues as manifests, byte-identical](issues/03-shortlet-catalogues-as-manifests.md) | task | resolved | 02 |
-| 04 | [One registration source; retire the `{ commerce }` flag](issues/04-one-registration-source.md) | task | ready-for-agent | 03 |
+| 04 | [One registration source; retire the `{ commerce }` flag](issues/04-one-registration-source.md) | task | resolved | 03 |
 | 05 | [Catalogue snapshot gate and change classifier](issues/05-catalogue-snapshot-gate.md) | task | ready-for-agent | 03 |
 
 **Run the issues one at a time.**
@@ -57,3 +57,4 @@ Work top to bottom. The frontier is the first issue that is open, unblocked and 
 - 01: the Weaver-free library `packages/surface-kit/src` (define, compose, `catalogueIds`, `findGlossaryTerms`), its README, `test/surface-kit*.test.ts`, and the test-only `test/fixtures/surface-kit/probe-card.ts`.
 - 02: the Weaver adapters `apps/web-agent/src/catalogues/weaver-catalogues.ts` and `apps/local-guest/src/catalogue-renderers.ts`, the probe manifest `test/fixtures/surface-kit/probe-manifest.ts`, and `test/surface-kit-weaver.test.ts`.
 - 03: `apps/web-agent/src/shortlet-catalogs.ts` (manifests, derived catalogues, `SHORTLET_COMPOSED_CATALOGUES`), `canonicalJson` and `catalogueSnapshotSlug` in `packages/surface-kit/src/canonical.ts`, the baselines `test/fixtures/catalogues/urn-chat-marketplace-shortlet-{discovery,booking}-v1.json`, and `test/shortlet-catalogue-manifests.test.ts`.
+- 04: `createGuestWebRuntime` and the flag-free `createShortletWebRuntime` in `apps/local-guest/src/shortlet-runtime.ts`, `catalogRegistrationFor` and `catalogueIds` in `apps/web-agent/src/catalogues/weaver-catalogues.ts`, the rebuilt `apps/local-guest/dist/client.js`, and `test/guest-web-runtime.test.ts`. The two commerce tests now pass their catalogues explicitly.

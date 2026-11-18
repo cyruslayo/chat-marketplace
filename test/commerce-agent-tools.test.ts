@@ -11,7 +11,9 @@ import type { CommerceCheckoutExecutor } from "../apps/local-guest/src/assistant
 import { createCommercePack } from "../domains/commerce/src/index.js";
 import { COMMERCE_CATALOGS } from "../apps/web-agent/src/commerce-catalogs.js";
 import { commerceDiscoveryPresentation, commerceDiscoverySurface, commerceCartSurface, commerceOrderSurface, projectCommerceText } from "../apps/web-agent/src/commerce-presentation.js";
-import { createShortletWebRuntime } from "../apps/local-guest/src/shortlet-runtime.js";
+import { createGuestWebRuntime } from "../apps/local-guest/src/shortlet-runtime.js";
+import { basicEquivalentCatalogue } from "../apps/web-agent/src/catalogues/weaver-catalogues.js";
+import { SHORTLET_COMPOSED_CATALOGUES } from "../apps/web-agent/src/shortlet-catalogs.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import { AssistantRuntime } from "../apps/local-guest/src/assistant/assistant-runtime.js";
 import { ShortletAssistantRuntime } from "./helpers/assistant-runtime-host.js";
@@ -157,7 +159,7 @@ test("AC3: commerce surfaces use only the owner-approved registered commerce cat
   assert.equal((commerceCartSurface({ storeId: "s", storeName: "Store", lines: [] }, "c")[0] as { createSurface: { catalogId: string } }).createSurface.catalogId, COMMERCE_CATALOGS[1].catalogId);
   assert.equal((commerceOrderSurface({ publicCode: "ORD-1", status: "Processing", updatedAt: "2026-10-16" }, "o")[0] as { createSurface: { catalogId: string } }).createSurface.catalogId, COMMERCE_CATALOGS[2].catalogId);
   // ADR 0104: a commerce surface needs the commerce switch on, which registers the commerce catalogues (ADR 0103).
-  const runtime = createShortletWebRuntime({ commerce: true });
+  const runtime = createGuestWebRuntime({ catalogues: [...SHORTLET_COMPOSED_CATALOGUES, ...COMMERCE_CATALOGS.map(basicEquivalentCatalogue)] });
   const window = new Window();
   for (const [index, messages] of [
     commerceDiscoverySurface([], "commerce-discovery"),
@@ -176,7 +178,7 @@ test("AC3 scripted assistant: discovery, cart and order surfaces all validate an
   const order = await fixture.assistant.handleTurn(fixture.threadId, "Track my order");
   const surfaces = [...(discovered.surfaces ?? []), ...(cart.surfaces ?? []), ...(order.surfaces ?? [])];
   // ADR 0104: a commerce surface needs the commerce switch on, which registers the commerce catalogues (ADR 0103).
-  const runtime = createShortletWebRuntime({ commerce: true });
+  const runtime = createGuestWebRuntime({ catalogues: [...SHORTLET_COMPOSED_CATALOGUES, ...COMMERCE_CATALOGS.map(basicEquivalentCatalogue)] });
   const window = new Window();
   for (const surface of surfaces) {
     const createMessage = surface.a2uiMessages[0] as { createSurface?: { catalogId?: string } };

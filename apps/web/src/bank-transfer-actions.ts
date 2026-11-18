@@ -4,7 +4,8 @@ import { resolveActionAsync } from "../../../packages/platform-core/src/index.js
 import { BANK_TRANSFER_ARTIFACT_KIND, BANK_TRANSFER_SCHEMA_VERSION, type BankTransferArtifact } from "./bank-transfer-artifact.js";
 import type { BankTransferPaymentApplication } from "./bank-transfer-application.js";
 
-export const BANK_TRANSFER_INITIALIZE_EVENT = "shortlet.bank-transfer.initialize";
+export { BANK_TRANSFER_INITIALIZE_EVENT } from "./bank-transfer-events.js";
+import { BANK_TRANSFER_INITIALIZE_EVENT } from "./bank-transfer-events.js";
 
 type Context = {
   readonly artifactId: string;
