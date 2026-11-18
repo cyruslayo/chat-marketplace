@@ -1,5 +1,6 @@
 import { generatePlatformId } from "./platform-id.js";
 import { CatalogueRegistry } from "./catalogue-registry.js";
+import { canTransition, type TransitionTable } from "./state-transition.js";
 
 /**
  * The catalogue ids the shortlet pack registers today. Kept as the default so a manager
@@ -28,6 +29,20 @@ export interface CreateSurfaceOptions {
 export const SURFACE_LIFECYCLE_STATUSES = ["active", "superseded", "stale", "expired", "deleted", "fallback"] as const;
 
 export type SurfaceLifecycleStatus = (typeof SURFACE_LIFECYCLE_STATUSES)[number];
+
+/**
+ * Issue 17 (ADR 0074): the surface moves the code makes today. deleted and superseded are terminal. A move that is
+ * not listed is refused as a no-op: the surface is unchanged and nothing throws. Self-loops are the idempotent writes
+ * (re-expire, re-stale, a projection refresh on a live surface).
+ */
+export const SURFACE_LIFECYCLE_TRANSITIONS = {
+  active: ["active", "stale", "expired", "superseded", "deleted"],
+  stale: ["stale", "expired", "deleted"],
+  expired: ["expired", "stale", "deleted"],
+  superseded: [],
+  deleted: [],
+  fallback: [],
+} as const satisfies TransitionTable<SurfaceLifecycleStatus>;
 
 interface ManagedSurface {
   surfaceId: string;
@@ -117,6 +132,10 @@ export class GenerativeSurfaceManager {
     const surface = this.#surfaces.get(surfaceId);
     if (!surface) throw new Error(`Surface not found: ${surfaceId}`);
 
+    // Issue 17 (ADR 0074): a refused move is a no-op. A deleted or superseded surface is unchanged.
+    const target: SurfaceLifecycleStatus = projectionVersion < surface.revision ? "stale" : surface.status;
+    if (!canTransition(SURFACE_LIFECYCLE_TRANSITIONS, surface.status, target)) return;
+
     if (projectionVersion < surface.revision) {
       surface.status = "stale";
     } else {
@@ -128,6 +147,7 @@ export class GenerativeSurfaceManager {
   expireSurface(surfaceId: string): void {
     const surface = this.#surfaces.get(surfaceId);
     if (!surface) throw new Error(`Surface not found: ${surfaceId}`);
+    if (!canTransition(SURFACE_LIFECYCLE_TRANSITIONS, surface.status, "expired")) return;
     surface.status = "expired";
   }
 
@@ -135,12 +155,14 @@ export class GenerativeSurfaceManager {
     const surface = this.#surfaces.get(surfaceId);
     if (!surface) throw new Error(`Surface not found: ${surfaceId}`);
     this.#refreshLifecycle(surface);
-    if (surface.status === "active") surface.status = "superseded";
+    if (!canTransition(SURFACE_LIFECYCLE_TRANSITIONS, surface.status, "superseded")) return;
+    surface.status = "superseded";
   }
 
   deleteSurface(surfaceId: string): void {
     const surface = this.#surfaces.get(surfaceId);
     if (!surface) throw new Error(`Surface not found: ${surfaceId}`);
+    if (!canTransition(SURFACE_LIFECYCLE_TRANSITIONS, surface.status, "deleted")) return;
     surface.status = "deleted";
   }
 

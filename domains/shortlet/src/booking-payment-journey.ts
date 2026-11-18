@@ -36,8 +36,8 @@ export type BookingPaymentStage = (typeof BOOKING_PAYMENT_STAGES)[number];
 /**
  * Allowed-from table for `BookingPaymentStage` (issue 07). Each key lists the stages it may move to. It records
  * the moves the card and bank-transfer managers make today. Production code does not check it; only the tests
- * do (test/payment-journey-stages.test.ts, through a spy over the repository). Writes marked "issue 17" have no
- * from-stage check, so their from-lists are the stages the tests and the documented flows reach. Issue 17 owns
+ * do (test/payment-journey-stages.test.ts, through a spy over the repository). Writes marked "issue 27" have no
+ * from-stage check, so their from-lists are the stages the tests and the documented flows reach. Issue 27 owns
  * guarding them.
  */
 export const BOOKING_PAYMENT_STAGE_TRANSITIONS = {

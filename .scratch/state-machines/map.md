@@ -22,7 +22,7 @@ PRD: `PRD.md`. Line numbers come from a sweep of an earlier checkout and are app
 | 14 | C | Expired confirmation is cleared, so the guest is not stuck | resolved | - |
 | 15 | C | Unknown card-session status fails closed | resolved | - |
 | 16 | C | Stale `draftId` cleared on a new search (merged into 18) | resolved | 10 |
-| 17 | C | Allow-list hardening: `resolveExpiry`, `commitAmendment`, surface from-state | ready-for-agent | 05, 06, 07, 08 |
+| 17 | C | Allow-list hardening: `resolveExpiry`, `commitAmendment`, surface from-state | resolved | 05, 06, 07, 08 |
 | 18 | C | One guest stage everywhere: collapse each matrix disagreement | ready-for-agent | 10, 11, 13, 16 |
 | 19 | C | Draft-replacement card restored after a cold restore | ready-for-agent | 10 |
 | 20 | D | Pending-action card re-rendered after a cold restore? | to write | - |
@@ -32,6 +32,7 @@ PRD: `PRD.md`. Line numbers come from a sweep of an earlier checkout and are app
 | 24 | D | Deposit-claim day 14/45/90 steps have no from-state check | to write | - |
 | 25 | D | Owner decision: keep or remove each never-written state (offer `revoked`; card session `failed`/`expired`; journey `failed`/`expired`; check-in `active`/`human_owned`/`closed`; overstay `resolved`) | needs-info | - |
 | 26 | D | Draft replacement can pass an undefined self-booking attestation into `createDraft` (made visible by issue 04 cast in `shortlet-app.ts`); confirm whether reachable | to write | - |
+| 27 | C | Guard the unguarded payment-journey stage writes (owner decisions per pair, incl. deposit retry returning to stay_payment_active) | needs-info | - |
 
 ## Seed inventory (for issue 01)
 
@@ -45,11 +46,11 @@ PRD: `PRD.md`. Line numbers come from a sweep of an earlier checkout and are app
 | BookingContract (`booking-state.ts`) | version only | `mutateContract` version CAS | `securityDeposit.status` frozen at `held` but read as live |
 | BookingPaymentJourney (`booking-payment-journey.ts`) | 13 stages | About 15 writes in `card-payment.ts` and `bank-transfer.ts`; `journeyVersion` CAS only | No from-stage check; `failed`/`expired` never written |
 | Card checkout session (`card-payment.ts`) | initiated, completed, expired, failed | New checkout blocked while `initiated` | Unknown row status loads as `initiated` (issue 15) |
-| Bank transfer session (`bank-transfer.ts`) | initiated, processing_in_grace, completed, expired, refunded | Inline | `resolveExpiry` deny-list admits completed→expired (latent; issue 17) |
+| Bank transfer session (`bank-transfer.ts`) | initiated, processing_in_grace, completed, expired, refunded | Inline | Issue 17: `resolveExpiry` allow-list. Refused on expired, refunded and completed (session unchanged, no release, no audit) |
 | Manual transfer (`manual-transfer.ts`) | awaiting_receipt, awaiting_verification, confirmed, rejected, expired | `#decidable` plus lazy `#expireIfDue` | Blind upsert |
 | Live payment attempt (`payment-attempt.ts`) | active, terminal | acquire/release; lazy expiry | `release` not tied to an attempt id |
 | Period payment (`period-payment.ts`) | billing period projection; session superseded/expired/completed | Idempotent verify | Expiry uses `>` where card and bank transfer use `>=` |
-| Booking amendment (`booking-amendment.ts`) | proposed, accepted, awaiting_financial_settlement, committed, rejected, expired | Deny-list commit guard | `status` and `lifecycleStatus` duplicated; settlement runs before the CAS |
+| Booking amendment (`booking-amendment.ts`) | proposed, accepted, awaiting_financial_settlement, committed, rejected, expired | Allow-list commit guard (issue 17). Refused on committed, rejected and expired with `STALE_ACTION` | `status` and `lifecycleStatus` duplicated; settlement runs before the CAS |
 | Deposit claim (`deposit-claim.ts`) | case status, ledgerStatus, exceptionalStatus, finality | Production path in `apps/web/src/deposit-claim-application.ts` | Day 14/45/90 steps have no from-state check (issue 24); legacy manager is test-only |
 | Security deposit accounting (`security-deposit-accounting.ts`) | collection, binding, refund, award | Allow-from lists (precedent) | `markAwardStatus` accepts any target |
 | HumanRiskReview (`human-risk-review.ts`) | pending_review, approved, rejected, expired_unresolved, cancelled | Deadline guard | In-memory only |
@@ -57,7 +58,7 @@ PRD: `PRD.md`. Line numbers come from a sweep of an earlier checkout and are app
 | Reserve tranche (`reserve-payout-trust.ts`) | held and others | Guard plus transaction (clean) | - |
 | Owner payable (`owner-payable.ts`) | not_yet_due, due, paused, paid, nothing_owed, overpaid | Pure projection (precedent) | - |
 | Check-in support / overstay / mid-stay (`checkin-support.ts`, `checkout-overstay.ts`, `mid-stay-failure.ts`) | various | Unguarded writes | Never-written states (issue 01 AC2) |
-| Surface lifecycle (`packages/platform-core/src/surface.ts`) | active, superseded, stale, expired, deleted, fallback | No from-state guard | deleted→stale possible (issue 17); union duplicated in `conversational-shell.ts` (issue 08) |
+| Surface lifecycle (`packages/platform-core/src/surface.ts`) | active, superseded, stale, expired, deleted, fallback | Allow-list (issue 17). Refused moves are no-ops with no throw: deleted and superseded are terminal, so deleted→stale is refused | union duplicated in `conversational-shell.ts` (issue 08) |
 | Thread runs (`packages/platform-core/src/thread.ts`) | run statuses | Overwrites terminal runs | - |
 | Human handoff (`packages/platform-core/src/human-handoff.ts`) | automated, handoff-requested, human-owned, resume-pending | `#transition` (precedent) | - |
 
