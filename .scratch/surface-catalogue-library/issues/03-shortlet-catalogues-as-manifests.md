@@ -1,6 +1,6 @@
 # Shortlet catalogues as manifests, byte-identical
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 02
 Requested: 18 Nov 2026
@@ -42,3 +42,17 @@ The two approved shortlet catalogues (ADR 0102) are built by `shortletCatalog()`
 ## Comments
 
 - Affected tests: `test/shortlet-catalog-validation.test.ts`, `test/weaver-web-host.test.ts`, `test/local-guest-weaver-demo.test.ts`, the `test/render-*-weaver-a2ui.test.ts` files that use shortlet ids, and `test/surface-kit*.test.ts`.
+
+- Commands run (worktree `chat-marketplace-surface-kit`, every command with `env -u LLM_API_KEY`):
+  - `npx tsx --test test/surface-kit.test.ts test/surface-kit-boundary.test.ts test/surface-kit-weaver.test.ts test/shortlet-catalogue-manifests.test.ts test/shortlet-catalog-validation.test.ts test/weaver-web-host.test.ts test/local-guest-weaver-demo.test.ts test/render-*-weaver-a2ui.test.ts test/commerce-switch-catalogues.test.ts test/weaver-dependency-boundary.test.ts test/apartment-commerce-free-closure.test.ts`: 95 tests, 95 pass, 0 fail. `test/shortlet-catalog-validation.test.ts` is unchanged (its AC1–AC5 pass with unchanged expectations).
+  - `npm run check`: clean.
+- **Baseline captured before the change.** `test/fixtures/catalogues/urn-chat-marketplace-shortlet-discovery-v1.json` and `...-booking-v1.json` were written from the previous `shortletCatalog()` output, using `canonicalJson` (new, in `packages/surface-kit/src/canonical.ts`, with `catalogueSnapshotSlug`), before `shortlet-catalogs.ts` was edited. Issue 05 reuses both helpers. The test strips CR when it reads a fixture, because this checkout has `core.autocrlf=true` and a Windows working copy may hold CRLF; the serialized schema is compared byte for byte after that.
+- **Which builders use the shortlet ids: none.** Every `*-a2ui.ts` builder and `apps/local-guest/src/shortlet-app.ts:5124` create surfaces under `A2UI_V091_BASIC_CATALOG_ID` (only `commerce-presentation.ts` uses the commerce ids). The four files that reference the shortlet ids are `shortlet-catalogs.ts`, `shortlet-runtime.ts`, `validate-shortlet-messages.ts` and `index.ts`. So both manifests have `actions: []`: the issue allows only names emitted on surfaces with these ids, and no name may be invented. **Open for the owner:** if the intent was to allow-list the names builders emit under the Basic id, say so; that needs a decision on which names belong to which catalogue. AC3 is not vacuous: it walks the real guest stages, buckets every surface by its `createSurface.catalogId` and checks that any name emitted under a shortlet id is in that manifest's list, and it checks every manifest name against the `*_EVENT` constants the guest packages export (the ActionSpec names and presentation events). Today the buckets are empty; the test bites when a builder moves to these ids.
+- `defineShortletCatalog` and `shortletCatalog()` are removed (no test or source imports them; `apps/local-guest/dist/client.js` still holds the old bundle text until issue 04 rebuilds it).
+- `dist/client.js` was not rebuilt in this issue: the PRD lists only issues 02 and 04 for the client rebuild and the Chrome test, and the composed schemas are byte-identical, so the bundle's behaviour is unchanged. Issue 04 rebuilds it and runs `test/weaver-failure-chromium.test.ts`.
+- `shortlet-catalogs.ts` imports the library and the schema adapter, not Weaver, so the AC7 pairing scan still finds only the two adapters.
+- Definition of Done: AC1–AC5 each have a dedicated named test. The failure path in AC3 (a name outside the list fails) and AC4 (an unknown component still fails closed) are asserted. No invented policy string, copy or action name. ADR 0102, 0108, 0072/0099, 0079 are reflected.
+
+## Answer
+
+`shortlet-catalogs.ts` declares `SHORTLET_DISCOVERY_MANIFEST` and `SHORTLET_BOOKING_MANIFEST` and derives the two catalogue registrations and `SHORTLET_COMPOSED_CATALOGUES` from them. The composed schemas serialize byte-identically to the baselines captured before the change. Both manifests have an empty `actions` list because no builder emits under a shortlet id today (open question recorded above).

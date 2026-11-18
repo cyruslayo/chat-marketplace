@@ -3,10 +3,9 @@ import { formatBookingMoney, formatStayDates } from "./booking-presentation.js";
 import { GUEST_GLOSSARY, guestReservationStatus } from "./guest-content.js";
 import { surfaceMessages } from "./a2ui-surface.js";
 
-/** Issue 14: accept the proposed replacement Request Draft. */
-export const DRAFT_REPLACEMENT_ACCEPT_EVENT = "shortlet.request-draft.replacement.accept";
-/** Issue 14: keep the current Request Draft unchanged. */
-export const DRAFT_REPLACEMENT_KEEP_EVENT = "shortlet.request-draft.replacement.keep";
+// The action event names live in `draft-replacement-actions.ts` (one copy, no import cycle with the catalogue manifest).
+export { DRAFT_REPLACEMENT_ACCEPT_EVENT, DRAFT_REPLACEMENT_KEEP_EVENT } from "./draft-replacement-actions.js";
+import { DRAFT_REPLACEMENT_ACCEPT_EVENT, DRAFT_REPLACEMENT_KEEP_EVENT } from "./draft-replacement-actions.js";
 
 export interface DraftStayTerms {
   readonly checkIn: string;

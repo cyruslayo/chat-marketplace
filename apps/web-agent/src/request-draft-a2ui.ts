@@ -6,8 +6,9 @@ import { GUEST_FACT_LABELS, GUEST_GLOSSARY, accommodationProviderLine, guestDisc
 import { surfaceMessages } from "./a2ui-surface.js";
 import { SHORTLET_BOOKING_CATALOG_ID } from "./shortlet-catalogs.js";
 
-export const REQUEST_DRAFT_REVIEW_EVENT = "shortlet.request-draft.review";
-export const REQUEST_DRAFT_SUBMIT_EVENT = "shortlet.request-draft.submit";
+// The action event names live in `request-draft-actions.ts` (one copy, no import cycle with the catalogue manifest).
+export { REQUEST_DRAFT_REVIEW_EVENT, REQUEST_DRAFT_SUBMIT_EVENT } from "./request-draft-actions.js";
+import { REQUEST_DRAFT_REVIEW_EVENT, REQUEST_DRAFT_SUBMIT_EVENT } from "./request-draft-actions.js";
 
 export function requestDraftArtifactToA2UI({ artifact, surfaceId }: { readonly artifact: RequestDraftArtifact; readonly surfaceId: string }): readonly A2UIServerMessage[] {
   const { facts } = artifact;

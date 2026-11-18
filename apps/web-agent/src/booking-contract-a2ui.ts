@@ -6,10 +6,9 @@ import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_NOTICE_COPY, accommodationProv
 import { surfaceMessages } from "./a2ui-surface.js";
 import { SHORTLET_BOOKING_CATALOG_ID } from "./shortlet-catalogs.js";
 
-/** Issue 18: the chat event a booking surface sends to open the Notice to End card. The platform routes it by name. */
-export const NOTICE_OPEN_EVENT = "shortlet.assistant.open-notice";
-/** Monthly-stays issue 09: the closed event the "Extend your stay" button sends (routed by name, ADR 0074). */
-export const EXTENSION_OPEN_EVENT = "shortlet.assistant.open-extension";
+// The action event names live in `booking-contract-actions.ts` (one copy, no import cycle with the catalogue manifest).
+export { EXTENSION_OPEN_EVENT, NOTICE_OPEN_EVENT } from "./booking-contract-actions.js";
+import { EXTENSION_OPEN_EVENT, NOTICE_OPEN_EVENT } from "./booking-contract-actions.js";
 
 export function bookingContractArtifactToA2UI({ artifact, surfaceId }: { readonly artifact: BookingContractArtifact; readonly surfaceId: string }): readonly A2UIServerMessage[] {
   const { facts } = artifact;

@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createBasicCatalogV091Registration } from "@cylayo/weaver-core";
 import {
+  canonicalJson,
   catalogueIds,
+  catalogueSnapshotSlug,
   composeCatalogueSchema,
   defineCatalogueManifest,
   defineSurfaceComponent,
@@ -193,4 +195,11 @@ test("AC6 - findGlossaryTerms finds a camelCase property and an enum value from 
   assert.equal(hits[1]!.pointer, "/properties/mode/enum/0");
   assert.deepEqual(findGlossaryTerms(PROBE_CARD.schema, ["kobo", "stay", "apartment"]), []);
   assert.deepEqual(findGlossaryTerms(leaky, []), []);
+});
+
+test("canonicalJson sorts keys at every depth with two-space indent, LF and one trailing newline, and catalogueSnapshotSlug maps an id to a file stem", () => {
+  const text = canonicalJson({ b: 1, a: { d: [{ z: 1, y: 2 }], c: null } });
+  assert.equal(text, '{\n  "a": {\n    "c": null,\n    "d": [\n      {\n        "y": 2,\n        "z": 1\n      }\n    ]\n  },\n  "b": 1\n}\n');
+  assert.ok(!text.includes("\r"));
+  assert.equal(catalogueSnapshotSlug("urn:chat-marketplace:test/probe/v1"), "urn-chat-marketplace-test-probe-v1");
 });

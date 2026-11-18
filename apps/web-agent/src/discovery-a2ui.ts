@@ -84,12 +84,9 @@ export interface DiscoveryArtifactToA2UIInput {
   readonly demo?: boolean;
 }
 
-export const VIEW_UNIT_EVENT = "shortlet.discovery.view-unit";
-export const SEE_ALL_DISCOVERY_EVENT = "shortlet.discovery.see-all";
-/** Issue 13b: pick (or un-pick) a result; the second pick opens the comparison. */
-export const COMPARE_UNIT_EVENT = "shortlet.discovery.compare";
-/** Issue 13b: from the comparison, re-present the same search results. */
-export const COMPARE_BACK_EVENT = "shortlet.discovery.compare.back-to-results";
+// The action event names live in `discovery-actions.ts` (one copy, no import cycle with the catalogue manifest).
+export { COMPARE_BACK_EVENT, COMPARE_UNIT_EVENT, SEE_ALL_DISCOVERY_EVENT, VIEW_UNIT_EVENT } from "./discovery-actions.js";
+import { COMPARE_BACK_EVENT, COMPARE_UNIT_EVENT, SEE_ALL_DISCOVERY_EVENT, VIEW_UNIT_EVENT } from "./discovery-actions.js";
 /** Presentation only: the comparison is two-up (issue 13b). */
 export const COMPARE_SIZE = 2;
 

@@ -16,9 +16,9 @@ import {
 } from "./shortlet-catalogs.js";
 import { surfaceMessages } from "./a2ui-surface.js";
 
-export const REQUEST_TO_BOOK_EVENT = "shortlet.unit-detail.request-to-book";
-/** Issue 08: returns to the results of the same search; the server validates the discovery artifact id. */
-export const BACK_TO_RESULTS_EVENT = "shortlet.unit-detail.back-to-results";
+// The action event names live in `unit-detail-actions.ts` (one copy, no import cycle with the catalogue manifest).
+export { BACK_TO_RESULTS_EVENT, REQUEST_TO_BOOK_EVENT } from "./unit-detail-actions.js";
+import { BACK_TO_RESULTS_EVENT, REQUEST_TO_BOOK_EVENT } from "./unit-detail-actions.js";
 
 export interface UnitDetailActionContext {
   readonly artifactId: string;

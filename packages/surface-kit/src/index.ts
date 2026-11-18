@@ -14,3 +14,4 @@ export type {
   SurfaceComponentInput,
   SurfaceTier,
 } from "./types.js";
+export { canonicalJson, catalogueSnapshotSlug } from "./canonical.js";
