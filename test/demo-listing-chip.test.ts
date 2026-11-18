@@ -32,7 +32,10 @@ test("AC5: stay cards show the Demo listing chip from one kit helper in chat and
       const artifact = environment.discoveryQuery.search({ city: "Lagos" });
       assert.ok(renderConventionalSearchHtml(artifact, undefined, true).includes(demoListingChipHtml()), "the standalone results page shows the chip");
       const chat = discoveryArtifactToA2UI({ artifact, surfaceId: "demo-chip-surface", demo: true });
-      assert.ok(JSON.stringify(chat).includes(GUEST_FACT_LABELS.demoListing), "the chat discovery card carries the chip fact");
+      // Weaver catalogues issue 06: the chat card is a typed StayCard; its demo prop makes the renderer draw the same
+      // kit chip (stayCardInnerHtml → demoListingChipHtml) as the standalone page.
+      const cards = chat.flatMap((message) => "updateComponents" in message ? message.updateComponents.components : []).filter((component) => component.component === "StayCard");
+      assert.ok(cards.length > 0 && cards.every((component) => (component as { demo?: boolean }).demo === true), "the chat discovery card carries the chip fact");
     });
   } finally {
     removeDemoDatabase(f.dir);

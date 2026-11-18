@@ -23,6 +23,12 @@ function texts(messages: readonly A2UIServerMessage[]): { readonly id: string; r
     .filter((component) => typeof component.text === "string").map((component) => ({ id: component.id, text: component.text! }));
 }
 
+/** Weaver catalogues issue 06: each result's typed StayCard props. */
+function stayCards(messages: readonly A2UIServerMessage[]): readonly Readonly<Record<string, unknown>>[] {
+  const update = messages.find((message): message is Extract<A2UIServerMessage, { updateComponents: unknown }> => "updateComponents" in message);
+  return ((update?.updateComponents.components ?? []) as readonly Readonly<Record<string, unknown>>[]).filter((component) => component.component === "StayCard");
+}
+
 function unitIds(surface: GuestSurfacePayload): string[] {
   return [...new Set([...JSON.stringify(surface.a2uiMessages).matchAll(/"unitId":"([^"]+)"/g)].map((match) => match[1]!))];
 }
@@ -114,7 +120,8 @@ test("AC9: An apartment within budget only before its deposit is still listed, w
     const surface = result.surfaces[0]!;
     assert.deepEqual(unitIds(surface), [LEKKI, IKOYI]);
     assert.equal(note(surface, IKOYI), "Within your ₦380,000 budget (All-In Stay Total). The Refundable Security Deposit is paid separately, so the total to complete booking is ₦390,000.");
-    assert.ok(texts(surface.a2uiMessages).some((component) => component.id === `unit-${IKOYI}-deposit` && component.text === "Refundable Security Deposit (separate): ₦20,000"));
+    // Weaver catalogues issue 06: the deposit is the StayCard's own prop; the kit labels it "Refundable Security Deposit (separate)".
+    assert.ok(stayCards(surface.a2uiMessages).some((card) => card.unitId === IKOYI && card.deposit === "₦20,000"));
     // Failure path: a unit whose deposit stays inside the budget gets no deposit warning.
     assert.equal(note(surface, LEKKI), "Within your ₦380,000 budget (All-In Stay Total).");
   } finally { await fixture.close(); }
@@ -130,7 +137,8 @@ test("AC10: A unit without an All-In Stay Total is never described as within bud
     id: "search-x", kind: "shortlet.discovery-results", schemaVersion: "v1", projectionVersion: 1, domainReferences: [], policyVersions: {}, disclosures: [],
     facts: { filters: { location: "Lagos", maxPriceKobo: 50_000_000 }, results: [unit] }, amounts: [], actions: [], acknowledgements: [], sensitivity: "public",
   };
-  const all = texts(discoveryArtifactToA2UI({ artifact, surfaceId: "s" })).map((component) => component.text).join(" ");
+  const messages = discoveryArtifactToA2UI({ artifact, surfaceId: "s" });
+  const all = [...texts(messages).map((component) => component.text), ...stayCards(messages).map((card) => String(card.totalLabel))].join(" ");
   assert.doesNotMatch(all, /within your/i);
   assert.match(all, /Indicative nightly rate/);
 });

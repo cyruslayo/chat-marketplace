@@ -50,10 +50,10 @@ test("AC1 - catalogue ids are exported from the one namespace constant", async (
 test("AC2 - shortlet catalogues preserve all Basic schemas and render Basic surfaces identically", () => {
   const basic = createBasicCatalogV091Registration();
   const basicComponents = basic.schema.components as Record<string, unknown>;
-  // Weaver catalogues issue 05: discovery adds typed components on top of every unchanged Basic component.
+  // Weaver catalogues issues 05 and 06: discovery adds typed components on top of every unchanged Basic component.
   const discoveryComponents = SHORTLET_DISCOVERY_CATALOG.schema.components as Record<string, unknown>;
   for (const [name, schema] of Object.entries(basicComponents)) assert.deepEqual(discoveryComponents[name], schema, `Basic ${name} is unchanged`);
-  assert.deepEqual(Object.keys(discoveryComponents).filter((name) => !(name in basicComponents)), ["UnitDetail", "UnitGallery", "UnitDetailSheet", "UnitActionBar"]);
+  assert.deepEqual(Object.keys(discoveryComponents).filter((name) => !(name in basicComponents)), ["UnitDetail", "UnitGallery", "UnitDetailSheet", "UnitActionBar", "StayCard", "StayResults"]);
   assert.deepEqual(SHORTLET_BOOKING_CATALOG.schema.components, basic.schema.components);
   for (const catalogId of [SHORTLET_DISCOVERY_CATALOG_ID, SHORTLET_BOOKING_CATALOG_ID]) {
     const runtime = createShortletWebRuntime();
@@ -144,6 +144,40 @@ test("Weaver catalogues 05 AC5 - the unit detail validates on shortlet-discovery
       { version: "v0.9.1", updateComponents: { surfaceId, components: [JSON.parse(JSON.stringify({ ...invalid, id: "root" }))] } },
     ]);
     assert.equal(result.ok, false, `invalid sheet ${index} is rejected`);
+  }
+});
+
+test("Weaver catalogues 06 AC5 - discovery surfaces validate on shortlet-discovery/v1, and a StayCard without unitId or total is rejected", async () => {
+  const fixture = await restartFixture();
+  try {
+    const first = await fixture.app.handleTurn(fixture.threadId, "I need an apartment in Lagos from 10 Sept for 3 nights for 2 people");
+    assert.equal(first.ok, true);
+    if (!first.ok) return;
+    const discovery = first.surfaces[0]!;
+    assert.match(JSON.stringify(discovery.a2uiMessages), /"component":"StayResults"/);
+    assert.deepEqual(validateShortletMessages(discovery.a2uiMessages), { ok: true });
+  } finally {
+    await fixture.close();
+  }
+  const card = { id: "root", component: "StayCard", unitId: "unit-1", title: "Flat", where: "Ikoyi, Lagos", facts: [{ icon: "users", text: "Sleeps 2" }], total: "₦1", totalLabel: "All-In Stay Total for 1 night" };
+  const { unitId: _unitId, ...withoutUnitId } = card;
+  const { total: _total, ...withoutTotal } = card;
+  for (const [index, invalid] of [
+    withoutUnitId,
+    withoutTotal,
+    { ...card, unitId: "" },
+    { ...card, facts: [] },
+    { ...card, photoCount: -1 },
+    { ...card, href: "javascript:alert(1)" },
+    { id: "root", component: "StayResults", rows: [], cards: [] },
+    { id: "root", component: "StayResults", rows: [{ unitId: "unit-1", title: "Flat", total: "₦1", totalLabel: "x", rank: 1 }], cards: [] },
+  ].entries()) {
+    const surfaceId = `stay-card-invalid-${index}`;
+    const result = validateShortletMessages([
+      { version: "v0.9.1", createSurface: { surfaceId, catalogId: SHORTLET_DISCOVERY_CATALOG_ID } },
+      { version: "v0.9.1", updateComponents: { surfaceId, components: [JSON.parse(JSON.stringify(invalid))] } },
+    ]);
+    assert.equal(result.ok, false, `invalid discovery component ${index} is rejected`);
   }
 });
 

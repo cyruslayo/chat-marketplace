@@ -42,11 +42,12 @@ function components(messages: readonly unknown[]): readonly Record<string, unkno
 
 test("AC13 — discovery shows the primary photo when present", () => {
   const artifact = artifactWithPhotos(PHOTO_URLS);
-  const images = components(discoveryArtifactToA2UI({ artifact, surfaceId: "photo-discovery" }))
-    .filter((component) => component.component === "Image");
-  assert.equal(images.length, 1);
-  assert.equal(images[0]?.url, PHOTO_URLS[0]);
-  assert.match(String(images[0]?.description), /Sunlit 2-bedroom apartment in Ikeja/);
+  // Weaver catalogues issue 06: the primary photo is the StayCard's photoUrl; the kit names it "Photo of <title>".
+  const cards = components(discoveryArtifactToA2UI({ artifact, surfaceId: "photo-discovery" }))
+    .filter((component) => component.component === "StayCard");
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0]?.photoUrl, PHOTO_URLS[0]);
+  assert.match(String(cards[0]?.title), /Sunlit 2-bedroom apartment in Ikeja/);
 });
 
 test("AC14 — discovery remains usable with zero photos", () => {

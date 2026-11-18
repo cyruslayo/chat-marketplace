@@ -68,7 +68,7 @@ function createTabHarness(): BrowserTabHarness {
       const button = accessibleLabel === undefined
         ? buttons.find((candidate) => candidate.textContent?.includes(labelText))
         : buttons.find((candidate) => {
-          const card = candidate.closest('[data-a2ui-component="Card"]');
+          const card = candidate.closest('.ui-stay-card, [data-a2ui-component="Card"]');
           return candidate.textContent?.includes(labelText) && card?.textContent?.includes(accessibleLabel.replace(/^View /, ""));
         });
       if (!button) return false;

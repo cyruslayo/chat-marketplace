@@ -919,7 +919,7 @@ export async function launchRealBrowser(
             ${
               accessibleLabel
                 ? `
-            const card = b.closest('[data-a2ui-component="Card"]');
+            const card = b.closest('.ui-stay-card, [data-a2ui-component="Card"]');
             return Boolean(card && card.textContent && card.textContent.includes(${JSON.stringify(accessibleLabel.replace(/^View /, ""))}));
             `
                 : "return true;"

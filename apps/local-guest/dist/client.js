@@ -9105,6 +9105,8 @@ Known schemas:
   var UNIT_GALLERY_COMPONENT = "UnitGallery";
   var UNIT_DETAIL_SHEET_COMPONENT = "UnitDetailSheet";
   var UNIT_ACTION_BAR_COMPONENT = "UnitActionBar";
+  var STAY_CARD_COMPONENT = "StayCard";
+  var STAY_RESULTS_COMPONENT = "StayResults";
   var COMPONENT_ID = { $ref: "common_types.json#/$defs/ComponentId" };
   var CHILD_LIST = { $ref: "common_types.json#/$defs/ChildList" };
   var TEXT = { type: "string", minLength: 1 };
@@ -9134,13 +9136,19 @@ Known schemas:
     required: ["total", "totalLabel"],
     additionalProperties: false
   };
+  var RESULT_ROW = {
+    type: "object",
+    properties: { unitId: TEXT, title: TEXT, total: TEXT, totalLabel: TEXT, photoUrl: TEXT },
+    required: ["unitId", "title", "total", "totalLabel"],
+    additionalProperties: false
+  };
   var PHOTO = {
     type: "object",
     properties: { url: TEXT, alt: TEXT },
     required: ["url", "alt"],
     additionalProperties: false
   };
-  var UNIT_DETAIL_COMPONENTS = {
+  var DISCOVERY_COMPONENTS = {
     // The surface root: the unit detail's sections in their fixed order, so the client never searches the DOM for them.
     [UNIT_DETAIL_COMPONENT]: componentSchema(UNIT_DETAIL_COMPONENT, {
       gallery: COMPONENT_ID,
@@ -9166,7 +9174,31 @@ Known schemas:
       total: TEXT,
       totalLabel: TEXT,
       child: COMPONENT_ID
-    }, ["child"])
+    }, ["child"]),
+    // Weaver catalogues issue 06: one search result, the search page's `.ui-stay-card`. `view` and `compare` are the Basic
+    // Buttons that carry the allow-listed discovery events; `fit` and `notes` are Basic caption Texts the server words.
+    [STAY_CARD_COMPONENT]: componentSchema(STAY_CARD_COMPONENT, {
+      unitId: TEXT,
+      title: TEXT,
+      where: TEXT,
+      demo: { type: "boolean" },
+      facts: { type: "array", items: TILE, minItems: 1 },
+      total: TEXT,
+      totalLabel: TEXT,
+      deposit: TEXT,
+      photoUrl: TEXT,
+      photoCount: { type: "integer", minimum: 0 },
+      view: COMPONENT_ID,
+      compare: COMPONENT_ID,
+      fit: COMPONENT_ID,
+      notes: CHILD_LIST
+    }, ["unitId", "title", "where", "facts", "total", "totalLabel"]),
+    // The result list: the phone result rows (each opening its own card by unitId), "See both side by side" for exactly
+    // two results, and the grid of StayCards.
+    [STAY_RESULTS_COMPONENT]: componentSchema(STAY_RESULTS_COMPONENT, {
+      rows: { type: "array", items: RESULT_ROW, minItems: 1 },
+      cards: CHILD_LIST
+    }, ["rows", "cards"])
   };
   function withComponents(schema, components) {
     const table = schema["components"];
@@ -9185,7 +9217,7 @@ Known schemas:
     schema["catalogId"] = catalogId;
     return { catalogId, schema: defineShortletCatalog(withComponents(schema, components)) };
   }
-  var SHORTLET_DISCOVERY_CATALOG = shortletCatalog(SHORTLET_DISCOVERY_CATALOG_ID, UNIT_DETAIL_COMPONENTS);
+  var SHORTLET_DISCOVERY_CATALOG = shortletCatalog(SHORTLET_DISCOVERY_CATALOG_ID, DISCOVERY_COMPONENTS);
   var SHORTLET_BOOKING_CATALOG = shortletCatalog(SHORTLET_BOOKING_CATALOG_ID);
 
   // apps/web/src/ui-kit.ts
@@ -10634,9 +10666,8 @@ Known schemas:
       const title = text(properties["title"]) ?? "this apartment";
       const images = list(properties["photos"]).flatMap((item) => {
         const photo = record(item);
-        const url = text(photo?.["url"]);
-        const approved = url === void 0 ? void 0 : resourcePolicy?.({ kind: "image", url });
-        if (approved === void 0 || approved.trim() === "") return [];
+        const approved = approvedImage(resourcePolicy, text(photo?.["url"]));
+        if (approved === void 0) return [];
         const image = document2.createElement("img");
         image.setAttribute("src", approved);
         image.alt = text(photo?.["alt"]) ?? "";
@@ -10710,13 +10741,116 @@ Known schemas:
     }
     return bar;
   }
+  function approvedImage(resourcePolicy, url) {
+    if (url === void 0) return void 0;
+    const approved = resourcePolicy?.({ kind: "image", url });
+    return approved === void 0 || approved.trim() === "" ? void 0 : approved;
+  }
+  function asElement(node) {
+    return node !== void 0 && node.nodeType === 1 ? node : void 0;
+  }
+  function openStayFrom(link, view) {
+    if (!link || !view) return;
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      view.click();
+    });
+  }
+  function renderStayCard(resourcePolicy) {
+    return ({ document: document2, properties, relationships }) => {
+      const unitId = text(properties["unitId"]) ?? "";
+      const photoSrc = approvedImage(resourcePolicy, text(properties["photoUrl"]));
+      const photoCount = properties["photoCount"];
+      const deposit = text(properties["deposit"]);
+      const parts = {
+        ...properties["demo"] === true ? { demoListing: true } : {},
+        href: `/stays/${encodeURIComponent(unitId)}`,
+        title: text(properties["title"]) ?? "",
+        where: text(properties["where"]) ?? "",
+        facts: tiles(properties["facts"]),
+        total: text(properties["total"]) ?? "",
+        totalLabel: text(properties["totalLabel"]) ?? "",
+        ...deposit === void 0 ? {} : { deposit },
+        ...photoSrc === void 0 ? {} : { photoSrc },
+        ...typeof photoCount === "number" ? { photoCount } : {}
+      };
+      const card = element(document2, "article", "stay-card ui-stay-card");
+      card.setAttribute("role", "listitem");
+      card.setAttribute("data-unit-id", unitId);
+      card.append(fromKit(document2, stayCardInnerHtml(parts)));
+      const view = asElement(single(relationships, "view"));
+      const anchor = card.querySelector(".ui-stay-card__view");
+      if (view && anchor) {
+        view.classList.add("ui-button", "ui-button--primary", "ui-button--block", "ui-stay-card__view");
+        anchor.replaceWith(view);
+      } else anchor?.remove();
+      openStayFrom(card.querySelector(".ui-stay-card__title a"), view);
+      const fit = asElement(single(relationships, "fit"));
+      fit?.classList.add("stay-card__fit");
+      const after = [...fit ? [fit] : [], ...children(relationships, "notes")];
+      if (after.length > 0) card.querySelector(".ui-stay-card__facts")?.after(...after);
+      const compare = asElement(single(relationships, "compare"));
+      if (compare) {
+        compare.classList.add("stay-card__compare", "ui-link");
+        card.append(compare);
+      }
+      return card;
+    };
+  }
+  function renderStayResults(resourcePolicy, onCompareBoth) {
+    return ({ document: document2, properties, relationships }) => {
+      const results = element(document2, "div", "stay-results");
+      const cards = children(relationships, "cards");
+      const rows = list(properties["rows"]).flatMap((item) => {
+        const row = record(item);
+        const unitId = text(row?.["unitId"]);
+        const title = text(row?.["title"]);
+        const total = text(row?.["total"]);
+        const totalLabel = text(row?.["totalLabel"]);
+        if (!unitId || !title || !total || !totalLabel) return [];
+        const photoSrc = approvedImage(resourcePolicy, text(row?.["photoUrl"]));
+        return [{ unitId, parts: { href: `/stays/${encodeURIComponent(unitId)}`, title, where: "", facts: [], total, totalLabel, ...photoSrc === void 0 ? {} : { photoSrc } } }];
+      });
+      if (rows.length > 0) {
+        const rowList = element(document2, "div", "ui-result-rows");
+        rowList.setAttribute("role", "list");
+        rowList.setAttribute("aria-label", "Stays for your search");
+        for (const row of rows) {
+          const link = fromKit(document2, resultRowPartsHtml(row.parts)).firstElementChild;
+          if (!link) continue;
+          const card = cards.map(asElement).find((candidate) => candidate?.getAttribute("data-unit-id") === row.unitId);
+          openStayFrom(link, card?.querySelector(".ui-stay-card__view"));
+          const item = document2.createElement("div");
+          item.setAttribute("role", "listitem");
+          item.append(link);
+          rowList.append(item);
+        }
+        results.append(rowList);
+        if (rows.length === 2 && onCompareBoth) {
+          const both = element(document2, "button", "ui-link ui-result-rows__compare");
+          both.setAttribute("type", "button");
+          both.append(fromKit(document2, `See both side by side${icon("arrow-right")}`));
+          both.addEventListener("click", () => onCompareBoth());
+          results.append(both);
+        }
+      }
+      const grid = element(document2, "div", "stay-grid");
+      grid.setAttribute("role", "list");
+      grid.setAttribute("aria-label", "Stay search results");
+      grid.append(...cards);
+      results.append(grid);
+      return results;
+    };
+  }
   function createShortletRenderers(options = {}) {
     const catalogId = SHORTLET_DISCOVERY_CATALOG_ID;
     return [
       { catalogId, component: UNIT_DETAIL_COMPONENT, render: renderUnitDetail },
       { catalogId, component: UNIT_GALLERY_COMPONENT, render: renderUnitGallery(options.resourcePolicy) },
       { catalogId, component: UNIT_DETAIL_SHEET_COMPONENT, render: renderUnitDetailSheet },
-      { catalogId, component: UNIT_ACTION_BAR_COMPONENT, render: renderUnitActionBar }
+      { catalogId, component: UNIT_ACTION_BAR_COMPONENT, render: renderUnitActionBar },
+      { catalogId, component: STAY_CARD_COMPONENT, render: renderStayCard(options.resourcePolicy) },
+      { catalogId, component: STAY_RESULTS_COMPONENT, render: renderStayResults(options.resourcePolicy, options.onCompareBoth) }
     ];
   }
 
@@ -10747,7 +10881,7 @@ Known schemas:
         ...createBasicCatalogRendererRegistrations({ catalogId: SHORTLET_BOOKING_CATALOG.catalogId, resourcePolicy }),
         ...commerceCatalogs.flatMap(({ catalogId }) => createBasicCatalogRendererRegistrations({ catalogId, resourcePolicy })),
         // ADR 0102: the typed catalogue components use the same host image policy as Basic Image.
-        ...createShortletRenderers({ resourcePolicy })
+        ...createShortletRenderers({ resourcePolicy, ...options.onCompareBoth === void 0 ? {} : { onCompareBoth: options.onCompareBoth } })
       ],
       ...options.safety === void 0 ? {} : { runtime: { safety: options.safety } },
       basic: { resourcePolicy },
@@ -11550,162 +11684,6 @@ Known schemas:
       if (countdown) startCountdown(activePayload.waiting, countdown);
     }
   }
-  function viewUnitIds(payload) {
-    const ids = [];
-    for (const message of payload?.a2uiMessages ?? []) {
-      if (!isRecord5(message) || !isRecord5(message.updateComponents) || !Array.isArray(message.updateComponents.components))
-        continue;
-      for (const component of message.updateComponents.components) {
-        if (!isRecord5(component) || !isRecord5(component.action) || !isRecord5(component.action.event))
-          continue;
-        const context = component.action.event.context;
-        if (component.action.event.name === "shortlet.discovery.view-unit" && isRecord5(context) && typeof context.unitId === "string")
-          ids.push(context.unitId);
-      }
-    }
-    return ids;
-  }
-  function factIcon(text2) {
-    return text2.includes("bedroom") ? "bed" : text2.includes("bathroom") ? "bath" : "users";
-  }
-  function openStayFrom(link, viewButton) {
-    if (!viewButton) return;
-    link.addEventListener("click", (event) => {
-      event.preventDefault();
-      viewButton.click();
-    });
-  }
-  function decorateDiscoveryCards(mount) {
-    const unitIds = viewUnitIds(activePayload);
-    const rows = [];
-    let listElement;
-    for (const [index, card] of [
-      ...mount.querySelectorAll('[data-a2ui-component="Card"]')
-    ].entries()) {
-      const list2 = card.parentElement;
-      if (list2 instanceof HTMLElement) {
-        list2.classList.add("stay-grid");
-        list2.setAttribute("role", "list");
-        list2.setAttribute("aria-label", "Stay search results");
-        listElement = list2;
-      }
-      const body = card.querySelector(
-        ':scope > [data-weaver-mount] > [data-a2ui-component="Column"], :scope > [data-a2ui-component="Column"]'
-      );
-      const unitId = unitIds[index];
-      if (!body || unitId === void 0) continue;
-      const children2 = [...body.children];
-      const title = children2.find(
-        (child) => child.tagName === "H3" && !isMoney(child.textContent ?? "")
-      );
-      const where = findFact(children2, GUEST_FACT_LABELS.where);
-      const factLine = children2.find((child) => child.tagName === "P");
-      const priceLabel = children2.find(
-        (child) => isPriceLabel(child.textContent?.trim() ?? "")
-      );
-      const price = children2.find(
-        (child) => child.tagName === "H3" && isMoney(child.textContent ?? "")
-      );
-      if (!title || !where || !factLine || !priceLabel || !price) continue;
-      const deposit = findFact(
-        children2,
-        GUEST_FACT_LABELS.refundableSecurityDeposit
-      );
-      const fit = findFact(children2, GUEST_FACT_LABELS.fitReason);
-      const photos = findFact(children2, GUEST_FACT_LABELS.photos);
-      const photoCount = photos === void 0 ? void 0 : Number(photos.value);
-      const image = children2.find(
-        (child) => child instanceof HTMLImageElement
-      );
-      const buttons = children2.filter(
-        (child) => child instanceof HTMLButtonElement
-      );
-      const view = buttons[0];
-      const parts = {
-        ...children2.some((child) => child.textContent?.trim() === GUEST_FACT_LABELS.demoListing) ? { demoListing: true } : {},
-        href: `/stays/${encodeURIComponent(unitId)}`,
-        title: title.textContent?.trim() ?? "",
-        where: where.value,
-        facts: (factLine.textContent ?? "").split(" \xB7 ").map((text2) => text2.trim()).filter(Boolean).map((text2) => ({ icon: factIcon(text2), text: text2 })),
-        total: price.textContent?.trim() ?? "",
-        totalLabel: priceLabel.textContent?.trim() ?? "",
-        ...deposit ? { deposit: deposit.value } : {},
-        ...image?.src ? { photoSrc: image.src } : {},
-        ...photoCount === void 0 ? {} : { photoCount }
-      };
-      const known = /* @__PURE__ */ new Set([
-        title,
-        where.element,
-        factLine,
-        priceLabel,
-        price,
-        deposit?.element,
-        fit?.element,
-        photos?.element,
-        image,
-        ...buttons
-      ]);
-      const extras = children2.filter(
-        (child) => !known.has(child) && child.getAttribute("data-a2ui-component") !== "Divider"
-      );
-      const template = document.createElement("template");
-      template.innerHTML = stayCardInnerHtml(parts);
-      card.replaceChildren(template.content);
-      card.classList.add("stay-card", "ui-stay-card");
-      card.setAttribute("role", "listitem");
-      const anchor = card.querySelector(".ui-stay-card__view");
-      if (view && anchor) {
-        view.classList.add(
-          "ui-button",
-          "ui-button--primary",
-          "ui-button--block",
-          "ui-stay-card__view"
-        );
-        anchor.replaceWith(view);
-      } else anchor?.remove();
-      openStayFrom(
-        card.querySelector(".ui-stay-card__title a"),
-        view
-      );
-      fit?.element.classList.add("stay-card__fit");
-      const facts = card.querySelector(".ui-stay-card__facts");
-      for (const extra of [...extras].reverse()) facts?.after(extra);
-      if (fit) facts?.after(fit.element);
-      for (const extra of buttons.slice(1)) {
-        extra.classList.add("stay-card__compare", "ui-link");
-        card.appendChild(extra);
-      }
-      rows.push({ html: resultRowPartsHtml(parts), view });
-    }
-    if (rows.length > 0 && listElement) {
-      const rowList = document.createElement("div");
-      rowList.className = "ui-result-rows";
-      rowList.setAttribute("role", "list");
-      rowList.setAttribute("aria-label", "Stays for your search");
-      for (const row of rows) {
-        const template = document.createElement("template");
-        template.innerHTML = row.html;
-        const link = template.content.firstElementChild;
-        openStayFrom(link, row.view);
-        const item = document.createElement("div");
-        item.setAttribute("role", "listitem");
-        item.appendChild(link);
-        rowList.appendChild(item);
-      }
-      listElement.before(rowList);
-      if (rows.length === 2) {
-        const both = document.createElement("button");
-        both.type = "button";
-        both.className = "ui-link ui-result-rows__compare";
-        both.insertAdjacentHTML(
-          "beforeend",
-          `See both side by side${icon("arrow-right")}`
-        );
-        both.addEventListener("click", () => void compareBoth());
-        rowList.after(both);
-      }
-    }
-  }
   var comparingBoth = false;
   async function compareBoth() {
     if (comparingBoth) return;
@@ -11811,7 +11789,7 @@ Known schemas:
   }
   function enhanceSurfacePresentation(mount, kind) {
     mount.dataset.surfaceKind = kind;
-    for (const button of mount.querySelectorAll("button"))
+    for (const button of mount.querySelectorAll('button[data-a2ui-component="Button"]'))
       button.classList.add("guest-action");
     for (const field2 of mount.querySelectorAll("input, textarea, select"))
       field2.classList.add("guest-field");
@@ -11825,7 +11803,6 @@ Known schemas:
       if (/^No stays match|^No current matches/i.test(value))
         text2.classList.add("empty-state-title");
     }
-    if (kind === "discovery") decorateDiscoveryCards(mount);
     if (kind === "compare") decorateComparison(mount);
     if (kind === "booking" || kind === "request-draft" || kind === "payment") organizeBookingTicket(mount);
     if (activePayload?.requestScreen)
@@ -11838,13 +11815,6 @@ Known schemas:
       organizePaymentScreen(mount, activePayload.paymentScreen);
     if (activePayload?.signInOffer)
       organizeSignInOffer(mount, activePayload.signInOffer);
-  }
-  function isMoney(text2) {
-    const value = text2.trim();
-    return value.startsWith("\u20A6") || value.startsWith("NGN");
-  }
-  function isPriceLabel(text2) {
-    return text2.startsWith(GUEST_GLOSSARY.allInStayTotal) || text2.startsWith("Indicative nightly rate");
   }
   function isSafeInternalRoute(value) {
     if (typeof value !== "string" || value === "" || !value.startsWith("/") || value.startsWith("//") || value.includes("\\"))
@@ -13448,7 +13418,9 @@ Known schemas:
       resourcePolicy: ({ kind, url }) => kind === "image" ? safeImageResourceUrl(url) : void 0,
       onServerEvent: (event) => {
         void sendEvent(event.message.action);
-      }
+      },
+      // Weaver catalogues issue 06: the StayResults renderer offers "See both side by side" through this handler.
+      onCompareBoth: () => void compareBoth()
     });
   } catch {
     addTurn("assistant", "The interface runtime could not start. Please reload the page.");

@@ -15,13 +15,15 @@ export function defineShortletCatalog<TSchema extends JsonObject>(schema: TSchem
 }
 
 /**
- * Weaver catalogues issue 05 (ADR 0102): the typed unit detail components of `shortlet-discovery/v1`. Every prop is a
+ * Weaver catalogues issues 05 and 06 (ADR 0102): the typed components of `shortlet-discovery/v1`. Every prop is a
  * display string the server formatted (ADR 0077); none is a price, deadline or rule the client could compute.
  */
 export const UNIT_DETAIL_COMPONENT = "UnitDetail";
 export const UNIT_GALLERY_COMPONENT = "UnitGallery";
 export const UNIT_DETAIL_SHEET_COMPONENT = "UnitDetailSheet";
 export const UNIT_ACTION_BAR_COMPONENT = "UnitActionBar";
+export const STAY_CARD_COMPONENT = "StayCard";
+export const STAY_RESULTS_COMPONENT = "StayResults";
 
 const COMPONENT_ID: JsonObject = { $ref: "common_types.json#/$defs/ComponentId" };
 const CHILD_LIST: JsonObject = { $ref: "common_types.json#/$defs/ChildList" };
@@ -58,6 +60,14 @@ const UNIT_BREAKDOWN: JsonObject = {
   additionalProperties: false,
 };
 
+/** A compact result row: the parts `resultRowPartsHtml` draws, keyed by the unit its card shows. */
+const RESULT_ROW: JsonObject = {
+  type: "object",
+  properties: { unitId: TEXT, title: TEXT, total: TEXT, totalLabel: TEXT, photoUrl: TEXT },
+  required: ["unitId", "title", "total", "totalLabel"],
+  additionalProperties: false,
+};
+
 const PHOTO: JsonObject = {
   type: "object",
   properties: { url: TEXT, alt: TEXT },
@@ -65,7 +75,7 @@ const PHOTO: JsonObject = {
   additionalProperties: false,
 };
 
-const UNIT_DETAIL_COMPONENTS: Readonly<Record<string, JsonObject>> = {
+const DISCOVERY_COMPONENTS: Readonly<Record<string, JsonObject>> = {
   // The surface root: the unit detail's sections in their fixed order, so the client never searches the DOM for them.
   [UNIT_DETAIL_COMPONENT]: componentSchema(UNIT_DETAIL_COMPONENT, {
     gallery: COMPONENT_ID,
@@ -92,6 +102,30 @@ const UNIT_DETAIL_COMPONENTS: Readonly<Record<string, JsonObject>> = {
     totalLabel: TEXT,
     child: COMPONENT_ID,
   }, ["child"]),
+  // Weaver catalogues issue 06: one search result, the search page's `.ui-stay-card`. `view` and `compare` are the Basic
+  // Buttons that carry the allow-listed discovery events; `fit` and `notes` are Basic caption Texts the server words.
+  [STAY_CARD_COMPONENT]: componentSchema(STAY_CARD_COMPONENT, {
+    unitId: TEXT,
+    title: TEXT,
+    where: TEXT,
+    demo: { type: "boolean" },
+    facts: { type: "array", items: TILE, minItems: 1 },
+    total: TEXT,
+    totalLabel: TEXT,
+    deposit: TEXT,
+    photoUrl: TEXT,
+    photoCount: { type: "integer", minimum: 0 },
+    view: COMPONENT_ID,
+    compare: COMPONENT_ID,
+    fit: COMPONENT_ID,
+    notes: CHILD_LIST,
+  }, ["unitId", "title", "where", "facts", "total", "totalLabel"]),
+  // The result list: the phone result rows (each opening its own card by unitId), "See both side by side" for exactly
+  // two results, and the grid of StayCards.
+  [STAY_RESULTS_COMPONENT]: componentSchema(STAY_RESULTS_COMPONENT, {
+    rows: { type: "array", items: RESULT_ROW, minItems: 1 },
+    cards: CHILD_LIST,
+  }, ["rows", "cards"]),
 };
 
 /** Adds typed components to a Basic-derived schema: both the component table and the `anyComponent` union list them. */
@@ -114,6 +148,6 @@ function shortletCatalog(catalogId: string, components: Readonly<Record<string, 
   return { catalogId, schema: defineShortletCatalog(withComponents(schema, components)) };
 }
 
-export const SHORTLET_DISCOVERY_CATALOG = shortletCatalog(SHORTLET_DISCOVERY_CATALOG_ID, UNIT_DETAIL_COMPONENTS);
+export const SHORTLET_DISCOVERY_CATALOG = shortletCatalog(SHORTLET_DISCOVERY_CATALOG_ID, DISCOVERY_COMPONENTS);
 // Issue 04 adds StayTicket and PriceBreakdown to the booking catalogue.
 export const SHORTLET_BOOKING_CATALOG = shortletCatalog(SHORTLET_BOOKING_CATALOG_ID);

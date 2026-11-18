@@ -492,8 +492,8 @@
           "componentTypes": [
             "Column",
             "Text",
-            "Card",
-            "Divider",
+            "StayResults",
+            "StayCard",
             "Button"
           ]
         }
@@ -520,8 +520,8 @@
           "componentTypes": [
             "Column",
             "Text",
-            "Card",
-            "Divider",
+            "StayResults",
+            "StayCard",
             "Button"
           ]
         }

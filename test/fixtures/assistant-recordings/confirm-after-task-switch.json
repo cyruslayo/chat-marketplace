@@ -390,8 +390,8 @@
           "componentTypes": [
             "Column",
             "Text",
-            "Card",
-            "Divider",
+            "StayResults",
+            "StayCard",
             "Button"
           ]
         }

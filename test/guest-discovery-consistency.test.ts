@@ -72,19 +72,21 @@ test("Photo count: a stay card with several photos shows \"1 / N\" over its phot
   assert.match(none, /Photos not available/);
 });
 
-test("Photo count: the chat's discovery card carries the stay's photo count as a Photos fact only when there are two or more photos", () => {
+test("Photo count: the chat's discovery card carries the stay's photo count as its photoCount prop only when there are two or more photos", () => {
   const directory = mkdtempSync(join(tmpdir(), "guest-discovery-"));
   const environment = LocalGuestEnvironment.openNode({ databasePath: join(directory, "guest.sqlite"), clock: () => new Date("2026-09-03T10:00:00Z") });
   const search = { location: "Lagos", checkIn: "2026-09-10", checkOut: "2026-09-13", partySize: 2 };
-  const texts = () => discoveryArtifactToA2UI({ artifact: environment.discoveryQuery.search(search), surfaceId: "s" })
+  // Weaver catalogues issue 06 AC4: the count is the typed StayCard's photoCount; the kit draws "1 / N" from it.
+  const counts = () => discoveryArtifactToA2UI({ artifact: environment.discoveryQuery.search(search), surfaceId: "s" })
     .flatMap((message) => "updateComponents" in message ? message.updateComponents.components : [])
-    .map((component) => component.text).filter((text): text is string => typeof text === "string");
+    .filter((component) => component.component === "StayCard")
+    .map((component) => (component as { photoCount?: number }).photoCount);
   withPhotos(environment, PHOTOS);
-  assert.ok(texts().includes("Photos: 3"));
+  assert.ok(counts().includes(3));
   withPhotos(environment, PHOTOS.slice(0, 1));
-  assert.ok(!texts().some((text) => text.startsWith("Photos: ")));
+  assert.ok(counts().every((count) => count === undefined));
   withPhotos(environment, []);
-  assert.ok(!texts().some((text) => text.startsWith("Photos: ")));
+  assert.ok(counts().every((count) => count === undefined));
   environment.close();
   rmSync(directory, { recursive: true, force: true });
 });

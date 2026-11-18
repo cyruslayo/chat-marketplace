@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  A2UI_V091_BASIC_CATALOG_ID,
   createBasicCatalogV091Registration,
   createWeaverRuntime,
   type A2UIComponent,
@@ -10,6 +9,7 @@ import {
   type WeaverRuntime,
 } from "@cylayo/weaver-core";
 import { discoveryArtifactToA2UI } from "../apps/web-agent/src/index.js";
+import { SHORTLET_DISCOVERY_CATALOG, SHORTLET_DISCOVERY_CATALOG_ID } from "../apps/web-agent/src/shortlet-catalogs.js";
 import { UnitDiscoveryQuery, UnitRepository, seedIssue01Units } from "../domains/shortlet/src/index.js";
 import { InMemoryAuditLog, InMemoryTelemetry } from "../packages/platform-core/src/index.js";
 
@@ -29,7 +29,7 @@ function createQuery(): UnitDiscoveryQuery {
 }
 
 function createRuntime(): WeaverRuntime {
-  const result = createWeaverRuntime({ catalogs: [createBasicCatalogV091Registration()] });
+  const result = createWeaverRuntime({ catalogs: [createBasicCatalogV091Registration(), SHORTLET_DISCOVERY_CATALOG] });
   assert.equal(result.ok, true);
   if (!result.ok) throw new Error("Weaver runtime creation failed");
   return result.value;
@@ -52,14 +52,26 @@ function collectInstances(root: HydratedComponentInstance | undefined): Hydrated
       : relationship.children.flatMap((child) => collectInstances(child)))];
 }
 
+/**
+ * The text a surface shows, in order: each Basic Text, and each typed StayCard's facts as the card draws them (title,
+ * where, facts, then the total's label before its amount). Weaver catalogues issue 06 moved the card facts to props.
+ */
 function resolvedText(runtime: WeaverRuntime): string[] {
   const result = runtime.resolveSurface(SURFACE_ID);
   assert.equal(result.ok, true);
   if (!result.ok) throw new Error("Surface resolution failed");
-  return collectInstances(result.value.tree.root)
-    .filter((instance) => instance.component === "Text")
-    .map((instance) => instance.properties.text)
-    .filter((value): value is string => typeof value === "string");
+  return collectInstances(result.value.tree.root).flatMap((instance) => {
+    if (instance.component === "Text") return typeof instance.properties.text === "string" ? [instance.properties.text] : [];
+    if (instance.component !== "StayCard") return [];
+    const card = instance.properties as Readonly<Record<string, unknown>>;
+    const facts = Array.isArray(card.facts) ? card.facts.map((fact) => (fact as { text: string }).text) : [];
+    return [card.title, card.where, ...facts, card.totalLabel, card.total].filter((value): value is string => typeof value === "string");
+  });
+}
+
+/** The typed StayCard components of a surface. */
+function stayCards(components: readonly A2UIComponent[]): readonly Readonly<Record<string, unknown>>[] {
+  return components.filter((component) => component.component === "StayCard") as readonly Readonly<Record<string, unknown>>[];
 }
 
 function updateComponents(messages: readonly A2UIServerMessage[]): readonly A2UIComponent[] {
@@ -116,7 +128,8 @@ test("AC4: undated pricing is clearly indicative", () => {
   assert.match(text, /Indicative nightly rate\n₦85,000/);
   assert.doesNotMatch(text, /All-In Stay Total: ₦85,000/);
   assert.match(text, /Rates without dates and party size are indicative/);
-  assert.match(text, /Refundable Security Deposit \(separate\): ₦20,000/);
+  // The kit draws the deposit prop as "+ ₦20,000 Refundable Security Deposit (separate)", apart from the total.
+  assert.equal(stayCards(updateComponents(discoveryArtifactToA2UI({ artifact, surfaceId: SURFACE_ID })))[0]?.deposit, "₦20,000");
 });
 
 test("AC5: a zero-result artifact resolves successfully without View apartment actions", () => {
@@ -168,10 +181,10 @@ test("AC9: the conventional artifact remains unchanged after A2UI conversion", (
   assert.equal(artifact.actions[0].conventionalRoute, "/stays/unit-lagos-001?checkIn=2026-08-10&checkOut=2026-08-12&partySize=3&location=Lagos");
 });
 
-test("AC10: the generated surface uses the canonical Basic Catalog identifier", () => {
+test("AC10: the generated surface uses the shortlet discovery catalogue identifier (Weaver catalogues issue 06)", () => {
   const [message] = discoveryArtifactToA2UI({ artifact: datedArtifact(), surfaceId: SURFACE_ID });
   assert.ok("createSurface" in message);
-  assert.equal(message.createSurface.catalogId, A2UI_V091_BASIC_CATALOG_ID);
+  assert.equal(message.createSurface.catalogId, SHORTLET_DISCOVERY_CATALOG_ID);
 });
 
 test("AC12: missing canonical action removes the View apartment affordance", () => {
@@ -180,7 +193,7 @@ test("AC12: missing canonical action removes the View apartment affordance", () 
   const messages = discoveryArtifactToA2UI({ artifact, surfaceId: SURFACE_ID });
   const components = updateComponents(messages);
 
-  assert.equal(components.some((component) => component.component === "Text" && component.text === original.facts.results[0].title), true);
+  assert.equal(stayCards(components).some((card) => card.title === original.facts.results[0].title), true);
   assert.equal(components.some((component) => component.component === "Button"), false);
   assert.equal(components.some((component) => component.component === "Text" && component.text === "View apartment"), false);
   processMessages(messages);
@@ -198,7 +211,7 @@ test("AC13: an action for another Unit does not authorize the visible Unit", () 
   };
   const components = updateComponents(discoveryArtifactToA2UI({ artifact, surfaceId: SURFACE_ID }));
 
-  assert.equal(components.some((component) => component.component === "Text" && component.text === original.facts.results[0].title), true);
+  assert.equal(stayCards(components).some((card) => card.title === original.facts.results[0].title), true);
   assert.equal(components.some((component) => component.component === "Button"), false);
 });
 

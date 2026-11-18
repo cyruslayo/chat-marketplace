@@ -12,6 +12,7 @@ import * as webAgent from "../apps/web-agent/src/index.js";
 import { conventionalSearch, conventionalSearchRoute } from "../apps/web/src/index.js";
 import { UnitDiscoveryQuery, UnitRepository, seedIssue01Units } from "../domains/shortlet/src/index.js";
 import { InMemoryAuditLog, InMemoryTelemetry } from "../packages/platform-core/src/index.js";
+import { SHORTLET_DISCOVERY_CATALOG } from "../apps/web-agent/src/shortlet-catalogs.js";
 
 const FILTERS = Object.freeze({
   checkIn: "2026-08-10",
@@ -58,7 +59,7 @@ test("AC3 — Default path requires no runtime", () => {
 
 test("AC4 — Default A2UI validates through real Weaver Core", () => {
   const result = createDefaultAdapter().search(FILTERS);
-  const runtime = createWeaverRuntime({ catalogs: [createBasicCatalogV091Registration()] });
+  const runtime = createWeaverRuntime({ catalogs: [createBasicCatalogV091Registration(), SHORTLET_DISCOVERY_CATALOG] });
   assert.equal(runtime.ok, true);
   if (!runtime.ok) throw new Error("Weaver runtime creation failed");
   for (const message of result.a2uiMessages) {

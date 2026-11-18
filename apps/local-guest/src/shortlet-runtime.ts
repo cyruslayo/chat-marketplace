@@ -22,6 +22,8 @@ export interface ShortletWebRuntimeOptions {
    * caller turns commerce on with the COMMERCE_ENABLED switch (ADR 0104). Shortlet catalogues are always registered.
    */
   readonly commerce?: boolean;
+  /** Weaver catalogues issue 06: the guest browser's "See both side by side" handler (client.ts `compareBoth`). */
+  readonly onCompareBoth?: () => void;
 }
 
 export function createShortletWebRuntime(options: ShortletWebRuntimeOptions = {}): BasicWebRuntime {
@@ -35,7 +37,7 @@ export function createShortletWebRuntime(options: ShortletWebRuntimeOptions = {}
       ...createBasicCatalogRendererRegistrations({ catalogId: SHORTLET_BOOKING_CATALOG.catalogId, resourcePolicy }),
       ...commerceCatalogs.flatMap(({ catalogId }) => createBasicCatalogRendererRegistrations({ catalogId, resourcePolicy })),
       // ADR 0102: the typed catalogue components use the same host image policy as Basic Image.
-      ...createShortletRenderers({ resourcePolicy }),
+      ...createShortletRenderers({ resourcePolicy, ...(options.onCompareBoth === undefined ? {} : { onCompareBoth: options.onCompareBoth }) }),
     ],
     ...(options.safety === undefined ? {} : { runtime: { safety: options.safety } }),
     basic: { resourcePolicy },

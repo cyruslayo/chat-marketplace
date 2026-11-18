@@ -4,8 +4,9 @@ import {
   type A2UIServerMessage,
 } from "@cylayo/weaver-core";
 import { formatMoney } from "../../web/src/ui-kit.js";
-import { GUEST_COMPARE_LABELS, GUEST_FACT_LABELS, GUEST_GLOSSARY, formatGuestDate, guestAmenityLabel, guestFact, stayTotalLabel } from "./guest-content.js";
+import { GUEST_COMPARE_LABELS, GUEST_FACT_LABELS, GUEST_GLOSSARY, formatGuestDate, guestAmenityLabel, stayTotalLabel } from "./guest-content.js";
 import { monthlyPriceFact, utilitiesFact, type ExtendedStayUnitFacts } from "./extended-stay-presentation.js";
+import { SHORTLET_DISCOVERY_CATALOG_ID, STAY_CARD_COMPONENT, STAY_RESULTS_COMPONENT } from "./shortlet-catalogs.js";
 
 export interface DiscoveryLocationProjection {
   readonly city: string;
@@ -148,6 +149,15 @@ function budgetNote(unit: DiscoveryUnitProjection, budgetKobo: number | undefine
     : within;
 }
 
+/** One phone result row (`StayResults.rows`): the parts the kit's result row draws, keyed by its card's unit. */
+interface StayResultRow {
+  readonly unitId: string;
+  readonly title: string;
+  readonly total: string;
+  readonly totalLabel: string;
+  readonly photoUrl?: string;
+}
+
 interface CompareControl {
   /** The result already picked, if any. */
   readonly selected?: DiscoveryUnitProjection;
@@ -181,7 +191,7 @@ function unitComponents(
   budgetKobo?: number,
   compare?: CompareControl,
   demo = false,
-): { readonly cardId: string; readonly components: readonly A2UIComponent[] } {
+): { readonly cardId: string; readonly row: StayResultRow; readonly components: readonly A2UIComponent[] } {
   const prefix = `unit-${unit.id}`;
   // Guest UI consistency issue 05: always the neighbourhood-level place (ADR 0066), so the chat card and the page say the same.
   const location = `${unit.location.neighbourhood}, ${unit.location.city}`;
@@ -203,46 +213,47 @@ function unitComponents(
   const budget = budgetNote(unit, budgetKobo);
   const fit = fitReasons(unit, filters);
 
+  // Weaver catalogues issue 06 (ADR 0102): the card's facts are typed StayCard props, drawn by the search page's kit
+  // markup. Only the server-worded caption lines and the action Buttons stay Basic children.
+  const factTiles = [
+    ...(unit.bedrooms === undefined ? [] : [{ icon: "bed" as const, text: facts[0]! }]),
+    { icon: "bath" as const, text: facts[facts.length - 2]! },
+    { icon: "users" as const, text: facts[facts.length - 1]! },
+  ];
+  const notes = [
+    ...(highlights.length > 0 ? [`${prefix}-amenities`] : []),
+    ...(unit.extendedStay ? [`${prefix}-monthly`, `${prefix}-utilities`] : []),
+    ...(budget === undefined ? [] : [`${prefix}-budget`]),
+  ];
   return {
     cardId: `${prefix}-card`,
+    row: {
+      unitId: unit.id,
+      title: unit.title,
+      total: formatNgnKobo(allInAmount),
+      totalLabel: allInLabel,
+      ...(unit.photoUrls.length > 0 ? { photoUrl: unit.photoUrls[0]! } : {}),
+    },
     components: [
-      { id: `${prefix}-card`, component: "Card", child: `${prefix}-content` },
       {
-        id: `${prefix}-content`,
-        component: "Column",
-        children: [
-          ...(demo ? [`${prefix}-demo-listing`] : []),
-          ...(unit.photoUrls.length > 0 ? [`${prefix}-primary-photo`] : [`${prefix}-photo-unavailable`]),
-          ...(unit.photoUrls.length > 1 ? [`${prefix}-photo-count`] : []),
-          `${prefix}-title`, `${prefix}-location`, `${prefix}-facts`,
-          ...(fit.length > 0 ? [`${prefix}-fit`] : []),
-          ...(highlights.length > 0 ? [`${prefix}-amenities`] : []),
-          `${prefix}-divider`, `${prefix}-price-label`, `${prefix}-price`,
-          ...(unit.extendedStay ? [`${prefix}-monthly`, `${prefix}-utilities`] : []),
-          ...(unit.price.refundableSecurityDepositKobo > 0 ? [`${prefix}-deposit`] : []),
-          ...(budget === undefined ? [] : [`${prefix}-budget`]),
-          ...(canViewUnit ? [`${prefix}-view-button`] : []),
-          ...(compare === undefined ? [] : [`${prefix}-compare-button`]),
-        ],
+        id: `${prefix}-card`,
+        component: STAY_CARD_COMPONENT,
+        unitId: unit.id,
+        title: unit.title,
+        where: location,
+        ...(demo ? { demo: true } : {}),
+        facts: factTiles,
+        total: formatNgnKobo(allInAmount),
+        totalLabel: allInLabel,
+        ...(unit.price.refundableSecurityDepositKobo > 0 ? { deposit: formatNgnKobo(unit.price.refundableSecurityDepositKobo) } : {}),
+        ...(unit.photoUrls.length > 0 ? { photoUrl: unit.photoUrls[0]! } : {}),
+        // The "1 / N" badge counts the same photos as the search page's card; one photo shows no badge.
+        ...(unit.photoUrls.length > 1 ? { photoCount: unit.photoUrls.length } : {}),
+        ...(canViewUnit ? { view: `${prefix}-view-button` } : {}),
+        ...(compare === undefined ? {} : { compare: `${prefix}-compare-button` }),
+        ...(fit.length > 0 ? { fit: `${prefix}-fit` } : {}),
+        ...(notes.length > 0 ? { notes } : {}),
       },
-      ...(demo ? [{ id: `${prefix}-demo-listing`, component: "Text" as const, text: GUEST_FACT_LABELS.demoListing, variant: "caption" as const }] : []),
-      { id: `${prefix}-title`, component: "Text", text: unit.title, variant: "h3" },
-      { id: `${prefix}-location`, component: "Text", text: guestFact(GUEST_FACT_LABELS.where, location), variant: "caption" },
-      ...(unit.photoUrls.length > 0 ? [{
-        id: `${prefix}-primary-photo`,
-        component: "Image" as const,
-        url: unit.photoUrls[0]!,
-        description: `${unit.title} in ${unit.location.neighbourhood}, ${unit.location.city}`,
-      }] : []),
-      // The chat card's "1 / N" badge, so it counts the same photos as the search page's card.
-      ...(unit.photoUrls.length > 1 ? [{ id: `${prefix}-photo-count`, component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.photos, String(unit.photoUrls.length)), variant: "caption" as const }] : []),
-      ...(unit.photoUrls.length === 0 ? [{
-        id: `${prefix}-photo-unavailable`,
-        component: "Text" as const,
-        text: "No property photos are available yet.",
-        variant: "caption" as const,
-      }] : []),
-      { id: `${prefix}-facts`, component: "Text", text: facts.join(" · ") },
       ...(fit.length > 0 ? [{ id: `${prefix}-fit`, component: "Text" as const, text: `Why it fits: ${fit.map((reason) => reason.text).join(" · ")}`, variant: "caption" as const }] : []),
       ...(highlights.length > 0 ? [{
         id: `${prefix}-amenities`,
@@ -250,19 +261,10 @@ function unitComponents(
         text: highlights.map(guestAmenityLabel).join(" · "),
         variant: "caption" as const,
       }] : []),
-      { id: `${prefix}-divider`, component: "Divider", axis: "horizontal" },
-      { id: `${prefix}-price-label`, component: "Text", text: allInLabel, variant: "caption" },
-      { id: `${prefix}-price`, component: "Text", text: formatNgnKobo(allInAmount), variant: "h3" },
       ...(unit.extendedStay ? [
         { id: `${prefix}-monthly`, component: "Text" as const, text: monthlyPriceFact(unit.extendedStay), variant: "caption" as const },
         { id: `${prefix}-utilities`, component: "Text" as const, text: utilitiesFact(unit.extendedStay), variant: "caption" as const },
       ] : []),
-      ...(unit.price.refundableSecurityDepositKobo > 0 ? [{
-        id: `${prefix}-deposit`,
-        component: "Text" as const,
-        text: guestFact(GUEST_FACT_LABELS.refundableSecurityDeposit, formatNgnKobo(unit.price.refundableSecurityDepositKobo)),
-        variant: "caption" as const,
-      }] : []),
       ...(budget === undefined ? [] : [{ id: `${prefix}-budget`, component: "Text" as const, text: budget, variant: "caption" as const }]),
       ...(canViewUnit ? [
         {
@@ -314,11 +316,16 @@ export function discoveryArtifactToA2UI({
   const resultListId = "result-list";
   const seeAllId = "see-all-results";
   const rootChildren = ["result-summary", "search-context", resultListId, ...(unitGroups.length === 1 ? [] : unitGroups.length > 1 ? [seeAllId] : []), ...(unitGroups.length === 0 ? ["zero-result-guidance"] : []), ...disclosureIds];
+  const resultList: A2UIComponent = unitGroups.length === 0
+    ? { id: resultListId, component: "Column", children: [] }
+    : { id: resultListId, component: STAY_RESULTS_COMPONENT, rows: unitGroups.map((group) => ({ ...group.row })), cards: unitGroups.map((group) => group.cardId) };
   const components: A2UIComponent[] = [
     { id: "root", component: "Column", children: rootChildren },
     { id: "result-summary", component: "Text", text: resultSummary, variant: "h2" },
     { id: "search-context", component: "Text", text: `${context}${dateSummary}`.trim(), variant: "caption" },
-    { id: resultListId, component: "Column", children: unitGroups.map((group) => group.cardId) },
+    // Weaver catalogues issue 06: the result rows, "See both side by side" and the card grid; an empty search keeps the
+    // Basic Column and its "No stays match" guidance.
+    resultList,
     ...(unitGroups.length === 0 ? [{ id: "zero-result-guidance", component: "Text" as const, text: "Try another neighbourhood, dates, or guest count in your message. Your search details are still here to refine.", variant: "body" as const }] : []),
     ...(unitGroups.length > 1 ? [
       {
@@ -343,7 +350,7 @@ export function discoveryArtifactToA2UI({
   return [
     {
       version: "v0.9.1",
-      createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID },
+      createSurface: { surfaceId, catalogId: SHORTLET_DISCOVERY_CATALOG_ID },
     },
     {
       version: "v0.9.1",

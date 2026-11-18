@@ -54,12 +54,9 @@ import {
   offerScreenHtml,
   paymentScreenHtml,
   requestScreenHtml,
-  resultRowPartsHtml,
   signInOfferHtml,
-  stayCardInnerHtml,
   ticketHtml,
   type SignInOfferContent,
-  type StayCardParts,
 } from "./guest-kit.js";
 import type { ConfirmationContent } from "../../web-agent/src/confirmation-presentation.js";
 import { EXTENSION_OPEN_EVENT, NOTICE_OPEN_EVENT } from "../../web-agent/src/booking-contract-a2ui.js";
@@ -643,206 +640,6 @@ function organizeRequestScreen(
   }
 }
 
-/** The Units a discovery surface offers, in the order its cards are shown, from the view-unit actions the server generated. */
-function viewUnitIds(
-  payload: GuestSurfacePayload | undefined,
-): readonly string[] {
-  const ids: string[] = [];
-  for (const message of payload?.a2uiMessages ?? []) {
-    if (
-      !isRecord(message) ||
-      !isRecord(message.updateComponents) ||
-      !Array.isArray(message.updateComponents.components)
-    )
-      continue;
-    for (const component of message.updateComponents.components) {
-      if (
-        !isRecord(component) ||
-        !isRecord(component.action) ||
-        !isRecord(component.action.event)
-      )
-        continue;
-      const context = component.action.event.context;
-      if (
-        component.action.event.name === "shortlet.discovery.view-unit" &&
-        isRecord(context) &&
-        typeof context.unitId === "string"
-      )
-        ids.push(context.unitId);
-    }
-  }
-  return ids;
-}
-
-function factIcon(text: string): "bed" | "bath" | "users" {
-  return text.includes("bedroom")
-    ? "bed"
-    : text.includes("bathroom")
-      ? "bath"
-      : "users";
-}
-
-/** Sends the same view-unit event as the card's View apartment button; the link keeps working without JavaScript. */
-function openStayFrom(
-  link: HTMLElement,
-  viewButton: HTMLButtonElement | undefined,
-): void {
-  if (!viewButton) return;
-  link.addEventListener("click", (event) => {
-    event.preventDefault();
-    viewButton.click();
-  });
-}
-
-/**
- * Guest UI consistency issue 05: each Weaver stay Card becomes the shared `.ui-stay-card` (the same markup as the search
- * page), and phones also get the compact result rows. Facts are found through the label table; a card missing a required
- * fact is left as Weaver rendered it.
- */
-function decorateDiscoveryCards(mount: HTMLElement): void {
-  const unitIds = viewUnitIds(activePayload);
-  const rows: {
-    readonly html: string;
-    readonly view: HTMLButtonElement | undefined;
-  }[] = [];
-  let listElement: HTMLElement | undefined;
-  for (const [index, card] of [
-    ...mount.querySelectorAll<HTMLElement>('[data-a2ui-component="Card"]'),
-  ].entries()) {
-    const list = card.parentElement;
-    if (list instanceof HTMLElement) {
-      list.classList.add("stay-grid");
-      list.setAttribute("role", "list");
-      list.setAttribute("aria-label", "Stay search results");
-      listElement = list;
-    }
-    const body = card.querySelector<HTMLElement>(
-      ':scope > [data-weaver-mount] > [data-a2ui-component="Column"], :scope > [data-a2ui-component="Column"]',
-    );
-    const unitId = unitIds[index];
-    if (!body || unitId === undefined) continue;
-    const children = [...body.children];
-    const title = children.find(
-      (child) => child.tagName === "H3" && !isMoney(child.textContent ?? ""),
-    );
-    const where = findFact(children, GUEST_FACT_LABELS.where);
-    const factLine = children.find((child) => child.tagName === "P");
-    const priceLabel = children.find((child) =>
-      isPriceLabel(child.textContent?.trim() ?? ""),
-    );
-    const price = children.find(
-      (child) => child.tagName === "H3" && isMoney(child.textContent ?? ""),
-    );
-    if (!title || !where || !factLine || !priceLabel || !price) continue;
-    const deposit = findFact(
-      children,
-      GUEST_FACT_LABELS.refundableSecurityDeposit,
-    );
-    const fit = findFact(children, GUEST_FACT_LABELS.fitReason);
-    const photos = findFact(children, GUEST_FACT_LABELS.photos);
-    const photoCount = photos === undefined ? undefined : Number(photos.value);
-    const image = children.find(
-      (child): child is HTMLImageElement => child instanceof HTMLImageElement,
-    );
-    const buttons = children.filter(
-      (child): child is HTMLButtonElement => child instanceof HTMLButtonElement,
-    );
-    const view = buttons[0];
-    const parts: StayCardParts = {
-      ...(children.some((child) => child.textContent?.trim() === GUEST_FACT_LABELS.demoListing) ? { demoListing: true } : {}),
-      href: `/stays/${encodeURIComponent(unitId)}`,
-      title: title.textContent?.trim() ?? "",
-      where: where.value,
-      facts: (factLine.textContent ?? "")
-        .split(" · ")
-        .map((text) => text.trim())
-        .filter(Boolean)
-        .map((text) => ({ icon: factIcon(text), text })),
-      total: price.textContent?.trim() ?? "",
-      totalLabel: priceLabel.textContent?.trim() ?? "",
-      ...(deposit ? { deposit: deposit.value } : {}),
-      ...(image?.src ? { photoSrc: image.src } : {}),
-      ...(photoCount === undefined ? {} : { photoCount }),
-    };
-    // Whatever else Weaver rendered (the fit reason, amenity highlights, a budget note) stays, after the facts.
-    const known = new Set<Element | undefined>([
-      title,
-      where.element,
-      factLine,
-      priceLabel,
-      price,
-      deposit?.element,
-      fit?.element,
-      photos?.element,
-      image,
-      ...buttons,
-    ]);
-    const extras = children.filter(
-      (child) =>
-        !known.has(child) &&
-        child.getAttribute("data-a2ui-component") !== "Divider",
-    );
-    const template = document.createElement("template");
-    template.innerHTML = stayCardInnerHtml(parts);
-    card.replaceChildren(template.content);
-    card.classList.add("stay-card", "ui-stay-card");
-    card.setAttribute("role", "listitem");
-    const anchor = card.querySelector<HTMLAnchorElement>(".ui-stay-card__view");
-    if (view && anchor) {
-      view.classList.add(
-        "ui-button",
-        "ui-button--primary",
-        "ui-button--block",
-        "ui-stay-card__view",
-      );
-      anchor.replaceWith(view);
-    } else anchor?.remove();
-    openStayFrom(
-      card.querySelector<HTMLElement>(".ui-stay-card__title a")!,
-      view,
-    );
-    fit?.element.classList.add("stay-card__fit");
-    const facts = card.querySelector(".ui-stay-card__facts");
-    for (const extra of [...extras].reverse()) facts?.after(extra);
-    if (fit) facts?.after(fit.element);
-    // Compare follows View apartment (issue 13b).
-    for (const extra of buttons.slice(1)) {
-      extra.classList.add("stay-card__compare", "ui-link");
-      card.appendChild(extra);
-    }
-    rows.push({ html: resultRowPartsHtml(parts), view });
-  }
-  if (rows.length > 0 && listElement) {
-    const rowList = document.createElement("div");
-    rowList.className = "ui-result-rows";
-    rowList.setAttribute("role", "list");
-    rowList.setAttribute("aria-label", "Stays for your search");
-    for (const row of rows) {
-      const template = document.createElement("template");
-      template.innerHTML = row.html;
-      const link = template.content.firstElementChild as HTMLElement;
-      openStayFrom(link, row.view);
-      const item = document.createElement("div");
-      item.setAttribute("role", "listitem");
-      item.appendChild(link);
-      rowList.appendChild(item);
-    }
-    listElement.before(rowList);
-    // "Both" only when there are exactly two; with more, "See all results" leads to each stay's Compare.
-    if (rows.length === 2) {
-      const both = document.createElement("button");
-      both.type = "button";
-      both.className = "ui-link ui-result-rows__compare";
-      both.insertAdjacentHTML(
-        "beforeend",
-        `See both side by side${icon("arrow-right")}`,
-      );
-      both.addEventListener("click", () => void compareBoth());
-      rowList.after(both);
-    }
-  }
-}
-
 let comparingBoth = false;
 
 /**
@@ -965,7 +762,9 @@ function decorateComparison(mount: HTMLElement): void {
 
 function enhanceSurfacePresentation(mount: HTMLElement, kind: string): void {
   mount.dataset.surfaceKind = kind;
-  for (const button of mount.querySelectorAll<HTMLButtonElement>("button"))
+  // Only Weaver's Basic Buttons take the shell's button style; kit controls drawn by the typed renderers (the gallery's
+  // "Show all", "See both side by side") keep their own kit classes, as they did when the organizers added them later.
+  for (const button of mount.querySelectorAll<HTMLButtonElement>('button[data-a2ui-component="Button"]'))
     button.classList.add("guest-action");
   for (const field of mount.querySelectorAll<
     HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
@@ -981,7 +780,6 @@ function enhanceSurfacePresentation(mount: HTMLElement, kind: string): void {
     if (/^No stays match|^No current matches/i.test(value))
       text.classList.add("empty-state-title");
   }
-  if (kind === "discovery") decorateDiscoveryCards(mount);
   if (kind === "compare") decorateComparison(mount);
   if (kind === "booking" || kind === "request-draft" || kind === "payment") organizeBookingTicket(mount);
   if (activePayload?.requestScreen)
@@ -994,18 +792,6 @@ function enhanceSurfacePresentation(mount: HTMLElement, kind: string): void {
     organizePaymentScreen(mount, activePayload.paymentScreen);
   if (activePayload?.signInOffer)
     organizeSignInOffer(mount, activePayload.signInOffer);
-}
-
-function isMoney(text: string): boolean {
-  const value = text.trim();
-  return value.startsWith("₦") || value.startsWith("NGN");
-}
-
-function isPriceLabel(text: string): boolean {
-  return (
-    text.startsWith(GUEST_GLOSSARY.allInStayTotal) ||
-    text.startsWith("Indicative nightly rate")
-  );
 }
 
 function isSafeInternalRoute(value: unknown): value is string {
@@ -3144,6 +2930,8 @@ try {
   weaver = createShortletWebRuntime({
     resourcePolicy: ({ kind, url }) => kind === "image" ? safeImageResourceUrl(url) : undefined,
     onServerEvent: (event) => { void sendEvent(event.message.action); },
+    // Weaver catalogues issue 06: the StayResults renderer offers "See both side by side" through this handler.
+    onCompareBoth: () => void compareBoth(),
   });
 } catch {
   addTurn("assistant", "The interface runtime could not start. Please reload the page.");

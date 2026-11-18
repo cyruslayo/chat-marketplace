@@ -77,7 +77,8 @@ test("AC2 — Real discovery rendering", () => {
   assert.equal(mounted.ok, true);
   assert.match(target.textContent ?? "", /Sunlit 2-bedroom apartment in Ikeja/);
   assert.match(target.textContent ?? "", /Lagos/);
-  assert.match(target.textContent ?? "", /All-In Stay Total for 2 nights\s*₦180,000/);
+  // Weaver catalogues issue 06: the kit's card leads with the amount, then its label (ADR 0015), as the search page does.
+  assert.match(target.textContent ?? "", /₦180,000\s*All-In Stay Total for 2 nights/);
   assert.match(target.textContent ?? "", /View apartment/);
 });
 
@@ -257,6 +258,8 @@ test("AC4 — Largest local discovery and two-stay comparison fixtures resolve o
     const host = createWeaverWebHost();
     const discoverySurfaceId = "largest-local-discovery";
     const discoveryMessages = discoveryArtifactToA2UI({ artifact, surfaceId: discoverySurfaceId });
+    // Weaver catalogues issue 06 AC6: the budget holds for the typed StayResults and StayCard components.
+    assert.match(JSON.stringify(discoveryMessages), /"component":"StayResults"[\s\S]*"component":"StayCard"/);
     processSuccessfully(host, discoveryMessages);
     assert.equal(host.mount({ surfaceId: discoverySurfaceId, target: targetElement().target }).ok, true);
 

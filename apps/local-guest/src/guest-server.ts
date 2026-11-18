@@ -440,6 +440,7 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays,
     .guest-status--warning { color: var(--color-warning); background: var(--color-warning-surface); }
     .guest-status--danger { color: var(--color-danger); background: var(--color-danger-surface); }
     .empty-state-title { margin-block: var(--space-2); }
+    .stay-results { display: contents; }
     .stay-grid { display: grid !important; grid-template-columns: minmax(0, 1fr); gap: var(--space-4) !important; min-width: 0; }
     .stay-card { min-width: 0; margin: 0 !important; }
     .stay-card > * { min-width: 0; }

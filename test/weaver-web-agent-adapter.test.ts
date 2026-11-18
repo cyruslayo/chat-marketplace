@@ -14,6 +14,7 @@ import {
 import { conventionalSearchRoute } from "../apps/web/src/index.js";
 import { UnitDiscoveryQuery, UnitRepository, seedIssue01Units } from "../domains/shortlet/src/index.js";
 import { InMemoryAuditLog, InMemoryTelemetry } from "../packages/platform-core/src/index.js";
+import { SHORTLET_DISCOVERY_CATALOG } from "../apps/web-agent/src/shortlet-catalogs.js";
 
 const FIXED_NOW = new Date("2026-07-22T00:00:00Z");
 const SURFACE_ID = "surface-test-001";
@@ -44,7 +45,7 @@ function createAdapter(
 }
 
 function processMessages(messages: readonly A2UIServerMessage[], surfaceId = SURFACE_ID) {
-  const created = createWeaverRuntime({ catalogs: [createBasicCatalogV091Registration()] });
+  const created = createWeaverRuntime({ catalogs: [createBasicCatalogV091Registration(), SHORTLET_DISCOVERY_CATALOG] });
   assert.equal(created.ok, true);
   if (!created.ok) throw new Error("Weaver runtime creation failed");
   for (const message of messages) {

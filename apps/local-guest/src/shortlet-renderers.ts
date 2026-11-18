@@ -7,6 +7,8 @@ import type {
 } from "@cylayo/weaver-web";
 import {
   SHORTLET_DISCOVERY_CATALOG_ID,
+  STAY_CARD_COMPONENT,
+  STAY_RESULTS_COMPONENT,
   UNIT_ACTION_BAR_COMPONENT,
   UNIT_DETAIL_COMPONENT,
   UNIT_DETAIL_SHEET_COMPONENT,
@@ -15,11 +17,15 @@ import {
 import {
   breakdownHtml,
   demoListingChipHtml,
+  resultRowPartsHtml,
+  stayCardInnerHtml,
   unitAboutHtml,
   unitLocationHtml,
   unitTilesHtml,
   unitTitleHtml,
+  type StayCardParts,
 } from "./guest-kit.js";
+import { icon } from "../../web/src/ui-kit.js";
 import { buildListingGallery } from "./listing-gallery.js";
 
 /**
@@ -30,6 +36,11 @@ import { buildListingGallery } from "./listing-gallery.js";
  */
 export interface ShortletRendererOptions {
   readonly resourcePolicy?: BasicResourcePolicy;
+  /**
+   * Weaver catalogues issue 06: "See both side by side" picks both results through their Compare buttons. The host
+   * supplies it (client.ts `compareBoth`); without it the link is not offered, so it is never a dead control.
+   */
+  readonly onCompareBoth?: () => void;
 }
 
 export const UNIT_PHOTOS_UNAVAILABLE = "No property photos are available yet.";
@@ -114,9 +125,8 @@ function renderUnitGallery(resourcePolicy: BasicResourcePolicy | undefined) {
     const title = text(properties["title"]) ?? "this apartment";
     const images = list(properties["photos"]).flatMap((item) => {
       const photo = record(item);
-      const url = text(photo?.["url"]);
-      const approved = url === undefined ? undefined : resourcePolicy?.({ kind: "image", url });
-      if (approved === undefined || approved.trim() === "") return [];
+      const approved = approvedImage(resourcePolicy, text(photo?.["url"]));
+      if (approved === undefined) return [];
       const image = document.createElement("img");
       image.setAttribute("src", approved);
       image.alt = text(photo?.["alt"]) ?? "";
@@ -197,6 +207,125 @@ function renderUnitActionBar({ document, properties, relationships }: WebCompone
   return bar;
 }
 
+/** A photo URL the host resource policy approves, or undefined; a refused URL is never rendered. */
+function approvedImage(resourcePolicy: BasicResourcePolicy | undefined, url: string | undefined): string | undefined {
+  if (url === undefined) return undefined;
+  const approved = resourcePolicy?.({ kind: "image", url });
+  return approved === undefined || approved.trim() === "" ? undefined : approved;
+}
+
+function asElement(node: Node | undefined): Element | undefined {
+  return node !== undefined && node.nodeType === 1 ? (node as Element) : undefined;
+}
+
+/** Sends the same view-unit event as the card's View apartment button; without one the link keeps its real href. */
+function openStayFrom(link: Element | null, view: Element | null | undefined): void {
+  if (!link || !view) return;
+  link.addEventListener("click", (event) => {
+    event.preventDefault();
+    (view as HTMLButtonElement).click();
+  });
+}
+
+/**
+ * One search result as the search page's `.ui-stay-card` (stayCardInnerHtml). The Weaver View button takes the place of
+ * the kit's link and the title link opens the stay through it; the href stays `/stays/<unitId>` for no-JS and new tabs.
+ */
+function renderStayCard(resourcePolicy: BasicResourcePolicy | undefined) {
+  return ({ document, properties, relationships }: WebComponentRenderInput): Node => {
+    const unitId = text(properties["unitId"]) ?? "";
+    const photoSrc = approvedImage(resourcePolicy, text(properties["photoUrl"]));
+    const photoCount = properties["photoCount"];
+    const deposit = text(properties["deposit"]);
+    const parts: StayCardParts = {
+      ...(properties["demo"] === true ? { demoListing: true } : {}),
+      href: `/stays/${encodeURIComponent(unitId)}`,
+      title: text(properties["title"]) ?? "",
+      where: text(properties["where"]) ?? "",
+      facts: tiles(properties["facts"]),
+      total: text(properties["total"]) ?? "",
+      totalLabel: text(properties["totalLabel"]) ?? "",
+      ...(deposit === undefined ? {} : { deposit }),
+      ...(photoSrc === undefined ? {} : { photoSrc }),
+      ...(typeof photoCount === "number" ? { photoCount } : {}),
+    };
+    const card = element(document, "article", "stay-card ui-stay-card");
+    card.setAttribute("role", "listitem");
+    card.setAttribute("data-unit-id", unitId);
+    card.append(fromKit(document, stayCardInnerHtml(parts)));
+    const view = asElement(single(relationships, "view"));
+    const anchor = card.querySelector(".ui-stay-card__view");
+    if (view && anchor) {
+      view.classList.add("ui-button", "ui-button--primary", "ui-button--block", "ui-stay-card__view");
+      anchor.replaceWith(view);
+    } else anchor?.remove();
+    openStayFrom(card.querySelector(".ui-stay-card__title a"), view);
+    // The fit reason, then the server's other caption lines (amenity highlights, Extended Stay lines, budget note).
+    const fit = asElement(single(relationships, "fit"));
+    fit?.classList.add("stay-card__fit");
+    const after = [...(fit ? [fit] : []), ...children(relationships, "notes")];
+    if (after.length > 0) card.querySelector(".ui-stay-card__facts")?.after(...after);
+    // Compare follows View apartment (issue 13b).
+    const compare = asElement(single(relationships, "compare"));
+    if (compare) {
+      compare.classList.add("stay-card__compare", "ui-link");
+      card.append(compare);
+    }
+    return card;
+  };
+}
+
+/**
+ * The result list: phone result rows, "See both side by side" for exactly two results, then the grid of cards. Each row
+ * opens the card whose `data-unit-id` matches its own unitId, never by position. The wrapper is `display: contents`.
+ */
+function renderStayResults(resourcePolicy: BasicResourcePolicy | undefined, onCompareBoth: (() => void) | undefined) {
+  return ({ document, properties, relationships }: WebComponentRenderInput): Node => {
+    const results = element(document, "div", "stay-results");
+    const cards = children(relationships, "cards");
+    const rows = list(properties["rows"]).flatMap((item) => {
+      const row = record(item);
+      const unitId = text(row?.["unitId"]);
+      const title = text(row?.["title"]);
+      const total = text(row?.["total"]);
+      const totalLabel = text(row?.["totalLabel"]);
+      if (!unitId || !title || !total || !totalLabel) return [];
+      const photoSrc = approvedImage(resourcePolicy, text(row?.["photoUrl"]));
+      return [{ unitId, parts: { href: `/stays/${encodeURIComponent(unitId)}`, title, where: "", facts: [], total, totalLabel, ...(photoSrc === undefined ? {} : { photoSrc }) } satisfies StayCardParts }];
+    });
+    if (rows.length > 0) {
+      const rowList = element(document, "div", "ui-result-rows");
+      rowList.setAttribute("role", "list");
+      rowList.setAttribute("aria-label", "Stays for your search");
+      for (const row of rows) {
+        const link = fromKit(document, resultRowPartsHtml(row.parts)).firstElementChild;
+        if (!link) continue;
+        const card = cards.map(asElement).find((candidate) => candidate?.getAttribute("data-unit-id") === row.unitId);
+        openStayFrom(link, card?.querySelector(".ui-stay-card__view"));
+        const item = document.createElement("div");
+        item.setAttribute("role", "listitem");
+        item.append(link);
+        rowList.append(item);
+      }
+      results.append(rowList);
+      // "Both" only when there are exactly two; with more, "See all results" leads to each stay's Compare.
+      if (rows.length === 2 && onCompareBoth) {
+        const both = element(document, "button", "ui-link ui-result-rows__compare");
+        both.setAttribute("type", "button");
+        both.append(fromKit(document, `See both side by side${icon("arrow-right")}`));
+        both.addEventListener("click", () => onCompareBoth());
+        results.append(both);
+      }
+    }
+    const grid = element(document, "div", "stay-grid");
+    grid.setAttribute("role", "list");
+    grid.setAttribute("aria-label", "Stay search results");
+    grid.append(...cards);
+    results.append(grid);
+    return results;
+  };
+}
+
 /** Every typed component of the `shortlet-*` catalogues, bound to the host's resource policy. */
 export function createShortletRenderers(options: ShortletRendererOptions = {}): readonly RendererRegistration[] {
   const catalogId = SHORTLET_DISCOVERY_CATALOG_ID;
@@ -205,5 +334,7 @@ export function createShortletRenderers(options: ShortletRendererOptions = {}): 
     { catalogId, component: UNIT_GALLERY_COMPONENT, render: renderUnitGallery(options.resourcePolicy) },
     { catalogId, component: UNIT_DETAIL_SHEET_COMPONENT, render: renderUnitDetailSheet },
     { catalogId, component: UNIT_ACTION_BAR_COMPONENT, render: renderUnitActionBar },
+    { catalogId, component: STAY_CARD_COMPONENT, render: renderStayCard(options.resourcePolicy) },
+    { catalogId, component: STAY_RESULTS_COMPONENT, render: renderStayResults(options.resourcePolicy, options.onCompareBoth) },
   ];
 }

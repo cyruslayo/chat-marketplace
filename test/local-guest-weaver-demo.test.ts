@@ -75,7 +75,7 @@ function createBrowserHarness(): BrowserHarness {
       const button = accessibleLabel === undefined
         ? buttons.find((candidate) => candidate.textContent?.includes(labelText))
         : buttons.find((candidate) => {
-          const card = candidate.closest('[data-a2ui-component="Card"]');
+          const card = candidate.closest('.ui-stay-card, [data-a2ui-component="Card"]');
           return candidate.textContent?.includes(labelText) && card?.textContent?.includes(accessibleLabel.replace(/^View /, ""));
         });
       if (!button) return false;
@@ -233,7 +233,8 @@ test("AC5 — Conversational bedroom refinement replaces the active discovery su
     assert.notEqual(refined.surfaces[0]?.surfaceId, firstSurface.surfaceId);
     const refinedText = (() => {
       const components = refined.surfaces[0]!.a2uiMessages.filter((message): message is Extract<A2UIServerMessage, { updateComponents: unknown }> => "updateComponents" in message).flatMap((message) => message.updateComponents.components);
-      return components.filter((component) => component.component === "Text").map((component) => component.text).join(" ");
+      // Weaver catalogues issue 06: a result's title is its typed StayCard's prop.
+      return components.filter((component) => component.component === "Text" || component.component === "StayCard").map((component) => component.text ?? component.title).join(" ");
     })();
     assert.match(refinedText, /Sunlit 2-bedroom apartment in Ikeja|Luxury 2-Bedroom Apartment in Old Ikoyi/);
     const stale = await postJson(journey.base, "/api/event", { threadId: journey.threadId, name: firstAction.name, surfaceId: firstSurface.surfaceId, sourceComponentId: firstAction.sourceComponentId, timestamp: firstAction.timestamp, context: firstAction.context });
@@ -517,8 +518,8 @@ test("Guest demo reset restores deterministic discovery and booking state", asyn
     const rendered = (secondTurn.surfaces[0]!.a2uiMessages as readonly A2UIServerMessage[])
       .filter((message) => "updateComponents" in message)
       .flatMap((message) => message.updateComponents.components)
-      .filter((component: any) => component.component === "Text")
-      .map((component: any) => component.text)
+      .filter((component: any) => component.component === "Text" || component.component === "StayCard")
+      .map((component: any) => component.text ?? component.title)
       .join(" ");
     assert.ok(rendered.includes(IKOYI_TITLE));
     assert.equal(rendered.includes(LEKKI_TITLE), false, "reset preserves the canonical Ikoyi filter");
