@@ -57,16 +57,43 @@ export function guestRequestStatus(status: string, delivered: boolean): { readon
   return { label: `${GUEST_GLOSSARY.bookingRequest} status unavailable`, detail: "Refresh the current booking status before taking another action." };
 }
 
-export function guestPaymentStatus(status: CardPaymentStatus, processing = false): { readonly label: string; readonly detail: string; readonly progress?: BookingProgressStage } {
-  if (status === "ready") return { label: "Payment required", detail: "Continue to the designated payment checkout. Payment has not succeeded and the booking is not confirmed.", progress: "payment" };
-  if (status === "checkout_initiated" && processing) return { label: "Payment processing · Checking payment", detail: "We are checking the provider’s payment confirmation. Do not submit another payment while this result is pending. The booking is not confirmed until payment is verified and a Reservation exists.", progress: "payment-processing" };
-  if (status === "checkout_initiated") return { label: "Payment handoff ready · Payment not yet verified", detail: "Continue the current payment attempt. Payment has not succeeded and your booking is not confirmed. Your booking details will be retained when you return. Do not start another payment while this attempt is pending.", progress: "payment" };
-  if (status === "deposit_required") return { label: `Payment required · ${GUEST_GLOSSARY.refundableSecurityDeposit}`, detail: `The stay payment is verified. A separate ${GUEST_GLOSSARY.refundableSecurityDeposit} payment is still required before a Reservation can exist.`, progress: "payment" };
-  if (status === "reconciliation_required" || status === "compensation_pending") return { label: "Payment requires review · Booking not confirmed", detail: "This payment needs review. Your booking is not confirmed. Do not submit another payment while this payment is under review." };
-  if (status === "compensated") return { label: "Payment review update available", detail: "The payment attempt is closed and no Reservation exists. Check the current booking details before taking another action." };
-  if (status === "expired") return { label: "Payment window expired · Booking not confirmed", detail: "The Payment Window expired. This payment action is no longer available; no Reservation exists." };
-  if (status === "failed") return { label: "Payment was not verified · Booking not confirmed", detail: "Payment was not verified. No Reservation was created. Check the current booking status before retrying." };
-  return { label: "Booking confirmed", detail: "Payment verified and Reservation confirmed.", progress: "confirmed" };
+export interface GuestPaymentCopy {
+  readonly label: string;
+  readonly detail: string;
+  readonly progress?: BookingProgressStage;
+}
+
+/** Issue 09: `checkout_initiated` alone splits on the processing stage; every other status has one copy. */
+interface GuestCheckoutCopy {
+  readonly processing: GuestPaymentCopy;
+  readonly handoff: GuestPaymentCopy;
+}
+
+/**
+ * Issue 09 (ADR 0074): one entry per CardPaymentStatus. A new status without copy fails `npm run check` (satisfies).
+ * Copy is unchanged from the ternary chain this replaced; a runtime value outside the union falls back to `confirmed`
+ * (issue 12 changes that).
+ */
+export const GUEST_PAYMENT_STATUS_COPY = {
+  ready: { label: "Payment required", detail: "Continue to the designated payment checkout. Payment has not succeeded and the booking is not confirmed.", progress: "payment" },
+  checkout_initiated: {
+    processing: { label: "Payment processing · Checking payment", detail: "We are checking the provider’s payment confirmation. Do not submit another payment while this result is pending. The booking is not confirmed until payment is verified and a Reservation exists.", progress: "payment-processing" },
+    handoff: { label: "Payment handoff ready · Payment not yet verified", detail: "Continue the current payment attempt. Payment has not succeeded and your booking is not confirmed. Your booking details will be retained when you return. Do not start another payment while this attempt is pending.", progress: "payment" },
+  },
+  deposit_required: { label: `Payment required · ${GUEST_GLOSSARY.refundableSecurityDeposit}`, detail: `The stay payment is verified. A separate ${GUEST_GLOSSARY.refundableSecurityDeposit} payment is still required before a Reservation can exist.`, progress: "payment" },
+  compensation_pending: { label: "Payment requires review · Booking not confirmed", detail: "This payment needs review. Your booking is not confirmed. Do not submit another payment while this payment is under review." },
+  reconciliation_required: { label: "Payment requires review · Booking not confirmed", detail: "This payment needs review. Your booking is not confirmed. Do not submit another payment while this payment is under review." },
+  compensated: { label: "Payment review update available", detail: "The payment attempt is closed and no Reservation exists. Check the current booking details before taking another action." },
+  expired: { label: "Payment window expired · Booking not confirmed", detail: "The Payment Window expired. This payment action is no longer available; no Reservation exists." },
+  failed: { label: "Payment was not verified · Booking not confirmed", detail: "Payment was not verified. No Reservation was created. Check the current booking status before retrying." },
+  confirmed: { label: "Booking confirmed", detail: "Payment verified and Reservation confirmed.", progress: "confirmed" },
+} satisfies Record<CardPaymentStatus, GuestPaymentCopy | GuestCheckoutCopy>;
+
+export function guestPaymentStatus(status: CardPaymentStatus, processing = false): GuestPaymentCopy {
+  // A runtime value outside the union keeps today's result: the confirmed copy (issue 12 changes it).
+  const entry: GuestPaymentCopy | GuestCheckoutCopy = Object.hasOwn(GUEST_PAYMENT_STATUS_COPY, status) ? GUEST_PAYMENT_STATUS_COPY[status] : GUEST_PAYMENT_STATUS_COPY.confirmed;
+  if ("processing" in entry) return { ...(processing ? entry.processing : entry.handoff) };
+  return { ...entry };
 }
 
 export function formatBookingMoney(kobo: number, currency = "NGN"): string {

@@ -1,4 +1,4 @@
-import type { CardPaymentArtifact } from "../../web/src/card-payment-artifact.js";
+import type { CardPaymentArtifact, CardPaymentStatus } from "../../web/src/card-payment-artifact.js";
 import { guestPaymentStatus } from "./booking-presentation.js";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, guestWaitingCopy } from "./guest-content.js";
 import { billingPeriodLines, cardPaymentBillingPeriod } from "./extended-stay-presentation.js";
@@ -10,14 +10,39 @@ export function isCardPaymentProcessing(facts: CardPaymentFacts): boolean {
   return facts.journeyStage === "stay_payment_processing" || facts.journeyStage === "deposit_payment_processing";
 }
 
+/** Issue 09: the heading of each card payment status (the processing stage overrides it, except for a confirmed payment). */
+const CARD_PAYMENT_TITLE = {
+  ready: "Payment required",
+  checkout_initiated: "Payment status",
+  deposit_required: "Payment required",
+  compensation_pending: "Payment under review",
+  compensated: "Payment status",
+  reconciliation_required: "Payment under review",
+  confirmed: "Booking confirmed",
+  expired: "Payment status",
+  failed: "Payment status",
+} satisfies Record<CardPaymentStatus, string>;
+
+/** Issue 09: the status pill of each card payment status; undefined uses the guest payment label (guestPaymentStatus). */
+const CARD_PAYMENT_PILL = {
+  ready: "Secure checkout is available",
+  checkout_initiated: undefined,
+  deposit_required: "Stay payment verified",
+  compensation_pending: undefined,
+  compensated: undefined,
+  reconciliation_required: undefined,
+  confirmed: "Payment verified",
+  expired: undefined,
+  failed: undefined,
+} satisfies Record<CardPaymentStatus, string | undefined>;
+
 /** The heading, status pill and explanation of a card payment, shared by the chat surface and the payment page. */
 export function cardPaymentCopy(facts: CardPaymentFacts): { readonly title: string; readonly status: string; readonly content: string } {
   const processing = isCardPaymentProcessing(facts);
   const detail = guestPaymentStatus(facts.status, processing);
-  const payable = facts.status === "ready" || facts.status === "deposit_required";
   return {
-    title: facts.status === "confirmed" ? "Booking confirmed" : processing ? "Payment being checked" : payable ? "Payment required" : facts.status === "reconciliation_required" || facts.status === "compensation_pending" ? "Payment under review" : "Payment status",
-    status: facts.status === "confirmed" ? "Payment verified" : processing ? "Payment processing" : facts.status === "ready" ? "Secure checkout is available" : facts.status === "deposit_required" ? "Stay payment verified" : detail.label,
+    title: processing && facts.status !== "confirmed" ? "Payment being checked" : (CARD_PAYMENT_TITLE[facts.status] ?? "Payment status"),
+    status: processing && facts.status !== "confirmed" ? "Payment processing" : (CARD_PAYMENT_PILL[facts.status] ?? detail.label),
     content: facts.status === "confirmed"
       ? `${detail.detail} Booking reference is available in your booking details.`
       : processing
