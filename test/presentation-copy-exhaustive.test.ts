@@ -114,15 +114,27 @@ test("AC3: adding a member to CardPaymentStatus without copy fails npm run check
   assert.deepEqual(Object.keys(GUEST_PAYMENT_STATUS_COPY).sort(), [...ALL_CARD_PAYMENT_STATUSES].sort());
 });
 
-test("a runtime status outside CardPaymentStatus keeps today's cardPaymentCopy title and status pill (issue 12 changes it)", () => {
-  const outside = "not_a_status" as unknown as CardPaymentStatus;
-  const copy = cardPaymentCopy(paymentFacts(outside, "stay_settled"));
-  assert.equal(copy.title, "Payment status");
-  assert.equal(copy.status, "Booking confirmed");
+const OUT_OF_UNION_STATUS = "not_a_status" as unknown as CardPaymentStatus;
+const REFRESH_DETAIL = "Refresh the current booking status before taking another action.";
+
+test("AC1: an out-of-union status gets the label Payment status unavailable, the refresh detail, and no progress; it never gets Booking confirmed", () => {
+  for (const processing of [false, true]) {
+    const copy = guestPaymentStatus(OUT_OF_UNION_STATUS, processing);
+    assert.deepStrictEqual(copy, { label: "Payment status unavailable", detail: REFRESH_DETAIL }, `processing=${processing}`);
+    assert.equal("progress" in copy, false, `processing=${processing}`);
+    assert.notEqual(copy.label, "Booking confirmed");
+  }
 });
 
-test("a runtime value outside CardPaymentStatus keeps today's confirmed copy (issue 12 changes it)", () => {
-  const outside = "not_a_status" as unknown as CardPaymentStatus;
-  assert.deepStrictEqual(guestPaymentStatus(outside), { label: "Booking confirmed", detail: "Payment verified and Reservation confirmed.", progress: "confirmed" });
-  assert.deepStrictEqual(guestPaymentStatus(outside, true), { label: "Booking confirmed", detail: "Payment verified and Reservation confirmed.", progress: "confirmed" });
+test("AC2: cardPaymentCopy for an out-of-union status has title Payment status and status pill Payment status unavailable", () => {
+  const copy = cardPaymentCopy(paymentFacts(OUT_OF_UNION_STATUS, "stay_settled"));
+  assert.equal(copy.title, "Payment status");
+  assert.equal(copy.status, "Payment status unavailable");
+});
+
+test("AC3: every in-union status, with processing true and false, still renders exactly as before", () => {
+  for (const [status, processing, expected] of GUEST_PAYMENT_EXPECTED) {
+    assert.deepStrictEqual(guestPaymentStatus(status, processing), expected, `${status} processing=${processing}`);
+    assert.notEqual(expected.label, "Payment status unavailable");
+  }
 });

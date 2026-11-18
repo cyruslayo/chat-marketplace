@@ -71,8 +71,7 @@ interface GuestCheckoutCopy {
 
 /**
  * Issue 09 (ADR 0074): one entry per CardPaymentStatus. A new status without copy fails `npm run check` (satisfies).
- * Copy is unchanged from the ternary chain this replaced; a runtime value outside the union falls back to `confirmed`
- * (issue 12 changes that).
+ * Copy is unchanged from the ternary chain this replaced.
  */
 export const GUEST_PAYMENT_STATUS_COPY = {
   ready: { label: "Payment required", detail: "Continue to the designated payment checkout. Payment has not succeeded and the booking is not confirmed.", progress: "payment" },
@@ -89,9 +88,12 @@ export const GUEST_PAYMENT_STATUS_COPY = {
   confirmed: { label: "Booking confirmed", detail: "Payment verified and Reservation confirmed.", progress: "confirmed" },
 } satisfies Record<CardPaymentStatus, GuestPaymentCopy | GuestCheckoutCopy>;
 
+/** Issue 12 (ADR 0074, fail closed): a runtime value outside CardPaymentStatus; mirrors guestRequestStatus's fallback. */
+const GUEST_PAYMENT_STATUS_UNAVAILABLE: GuestPaymentCopy = { label: "Payment status unavailable", detail: "Refresh the current booking status before taking another action." };
+
 export function guestPaymentStatus(status: CardPaymentStatus, processing = false): GuestPaymentCopy {
-  // A runtime value outside the union keeps today's result: the confirmed copy (issue 12 changes it).
-  const entry: GuestPaymentCopy | GuestCheckoutCopy = Object.hasOwn(GUEST_PAYMENT_STATUS_COPY, status) ? GUEST_PAYMENT_STATUS_COPY[status] : GUEST_PAYMENT_STATUS_COPY.confirmed;
+  if (!Object.hasOwn(GUEST_PAYMENT_STATUS_COPY, status)) return { ...GUEST_PAYMENT_STATUS_UNAVAILABLE };
+  const entry: GuestPaymentCopy | GuestCheckoutCopy = GUEST_PAYMENT_STATUS_COPY[status];
   if ("processing" in entry) return { ...(processing ? entry.processing : entry.handoff) };
   return { ...entry };
 }

@@ -1,6 +1,6 @@
 # 12 An unknown payment status no longer says "Booking confirmed"
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Track: C (one named behaviour change)
 Blocked by: 09
@@ -40,3 +40,14 @@ Change one behaviour: an out-of-union status gets the "status unavailable" copy,
 ADRs: 0074 (fail closed). See also UX guidelines §9-10 (`docs/design/shortlet-ux-guidelines.md`).
 
 ## Comments
+
+- Failing tests first: `test/presentation-copy-exhaustive.test.ts` now has AC1 (out-of-union label, detail, no progress, never "Booking confirmed"), AC2 (cardPaymentCopy title and pill) and AC3 (in-union unchanged). The two old runtime-fallback assertions were replaced by AC1 and AC2.
+- Before the fix: `env -u LLM_API_KEY npx tsx --test` over the 8 files below gave `# tests 56`, `# pass 54`, `# fail 2`. The two failures were `AC1: an out-of-union status ...` and `AC2: cardPaymentCopy for an out-of-union status ...`.
+- Fix: `apps/web-agent/src/booking-presentation.ts` adds `GUEST_PAYMENT_STATUS_UNAVAILABLE` (label "Payment status unavailable", the refresh sentence from `guestRequestStatus`, no progress) and `guestPaymentStatus` returns it for any value outside the map. `payment-presentation.ts` needed no change: its status pill already falls back to `detail.label`, and its title fallback stays "Payment status". `guest-content.ts` was not touched because it has no shared label for these strings, and `guestRequestStatus` keeps its copy inline.
+- Doc: `docs/agents/state-machines.md` row "Payment and offer copy" now states the new fallback.
+- After the fix, same command: `# tests 56`, `# pass 56`, `# fail 0`. Files: `test/guest-offer-access.test.ts`, `test/guest-offer-consistency.test.ts`, `test/guest-offer-payment-clarity.test.ts`, `test/guest-payment-choice.test.ts`, `test/guest-payment-consistency.test.ts`, `test/phase4-booking-payment-presentation.test.ts`, `test/presentation-copy-exhaustive.test.ts`, `test/state-machine-inventory.test.ts`. The chromium files were excluded.
+- `env -u LLM_API_KEY npm run check` exit 0, zero `error TS` lines.
+- Definition of Done: each AC has a named test (1 to 1). Failure path covered: the out-of-union status, with processing true and false. No `any` added. The copy is taken from the issue and `guestRequestStatus`. No new constructor parameters. ADR 0074 (fail closed) is the only ADR, and it is applied. No credentials are touched. Real-Chrome: not run, as the issue says.
+- Not run: the full `npm test` (batch gate, DoD item 7 is confirmed there), and `npm run test:workers` (not affected: no Worker code changed).
+- Unconfirmed: with a processing stage (`stay_payment_processing`), an out-of-union status still shows the title "Payment being checked" and pill "Payment processing", because the processing override runs before the fallback. AC2 only covers the non-processing case, so I did not change it.
+- Orchestrator review: diff read; re-ran the 8 files (56 pass) and `npm run check` (exit 0). The processing-stage case (title "Payment being checked") makes no booking claim, so it stays out of scope.
