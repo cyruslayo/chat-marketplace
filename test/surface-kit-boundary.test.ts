@@ -55,3 +55,42 @@ test("AC7 - the scanner catches relative, bare and Weaver imports that leave the
     await rm(root, { recursive: true, force: true });
   }
 });
+
+const ADAPTERS: readonly string[] = [
+  "apps/web-agent/src/catalogues/weaver-catalogues.ts",
+  "apps/local-guest/src/catalogue-renderers.ts",
+];
+
+/** Files that import both the library and a Weaver package, as repository-relative forward-slash paths. */
+async function filesPairingKitWithWeaver(root: string, files: readonly string[]): Promise<string[]> {
+  const pairing: string[] = [];
+  for (const file of files) {
+    const specifiers = specifiersIn(await readFile(file, "utf8"));
+    const kit = specifiers.some((specifier) => /(?:^|\/)surface-kit(?:\/|$)/.test(specifier));
+    const weaver = specifiers.some((specifier) => /^@(?:cylayo\/weaver-|weaver\/)/.test(specifier));
+    if (kit && weaver) pairing.push(path.relative(root, file).split(path.sep).join("/"));
+  }
+  return pairing.sort();
+}
+
+test("AC7 - only the two adapter modules pair surface-kit with Weaver outside tests", async () => {
+  const files: string[] = [];
+  for (const area of ["apps", "domains", "packages", "scripts"]) {
+    files.push(...(await sourceFiles(path.join(repositoryRoot, area))).filter((file) => /\.(?:ts|tsx|mts|mjs)$/.test(file)));
+  }
+  const pairing = await filesPairingKitWithWeaver(repositoryRoot, files);
+  assert.deepEqual(pairing, [...ADAPTERS].sort(), "exactly the two adapters pair the library with Weaver");
+});
+
+test("AC7 - the pairing scan flags a module that imports both the library and Weaver", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "surface-kit-pairing-"));
+  try {
+    await mkdir(path.join(root, "apps"));
+    await writeFile(path.join(root, "apps", "both.ts"), 'import { x } from "../packages/surface-kit/src/index.js";\nimport { y } from "@cylayo/weaver-web";\nexport { x, y };\n');
+    await writeFile(path.join(root, "apps", "kit-only.ts"), 'import { x } from "../packages/surface-kit/src/index.js";\nexport { x };\n');
+    await writeFile(path.join(root, "apps", "weaver-only.ts"), 'import { y } from "@cylayo/weaver-core";\nexport { y };\n');
+    assert.deepEqual(await filesPairingKitWithWeaver(root, await sourceFiles(root)), ["apps/both.ts"]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
