@@ -35,3 +35,17 @@ Tiers 1 and 2 hold no domain vocabulary. `findGlossaryTerms(schema, terms)` find
 Weaver binds one catalogue to a surface and resolves `$ref` only inside the registered document, so a catalogue cannot reference shared components at run time. Composition at build time is how a shared component reaches several catalogues.
 
 See `docs/adr/0108-compose-domain-surface-catalogues-from-a-shared-library.md` and `.scratch/surface-catalogue-library/`.
+
+## Versioning and the snapshot gate
+
+A catalogue embeds its components, so changing a shared Surface Component changes the schema of every catalogue that uses it (ADR 0108 decision 6).
+
+- **Additive** is a minor version of the component and keeps the catalogue id: a new component, a new optional property, an enum value appended, a raised `maxLength`, `maxItems` or `maximum`, a new `$defs` or `functions` entry, or an alternative appended to a `oneOf` or `anyOf` (how a component joins the `anyComponent` union).
+- **Anything else is breaking** and needs a new catalogue major (`.../v2`) after ADR 0073 review: a removed component, property or enum value, a new `required` entry, a changed `type`, `const` or `$ref`, a lowered bound, a changed `$defs` or `functions` entry, or any other changed keyword (a description counts: the gate fails closed).
+- `classifyCatalogueChange(before, after)` returns `identical`, `additive` or `breaking`, with one reason per change that starts with its JSON pointer.
+- `test/catalogue-snapshots.test.ts` compares every composed catalogue with its snapshot in `test/fixtures/catalogues/<id-slug>.json`. An additive change fails until the snapshot is rewritten on purpose with `UPDATE_CATALOGUE_SNAPSHOTS=1`. A breaking change under the same id major fails even then; publish it under a new major id and the new file is written next to the old one. A snapshot with no current catalogue (an orphan) fails, so a retired catalogue is removed on purpose.
+- Strict props (`additionalProperties: false`) mean even an additive change is rejected by a tab opened before the deploy. That tab falls back to the complete `text(props)` and the conventional route (ADR 0074); the test in `catalogue-snapshots.test.ts` covers it.
+
+```bash
+UPDATE_CATALOGUE_SNAPSHOTS=1 npx tsx --test test/catalogue-snapshots.test.ts
+```

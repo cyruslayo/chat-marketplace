@@ -15,3 +15,4 @@ export type {
   SurfaceTier,
 } from "./types.js";
 export { canonicalJson, catalogueSnapshotSlug } from "./canonical.js";
+export { classifyCatalogueChange, type CatalogueChange, type CatalogueChangeKind } from "./classify.js";

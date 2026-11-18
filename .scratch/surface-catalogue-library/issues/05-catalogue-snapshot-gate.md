@@ -1,6 +1,6 @@
 # Catalogue snapshot gate and change classifier
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 03
 Requested: 18 Nov 2026
@@ -64,3 +64,20 @@ Strict props (`additionalProperties: false`) mean even an additive change reache
 ## Comments
 
 - Affected tests: `test/catalogue-snapshots.test.ts`, `test/surface-kit*.test.ts`. This is the last phase-1 issue. After it, run the batch gate in `map.md` (check, `test:workers`, full `npm test`) before any merge.
+
+- Commands run (worktree `chat-marketplace-surface-kit`, every command with `env -u LLM_API_KEY`):
+  - `npx tsx --test test/catalogue-snapshots.test.ts test/surface-kit.test.ts test/surface-kit-boundary.test.ts test/surface-kit-weaver.test.ts test/shortlet-catalogue-manifests.test.ts test/guest-web-runtime.test.ts`: 35 tests, 35 pass, 0 fail (`catalogue-snapshots.test.ts` alone: 7 tests, 7 pass).
+  - `npm run check`: clean.
+- No client file changed in this issue, so `dist/client.js` was not rebuilt and no real-Chrome test was run.
+- Classifier decisions inside the issue text:
+  - Strictness: a changed `description` or any keyword that is not on the additive list is breaking, a removed required entry is breaking, and an added or removed keyword is breaking. The gate fails closed; a reviewed wording change needs a new major or, for an additive reviewer decision, widening the rule in a later issue.
+  - Inside an existing `$defs` or `functions` entry only an appended `oneOf` or `anyOf` entry is allowed (that is how a new component joins `$defs.anyComponent`, and a new function joins `anyFunction`). A new property, an appended enum value or a raised bound inside a `$defs` or `functions` entry is breaking, per "any change to `functions` or `$defs` other than an addition".
+  - When a change is breaking, `reasons` lists only the breaking changes; when additive, only the additive ones.
+- The snapshot gate lives in `test/helpers/catalogue-snapshots.ts` (it needs `node:fs`, so not in the Weaver-free library). The "new major" rule in the issue needs a defined meaning, because the snapshot file name already contains the id major: a catalogue with no snapshot under its own id but with a lower-major snapshot of the same `urn:chat-marketplace:<namespace>/<name>` is a new major; it fails without `UPDATE_CATALOGUE_SNAPSHOTS=1` and is written next to the old file with it. The old major must stay in the catalogue list or its file is an orphan and fails (AC6).
+- The test strips CR when it reads a snapshot (this checkout has `core.autocrlf=true`).
+- Stale-tab rule (AC7): the new prop is rejected by `runtime.process` on the old client (strict props), and the client then mounts `mountGuestSurfaceOrFallback` with no rich attempt, which is exactly what `client.ts` does when `process` fails; the fallback keeps the complete text of the new definition (including the new prop) and the conventional route.
+- Definition of Done: AC1–AC7 each have a dedicated named test with failure paths (each breaking case, the variable ignored for a breaking change, an orphan, a stale client). No invented policy string, id, copy or action name. ADR 0108 decision 6, 0073, 0074, 0079 are reflected.
+
+## Answer
+
+`classifyCatalogueChange` (in `packages/surface-kit`) and the snapshot gate (`test/catalogue-snapshots.test.ts` with `test/helpers/catalogue-snapshots.ts`) now fail a breaking change to a composed catalogue under an unchanged major, require `UPDATE_CATALOGUE_SNAPSHOTS=1` for an additive one and fail an orphan snapshot. The README documents the rule and the variable. A stale client falls back to complete text and the conventional route.
