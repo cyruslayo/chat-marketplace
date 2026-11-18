@@ -162,15 +162,16 @@ const V2 = "urn:chat-marketplace:test/probe/v2";
 test("AC3 - the snapshot test passes on the current tree with the issue-03 snapshots, unchanged", async () => {
   const before = new Map<string, string>();
   for (const name of await readdir(COMMITTED)) before.set(name, await readFile(path.join(COMMITTED, name), "utf8"));
-  const result = await checkCatalogueSnapshots({
-    catalogues: SHORTLET_COMPOSED_CATALOGUES,
-    directory: COMMITTED,
-    update: process.env[UPDATE_SNAPSHOTS_VARIABLE] === "1",
-  });
+  const update = process.env[UPDATE_SNAPSHOTS_VARIABLE] === "1";
+  const result = await checkCatalogueSnapshots({ catalogues: SHORTLET_COMPOSED_CATALOGUES, directory: COMMITTED, update });
   assert.deepEqual(result.failures, []);
-  assert.deepEqual(result.written, [], "a clean tree rewrites nothing");
-  assert.deepEqual([...before.keys()].sort(), SHORTLET_COMPOSED_CATALOGUES.map((catalogue) => `${catalogueSnapshotSlug(catalogue.manifest.id)}.json`).sort());
-  for (const [name, text] of before) assert.equal(await readFile(path.join(COMMITTED, name), "utf8"), text, `${name} is unchanged`);
+  // With the variable set, a deliberate rewrite (or a new major file) is the point, so the "nothing changed" checks
+  // apply only to a normal run.
+  if (!update) {
+    assert.deepEqual(result.written, [], "a clean tree rewrites nothing");
+    assert.deepEqual([...before.keys()].sort(), SHORTLET_COMPOSED_CATALOGUES.map((catalogue) => `${catalogueSnapshotSlug(catalogue.manifest.id)}.json`).sort());
+    for (const [name, text] of before) assert.equal(await readFile(path.join(COMMITTED, name), "utf8"), text, `${name} is unchanged`);
+  }
 });
 
 test("AC4 - a simulated additive drift fails without UPDATE_CATALOGUE_SNAPSHOTS and is rewritten with it", async () => {
