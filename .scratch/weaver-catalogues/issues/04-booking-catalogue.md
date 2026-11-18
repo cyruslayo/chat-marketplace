@@ -117,3 +117,5 @@ The chat's confirmed ticket never showed the booking reference (its foot is "3 n
 5. No new policy string or amount; labels come from `GUEST_FACT_LABELS` through the kit.
 6. No logging added.
 7. `npm run check` clean; full suite at the batch gate.
+- 18 Nov 2026 (owner decision, ADR 0108): amended. Build this issue's components in the Surface Catalogue Library format, after phase 1 of `.scratch/surface-catalogue-library/` (blocked by its issue 05). Each component is a Surface Component in `packages/surface-kit` (Tier 1 or Tier 2), or a stays-only Tier 3 component if the commerce paper check fails. It is exposed in the shortlet manifest under the name this issue and ADR 0102 approved (alias). Its renderer comes from `rendererRegistrationsFor`, not a hand-written `SHORTLET_RENDERERS` entry. Acceptance criteria are otherwise unchanged; the issue is re-scoped when phase 1 lands.
+- 25 Nov 2026: this issue is resolved on main. The comment above arrived with ADR 0108 (app-expansion D1) and describes the planned order; the typed components landed first. Reconciliation: `.scratch/app-expansion/issues/02-reconcile-surface-kit.md`.

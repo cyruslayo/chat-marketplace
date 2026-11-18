@@ -48,6 +48,18 @@ _Avoid_: System of record, booking state, ledger state
 A declarative, catalogue-validated arrangement of approved interface components that can present state and request application commands without containing executable business logic.
 _Avoid_: Generated code, authoritative workflow, arbitrary HTML
 
+**Surface Catalogue**:
+A closed, versioned A2UI catalogue under the platform namespace that a Generative Surface is validated against. Each one is composed at build time from a Catalogue Manifest (ADR 0073, ADR 0108). Say "Surface Catalogue" wherever "catalogue" alone could mean the commerce product catalogue.
+_Avoid_: Catalogue (on its own, in shared or commerce contexts), component library, theme
+
+**Surface Component**:
+One reusable interface component, defined once: a strict props schema, one kit markup helper shared by chat and the conventional page, a complete text fallback, fixtures, an accessibility contract and a version. A channel renderer is a thin adapter over it (ADR 0108).
+_Avoid_: Renderer, widget, Weaver component
+
+**Catalogue Manifest**:
+A Domain Pack's static declaration of one Surface Catalogue: its owner-approved id, its base catalogue, the Surface Components it uses under domain alias names with their pinned major and slot choice, and its allow-listed actions (ADR 0108).
+_Avoid_: Catalogue schema, registration, runtime configuration
+
 **Web Agent Adapter**:
 A replaceable web presentation integration that converts canonical Interaction Artifacts into the supported A2UI presentation and connects interactive events back to trusted application boundaries. The current implementation uses Weaver for A2UI v0.9.1; Weaver remains an adapter/runtime dependency rather than a domain or platform contract.
 _Avoid_: Agent runtime, application service, domain dependency
