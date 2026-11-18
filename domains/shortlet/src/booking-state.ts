@@ -1,5 +1,6 @@
-import type { BookingContract, Reservation } from "./card-payment.js";
+import { RESERVATION_TRANSITIONS, type BookingContract, type Reservation, type ReservationStatus } from "./card-payment.js";
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
+import { canTransition } from "../../../packages/platform-core/src/state-transition.js";
 
 /** Small in-memory authoritative aggregate store; adapters can replace it with a transactional repository. */
 export interface BookingStateRepository {
@@ -24,7 +25,7 @@ export interface BookingStateRepository {
   transitionReservationStatus(
     reservationId: string,
     expectedStatus: "confirmed",
-    nextStatus: "cancelled" | "no_show",
+    nextStatus: Exclude<ReservationStatus, "confirmed">,
   ): Reservation;
 }
 
@@ -106,10 +107,10 @@ export class InMemoryBookingStateRepository implements BookingStateRepository {
   transitionReservationStatus(
     id: string,
     expectedStatus: "confirmed",
-    nextStatus: "cancelled" | "no_show",
+    nextStatus: Exclude<ReservationStatus, "confirmed">,
   ): Reservation {
     const current = this.#reservations.get(id);
-    if (!current || current.status !== expectedStatus)
+    if (!current || current.status !== expectedStatus || !canTransition(RESERVATION_TRANSITIONS, current.status, nextStatus))
       throw new Error("STALE_ACTION");
     const next = { ...current, status: nextStatus };
     this.#reservations.set(id, next);
@@ -262,10 +263,10 @@ export class SqliteBookingStateRepository implements BookingStateRepository {
   transitionReservationStatus(
     id: string,
     expectedStatus: "confirmed",
-    nextStatus: "cancelled" | "no_show",
+    nextStatus: Exclude<ReservationStatus, "confirmed">,
   ): Reservation {
     const current = this.findReservationById(id);
-    if (!current || current.status !== expectedStatus)
+    if (!current || current.status !== expectedStatus || !canTransition(RESERVATION_TRANSITIONS, current.status, nextStatus))
       throw new Error("STALE_ACTION");
     const next = { ...current, status: nextStatus };
     this.saveReservation(next);

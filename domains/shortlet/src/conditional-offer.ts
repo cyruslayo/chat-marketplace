@@ -9,6 +9,22 @@ import type { OperatorRepresentativeAuthority } from "./operator-representative-
 import type { ExtendedStayPolicy } from "./extended-stay.js";
 import { isEligibleExtendedStayUnit, isEligibleUnit, type Unit } from "./browse.js";
 import { contractualCheckInWindow, type ContractualCheckInWindow } from "./checkin-support.js";
+import type { TransitionTable } from "../../../packages/platform-core/src/state-transition.js";
+
+/** ConditionalOffer statuses. Persisted strings are never renamed (docs/agents/state-machines.md). */
+export const CONDITIONAL_OFFER_STATUSES = ["issued", "accepted", "expired", "stale", "revoked"] as const;
+export type ConditionalOfferStatus = (typeof CONDITIONAL_OFFER_STATUSES)[number];
+/**
+ * Allowed moves as the accept path makes them: `issued` to `accepted`, `expired` or `stale` (ADR 0044, 0074, 0086).
+ * `revoked` is never written. The other states are terminal and list no moves.
+ */
+export const CONDITIONAL_OFFER_TRANSITIONS = {
+  issued: ["accepted", "expired", "stale"],
+  accepted: [],
+  expired: [],
+  stale: [],
+  revoked: [],
+} satisfies TransitionTable<ConditionalOfferStatus>;
 
 
 export interface ConfirmationTokenPayload {
@@ -119,7 +135,7 @@ export interface ConditionalBookingOffer {
   };
   /** ADR 0031: the unit's Contractual Check-In Window at issue, never re-read from the unit afterwards. */
   readonly checkInWindow?: ContractualCheckInWindow;
-  status: "issued" | "accepted" | "expired" | "stale" | "revoked";
+  status: ConditionalOfferStatus;
   issuedAt: string;
   acceptedAt?: string;
   /** The current plaintext token for the guest's surface. Held in memory only; never persisted (ADR 0075). */

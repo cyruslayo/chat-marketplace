@@ -1,4 +1,5 @@
 import { PlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
+import type { TransitionTable } from "../../../packages/platform-core/src/state-transition.js";
 import { ConditionalBookingOffer } from "./conditional-offer.js";
 import type { BookingStateRepository } from "./booking-state.js";
 import { deriveCompensationStatus, PAYMENT_PROCESSING_GRACE_MINUTES, type BookingPaymentJourneyRepository, type BookingPaymentCompensationPort } from "./booking-payment-journey.js";
@@ -139,13 +140,23 @@ export interface BookingContract {
   readonly financialSummary?: { readonly originalBookingTotalKobo: number; readonly currentContractTotalKobo: number; readonly currency: "NGN"; readonly amendmentAdjustments: readonly { readonly amendmentId: string; readonly type: "additional_collection" | "refund" | "none"; readonly amountKobo: number; readonly currency: "NGN"; readonly settlementId?: string; readonly settledAt?: string; readonly quoteId: string; readonly quoteVersion: string | number }[] };
 }
 
+/** Reservation statuses. Persisted strings are never renamed (docs/agents/state-machines.md). */
+export const RESERVATION_STATUSES = ["confirmed", "cancelled", "no_show"] as const;
+export type ReservationStatus = (typeof RESERVATION_STATUSES)[number];
+/** Allowed moves: a confirmed Reservation is cancelled or marked no-show. The other states are terminal and list no moves. */
+export const RESERVATION_TRANSITIONS = {
+  confirmed: ["cancelled", "no_show"],
+  cancelled: [],
+  no_show: [],
+} satisfies TransitionTable<ReservationStatus>;
+
 export interface Reservation {
   readonly reservationId: string;
   readonly contractId: string;
   readonly unitId: string;
   readonly primaryGuestId: string;
   readonly dates: { readonly checkIn: string; readonly checkOut: string };
-  readonly status: "confirmed" | "cancelled" | "no_show";
+  readonly status: ReservationStatus;
   readonly confirmedAt: string;
   readonly inventoryCommitmentId?: string;
 }
