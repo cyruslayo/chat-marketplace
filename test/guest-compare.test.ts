@@ -62,32 +62,37 @@ test("AC2: Choosing Compare on two results shows price, capacity and amenities a
     const view = compared.surfaces[0]!;
     assert.match(view.surfaceId, /:compare:/);
     assert.equal(view.mode, "focused-surface");
-    const byId = new Map(components(view).map((component) => [component.id, component]));
     const results = (fixture.environment.discoveryQuery.search({ location: "Lagos", checkIn: "2026-09-10", checkOut: "2026-09-13", partySize: 2 }).facts.results) as readonly DiscoveryUnitProjection[];
     const units = [first, second].map((id) => results.find((unit) => unit.id === id)!);
+    // Weaver catalogues issue 07: the comparison is one typed StayComparison; its rows and cells are props.
+    const table = components(view).find((component) => component.component === "StayComparison") as unknown as {
+      readonly heads: readonly string[];
+      readonly rows: readonly { readonly key: string; readonly cells: readonly { readonly value: string; readonly unit: string }[] }[];
+    } | undefined;
+    assert.ok(table, "the comparison surface has a StayComparison");
+    assert.deepEqual(table.heads, units.map((unit) => unit.title), "the stays are the columns, in pick order");
 
     // Price, deposit, where, bedrooms, bathrooms and sleeps appear in that order, one row each.
-    const order = byId.get("root")!.children!.filter((id) => id.endsWith("-row") && id !== "compare-view-row");
-    assert.deepEqual(order, COMPARE_ATTRIBUTES.map((attribute) => `compare-${attribute.key}-row`));
+    assert.deepEqual(table.rows.map((row) => row.key), COMPARE_ATTRIBUTES.map((attribute) => attribute.label));
     assert.deepEqual(COMPARE_ATTRIBUTES.map((attribute) => attribute.key), ["price", "deposit", "where", "bedrooms", "bathrooms", "sleeps"]);
-    for (const attribute of COMPARE_ATTRIBUTES) {
-      const row = byId.get(`compare-${attribute.key}-row`)!;
-      assert.equal(row.component, "Row");
-      assert.deepEqual(row.children, [`compare-${attribute.key}-0`, `compare-${attribute.key}-1`], `${attribute.key} has one cell per stay`);
+    COMPARE_ATTRIBUTES.forEach((attribute, rowIndex) => {
+      const row = table.rows[rowIndex]!;
+      assert.equal(row.cells.length, units.length, `${attribute.key} has one cell per stay`);
       units.forEach((unit, index) => {
-        assert.equal(byId.get(`compare-${attribute.key}-${index}-unit`)!.text, unit.title, "each cell names its stay");
-        assert.equal(byId.get(`compare-${attribute.key}-${index}-value`)!.text, attribute.value(unit));
+        assert.equal(row.cells[index]!.unit, unit.title, "each cell names its stay");
+        assert.equal(row.cells[index]!.value, attribute.value(unit));
       });
-    }
+    });
+    const cell = (key: string, index: number) => table.rows[COMPARE_ATTRIBUTES.findIndex((attribute) => attribute.key === key)]!.cells[index]!.value;
     units.forEach((unit, index) => {
       // ADR-0015: the price is the All-In Stay Total for these dates and guests.
-      assert.equal(byId.get(`compare-price-${index}-value`)!.text, formatNgnKobo(unit.price.allInStayTotalKobo!));
-      assert.equal(byId.get(`compare-sleeps-${index}-value`)!.text, String(unit.capacity));
-      assert.equal(byId.get(`compare-where-${index}-value`)!.text, `${unit.location.neighbourhood}, ${unit.location.city}`);
+      assert.equal(cell("price", index), formatNgnKobo(unit.price.allInStayTotalKobo!));
+      assert.equal(cell("sleeps", index), String(unit.capacity));
+      assert.equal(cell("where", index), `${unit.location.neighbourhood}, ${unit.location.city}`);
       // ADR-0016: the deposit is its own row, never folded into the price.
-      assert.equal(byId.get(`compare-deposit-${index}-value`)!.text, formatNgnKobo(unit.price.refundableSecurityDepositKobo));
+      assert.equal(cell("deposit", index), formatNgnKobo(unit.price.refundableSecurityDepositKobo));
     });
-    assert.equal(byId.get("compare-price-label")!.text, "All-In Stay Total");
+    assert.equal(table.rows[0]!.key, "All-In Stay Total");
     assert.ok(view.textFallback?.includes(units[0]!.title) && view.textFallback.includes(units[1]!.title));
 
     // The discovery surface is superseded; Back to results re-presents the same search.

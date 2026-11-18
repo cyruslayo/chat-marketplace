@@ -683,83 +683,6 @@ async function compareBoth(): Promise<void> {
   }
 }
 
-/**
- * Issue 05: the comparison is a table with the stays as columns and one row per attribute (a stacked list on narrow
- * screens, ADR-0078). It rearranges the Weaver elements, which keep their events.
- */
-function decorateComparison(mount: HTMLElement): void {
-  const root = mount.querySelector<HTMLElement>(
-    '[data-a2ui-component="Column"]',
-  );
-  if (!root) return;
-  const rowElements = [
-    ...root.querySelectorAll<HTMLElement>(
-      ':scope > [data-a2ui-component="Row"]',
-    ),
-  ];
-  const attributeRows = rowElements.filter(
-    (row) => row.previousElementSibling?.tagName === "H3",
-  );
-  const actionRow = rowElements.find(
-    (row) => row.querySelector("button") !== null,
-  );
-  if (attributeRows.length === 0) return;
-  const table = document.createElement("div");
-  table.className = "ui-compare";
-  table.setAttribute("role", "table");
-  table.setAttribute("aria-label", "Compare stays");
-  const line = (className: string): HTMLElement => {
-    const element = document.createElement("div");
-    element.className = `ui-compare__row compare-row ${className}`;
-    element.setAttribute("role", "row");
-    return element;
-  };
-  const cellsOf = (row: HTMLElement): HTMLElement[] => [
-    ...row.querySelectorAll<HTMLElement>(
-      ':scope > [data-a2ui-component="Column"], :scope > [data-weaver-mount] > [data-a2ui-component="Column"]',
-    ),
-  ];
-  const head = line("ui-compare__row--head");
-  const corner = document.createElement("div");
-  corner.setAttribute("role", "columnheader");
-  head.appendChild(corner);
-  for (const cell of cellsOf(attributeRows[0]!)) {
-    const heading = document.createElement("div");
-    heading.className = "ui-compare__head";
-    heading.setAttribute("role", "columnheader");
-    heading.textContent =
-      cell.querySelector("small")?.textContent?.trim() ?? "";
-    head.appendChild(heading);
-  }
-  table.appendChild(head);
-  root.insertBefore(table, attributeRows[0]!.previousElementSibling);
-  for (const row of attributeRows) {
-    const label = row.previousElementSibling as HTMLElement;
-    const item = line("");
-    label.classList.add("ui-compare__key");
-    label.setAttribute("role", "rowheader");
-    item.appendChild(label);
-    for (const cell of cellsOf(row)) {
-      cell.classList.add("compare-cell", "ui-compare__cell");
-      cell.setAttribute("role", "cell");
-      cell.querySelector("small")?.classList.add("compare-cell__unit");
-      item.appendChild(cell);
-    }
-    row.remove();
-    table.appendChild(item);
-  }
-  if (actionRow) {
-    const item = line("ui-compare__row--actions");
-    item.appendChild(document.createElement("div"));
-    for (const cell of [...actionRow.children]) {
-      (cell as HTMLElement).classList.add("ui-compare__cell");
-      item.appendChild(cell);
-    }
-    actionRow.remove();
-    table.appendChild(item);
-  }
-}
-
 function enhanceSurfacePresentation(mount: HTMLElement, kind: string): void {
   mount.dataset.surfaceKind = kind;
   // Only Weaver's Basic Buttons take the shell's button style; kit controls drawn by the typed renderers (the gallery's
@@ -780,7 +703,6 @@ function enhanceSurfacePresentation(mount: HTMLElement, kind: string): void {
     if (/^No stays match|^No current matches/i.test(value))
       text.classList.add("empty-state-title");
   }
-  if (kind === "compare") decorateComparison(mount);
   if (kind === "booking" || kind === "request-draft" || kind === "payment") organizeBookingTicket(mount);
   if (activePayload?.requestScreen)
     organizeRequestScreen(mount, activePayload.requestScreen);

@@ -1,12 +1,11 @@
 import {
-  A2UI_V091_BASIC_CATALOG_ID,
   type A2UIComponent,
   type A2UIServerMessage,
 } from "@cylayo/weaver-core";
 import { formatMoney } from "../../web/src/ui-kit.js";
 import { GUEST_COMPARE_LABELS, GUEST_FACT_LABELS, GUEST_GLOSSARY, formatGuestDate, guestAmenityLabel, stayTotalLabel } from "./guest-content.js";
 import { monthlyPriceFact, utilitiesFact, type ExtendedStayUnitFacts } from "./extended-stay-presentation.js";
-import { SHORTLET_DISCOVERY_CATALOG_ID, STAY_CARD_COMPONENT, STAY_RESULTS_COMPONENT } from "./shortlet-catalogs.js";
+import { SHORTLET_DISCOVERY_CATALOG_ID, STAY_CARD_COMPONENT, STAY_COMPARISON_COMPONENT, STAY_RESULTS_COMPONENT } from "./shortlet-catalogs.js";
 
 export interface DiscoveryLocationProjection {
   readonly city: string;
@@ -400,12 +399,33 @@ export function compareFallbackText(units: readonly DiscoveryUnitProjection[]): 
   return units.map((unit) => `${unit.title}: ${COMPARE_ATTRIBUTES.map((attribute) => `${attribute.label} ${attribute.value(unit)}`).join("; ")}.`).join(" ");
 }
 
+/** Weaver catalogues issue 07: the `StayComparison` table props, as the renderer draws them. */
+export interface StayComparisonProps {
+  readonly heads: readonly string[];
+  readonly rows: readonly {
+    readonly key: string;
+    readonly cells: readonly { readonly value: string; readonly unit: string }[];
+  }[];
+}
+
+/**
+ * Builds the comparison table props and refuses a row whose cell count differs from the heads, before anything is
+ * emitted: a short row would otherwise shift a value into another stay's column.
+ */
+export function stayComparisonProps(heads: readonly string[], rows: StayComparisonProps["rows"]): StayComparisonProps {
+  for (const row of rows) {
+    if (row.cells.length !== heads.length) throw new Error(`Comparison row "${row.key}" has ${row.cells.length} cells for ${heads.length} stays`);
+  }
+  return { heads: [...heads], rows: rows.map((row) => ({ key: row.key, cells: row.cells.map((cell) => ({ ...cell })) })) };
+}
+
 /**
  * Issue 13b AC2: two results side by side, one row per attribute. Each cell
  * repeats its stay's name so a stacked cell still says what it describes;
- * the shell stacks the rows at narrow widths (AC3, ADR-0078). Basic Catalog
- * components only (ADR-0073, ADR-0081). Throws on a unit the artifact lacks:
- * the caller has already validated both against the stored artifact.
+ * the shell stacks the rows at narrow widths (AC3, ADR-0078). Weaver
+ * catalogues issue 07 (ADR 0102): one typed StayComparison on
+ * `shortlet-discovery/v1`. Throws on a unit the artifact lacks: the caller
+ * has already validated both against the stored artifact.
  */
 export function compareArtifactToA2UI({ artifact, unitIds, surfaceId }: CompareArtifactToA2UIInput): readonly A2UIServerMessage[] {
   const units = unitIds.map((id) => {
@@ -413,15 +433,10 @@ export function compareArtifactToA2UI({ artifact, unitIds, surfaceId }: CompareA
     if (unit === undefined) throw new Error("Compared stay is not in these results");
     return unit;
   });
-  const rows = COMPARE_ATTRIBUTES.flatMap((attribute): A2UIComponent[] => [
-    { id: `compare-${attribute.key}-label`, component: "Text", text: attribute.label, variant: "h3" },
-    { id: `compare-${attribute.key}-row`, component: "Row", children: units.map((_, index) => `compare-${attribute.key}-${index}`) },
-    ...units.flatMap((unit, index): A2UIComponent[] => [
-      { id: `compare-${attribute.key}-${index}`, component: "Column", children: [`compare-${attribute.key}-${index}-unit`, `compare-${attribute.key}-${index}-value`] },
-      { id: `compare-${attribute.key}-${index}-unit`, component: "Text", text: unit.title, variant: "caption" },
-      { id: `compare-${attribute.key}-${index}-value`, component: "Text", text: attribute.value(unit), variant: "body" },
-    ]),
-  ]);
+  const table = stayComparisonProps(
+    units.map((unit) => unit.title),
+    COMPARE_ATTRIBUTES.map((attribute) => ({ key: attribute.label, cells: units.map((unit) => ({ value: attribute.value(unit), unit: unit.title })) })),
+  );
   const checkIn = typeof artifact.facts.filters.checkIn === "string" ? formatGuestDate(artifact.facts.filters.checkIn) : undefined;
   const checkOut = typeof artifact.facts.filters.checkOut === "string" ? formatGuestDate(artifact.facts.filters.checkOut) : undefined;
   const context = `${discoveryContext(artifact.facts.filters)}${checkIn && checkOut ? ` · ${checkIn} – ${checkOut}` : ""}`.trim();
@@ -430,13 +445,18 @@ export function compareArtifactToA2UI({ artifact, unitIds, surfaceId }: CompareA
     {
       id: "root",
       component: "Column",
-      children: ["compare-heading", ...(context === "" ? [] : ["compare-context"]), ...COMPARE_ATTRIBUTES.flatMap((attribute) => [`compare-${attribute.key}-label`, `compare-${attribute.key}-row`]), "compare-view-row", ...disclosureIds, "compare-back"],
+      children: ["compare-heading", ...(context === "" ? [] : ["compare-context"]), "compare-table", ...disclosureIds, "compare-back"],
     },
     { id: "compare-heading", component: "Text", text: `Compare ${units.length} stays`, variant: "h2" },
     ...(context === "" ? [] : [{ id: "compare-context", component: "Text" as const, text: context, variant: "caption" as const }]),
-    ...rows,
-    // A "View" per stay opens it, the same event a result's View apartment sends.
-    { id: "compare-view-row", component: "Row", children: units.map((_, index) => `compare-view-${index}`) },
+    {
+      id: "compare-table",
+      component: STAY_COMPARISON_COMPONENT,
+      heads: [...table.heads],
+      rows: table.rows.map((row) => ({ key: row.key, cells: row.cells.map((cell) => ({ value: cell.value, unit: cell.unit })) })),
+      // A "View" per stay opens it, the same event a result's View apartment sends.
+      actions: units.map((_, index) => `compare-view-${index}`),
+    },
     ...units.flatMap((unit, index): A2UIComponent[] => [
       { id: `compare-view-${index}`, component: "Button", child: `compare-view-${index}-label`, action: { event: { name: VIEW_UNIT_EVENT, context: { artifactId: artifact.id, unitId: unit.id } } }, accessibility: { label: `View ${unit.title}` } },
       { id: `compare-view-${index}-label`, component: "Text", text: "View" },
@@ -452,7 +472,7 @@ export function compareArtifactToA2UI({ artifact, unitIds, surfaceId }: CompareA
     { id: "compare-back-label", component: "Text", text: "Back to results" },
   ];
   return [
-    { version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } },
+    { version: "v0.9.1", createSurface: { surfaceId, catalogId: SHORTLET_DISCOVERY_CATALOG_ID } },
     { version: "v0.9.1", updateComponents: { surfaceId, components } },
   ];
 }

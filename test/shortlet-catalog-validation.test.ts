@@ -15,6 +15,7 @@ import { createShortletWebRuntime } from "../apps/local-guest/src/shortlet-runti
 import { validateShortletMessages } from "../apps/web-agent/src/validate-shortlet-messages.js";
 import { guestAction, restartFixture, stages } from "./helpers/guest-restart.js";
 import { unitDetailArtifactToA2UI } from "../apps/web-agent/src/unit-detail-a2ui.js";
+import { compareArtifactToA2UI, stayComparisonProps } from "../apps/web-agent/src/discovery-a2ui.js";
 import { quotedUnitDetailArtifact } from "./helpers/unit-detail-fixture.js";
 
 function surface(catalogId: string, surfaceId: string, text: string): readonly A2UIServerMessage[] {
@@ -50,10 +51,10 @@ test("AC1 - catalogue ids are exported from the one namespace constant", async (
 test("AC2 - shortlet catalogues preserve all Basic schemas and render Basic surfaces identically", () => {
   const basic = createBasicCatalogV091Registration();
   const basicComponents = basic.schema.components as Record<string, unknown>;
-  // Weaver catalogues issues 05 and 06: discovery adds typed components on top of every unchanged Basic component.
+  // Weaver catalogues issues 05 to 07: discovery adds typed components on top of every unchanged Basic component.
   const discoveryComponents = SHORTLET_DISCOVERY_CATALOG.schema.components as Record<string, unknown>;
   for (const [name, schema] of Object.entries(basicComponents)) assert.deepEqual(discoveryComponents[name], schema, `Basic ${name} is unchanged`);
-  assert.deepEqual(Object.keys(discoveryComponents).filter((name) => !(name in basicComponents)), ["UnitDetail", "UnitGallery", "UnitDetailSheet", "UnitActionBar", "StayCard", "StayResults"]);
+  assert.deepEqual(Object.keys(discoveryComponents).filter((name) => !(name in basicComponents)), ["UnitDetail", "UnitGallery", "UnitDetailSheet", "UnitActionBar", "StayCard", "StayResults", "StayComparison"]);
   assert.deepEqual(SHORTLET_BOOKING_CATALOG.schema.components, basic.schema.components);
   for (const catalogId of [SHORTLET_DISCOVERY_CATALOG_ID, SHORTLET_BOOKING_CATALOG_ID]) {
     const runtime = createShortletWebRuntime();
@@ -178,6 +179,37 @@ test("Weaver catalogues 06 AC5 - discovery surfaces validate on shortlet-discove
       { version: "v0.9.1", updateComponents: { surfaceId, components: [JSON.parse(JSON.stringify(invalid))] } },
     ]);
     assert.equal(result.ok, false, `invalid discovery component ${index} is rejected`);
+  }
+});
+
+test("Weaver catalogues 07 AC4 - the comparison validates on shortlet-discovery/v1; the builder refuses rows whose cells differ from the heads", async () => {
+  const fixture = await restartFixture();
+  try {
+    const artifact = fixture.environment.discoveryQuery.search({ location: "Lagos", checkIn: "2026-09-10", checkOut: "2026-09-13", partySize: 2 });
+    const [first, second] = artifact.facts.results;
+    const messages = compareArtifactToA2UI({ artifact, unitIds: [first!.id, second!.id], surfaceId: "compare-ac4" });
+    assert.match(JSON.stringify(messages), /"component":"StayComparison"/);
+    assert.deepEqual(validateShortletMessages(messages), { ok: true });
+  } finally {
+    await fixture.close();
+  }
+  assert.throws(() => stayComparisonProps(["A", "B"], [{ key: "Where", cells: [{ value: "Ikoyi", unit: "A" }] }]), /has 1 cells for 2 stays/);
+  assert.throws(() => stayComparisonProps(["A"], [{ key: "Where", cells: [{ value: "Ikoyi", unit: "A" }, { value: "Lekki", unit: "B" }] }]), /has 2 cells for 1 stays/);
+  const table = { id: "root", component: "StayComparison", heads: ["A", "B"], rows: [{ key: "Where", cells: [{ value: "Ikoyi", unit: "A" }, { value: "", unit: "B" }] }] };
+  for (const [index, invalid] of [
+    { ...table, heads: [] },
+    { ...table, rows: [] },
+    { ...table, rows: [{ key: "", cells: [{ value: "x" }] }] },
+    { ...table, rows: [{ key: "Where", cells: [{ value: "x", html: "<b>x</b>" }] }] },
+    { ...table, rows: [{ key: "Where", cells: [{ unit: "A" }] }] },
+    { ...table, caption: "extra" },
+  ].entries()) {
+    const surfaceId = `compare-invalid-${index}`;
+    const result = validateShortletMessages([
+      { version: "v0.9.1", createSurface: { surfaceId, catalogId: SHORTLET_DISCOVERY_CATALOG_ID } },
+      { version: "v0.9.1", updateComponents: { surfaceId, components: [JSON.parse(JSON.stringify(invalid))] } },
+    ]);
+    assert.equal(result.ok, false, `invalid comparison ${index} is rejected`);
   }
 });
 

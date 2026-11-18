@@ -8,6 +8,7 @@ import type {
 import {
   SHORTLET_DISCOVERY_CATALOG_ID,
   STAY_CARD_COMPONENT,
+  STAY_COMPARISON_COMPONENT,
   STAY_RESULTS_COMPONENT,
   UNIT_ACTION_BAR_COMPONENT,
   UNIT_DETAIL_COMPONENT,
@@ -326,6 +327,67 @@ function renderStayResults(resourcePolicy: BasicResourcePolicy | undefined, onCo
   };
 }
 
+/**
+ * Weaver catalogues issue 07: the comparison as a table (`.ui-compare[role=table]`), the stays as columns and one row per
+ * attribute; the kit CSS stacks it in a narrow column (ADR 0078). Every row draws exactly one cell per head, so a
+ * missing value is an empty cell in its own column and never shifts later cells. The View buttons sit in the last row.
+ */
+function renderStayComparison({ document, properties, relationships }: WebComponentRenderInput): Node {
+  const heads = texts(properties["heads"]);
+  const table = element(document, "div", "ui-compare");
+  table.setAttribute("role", "table");
+  table.setAttribute("aria-label", "Compare stays");
+  const line = (modifier: string): HTMLElement => {
+    const row = element(document, "div", `ui-compare__row compare-row${modifier === "" ? "" : ` ${modifier}`}`);
+    row.setAttribute("role", "row");
+    table.append(row);
+    return row;
+  };
+  const head = line("ui-compare__row--head");
+  const corner = document.createElement("div");
+  corner.setAttribute("role", "columnheader");
+  head.append(corner);
+  for (const title of heads) {
+    const heading = element(document, "div", "ui-compare__head");
+    heading.setAttribute("role", "columnheader");
+    heading.textContent = title;
+    head.append(heading);
+  }
+  for (const item of list(properties["rows"])) {
+    const row = record(item);
+    const key = text(row?.["key"]);
+    if (!key) continue;
+    const attribute = line("");
+    const label = element(document, "h3", "ui-compare__key");
+    label.setAttribute("role", "rowheader");
+    label.textContent = key;
+    attribute.append(label);
+    const cells = list(row?.["cells"]);
+    heads.forEach((title, index) => {
+      const values = record(cells[index]);
+      const cell = element(document, "div", "compare-cell ui-compare__cell");
+      cell.setAttribute("role", "cell");
+      // Each cell names its stay, so a stacked cell still says what it describes.
+      const unit = element(document, "small", "compare-cell__unit");
+      unit.textContent = text(values?.["unit"]) ?? title;
+      const value = document.createElement("p");
+      value.textContent = typeof values?.["value"] === "string" ? values["value"] : "";
+      cell.append(unit, value);
+      attribute.append(cell);
+    });
+  }
+  const actions = children(relationships, "actions");
+  if (actions.length > 0) {
+    const row = line("ui-compare__row--actions");
+    row.append(document.createElement("div"));
+    for (const action of actions) {
+      asElement(action)?.classList.add("ui-compare__cell");
+      row.append(action);
+    }
+  }
+  return table;
+}
+
 /** Every typed component of the `shortlet-*` catalogues, bound to the host's resource policy. */
 export function createShortletRenderers(options: ShortletRendererOptions = {}): readonly RendererRegistration[] {
   const catalogId = SHORTLET_DISCOVERY_CATALOG_ID;
@@ -336,5 +398,6 @@ export function createShortletRenderers(options: ShortletRendererOptions = {}): 
     { catalogId, component: UNIT_ACTION_BAR_COMPONENT, render: renderUnitActionBar },
     { catalogId, component: STAY_CARD_COMPONENT, render: renderStayCard(options.resourcePolicy) },
     { catalogId, component: STAY_RESULTS_COMPONENT, render: renderStayResults(options.resourcePolicy, options.onCompareBoth) },
+    { catalogId, component: STAY_COMPARISON_COMPONENT, render: renderStayComparison },
   ];
 }

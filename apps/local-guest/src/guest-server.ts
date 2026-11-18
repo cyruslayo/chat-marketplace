@@ -441,6 +441,8 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays,
     .guest-status--danger { color: var(--color-danger); background: var(--color-danger-surface); }
     .empty-state-title { margin-block: var(--space-2); }
     .stay-results { display: contents; }
+    .ui-compare__cell > p { margin: 0; }
+    .compare-cell__unit { color: var(--color-text-secondary); }
     .stay-grid { display: grid !important; grid-template-columns: minmax(0, 1fr); gap: var(--space-4) !important; min-width: 0; }
     .stay-card { min-width: 0; margin: 0 !important; }
     .stay-card > * { min-width: 0; }

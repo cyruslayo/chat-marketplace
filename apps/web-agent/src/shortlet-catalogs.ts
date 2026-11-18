@@ -15,7 +15,7 @@ export function defineShortletCatalog<TSchema extends JsonObject>(schema: TSchem
 }
 
 /**
- * Weaver catalogues issues 05 and 06 (ADR 0102): the typed components of `shortlet-discovery/v1`. Every prop is a
+ * Weaver catalogues issues 05 to 07 (ADR 0102): the typed components of `shortlet-discovery/v1`. Every prop is a
  * display string the server formatted (ADR 0077); none is a price, deadline or rule the client could compute.
  */
 export const UNIT_DETAIL_COMPONENT = "UnitDetail";
@@ -24,6 +24,7 @@ export const UNIT_DETAIL_SHEET_COMPONENT = "UnitDetailSheet";
 export const UNIT_ACTION_BAR_COMPONENT = "UnitActionBar";
 export const STAY_CARD_COMPONENT = "StayCard";
 export const STAY_RESULTS_COMPONENT = "StayResults";
+export const STAY_COMPARISON_COMPONENT = "StayComparison";
 
 const COMPONENT_ID: JsonObject = { $ref: "common_types.json#/$defs/ComponentId" };
 const CHILD_LIST: JsonObject = { $ref: "common_types.json#/$defs/ChildList" };
@@ -65,6 +66,21 @@ const RESULT_ROW: JsonObject = {
   type: "object",
   properties: { unitId: TEXT, title: TEXT, total: TEXT, totalLabel: TEXT, photoUrl: TEXT },
   required: ["unitId", "title", "total", "totalLabel"],
+  additionalProperties: false,
+};
+
+/** One comparison cell: the server-formatted value (empty when the stay has none) and the stay it describes. */
+const COMPARE_CELL: JsonObject = {
+  type: "object",
+  properties: { value: { type: "string" }, unit: TEXT },
+  required: ["value"],
+  additionalProperties: false,
+};
+
+const COMPARE_ROW: JsonObject = {
+  type: "object",
+  properties: { key: TEXT, cells: { type: "array", items: COMPARE_CELL, minItems: 1 } },
+  required: ["key", "cells"],
   additionalProperties: false,
 };
 
@@ -126,6 +142,13 @@ const DISCOVERY_COMPONENTS: Readonly<Record<string, JsonObject>> = {
     rows: { type: "array", items: RESULT_ROW, minItems: 1 },
     cards: CHILD_LIST,
   }, ["rows", "cards"]),
+  // Weaver catalogues issue 07: the side-by-side table, stays as columns and one row per attribute. `actions` are the
+  // Basic View Buttons, one per stay in head order. The builder guarantees every row has one cell per head.
+  [STAY_COMPARISON_COMPONENT]: componentSchema(STAY_COMPARISON_COMPONENT, {
+    heads: { type: "array", items: TEXT, minItems: 1 },
+    rows: { type: "array", items: COMPARE_ROW, minItems: 1 },
+    actions: CHILD_LIST,
+  }, ["heads", "rows"]),
 };
 
 /** Adds typed components to a Basic-derived schema: both the component table and the `anyComponent` union list them. */

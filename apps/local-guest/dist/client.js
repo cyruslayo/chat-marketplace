@@ -9107,6 +9107,7 @@ Known schemas:
   var UNIT_ACTION_BAR_COMPONENT = "UnitActionBar";
   var STAY_CARD_COMPONENT = "StayCard";
   var STAY_RESULTS_COMPONENT = "StayResults";
+  var STAY_COMPARISON_COMPONENT = "StayComparison";
   var COMPONENT_ID = { $ref: "common_types.json#/$defs/ComponentId" };
   var CHILD_LIST = { $ref: "common_types.json#/$defs/ChildList" };
   var TEXT = { type: "string", minLength: 1 };
@@ -9140,6 +9141,18 @@ Known schemas:
     type: "object",
     properties: { unitId: TEXT, title: TEXT, total: TEXT, totalLabel: TEXT, photoUrl: TEXT },
     required: ["unitId", "title", "total", "totalLabel"],
+    additionalProperties: false
+  };
+  var COMPARE_CELL = {
+    type: "object",
+    properties: { value: { type: "string" }, unit: TEXT },
+    required: ["value"],
+    additionalProperties: false
+  };
+  var COMPARE_ROW = {
+    type: "object",
+    properties: { key: TEXT, cells: { type: "array", items: COMPARE_CELL, minItems: 1 } },
+    required: ["key", "cells"],
     additionalProperties: false
   };
   var PHOTO = {
@@ -9198,7 +9211,14 @@ Known schemas:
     [STAY_RESULTS_COMPONENT]: componentSchema(STAY_RESULTS_COMPONENT, {
       rows: { type: "array", items: RESULT_ROW, minItems: 1 },
       cards: CHILD_LIST
-    }, ["rows", "cards"])
+    }, ["rows", "cards"]),
+    // Weaver catalogues issue 07: the side-by-side table, stays as columns and one row per attribute. `actions` are the
+    // Basic View Buttons, one per stay in head order. The builder guarantees every row has one cell per head.
+    [STAY_COMPARISON_COMPONENT]: componentSchema(STAY_COMPARISON_COMPONENT, {
+      heads: { type: "array", items: TEXT, minItems: 1 },
+      rows: { type: "array", items: COMPARE_ROW, minItems: 1 },
+      actions: CHILD_LIST
+    }, ["heads", "rows"])
   };
   function withComponents(schema, components) {
     const table = schema["components"];
@@ -10842,6 +10862,60 @@ Known schemas:
       return results;
     };
   }
+  function renderStayComparison({ document: document2, properties, relationships }) {
+    const heads = texts(properties["heads"]);
+    const table = element(document2, "div", "ui-compare");
+    table.setAttribute("role", "table");
+    table.setAttribute("aria-label", "Compare stays");
+    const line = (modifier) => {
+      const row = element(document2, "div", `ui-compare__row compare-row${modifier === "" ? "" : ` ${modifier}`}`);
+      row.setAttribute("role", "row");
+      table.append(row);
+      return row;
+    };
+    const head = line("ui-compare__row--head");
+    const corner = document2.createElement("div");
+    corner.setAttribute("role", "columnheader");
+    head.append(corner);
+    for (const title of heads) {
+      const heading = element(document2, "div", "ui-compare__head");
+      heading.setAttribute("role", "columnheader");
+      heading.textContent = title;
+      head.append(heading);
+    }
+    for (const item of list(properties["rows"])) {
+      const row = record(item);
+      const key3 = text(row?.["key"]);
+      if (!key3) continue;
+      const attribute = line("");
+      const label = element(document2, "h3", "ui-compare__key");
+      label.setAttribute("role", "rowheader");
+      label.textContent = key3;
+      attribute.append(label);
+      const cells = list(row?.["cells"]);
+      heads.forEach((title, index) => {
+        const values = record(cells[index]);
+        const cell = element(document2, "div", "compare-cell ui-compare__cell");
+        cell.setAttribute("role", "cell");
+        const unit = element(document2, "small", "compare-cell__unit");
+        unit.textContent = text(values?.["unit"]) ?? title;
+        const value = document2.createElement("p");
+        value.textContent = typeof values?.["value"] === "string" ? values["value"] : "";
+        cell.append(unit, value);
+        attribute.append(cell);
+      });
+    }
+    const actions = children(relationships, "actions");
+    if (actions.length > 0) {
+      const row = line("ui-compare__row--actions");
+      row.append(document2.createElement("div"));
+      for (const action of actions) {
+        asElement(action)?.classList.add("ui-compare__cell");
+        row.append(action);
+      }
+    }
+    return table;
+  }
   function createShortletRenderers(options = {}) {
     const catalogId = SHORTLET_DISCOVERY_CATALOG_ID;
     return [
@@ -10850,7 +10924,8 @@ Known schemas:
       { catalogId, component: UNIT_DETAIL_SHEET_COMPONENT, render: renderUnitDetailSheet },
       { catalogId, component: UNIT_ACTION_BAR_COMPONENT, render: renderUnitActionBar },
       { catalogId, component: STAY_CARD_COMPONENT, render: renderStayCard(options.resourcePolicy) },
-      { catalogId, component: STAY_RESULTS_COMPONENT, render: renderStayResults(options.resourcePolicy, options.onCompareBoth) }
+      { catalogId, component: STAY_RESULTS_COMPONENT, render: renderStayResults(options.resourcePolicy, options.onCompareBoth) },
+      { catalogId, component: STAY_COMPARISON_COMPONENT, render: renderStayComparison }
     ];
   }
 
@@ -11716,77 +11791,6 @@ Known schemas:
       comparingBoth = false;
     }
   }
-  function decorateComparison(mount) {
-    const root = mount.querySelector(
-      '[data-a2ui-component="Column"]'
-    );
-    if (!root) return;
-    const rowElements = [
-      ...root.querySelectorAll(
-        ':scope > [data-a2ui-component="Row"]'
-      )
-    ];
-    const attributeRows = rowElements.filter(
-      (row) => row.previousElementSibling?.tagName === "H3"
-    );
-    const actionRow = rowElements.find(
-      (row) => row.querySelector("button") !== null
-    );
-    if (attributeRows.length === 0) return;
-    const table = document.createElement("div");
-    table.className = "ui-compare";
-    table.setAttribute("role", "table");
-    table.setAttribute("aria-label", "Compare stays");
-    const line = (className) => {
-      const element2 = document.createElement("div");
-      element2.className = `ui-compare__row compare-row ${className}`;
-      element2.setAttribute("role", "row");
-      return element2;
-    };
-    const cellsOf = (row) => [
-      ...row.querySelectorAll(
-        ':scope > [data-a2ui-component="Column"], :scope > [data-weaver-mount] > [data-a2ui-component="Column"]'
-      )
-    ];
-    const head = line("ui-compare__row--head");
-    const corner = document.createElement("div");
-    corner.setAttribute("role", "columnheader");
-    head.appendChild(corner);
-    for (const cell of cellsOf(attributeRows[0])) {
-      const heading = document.createElement("div");
-      heading.className = "ui-compare__head";
-      heading.setAttribute("role", "columnheader");
-      heading.textContent = cell.querySelector("small")?.textContent?.trim() ?? "";
-      head.appendChild(heading);
-    }
-    table.appendChild(head);
-    root.insertBefore(table, attributeRows[0].previousElementSibling);
-    for (const row of attributeRows) {
-      const label = row.previousElementSibling;
-      const item = line("");
-      label.classList.add("ui-compare__key");
-      label.setAttribute("role", "rowheader");
-      item.appendChild(label);
-      for (const cell of cellsOf(row)) {
-        cell.classList.add("compare-cell", "ui-compare__cell");
-        cell.setAttribute("role", "cell");
-        cell.querySelector("small")?.classList.add("compare-cell__unit");
-        item.appendChild(cell);
-      }
-      row.remove();
-      table.appendChild(item);
-    }
-    if (actionRow) {
-      const item = line("ui-compare__row--actions");
-      item.appendChild(document.createElement("div"));
-      for (const cell of [...actionRow.children]) {
-        cell.classList.add("ui-compare__cell");
-        item.appendChild(cell);
-      }
-      actionRow.remove();
-      table.appendChild(item);
-    }
-  }
   function enhanceSurfacePresentation(mount, kind) {
     mount.dataset.surfaceKind = kind;
     for (const button of mount.querySelectorAll('button[data-a2ui-component="Button"]'))
@@ -11803,7 +11807,6 @@ Known schemas:
       if (/^No stays match|^No current matches/i.test(value))
         text2.classList.add("empty-state-title");
     }
-    if (kind === "compare") decorateComparison(mount);
     if (kind === "booking" || kind === "request-draft" || kind === "payment") organizeBookingTicket(mount);
     if (activePayload?.requestScreen)
       organizeRequestScreen(mount, activePayload.requestScreen);
