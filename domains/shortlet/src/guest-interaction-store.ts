@@ -1,4 +1,5 @@
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
+import type { BookingRequestStatus } from "./booking-request.js";
 import { createHash } from "node:crypto";
 import { normalizeContactEmail } from "../../../packages/platform-core/src/accounts/contact.js";
 import { redactLaneText } from "../../../packages/platform-core/src/redaction.js";
@@ -102,7 +103,7 @@ export interface DurableBookingRequest {
   readonly operatorResponseDeadlineAt: string;
   readonly delivered: boolean;
   readonly deliveredAt: string | null;
-  readonly status: string;
+  readonly status: BookingRequestStatus;
   readonly confirmedAt: string | null;
   readonly declinedAt: string | null;
   readonly declineReason: string | null;
@@ -338,7 +339,9 @@ function bookingRequestFromRow(row: BookingRequestRow): DurableBookingRequest {
     operatorResponseDeadlineAt: row.operator_response_deadline_at,
     delivered: parseBoolean(row.delivered),
     deliveredAt: row.delivered_at,
-    status: row.status,
+    // Pass-through, as before: a stored value outside BOOKING_REQUEST_STATUSES is returned unchanged. The manager's
+    // guards refuse it by name ("Cannot ... in status '...'"), so no unknown status is ever acted on.
+    status: row.status as BookingRequestStatus,
     confirmedAt: row.confirmed_at,
     declinedAt: row.declined_at,
     declineReason: row.decline_reason,

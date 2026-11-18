@@ -571,7 +571,7 @@ test("Booking Request disclosure preserves booking requirements without requirin
       principal: { id: "guest-unverified", role: "guest", tenantId: "tenant-lagos" },
       payload: { draftId: unverifiedDraft.draftId }
     }), { clock });
-  assert.equal((unverifiedRequest.primaryGuest as Record<string, unknown>).isGovernmentIdVerified, undefined);
+  assert.equal((unverifiedRequest.primaryGuest as unknown as Record<string, unknown>).isGovernmentIdVerified, undefined);
   assert.equal(calendar.getAuthoritativeAvailability({ unitId: unit.id, checkIn: "2026-08-01", checkOut: "2026-08-03", clock }).isAvailable, false);
   assert.equal(audit.entries().some((entry) => entry.type === "booking_request.disclosed"), true);
 
@@ -598,12 +598,12 @@ test("Booking Request disclosure preserves booking requirements without requirin
     checkIn: "2026-08-05",
     checkOut: "2026-08-07"
   } as any, { tenantId: "tenant-lagos", clock });
-  assert.equal((rawDraft.primaryGuest as Record<string, unknown>).ninNumber, undefined);
-  assert.equal((rawDraft.distinctPayer as Record<string, unknown>).passportNumber, undefined);
-  assert.equal((rawDraft.distinctPayer as Record<string, unknown>).ninNumber, undefined);
-  assert.equal((rawDraft.distinctPayer as Record<string, unknown>).rawEvidence, undefined);
-  assert.equal((rawDraft.distinctPayer as Record<string, unknown>).fullAddress, undefined);
-  assert.equal((rawDraft.distinctPayer as Record<string, unknown>).riskScore, undefined);
+  assert.equal((rawDraft.primaryGuest as unknown as Record<string, unknown>).ninNumber, undefined);
+  assert.equal((rawDraft.distinctPayer as unknown as Record<string, unknown>).passportNumber, undefined);
+  assert.equal((rawDraft.distinctPayer as unknown as Record<string, unknown>).ninNumber, undefined);
+  assert.equal((rawDraft.distinctPayer as unknown as Record<string, unknown>).rawEvidence, undefined);
+  assert.equal((rawDraft.distinctPayer as unknown as Record<string, unknown>).fullAddress, undefined);
+  assert.equal((rawDraft.distinctPayer as unknown as Record<string, unknown>).riskScore, undefined);
   assert.deepEqual(Object.keys(rawDraft.distinctPayer ?? {}).sort(), ["id", "name"]);
   assert.equal((rawDraft.occupants[0] as unknown as Record<string, unknown>).rawEvidence, undefined);
   const request = manager.discloseBookingRequest(createPlatformCommandEnvelope({
@@ -612,17 +612,17 @@ test("Booking Request disclosure preserves booking requirements without requirin
     payload: { draftId: rawDraft.draftId }
   }), { clock });
   assert.equal(request.tenantId, "tenant-lagos");
-  assert.equal((request.primaryGuest as Record<string, unknown>).ninNumber, undefined);
-  assert.equal((request.primaryGuest as Record<string, unknown>).isGovernmentIdVerified, undefined);
+  assert.equal((request.primaryGuest as unknown as Record<string, unknown>).ninNumber, undefined);
+  assert.equal((request.primaryGuest as unknown as Record<string, unknown>).isGovernmentIdVerified, undefined);
   assert.deepEqual(request.distinctPayer, { id: "payer-B", name: "Distinct Payer" });
   assert.notEqual(request.distinctPayer?.id, request.primaryGuest.id);
-  assert.equal((request.distinctPayer as Record<string, unknown>).passportNumber, undefined);
-  assert.equal((request.distinctPayer as Record<string, unknown>).ninNumber, undefined);
-  assert.equal((request.distinctPayer as Record<string, unknown>).rawEvidence, undefined);
-  assert.equal((request.distinctPayer as Record<string, unknown>).fullAddress, undefined);
-  assert.equal((request.distinctPayer as Record<string, unknown>).riskScore, undefined);
+  assert.equal((request.distinctPayer as unknown as Record<string, unknown>).passportNumber, undefined);
+  assert.equal((request.distinctPayer as unknown as Record<string, unknown>).ninNumber, undefined);
+  assert.equal((request.distinctPayer as unknown as Record<string, unknown>).rawEvidence, undefined);
+  assert.equal((request.distinctPayer as unknown as Record<string, unknown>).fullAddress, undefined);
+  assert.equal((request.distinctPayer as unknown as Record<string, unknown>).riskScore, undefined);
   assert.deepEqual(Object.keys(request.distinctPayer ?? {}).sort(), ["id", "name"]);
-  assert.equal((request.occupants[0] as Record<string, unknown>).rawEvidence, undefined);
+  assert.equal((request.occupants[0] as unknown as Record<string, unknown>).rawEvidence, undefined);
   const disclosureAudit = audit.entries().find((entry) => entry.type === "booking_request.disclosed" && entry.requestId === request.requestId);
   assert.equal(disclosureAudit?.primaryGuestId, "guest-A");
   assert.equal(disclosureAudit?.attestedByPrincipalId, "guest-A");

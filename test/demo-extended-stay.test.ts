@@ -204,7 +204,7 @@ test("AC2: a 30-night quote uses Monthly Agreed Amounts plus margin and carries 
     const request = guest.bookingRequestApp.getRequest(requestId);
     assert.equal(request.quote.stayType, "extended");
     assert.equal(request.quote.allInStayTotalKobo, expectedAccommodation + expectedCharges);
-    assert.equal(request.quote.billingPeriods[0].amountKobo, expectedAccommodation + expectedCharges);
+    assert.equal(request.quote.billingPeriods![0]!.amountKobo, expectedAccommodation + expectedCharges);
     assert.deepEqual(request.quote.utilitiesAndServicing, unit.extendedStay.utilitiesAndServicing);
     const captured = structuredClone(request.quote);
     const stored = guest.unitRepository.findById(request.unitId)!;

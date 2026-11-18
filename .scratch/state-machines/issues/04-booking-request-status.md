@@ -1,6 +1,6 @@
 # 04 BookingRequest: typed records and an exported status union
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Track: B (no behaviour change)
 Blocked by: 03
@@ -38,3 +38,54 @@ Do not change any guard, error string or decline behaviour (the late-decline rul
 ADRs: 0041, 0043, 0075.
 
 ## Comments
+
+**Reading done.** AGENTS.md, coding-standards, PRD, `docs/agents/state-machines.md`, this issue. ADRs read: 0041, 0043, 0075 (listed in the issue). Also read for context: 0023 and 0093 (already cited in the code, unchanged), and `docs/agents/issue-tracker.md` (Definition of Done). `CONTEXT.md` (`domains/shortlet/CONTEXT.md`) defines Booking Request, Request Draft, Pending Operator, Delivery Pending. It does not define "Delivery Failed" (glossary drift, the persisted `delivery_failed` string is kept per the PRD rule).
+
+**ADR table (constraint, and what it affects).**
+
+| ADR | Constraint | Code path affected |
+|---|---|---|
+| 0041 | Disclosed request blocks inventory for 30 min; the response deadline and expiry are inclusive (`now >= deadline`) | `disclosedDeadlineOutcome` (expiry), `confirm`, `decline`, projection |
+| 0043 | Delivery Pending lasts at most 5 min; delivery starts a fresh 30 min window; no delivery means Delivery Failed | `disclosedDeadlineOutcome` (delivery), `markDelivered`, `checkAndResolveDeliveryFailure` |
+| 0075 | No bearer credentials or restricted identity in logs or audit | No audit or log line changed. `contactEmailSnapshot` stays out of returned objects |
+
+**Transition table (read from every write site).** Writes found: `status: "draft"` (createDraft, getDraft from store); `status: "disclosed"` (disclose); `req.status = "delivery_failed"` (checkAndResolveDeliveryFailure, reached from checkAndResolveExpiry, markDelivered, confirm, decline); `req.status = "expired"` (checkAndResolveExpiry, reached from confirm); `req.status = "confirmed"` (confirm); `req.status = "declined"` (decline). `markDelivered` does not change status. No move beyond the table was found, so `BOOKING_REQUEST_TRANSITIONS` was not extended.
+
+**Shared rule.** `disclosedDeadlineOutcome(request, now)` returns `delivery_failed`, `expired` or `disclosed`. It is used by `projectBookingRequestStatus`, `checkAndResolveDeliveryFailure` and `checkAndResolveExpiry`. Same clock reads, same side effects, same order. The confirm, decline and markDelivered refusal checks were left as they were.
+
+**Typed records.** The store's `DurableBookingRequest` was searched first but does not fit. It is readonly, and it lacks `distinctPayer`, `holdId` and a typed `quote`. So `BookingRequestRecord` (mutable fields only where the code writes them) and `BookingRequestDraft` were added, with `BookingRequestUnitSource`, `AvailabilityCalendar` and `Pick<AuditLog, "record">` replacing the `any` constructor options. `grep` finds no `any` in `booking-request.ts` outside comments (AC4 test).
+
+**Stored-row behaviour (unchanged, recorded as required).** `guest-interaction-store.ts` maps `status: row.status` and now casts `as BookingRequestStatus`. A value outside the union is returned unchanged. The manager's guards then refuse it by name: `Cannot confirm booking request in status '<raw>'` (and the same for decline and markDelivered), after the delivered and deadline checks. The check and decline paths leave it alone. Characterised in the store-backed AC2 test.
+
+**Casts left for review (type-only, no runtime change).**
+- `booking-request.ts` disclose: `draft.selfBookingAttestation as SelfBookingAttestation`. Undefined only if a caller omitted it; it then fails inside validateBookingEligibility, as before.
+- `booking-request.ts` persist: `inventoryCommitmentId as string`. Undefined only when no calendar is wired.
+- `booking-request.ts` hydrate: `JSON.parse(...) as StayQuote`, with the same `{}` fallback.
+- `apps/local-guest/src/shortlet-app.ts` draft replacement (around line 5228): `original.selfBookingAttestation as SelfBookingAttestation`, plus one type import. Outside the file the issue names. It is the only edit to the shell, and it is type-only.
+
+**Test files touched (type-only).** `test/helpers/booking-request-manager.ts`: optional `store` argument, default unchanged. `test/submit-and-resolve-timed-booking-request.test.ts`: `as Record<string, unknown>` became `as unknown as Record<string, unknown>` at 15 sites, because the record types are now interfaces. `test/demo-extended-stay.test.ts` line 207: `billingPeriods![0]!`, because the quote type marks it optional. No assertion changed.
+
+**Characterisation tests (`test/booking-request-transitions.test.ts`).** AC1 (8 success subtests) and AC2 (12 refusal subtests, exact `message` match) were written first, and AC1/AC2 were not changed after the refactor. AC3 (9 subtests) drives each write path and asserts `canTransition`, plus a negative control. AC4 is the no-`any` check. One bug in my first draft (a positional SQL parameter) was fixed before the baseline. That was a test error, not a code change.
+
+**Commands and counts** (run from `C:\AI2026\chat-marketplace-sm-04`, prefixed `env -u LLM_API_KEY`):
+1. Before any source edit, `npx tsx --test test/booking-request-transitions.test.ts`: 22 pass, 0 fail (the AC1 and AC2 tests only).
+2. Before any source edit, the 17-file baseline (the four `booking-request` files, `state-machine-inventory`, and 12 files that drive the manager or store): 175 pass, 0 fail.
+3. `npm run check` on the unchanged tree: exit 0.
+4. After the refactor, `npx tsx --test` on `booking-request-transitions` plus the same 17 files plus `demo-extended-stay` and `move-guest-verification-to-checkin` (edited for types): 219 pass, 0 fail, 19 files. Of these, `booking-request-transitions` is 33 pass, 0 fail.
+5. `npm run check` after all edits (final): exit 0, no `error TS`, Worker bundle guard clean.
+
+**Map.** The BookingRequest row in `docs/agents/state-machines.md` now names `BOOKING_REQUEST_STATUSES` and `BookingRequestStatus`, the transition table, and the typed records. The known-gaps text was updated to match.
+
+**Definition of Done.**
+1. Each AC has its own `test()` whose name mirrors the criterion. Yes.
+2. Failure paths are asserted (exact error text and status after refusal). Yes.
+3. ADRs listed and read (table above). Yes.
+4. No new injected dependency. Yes.
+5. No new policy string or constant. Yes.
+6. No credential or identity material in logs or audit. Yes.
+7. `npm run check` passes (exit 0). `npm test` is not run per issue, per the batch-gate instruction and AGENTS.md Test scope. Still to run once per batch before merge.
+
+Not run: full `npm test`, `npm run test:workers`, real-Chrome tests. No commit was made.
+
+**Open, not decided here.** Owner question 1 (late decline records "declined" rather than "expired"): decline behaviour is unchanged and characterised. Owner question 4 (`disclosed` alias): not changed.
+- Orchestrator review: diff read. The remaining casts (draft-replacement attestation in shortlet-app.ts, inventoryCommitmentId, the empty-quote fallback, the row status pass-through) each make an existing runtime gap visible where `any` hid it; none changes behaviour. The draft-replacement attestation gap is logged in the map. Re-ran 8 files (90 pass) and `npm run check` (exit 0).

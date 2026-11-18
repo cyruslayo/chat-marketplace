@@ -245,7 +245,7 @@ import {
   type TaskRestoreRefusal,
   STAYS_DOMAIN,
 } from "./assistant/assistant-runtime.js";
-import type { DurableLaneEvent } from "../../../domains/shortlet/src/index.js";
+import type { DurableLaneEvent, SelfBookingAttestation } from "../../../domains/shortlet/src/index.js";
 import { DEFAULT_LANE_TIMELINE_CAP, LANE_SUMMARY_TEXT, capLaneTimeline, validateLaneTimelineCap } from "./assistant/task-lanes.js";
 import { ASSISTANT_CONTROL_COPY } from "./assistant/control-copy.js";
 import { createInitialTaskState, isAssistantBudgetPer, type AssistantStayReference, type AssistantTaskState } from "./assistant/assistant-state.js";
@@ -5225,7 +5225,8 @@ export class LocalGuestApp {
         unitId: pending.unitId,
         primaryGuest: original.primaryGuest,
         occupants: Array.from({ length: pending.stay.partySize }, (_, index) => original.occupants[index] ?? addedOccupants[index]!),
-        selfBookingAttestation: original.selfBookingAttestation,
+        // A stored draft without an accepted attestation carries undefined here, as before; createDraft's type requires one.
+        selfBookingAttestation: original.selfBookingAttestation as SelfBookingAttestation,
         checkIn: pending.stay.checkIn,
         checkOut: pending.stay.checkOut,
       },

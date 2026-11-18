@@ -5,13 +5,17 @@ import {
   GuestVerificationService,
   type GuestIdentityVerificationResultSource,
   RestrictedIdentityStore,
-  BookingRequestManager
+  BookingRequestManager,
+  type SqliteGuestInteractionStore
 } from "../../domains/shortlet/src/index.js";
 
 import { createTestAvailabilityCalendar } from "./availability-calendar.js";
 
-/** A BookingRequestManager over the Issue 01 units with an in-memory calendar and audit (shared by domain tests). */
-export function setupBookingRequestManager() {
+/**
+ * A BookingRequestManager over the Issue 01 units with an in-memory calendar and audit (shared by domain tests).
+ * Pass `store` to back the manager with a durable interaction store; omitted, it stays in memory as before.
+ */
+export function setupBookingRequestManager(options: { store?: SqliteGuestInteractionStore | null } = {}) {
   const repository = new UnitRepository();
   seedIssue01Units(repository);
   const audit = new InMemoryAuditLog();
@@ -25,7 +29,8 @@ export function setupBookingRequestManager() {
     repository,
     audit,
     calendar,
-    guestVerification
+    guestVerification,
+    store: options.store ?? null
   });
   const unit = repository.findAll()[0];
   return { repository, audit, calendar, identityStore, guestVerification, manager, unit };

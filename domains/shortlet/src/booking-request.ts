@@ -1,6 +1,6 @@
 import { generatePlatformId } from "../../../packages/platform-core/src/index.js";
 import { PlatformCommandEnvelope, createPlatformCommandEnvelope } from "../../../packages/platform-core/src/index.js";
-import { MAX_STAY_NIGHTS, StayDateRange, isEligibleExtendedStayUnit, isEligibleUnit } from "./browse.js";
+import { MAX_STAY_NIGHTS, StayDateRange, isEligibleExtendedStayUnit, isEligibleUnit, type Unit } from "./browse.js";
 import { createStayQuote } from "./quote.js";
 import {
   DistinctPayer,
@@ -15,6 +15,86 @@ import type { GuestContactSource } from "../../../packages/platform-core/src/acc
 import type { ExtendedStayPolicy } from "./extended-stay.js";
 import { ContinuousOccupancyLedger, assertContinuousOccupancy, type CountableBookingRequest } from "./continuous-occupancy.js";
 import type { BookingContract, Reservation } from "./card-payment.js";
+import type { AvailabilityCalendar } from "./availability.js";
+import type { AuditLog } from "../../../packages/platform-core/src/index.js";
+import type { TransitionTable } from "../../../packages/platform-core/src/state-transition.js";
+
+/**
+ * Every status a stored Booking Request can hold, and the Request Draft status (ADR 0041). Persisted strings are never
+ * renamed (state-machines PRD). `docs/agents/state-machines.md` maps this lifecycle.
+ */
+export const BOOKING_REQUEST_STATUSES = ["draft", "disclosed", "delivery_failed", "expired", "confirmed", "declined"] as const;
+export type BookingRequestStatus = (typeof BOOKING_REQUEST_STATUSES)[number];
+
+/**
+ * The moves the code makes today, and nothing else (state-machines issue 04). The guards stay at each write site, so
+ * `canTransition` only reads this table; no guard is changed by it. Terminal states list nothing.
+ */
+export const BOOKING_REQUEST_TRANSITIONS = {
+  draft: ["disclosed"],
+  disclosed: ["delivery_failed", "expired", "confirmed", "declined"],
+  delivery_failed: [],
+  expired: [],
+  confirmed: [],
+  declined: [],
+} as const satisfies TransitionTable<BookingRequestStatus>;
+
+/** The Unit lookup the manager reads: by id when the source offers `findById`, otherwise a scan of `findAll`. */
+export interface BookingRequestUnitSource {
+  findById?: (id: string) => Unit | null;
+  findAll: () => readonly Unit[];
+}
+
+type StayQuote = ReturnType<typeof createStayQuote>;
+
+/** A Request Draft: it blocks nothing and promises neither availability nor price (ADR 0041). */
+export interface BookingRequestDraft {
+  readonly draftId: string;
+  readonly unitId: string;
+  readonly primaryGuest: PrimaryGuest;
+  readonly occupants: readonly OvernightOccupant[];
+  readonly selfBookingAttestation?: SelfBookingAttestation;
+  readonly distinctPayer?: DistinctPayer | null;
+  readonly distinctPayerAttestation?: DistinctPayerAttestation;
+  readonly checkIn: string;
+  readonly checkOut: string;
+  readonly selectedOptionalServices?: readonly unknown[];
+  readonly status: "draft";
+  readonly createdAt: string;
+}
+
+/**
+ * A Booking Request as the manager holds it in memory or hydrates from the store. `status`, `delivered`,
+ * `deliveredAt`, `operatorResponseDeadlineAt`, `confirmedAt`, `declinedAt` and `declineReason` move after disclosure.
+ */
+export interface BookingRequestRecord {
+  readonly requestId: string;
+  readonly draftId: string;
+  readonly unitId: string;
+  readonly tenantId: string;
+  operatorId?: string | null;
+  readonly primaryGuest: PrimaryGuest;
+  distinctPayer?: DistinctPayer | null;
+  readonly occupants: readonly OvernightOccupant[];
+  readonly checkIn: string;
+  readonly checkOut: string;
+  readonly nights: number;
+  readonly quote: StayQuote;
+  inventoryCommitmentId?: string;
+  holdId?: string;
+  readonly disclosedAt: string;
+  readonly deliveryDeadlineAt: string;
+  operatorResponseDeadlineAt: string;
+  delivered: boolean;
+  deliveredAt: string | null;
+  status: BookingRequestStatus;
+  confirmedAt?: string | null;
+  declinedAt?: string | null;
+  declineReason?: string | null;
+  phoneNumber?: string | null;
+  /** ADR 0093: persisted as claim evidence, and removed from every object the manager returns. */
+  contactEmailSnapshot?: string | null;
+}
 
 /** ADR 0043: Delivery Pending lasts at most five minutes (the Technical Delivery Window). */
 export const TECHNICAL_DELIVERY_WINDOW_MINUTES = 5;
@@ -44,6 +124,18 @@ export function operatorResponseReminderDue(request: { readonly status: string; 
  */
 export function projectBookingRequestStatus(request: { readonly status: string; readonly delivered: boolean; readonly deliveryDeadlineAt: string; readonly operatorResponseDeadlineAt: string }, now: Date): string {
   if (request.status !== "disclosed") return request.status;
+  return disclosedDeadlineOutcome(request, now);
+}
+
+/**
+ * The one delivered-and-deadline rule for a disclosed request (ADR 0041, 0043), evaluated at `now`: an undelivered
+ * request is judged against its delivery deadline, and a delivered one against its response deadline. Pure. Callers
+ * apply the outcome; this function never writes.
+ */
+function disclosedDeadlineOutcome(
+  request: { readonly delivered: boolean; readonly deliveryDeadlineAt: string; readonly operatorResponseDeadlineAt: string },
+  now: Date
+): "delivery_failed" | "expired" | "disclosed" {
   if (!request.delivered) return now.getTime() >= Date.parse(request.deliveryDeadlineAt) ? "delivery_failed" : "disclosed";
   return now.getTime() >= Date.parse(request.operatorResponseDeadlineAt) ? "expired" : "disclosed";
 }
@@ -82,7 +174,7 @@ export interface CreateDraftOptions extends OccupancyDetails {
   unitId: string;
   checkIn: string;
   checkOut: string;
-  selectedOptionalServices?: any[];
+  selectedOptionalServices?: unknown[];
   clock?: () => Date;
   extendedStayPolicy?: ExtendedStayPolicy;
 }
@@ -96,12 +188,12 @@ export class UnitUnavailableError extends Error {
 }
 
 export class BookingRequestManager {
-  #repository: any;
-  #audit: any;
-  #calendar: any;
+  #repository: BookingRequestUnitSource | null;
+  #audit: Pick<AuditLog, "record"> | null;
+  #calendar: AvailabilityCalendar | null;
   #guestVerification: GuestVerificationService;
-  #drafts = new Map<string, any>();
-  #requests = new Map<string, any>();
+  #drafts = new Map<string, BookingRequestDraft>();
+  #requests = new Map<string, BookingRequestRecord>();
   readonly #draftStore: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
   readonly #requestStore: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
   readonly #guestContacts?: GuestContactSource;
@@ -124,11 +216,11 @@ export class BookingRequestManager {
     demoTerms = false,
     bookingState = null
   }: {
-    repository?: any;
+    repository?: BookingRequestUnitSource | null;
     /** Authoritative confirmed Reservations and contracts, read for Continuous Occupancy (ADR 0023). */
     bookingState?: { findContractById(contractId: string): BookingContract | null; findReservationById(reservationId: string): Reservation | null } | null;
-    audit?: any;
-    calendar?: any;
+    audit?: Pick<AuditLog, "record"> | null;
+    calendar?: AvailabilityCalendar | null;
     guestVerification?: GuestVerificationService;
     store?: import("./guest-interaction-store.js").SqliteGuestInteractionStore | null;
     guestContacts?: GuestContactSource;
@@ -258,7 +350,7 @@ export class BookingRequestManager {
     const draftId = generatePlatformId("draft");
     const now = clock();
 
-    const draft = Object.freeze({
+    const draft: BookingRequestDraft = Object.freeze({
       draftId,
       unitId,
       primaryGuest: Object.freeze(canonicalPrimaryGuest),
@@ -304,7 +396,7 @@ export class BookingRequestManager {
     return draft;
   }
 
-  #persistRequest(request: any): void {
+  #persistRequest(request: BookingRequestRecord): void {
     if (!this.#requestStore) return;
     this.#requestStore.saveBookingRequest({
       requestId: request.requestId,
@@ -319,7 +411,8 @@ export class BookingRequestManager {
       checkOut: request.checkOut,
       nights: request.nights,
       quoteJson: JSON.stringify(request.quote ?? {}),
-      inventoryCommitmentId: request.inventoryCommitmentId,
+      // The store types this column as non-optional. It is undefined only when no calendar is wired, and is then passed on unchanged.
+      inventoryCommitmentId: request.inventoryCommitmentId as string,
       disclosedAt: request.disclosedAt,
       deliveryDeadlineAt: request.deliveryDeadlineAt,
       operatorResponseDeadlineAt: request.operatorResponseDeadlineAt,
@@ -334,16 +427,18 @@ export class BookingRequestManager {
     });
   }
 
-  #hydrateRequest(requestId: string): any | undefined {
+  #hydrateRequest(requestId: string): BookingRequestRecord | undefined {
     const record = this.#requestStore?.findBookingRequest(requestId);
     if (!record) return undefined;
-    let quote: any = {};
+    // The quote JSON is written only by #persistRequest from a StayQuote, so the parse is an unchecked cast. Unparseable JSON
+    // falls back to an empty quote, as before.
+    let quote = {} as StayQuote;
     try {
-      quote = JSON.parse(record.quoteJson);
+      quote = JSON.parse(record.quoteJson) as StayQuote;
     } catch {
-      quote = {};
+      quote = {} as StayQuote;
     }
-    const request = {
+    const request: BookingRequestRecord = {
       requestId: record.requestId,
       draftId: record.draftId,
       unitId: record.unitId,
@@ -397,7 +492,7 @@ export class BookingRequestManager {
     return draft;
   }
 
-  getRequest(requestId: string) {
+  getRequest(requestId: string): BookingRequestRecord {
     let req = this.#requestStore ? this.#hydrateRequest(requestId) : this.#requests.get(requestId);
     if (!req) req = this.#requests.get(requestId);
     if (!req) throw new Error(`Booking request not found: ${requestId}`);
@@ -447,7 +542,8 @@ export class BookingRequestManager {
       unitId: draft.unitId,
       primaryGuest: draft.primaryGuest,
       occupants: draft.occupants,
-      selfBookingAttestation: draft.selfBookingAttestation,
+      // createDraft requires an attestation (CreateDraftOptions). A draft that lacks one fails inside validateBookingEligibility, as before.
+      selfBookingAttestation: draft.selfBookingAttestation as SelfBookingAttestation,
       distinctPayer: draft.distinctPayer,
       distinctPayerAttestation: draft.distinctPayerAttestation,
       attestingPrincipalId: principal.id
@@ -460,7 +556,7 @@ export class BookingRequestManager {
     let dateRange: StayDateRange;
     try {
       dateRange = new StayDateRange(draft.checkIn, draft.checkOut, now, this.#extendedStayPolicy);
-    } catch (err: any) {
+    } catch (err) {
       if (err instanceof RangeError) {
         if (err.message.includes("checkOut must be after checkIn") || err.message.includes("stay cannot exceed")) {
           throw new Error(`Stay length is outside the configured ranges (${err.message})`);
@@ -505,11 +601,11 @@ export class BookingRequestManager {
     });
 
     // 4. Quote Validation
-    let unit = null;
+    let unit: Unit | null | undefined = null;
     if (this.#repository) {
       unit = this.#repository.findById
         ? this.#repository.findById(draft.unitId)
-        : this.#repository.findAll().find((u: any) => u.id === draft.unitId);
+        : this.#repository.findAll().find((u) => u.id === draft.unitId);
     }
     if (!unit) throw new Error(`Unit not found: ${draft.unitId}`);
 
@@ -518,7 +614,8 @@ export class BookingRequestManager {
       checkIn: draft.checkIn,
       checkOut: draft.checkOut,
       partySize: draft.occupants.length || 1,
-      selectedOptionalServices: draft.selectedOptionalServices,
+      // A store-hydrated draft carries no optional services; createStayQuote's own default is the same empty list.
+      selectedOptionalServices: [...(draft.selectedOptionalServices ?? [])],
       extendedStayPolicy: this.#extendedStayPolicy,
       demoTerms: this.#demoTerms,
       clock
@@ -564,7 +661,7 @@ export class BookingRequestManager {
     const isDelivered = autoDeliver;
     const deliveredAtIso = autoDeliver ? disclosedAtIso : null;
 
-    const bookingRequest = {
+    const bookingRequest: BookingRequestRecord = {
       requestId,
       draftId,
       unitId: draft.unitId,
@@ -699,7 +796,7 @@ export class BookingRequestManager {
     }
 
     const now = clock();
-    if (now.getTime() >= new Date(req.deliveryDeadlineAt).getTime()) {
+    if (disclosedDeadlineOutcome(req, now) === "delivery_failed") {
       req.status = "delivery_failed";
       if (req.inventoryCommitmentId && this.#calendar) {
         this.#calendar.releaseBookingRequestBlock(req.inventoryCommitmentId, { clock });
@@ -735,7 +832,7 @@ export class BookingRequestManager {
     if (!req.delivered) return this.checkAndResolveDeliveryFailure(envelope, { clock });
 
     const now = clock();
-    if (now.getTime() >= new Date(req.operatorResponseDeadlineAt).getTime()) {
+    if (disclosedDeadlineOutcome(req, now) === "expired") {
       req.status = "expired";
       if (req.inventoryCommitmentId && this.#calendar) {
         this.#calendar.releaseBookingRequestBlock(req.inventoryCommitmentId, { clock });
