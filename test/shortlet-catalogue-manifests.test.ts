@@ -78,6 +78,14 @@ test("AC1 - the composed discovery and booking schemas serialize byte-identicall
       assert.ok(entry.definition.fixtures.valid.length > 0 && entry.definition.fixtures.invalid.length > 0, `${entry.alias} has valid and invalid fixtures`);
     }
   }
+
+  // The wire form too (e97d11f, resolved for the nine typed components): each registration schema deep-equals the
+  // committed snapshot, so content drift fails even where formatting would not. The byte-level identity to the
+  // pre-manifest construction was proven directly — SHA-256 of JSON.stringify of each catalogue: a2bcc2f8… (discovery)
+  // and 44e35c3e… (booking), identical before commit 34a1373 and after — and the canonical snapshot pin keeps it.
+  for (const registration of [SHORTLET_DISCOVERY_CATALOG, SHORTLET_BOOKING_CATALOG]) {
+    assert.deepEqual(JSON.parse(await snapshot(registration.catalogId)), registration.schema, `${registration.catalogId} wire form`);
+  }
 });
 
 test("AC2 - the shortlet ids stay in one namespace constant and no other source repeats the literal", async () => {
