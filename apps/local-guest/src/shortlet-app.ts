@@ -177,6 +177,25 @@ import {
 } from "./fixture.js";
 import { projectJourney, type GuestJourney } from "./journey-rail.js";
 import {
+  BOOKING_STAGE,
+  COMPARE_STAGE,
+  DISCOVERY_STAGE,
+  DRAFT_REPLACEMENT_STAGE,
+  OFFER_STAGE,
+  PAYMENT_STAGE,
+  REQUEST_STAGE,
+  UNIT_STAGE,
+  journeyRailStep,
+  journeyTailStep,
+  persistedActiveStage,
+  restoreStage,
+  stageForGuestThread,
+  stageForSurfaceId,
+  timelineCopyKey,
+  type GuestStage,
+  type GuestStageInputs,
+} from "./guest-stage.js";
+import {
   parseGuestProjection,
   type PersistedActiveContact,
   type PersistedAssistantContext,
@@ -547,19 +566,9 @@ function primaryGuestIs(record: unknown, principal: CommandPrincipal): boolean {
   );
 }
 
-const DISCOVERY_STAGE = "discovery";
-const UNIT_STAGE = "unit";
-const REQUEST_STAGE = "request";
-const OFFER_STAGE = "offer";
-const PAYMENT_STAGE = "payment";
 /** Issue 65: the one checkout-ready message, on the email-just-saved and the direct card path. */
 const CARD_CHECKOUT_READY_MESSAGE =
   "Hosted card checkout is ready. Payment has not succeeded; your booking details remain available when you return.";
-const BOOKING_STAGE = "booking";
-/** Issue 13b: the two-up comparison opened from results. */
-const COMPARE_STAGE = "compare";
-/** Issue 14: a proposed replacement Request Draft awaiting the Guest's choice. */
-const DRAFT_REPLACEMENT_STAGE = "draft_replacement";
 
 function unitDetailSurfaceId(
   threadId: string,
@@ -721,16 +730,6 @@ export const THREAD_ID_PATTERN = /^g-[a-f0-9-]{6,64}$/;
 
 /** The stays pack's domain id (ADR 0107): the one task whose timeline copy may read stays facts (issue 03d). */
 const STAYS_TASK_DOMAIN = "shortlet";
-
-/** Where the Guest is in the journey, for stage-aware free-text replies (issue 04a). */
-type GuestStage =
-  | "discovery"
-  | "unit"
-  | "draft"
-  | "request"
-  | "offer"
-  | "payment"
-  | "booking";
 
 /** Issue 03h: a legacy lane (no rows yet) whose stored entries are migrated to lane rows once on restore. */
 interface LaneMigration {
@@ -1118,13 +1117,18 @@ export class LocalGuestApp {
   }
 
   #guestStage(thread: GuestThreadState): GuestStage {
-    if (thread.activeSurfaces.has(BOOKING_STAGE)) return "booking";
-    if (thread.activeSurfaces.has(PAYMENT_STAGE)) return "payment";
-    if (thread.offerId) return "offer";
-    if (thread.requestId) return "request";
-    if (thread.draftId) return "draft";
-    if (thread.unitDetail) return "unit";
-    return "discovery";
+    return stageForGuestThread(this.#stageInputs(thread));
+  }
+
+  /** The plain facts the Guest stage is read from (guest-stage.ts, issue 10). */
+  #stageInputs(thread: GuestThreadState): GuestStageInputs {
+    return {
+      activeSurfaces: new Set(thread.activeSurfaces.keys()),
+      offerId: Boolean(thread.offerId),
+      requestId: Boolean(thread.requestId),
+      draftId: Boolean(thread.draftId),
+      unitDetail: Boolean(thread.unitDetail),
+    };
   }
 
   #currentUnit(thread: GuestThreadState): Unit | null {
@@ -2616,80 +2620,77 @@ export class LocalGuestApp {
     const environment = this.#environment;
     // The viewer is the thread's owner: a Linked Principal's own offers and requests are read as that principal (ADR 0093).
     const guest = viewer ?? environment.guestPrincipal();
+    const offerId = thread.offerId;
+    const requestId = thread.requestId;
     try {
-      if (thread.offerId) {
-        // ADR-0005: "Confirmed" only once the durable Booking Contract exists.
-        if (
-          environment.interactionStore.findBookingSnapshotByOfferId(
-            thread.offerId,
-          )
-        )
-          return projectJourney("confirmed");
-        const offer = environment.conditionalOfferApp.getArtifact(
-          thread.offerId,
-          guest,
-        ).facts.status;
-        if (offer === "accepted" || thread.activeSurfaces.has(PAYMENT_STAGE)) {
-          const payment = environment.cardPaymentApp.getArtifact(
-            thread.offerId,
-            guest,
-          ).facts.status;
-          if (payment === "expired" || payment === "failed") {
-            return projectJourney("pay", {
-              kind: payment,
-              label: guestPaymentStatus(payment).label.split(" · ")[0]!,
-            });
+      // guest-stage.ts `journeyRailStep`: the offer and request branches, with the same lazy reads in the same order.
+      const decision = journeyRailStep({
+        offerId: Boolean(offerId),
+        requestId: Boolean(requestId),
+        paymentSurfaceActive: thread.activeSurfaces.has(PAYMENT_STAGE),
+        bookingSnapshotHeld: () =>
+          offerId !== null &&
+          Boolean(environment.interactionStore.findBookingSnapshotByOfferId(offerId)),
+        offerStatus: () =>
+          offerId === null
+            ? ""
+            : environment.conditionalOfferApp.getArtifact(offerId, guest).facts.status,
+        paymentStatus: () =>
+          offerId === null
+            ? ""
+            : environment.cardPaymentApp.getArtifact(offerId, guest).facts.status,
+        requestFacts: () => {
+          const facts =
+            requestId === null
+              ? { status: "", delivered: false }
+              : environment.bookingRequestApp.getArtifact(requestId, guest).facts;
+          return { status: facts.status, delivered: facts.delivered };
+        },
+      });
+      if (decision !== null) {
+        switch (decision.step) {
+          // ADR-0005: "Confirmed" only once the durable Booking Contract exists.
+          case "confirmed":
+            return projectJourney("confirmed");
+          case "pay":
+            return decision.failure === undefined
+              ? projectJourney("pay")
+              : projectJourney("pay", {
+                  kind: decision.failure,
+                  label: guestPaymentStatus(decision.failure).label.split(" · ")[0]!,
+                });
+          case "offer":
+            if (decision.outcome === "expired")
+              return projectJourney("offer", { kind: "expired", label: "Offer expired" });
+            if (decision.outcome === "stale")
+              return projectJourney("offer", { kind: "closed", label: "Offer no longer current" });
+            if (decision.outcome === "revoked")
+              return projectJourney("offer", { kind: "closed", label: "Offer withdrawn" });
+            return projectJourney("offer");
+          case "request": {
+            const label = guestRequestStatus(decision.status, decision.delivered).label;
+            if (decision.outcome === "declined")
+              return projectJourney("request", { kind: "declined", label });
+            if (decision.outcome === "expired")
+              return projectJourney("request", { kind: "expired", label });
+            if (decision.outcome === "delivery_failed")
+              return projectJourney("request", { kind: "not-delivered", label });
+            return projectJourney("request");
           }
-          return projectJourney("pay");
         }
-        if (offer === "expired")
-          return projectJourney("offer", {
-            kind: "expired",
-            label: "Offer expired",
-          });
-        if (offer === "stale")
-          return projectJourney("offer", {
-            kind: "closed",
-            label: "Offer no longer current",
-          });
-        if (offer === "revoked")
-          return projectJourney("offer", {
-            kind: "closed",
-            label: "Offer withdrawn",
-          });
-        return projectJourney("offer");
-      }
-      if (thread.requestId) {
-        const request = environment.bookingRequestApp.getArtifact(
-          thread.requestId,
-          guest,
-        ).facts;
-        const label = guestRequestStatus(
-          request.status,
-          request.delivered,
-        ).label;
-        if (request.status === "declined")
-          return projectJourney("request", { kind: "declined", label });
-        if (request.status === "expired")
-          return projectJourney("request", { kind: "expired", label });
-        if (request.status === "delivery_failed")
-          return projectJourney("request", { kind: "not-delivered", label });
-        return projectJourney("request");
       }
     } catch {
       // An unreadable record never shows progress it cannot prove.
       return undefined;
     }
-    if (thread.activeSurfaces.has(UNIT_STAGE)) return projectJourney("stay");
-    // A kept draft counts only while it is the surface on screen, not after a new search.
-    if (
-      thread.draftId &&
-      this.#stageForSurfaceId(thread.lastSurfaces.at(-1)?.surfaceId ?? "") ===
-        REQUEST_STAGE
-    )
-      return projectJourney("request");
-    if (thread.discoveryArtifact) return projectJourney("search");
-    return undefined;
+    // The rail's tail (guest-stage.ts `journeyTailStep`): stay, then a kept draft on screen, then search.
+    const tail = journeyTailStep({
+      unitSurfaceActive: thread.activeSurfaces.has(UNIT_STAGE),
+      draftId: Boolean(thread.draftId),
+      lastSurfaceStage: stageForSurfaceId(thread.lastSurfaces.at(-1)?.surfaceId ?? ""),
+      discoveryArtifact: Boolean(thread.discoveryArtifact),
+    });
+    return tail === null ? undefined : projectJourney(tail);
   }
 
   recordShellTelemetry(event: unknown): boolean {
@@ -2757,9 +2758,7 @@ export class LocalGuestApp {
       return;
     }
     const current = thread.lastSurfaces.at(-1);
-    const activeStage =
-      this.#stageForSurfaceId(current?.surfaceId ?? "") ??
-      this.#inferActiveStage(thread);
+    const activeStage = persistedActiveStage(current?.surfaceId ?? "", new Set(thread.activeSurfaces.keys()));
     environment.interactionStore.saveThread({
       threadId: thread.threadId,
       principalId: environment.guestPrincipal().id,
@@ -2845,38 +2844,6 @@ export class LocalGuestApp {
     return { ...projection, ...(activeSurfaceId === undefined ? {} : { activeSurfaceId }) };
   }
 
-  #stageForSurfaceId(surfaceId: string): string | null {
-    // Issue 13b: a comparison is restored as the results it was opened from.
-    if (surfaceId.includes(":discovery:") || surfaceId.includes(":compare:"))
-      return DISCOVERY_STAGE;
-    if (surfaceId.includes(":request:replacement:")) return DRAFT_REPLACEMENT_STAGE;
-    if (surfaceId.includes(":unit:")) return UNIT_STAGE;
-    if (
-      surfaceId.includes(":request:draft:") ||
-      surfaceId.includes(":request:review:")
-    )
-      return REQUEST_STAGE;
-    if (surfaceId.includes(":request:req-") || surfaceId.includes(":request:"))
-      return REQUEST_STAGE;
-    if (surfaceId.includes(":offer:")) return OFFER_STAGE;
-    if (surfaceId.includes(":payment:")) return PAYMENT_STAGE;
-    if (surfaceId.includes(":booking:")) return BOOKING_STAGE;
-    // The contact-details form belongs to the stage it was opened from (see `#contactSurface`).
-    if (surfaceId.includes(":contact:phone:")) return REQUEST_STAGE;
-    if (surfaceId.includes(":contact:email:")) return PAYMENT_STAGE;
-    return null;
-  }
-
-  #inferActiveStage(thread: GuestThreadState): string | null {
-    if (thread.activeSurfaces.has(BOOKING_STAGE)) return BOOKING_STAGE;
-    if (thread.activeSurfaces.has(PAYMENT_STAGE)) return PAYMENT_STAGE;
-    if (thread.activeSurfaces.has(OFFER_STAGE)) return OFFER_STAGE;
-    if (thread.activeSurfaces.has(REQUEST_STAGE)) return REQUEST_STAGE;
-    if (thread.activeSurfaces.has(UNIT_STAGE)) return UNIT_STAGE;
-    if (thread.activeSurfaces.has(DISCOVERY_STAGE)) return DISCOVERY_STAGE;
-    return null;
-  }
-
   /**
    * Loads a thread from the durable store when it is not already resident in
    * memory (restart). The stored projection is validated; an invalid or
@@ -2953,7 +2920,7 @@ export class LocalGuestApp {
       return;
     }
     const current = thread.lastSurfaces.at(-1);
-    const activeStage = this.#stageForSurfaceId(current?.surfaceId ?? "") ?? this.#inferActiveStage(thread);
+    const activeStage = persistedActiveStage(current?.surfaceId ?? "", new Set(thread.activeSurfaces.keys()));
     await environment.guestData.saveThread({
       threadId, principalId, tenantId: environment.config.tenantId,
       threadJson: JSON.stringify(this.#projectionFor(thread, activeStage)),
@@ -3081,12 +3048,18 @@ export class LocalGuestApp {
       const restoredContact = this.#contactSurface(thread, contact.kind, { ...contact.resumeContext }, {}, surfaceId);
       return restoredContact.ok ? (restoredContact.surfaces[0] ?? null) : null;
     }
+    // guest-stage.ts `restoreStage`: the branch is chosen from the projection alone, with the guards' own conditions and order.
+    const branch = restoreStage({
+      activeStage: projection.activeStage,
+      unitDetail: Boolean(projection.unitDetail),
+      discoveryArtifact: Boolean(projection.discoveryArtifact),
+      draftId: Boolean(projection.draftId),
+      requestId: Boolean(projection.requestId),
+      offerId: Boolean(projection.offerId),
+    });
     try {
-      if (
-        projection.activeStage === UNIT_STAGE &&
-        projection.unitDetail &&
-        projection.discoveryArtifact
-      ) {
+      // Each guard repeats the fact it narrows: restoreStage already established it, so the test is always true for its branch.
+      if (branch === "unit" && projection.unitDetail && projection.discoveryArtifact) {
         const unit = projection.discoveryArtifact.facts.results.find(
           (candidate) => candidate.id === projection.unitDetail?.unitId,
         );
@@ -3121,11 +3094,7 @@ export class LocalGuestApp {
           };
         }
       }
-      if (
-        projection.activeStage === REQUEST_STAGE &&
-        projection.draftId &&
-        !projection.requestId
-      ) {
+      if (branch === "draft" && projection.draftId) {
         // Draft or review: rebuild the current draft artifact surface. The
         // stored surface id distinguishes draft from review.
         const review = surfaceId.includes(":request:review:");
@@ -3149,7 +3118,7 @@ export class LocalGuestApp {
           }),
         };
       }
-      if (projection.activeStage === REQUEST_STAGE && projection.requestId) {
+      if (branch === "request" && projection.requestId) {
         const artifact = environment.bookingRequestApp.getArtifact(
           projection.requestId,
           environment.guestPrincipal(),
@@ -3175,7 +3144,7 @@ export class LocalGuestApp {
         thread.activeSurfaces.set(REQUEST_STAGE, requestSurface.surfaceId);
         return requestSurface;
       }
-      if (projection.activeStage === OFFER_STAGE && projection.offerId) {
+      if (branch === "offer" && projection.offerId) {
         // Never issue a new offer during restoration; only present the one the
         // durable store already correlates.
         const offerArtifact = environment.conditionalOfferApp.getArtifact(
@@ -3209,7 +3178,7 @@ export class LocalGuestApp {
           }),
         };
       }
-      if (projection.activeStage === PAYMENT_STAGE && projection.offerId) {
+      if (branch === "payment" && projection.offerId) {
         const snapshot =
           environment.interactionStore.findBookingSnapshotByOfferId(
             projection.offerId,
@@ -3351,7 +3320,7 @@ export class LocalGuestApp {
           ...this.#paymentSurface(thread, artifact, "Secure payment", readyId),
         };
       }
-      if (projection.activeStage === BOOKING_STAGE) {
+      if (branch === "booking") {
         const snapshot =
           environment.interactionStore.findBookingSnapshotByOfferId(
             projection.offerId ?? "",
@@ -3381,10 +3350,7 @@ export class LocalGuestApp {
           };
         }
       }
-      if (
-        projection.activeStage === DISCOVERY_STAGE &&
-        projection.discoveryArtifact
-      ) {
+      if (branch === "discovery" && projection.discoveryArtifact) {
         thread.activeSurfaces.set(
           DISCOVERY_STAGE,
           projection.discoverySurfaceId,
@@ -3644,7 +3610,7 @@ export class LocalGuestApp {
   #refreshAssistantSurface(thread: GuestThreadState): void {
     if (!thread.assistantContext) return;
     const surfaceId = thread.lastSurfaces.at(-1)?.surfaceId ?? "";
-    const stage = this.#stageForSurfaceId(surfaceId);
+    const stage = stageForSurfaceId(surfaceId);
     if (!stage) return;
     const restored = this.#restoreCurrentSurface(thread, this.#assistantRestoreProjection(thread, stage));
     if (restored) thread.lastSurfaces = [restored];
@@ -3654,11 +3620,18 @@ export class LocalGuestApp {
     // Issue 03d: the copy below reads stays facts (shortlist, request, offer, discovery). A task on another domain never shows them.
     const activeDomain = this.#assistantRuntime?.activeDomainFor(thread.threadId);
     if (activeDomain !== undefined && activeDomain !== STAYS_TASK_DOMAIN) return ASSISTANT_CONTROL_COPY.taskClarification;
-    const stage = this.#stageForSurfaceId(thread.lastSurfaces.at(-1)?.surfaceId ?? "");
-    if (stage === REQUEST_STAGE && thread.draftId && !thread.requestId) return GUEST_ASSISTANT_COPY.draftReady;
-    if (stage === UNIT_STAGE) return GUEST_ASSISTANT_COPY.detailsReady;
-    if (thread.requestId || thread.offerId) return GUEST_ASSISTANT_COPY.statusReady;
-    if (thread.discoveryArtifact) {
+    // guest-stage.ts `timelineCopyKey`: the same order of checks the copy always had.
+    const copy = timelineCopyKey({
+      lastSurfaceStage: stageForSurfaceId(thread.lastSurfaces.at(-1)?.surfaceId ?? ""),
+      draftId: Boolean(thread.draftId),
+      requestId: Boolean(thread.requestId),
+      offerId: Boolean(thread.offerId),
+      discoveryArtifact: Boolean(thread.discoveryArtifact),
+    });
+    if (copy === "draftReady") return GUEST_ASSISTANT_COPY.draftReady;
+    if (copy === "detailsReady") return GUEST_ASSISTANT_COPY.detailsReady;
+    if (copy === "statusReady") return GUEST_ASSISTANT_COPY.statusReady;
+    if (copy === "results" && thread.discoveryArtifact) {
       const count = thread.discoveryArtifact.facts.results.length;
       return GUEST_ASSISTANT_COPY.results(count, thread.assistantContext?.neighbourhood ?? thread.assistantContext?.city ?? "your selected area");
     }
@@ -3865,7 +3838,7 @@ export class LocalGuestApp {
     if (replacement) thread.activeSurfaces.set(DRAFT_REPLACEMENT_STAGE, replacement.surfaceId);
     else this.#supersede(thread, DRAFT_REPLACEMENT_STAGE);
     const activeSurface = assistant.lastSurfaces.at(-1);
-    const stage = activeSurface ? this.#stageForSurfaceId(activeSurface.surfaceId) : null;
+    const stage = activeSurface ? stageForSurfaceId(activeSurface.surfaceId) : null;
     // ADR 0106: the planner's discovery card is the shell's current discovery surface. Adopting its id keeps the id the
     // guest holds, the id a restore presents, and the id the View guard accepts the same; a superseded search's id is stale.
     if (activeSurface && stage === DISCOVERY_STAGE) thread.discoverySurfaceId = activeSurface.surfaceId;

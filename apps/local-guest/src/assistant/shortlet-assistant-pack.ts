@@ -53,6 +53,7 @@ import {
   type AssistantReplyPlan,
 } from "./assistant-platform.js";
 import type { AssistantToolResult } from "./assistant-model.js";
+import { dateShowBackStage, sentStage, shortletTaskStatus } from "../guest-stage.js";
 
 /** The closed neighbourhood list (SEARCH_AREAS, ADR-0080): the names the tool description offers the model. */
 const NEIGHBOURHOOD_NAMES: readonly string[] = [...new Set(SEARCH_AREAS.flatMap((area) => (area.neighbourhood === undefined ? [] : [area.neighbourhood])))];
@@ -634,8 +635,13 @@ function openQuestionForClarification(taskState: AssistantTaskState, kind: Assis
 
 /** Issue 13b: the show-back sentence. With a Request Draft open, the same check updates the draft and nothing is searched. */
 function dateShowBackFor(state: AssistantTaskState, arriving: string, leaving: string, nights: number, guests: number, place: string): string {
-  const draftOpen = state.currentDraftId !== undefined && state.currentBookingRequestId === undefined && state.currentOfferId === undefined;
-  return draftOpen
+  // guest-stage.ts `dateShowBackStage`: a Request Draft is open when a draft is held and no request or offer is.
+  const stage = dateShowBackStage({
+    draftId: state.currentDraftId !== undefined,
+    requestId: state.currentBookingRequestId !== undefined,
+    offerId: state.currentOfferId !== undefined,
+  });
+  return stage === "draft"
     ? GUEST_ASSISTANT_COPY.draftDateShowBack(arriving, leaving, nights, guests)
     : GUEST_ASSISTANT_COPY.dateShowBack(arriving, leaving, nights, guests, place);
 }
@@ -1641,16 +1647,20 @@ export function executeAssistantTool(
 
 /** The shortlet task's current step for the shell rail, reusing the journey rail's canonical step names. */
 function shortletTaskSummary(taskState: AssistantTaskState): AssistantTaskSummary {
-  const status =
-    taskState.currentContractId || taskState.currentReservationId
-      ? GUEST_JOURNEY.confirmed
-      : taskState.currentOfferId
-        ? GUEST_JOURNEY.offer
-        : taskState.currentBookingRequestId || taskState.currentDraftId
-          ? GUEST_JOURNEY.request
-          : taskState.shortlist.length > 0 || taskState.selectedStayRef
-            ? GUEST_JOURNEY.stay
-            : GUEST_JOURNEY.search;
+  // guest-stage.ts `shortletTaskStatus` picks the step; the labels are the journey rail's canonical names.
+  const steps: Readonly<Record<ReturnType<typeof shortletTaskStatus>, string>> = {
+    confirmed: GUEST_JOURNEY.confirmed,
+    offer: GUEST_JOURNEY.offer,
+    request: GUEST_JOURNEY.request,
+    stay: GUEST_JOURNEY.stay,
+    search: GUEST_JOURNEY.search,
+  };
+  const status = steps[shortletTaskStatus({
+    contractOrReservation: Boolean(taskState.currentContractId || taskState.currentReservationId),
+    offerId: Boolean(taskState.currentOfferId),
+    requestOrDraft: Boolean(taskState.currentBookingRequestId || taskState.currentDraftId),
+    staySelected: taskState.shortlist.length > 0 || Boolean(taskState.selectedStayRef),
+  })];
   return { label: "Stay", status };
 }
 
@@ -1807,13 +1817,14 @@ function asksToChangeStay(intents: readonly ConciergeIntent[], slots: ScopeAsses
  * order matches the deterministic concierge (booking, then payment, then offer, then request). Undefined before anything is sent.
  */
 function sentStageFor(taskState: AssistantTaskState, environment: LocalGuestEnvironment): "request" | "offer" | "payment" | "booking" | undefined {
-  if (taskState.currentContractId || taskState.currentReservationId) return "booking";
-  if (taskState.currentOfferId) {
-    const offer = environment.conditionalOfferApp.getArtifact(taskState.currentOfferId, environment.guestPrincipal());
-    return offer.facts.status === "accepted" ? "payment" : "offer";
-  }
-  if (taskState.currentBookingRequestId) return "request";
-  return undefined;
+  // guest-stage.ts `sentStage` holds the order (booking, payment or offer, request). The offer is read only when one is held.
+  const offerId = taskState.currentOfferId;
+  return sentStage({
+    bookingHeld: Boolean(taskState.currentContractId || taskState.currentReservationId),
+    offerId: Boolean(offerId),
+    requestId: Boolean(taskState.currentBookingRequestId),
+    offerAccepted: () => offerId !== undefined && environment.conditionalOfferApp.getArtifact(offerId, environment.guestPrincipal()).facts.status === "accepted",
+  });
 }
 
 /**
