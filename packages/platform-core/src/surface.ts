@@ -24,7 +24,10 @@ export interface CreateSurfaceOptions {
   expiresAtIso?: string;
 }
 
-export type SurfaceLifecycleStatus = "active" | "superseded" | "stale" | "expired" | "deleted" | "fallback";
+/** ADR 0074: the surface lifecycle. Browser code takes the type only (type-only re-export), never this runtime array. */
+export const SURFACE_LIFECYCLE_STATUSES = ["active", "superseded", "stale", "expired", "deleted", "fallback"] as const;
+
+export type SurfaceLifecycleStatus = (typeof SURFACE_LIFECYCLE_STATUSES)[number];
 
 interface ManagedSurface {
   surfaceId: string;
