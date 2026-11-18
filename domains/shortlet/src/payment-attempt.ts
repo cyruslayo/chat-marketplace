@@ -1,8 +1,16 @@
 import type { SqliteGuestInteractionStore } from "./guest-interaction-store.js";
+import type { TransitionTable } from "../../../packages/platform-core/src/state-transition.js";
 
 export type LivePaymentMethod = "fresh_card" | "bank_transfer" | "ussd" | "manual_transfer";
 export type PaymentPurpose = "stay" | "security_deposit";
-export type LivePaymentAttemptStatus = "active" | "terminal";
+/** Issue 06: the live payment attempt statuses (persisted; never renamed). */
+export const LIVE_PAYMENT_ATTEMPT_STATUSES = ["active", "terminal"] as const;
+export type LivePaymentAttemptStatus = (typeof LIVE_PAYMENT_ATTEMPT_STATUSES)[number];
+/** Issue 06: release is the only move (active to terminal). current() also reaches it lazily once expired. */
+export const LIVE_PAYMENT_ATTEMPT_TRANSITIONS = {
+  active: ["terminal"],
+  terminal: [],
+} as const satisfies TransitionTable<LivePaymentAttemptStatus>;
 export interface LivePaymentAttempt { readonly offerId: string; readonly method: LivePaymentMethod; readonly attemptId: string; readonly purpose: PaymentPurpose; readonly status: LivePaymentAttemptStatus; readonly startedAt: string; readonly expiresAt: string; }
 
 /** ADR 0046 registry port: one active provider attempt per offer. */

@@ -8,6 +8,7 @@ import { stayAmountDueNowKobo } from "./quote.js";
 import type { LivePaymentAttemptRegistryPort } from "./payment-attempt.js";
 import type { BookingContract, Reservation } from "./card-payment.js";
 import type { BookingStateRepository } from "./booking-state.js";
+import type { TransitionTable } from "../../../packages/platform-core/src/state-transition.js";
 import { newReceiptObjectKey, SqliteReceiptBlobStore, type ReceiptBlobStore } from "../../../packages/platform-core/src/payments/receipt-blob-store.js";
 
 /**
@@ -34,12 +35,20 @@ export const RECEIPT_CONTENT_TYPES = Object.freeze([
 ] as const);
 export type ReceiptContentType = (typeof RECEIPT_CONTENT_TYPES)[number];
 
-export type ManualTransferStatus =
-  | "awaiting_receipt"
-  | "awaiting_verification"
-  | "confirmed"
-  | "rejected"
-  | "expired";
+/** Issue 06: the manual transfer statuses (persisted; never renamed). */
+export const MANUAL_TRANSFER_STATUSES = ["awaiting_receipt", "awaiting_verification", "confirmed", "rejected", "expired"] as const;
+export type ManualTransferStatus = (typeof MANUAL_TRANSFER_STATUSES)[number];
+/**
+ * Issue 06: the moves the code makes today. Upload moves awaiting_receipt to awaiting_verification. The two deadlines
+ * expire in #expireIfDue. The back-office decisions (saveDecision) run only after #decidable accepts awaiting_verification.
+ */
+export const MANUAL_TRANSFER_TRANSITIONS = {
+  awaiting_receipt: ["awaiting_verification", "expired"],
+  awaiting_verification: ["confirmed", "rejected", "expired"],
+  confirmed: [],
+  rejected: [],
+  expired: [],
+} as const satisfies TransitionTable<ManualTransferStatus>;
 
 export interface ManualTransferReceipt {
   readonly receiptId: string;
