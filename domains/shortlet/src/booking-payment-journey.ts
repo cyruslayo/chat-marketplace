@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { SqlDatabase } from "../../../packages/platform-core/src/sql-database.js";
+import type { TransitionTable } from "../../../packages/platform-core/src/state-transition.js";
 import type { SecurityDepositPolicySnapshot } from "./security-deposit.js";
 
 /** ADR 0044: one Payment-Processing Grace of at most 10 minutes after the Payment Window deadline, never repeated. */
@@ -14,20 +15,90 @@ export function paymentProcessingGraceEndsAt(
   ).toISOString();
 }
 
-export type BookingPaymentStage =
-  | "ready"
-  | "stay_payment_active"
-  | "stay_payment_processing"
-  | "stay_settled"
-  | "deposit_payment_active"
-  | "deposit_payment_processing"
-  | "both_settled"
-  | "confirmed"
-  | "compensation_pending"
-  | "compensated"
-  | "reconciliation_required"
-  | "failed"
-  | "expired";
+/** Every stage the journey can hold (issue 07). Stored in `journey_json`, so these strings are never renamed. */
+export const BOOKING_PAYMENT_STAGES = [
+  "ready",
+  "stay_payment_active",
+  "stay_payment_processing",
+  "stay_settled",
+  "deposit_payment_active",
+  "deposit_payment_processing",
+  "both_settled",
+  "confirmed",
+  "compensation_pending",
+  "compensated",
+  "reconciliation_required",
+  "failed",
+  "expired",
+] as const;
+export type BookingPaymentStage = (typeof BOOKING_PAYMENT_STAGES)[number];
+
+/**
+ * Allowed-from table for `BookingPaymentStage` (issue 07). Each key lists the stages it may move to. It records
+ * the moves the card and bank-transfer managers make today. Production code does not check it; only the tests
+ * do (test/payment-journey-stages.test.ts, through a spy over the repository). Writes marked "issue 17" have no
+ * from-stage check, so their from-lists are the stages the tests and the documented flows reach. Issue 17 owns
+ * guarding them.
+ */
+export const BOOKING_PAYMENT_STAGE_TRANSITIONS = {
+  ready: ["stay_payment_active"],
+  stay_payment_active: [
+    "stay_payment_active",
+    "stay_payment_processing",
+    "stay_settled",
+    "reconciliation_required",
+  ],
+  stay_payment_processing: [
+    "stay_payment_active",
+    "stay_payment_processing",
+    "stay_settled",
+    "reconciliation_required",
+  ],
+  stay_settled: [
+    "deposit_payment_active",
+    "both_settled",
+    "compensation_pending",
+    "compensated",
+    "reconciliation_required",
+  ],
+  deposit_payment_active: [
+    "stay_payment_active",
+    "deposit_payment_processing",
+    "both_settled",
+    "compensation_pending",
+    "compensated",
+    "reconciliation_required",
+  ],
+  deposit_payment_processing: [
+    "stay_payment_active",
+    "deposit_payment_processing",
+    "both_settled",
+    "compensation_pending",
+    "compensated",
+    "reconciliation_required",
+  ],
+  both_settled: [
+    "confirmed",
+    "compensation_pending",
+    "compensated",
+    "reconciliation_required",
+  ],
+  confirmed: [],
+  compensation_pending: [
+    "compensation_pending",
+    "compensated",
+    "reconciliation_required",
+  ],
+  compensated: ["compensation_pending", "reconciliation_required"],
+  reconciliation_required: [
+    "compensation_pending",
+    "compensated",
+    "reconciliation_required",
+  ],
+  // Never written (owner question 2). Kept until issue 25 decides whether to keep or remove them.
+  failed: [],
+  expired: [],
+} satisfies TransitionTable<BookingPaymentStage>;
 export interface BookingPaymentCompensationPort {
   refundOrGet(input: {
     obligationId: string;

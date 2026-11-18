@@ -15,8 +15,10 @@ import type { BookingStateRepository } from "./booking-state.js";
 import {
   deriveCompensationStatus,
   PAYMENT_PROCESSING_GRACE_MINUTES,
+  type BookingPaymentJourney,
   type BookingPaymentJourneyRepository,
   type BookingPaymentCompensationPort,
+  type BookingPaymentStage,
 } from "./booking-payment-journey.js";
 import {
   assertSecurityDepositCollectionAvailable,
@@ -568,11 +570,8 @@ export class BankTransferPaymentManager {
         offer.offerId,
         journey.journeyVersion,
         (value) => ({
-          ...value,
-          stage:
-            purpose === "stay"
-              ? "stay_payment_active"
-              : "deposit_payment_active",
+          // Unguarded stage write, no from-stage check (issue 17). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
+          ...this.#setStage(value, purpose === "stay" ? "stay_payment_active" : "deposit_payment_active"),
           [purpose === "stay" ? "stay" : "deposit"]: {
             ...(purpose === "stay" ? value.stay : value.deposit),
             status: "active",
@@ -591,6 +590,10 @@ export class BankTransferPaymentManager {
     return session;
   }
 
+  /** Every journey stage write goes through here (issue 07). Pure: sets `stage` and changes nothing else. */
+  #setStage(value: BookingPaymentJourney, to: BookingPaymentStage): BookingPaymentJourney {
+    return { ...value, stage: to };
+  }
   getPaymentJourney(offerId: string) {
     return this.#journeys?.findByOfferId(offerId) ?? null;
   }
@@ -822,8 +825,8 @@ export class BankTransferPaymentManager {
           ledgerEntries: this.#ledgerEntries.get(current.finalReservationId),
         };
       this.#journeys.update(offer.offerId, current.journeyVersion, (value) => ({
-        ...value,
-        stage: "stay_settled",
+        // Unguarded stage write, no from-stage check (issue 17). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
+        ...this.#setStage(value, "stay_settled"),
         stay: {
           ...value.stay,
           status: "settled",
@@ -879,8 +882,8 @@ export class BankTransferPaymentManager {
         offer.offerId,
         current.journeyVersion,
         (value) => ({
-          ...value,
-          stage: "both_settled",
+          // Stage write behind the from-stage check (issue 07); the check is unchanged.
+          ...this.#setStage(value, "both_settled"),
           deposit: {
             ...value.deposit,
             status: "settled",
@@ -1057,8 +1060,8 @@ export class BankTransferPaymentManager {
           offer.offerId,
           current.journeyVersion,
           (value) => ({
-            ...value,
-            stage: "confirmed",
+            // Stage write behind the from-stage check (issue 07); the check is unchanged.
+            ...this.#setStage(value, "confirmed"),
             finalReservationId: reservationId,
             finalContractId: contractId,
           }),
@@ -1171,13 +1174,8 @@ export class BankTransferPaymentManager {
         status: deriveCompensationStatus({ ...value.compensation, deposit }),
       };
       return {
-        ...value,
-        stage:
-          compensation.status === "pending"
-            ? "compensation_pending"
-            : compensation.status === "reconciliation_required"
-              ? "reconciliation_required"
-              : "compensated",
+        // Unguarded stage write, no from-stage check (issue 17). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
+        ...this.#setStage(value, compensation.status === "pending" ? "compensation_pending" : compensation.status === "reconciliation_required" ? "reconciliation_required" : "compensated"),
         compensation,
       };
     });
@@ -1186,8 +1184,8 @@ export class BankTransferPaymentManager {
     const journey = this.#journeys?.findByOfferId(offerId);
     if (journey)
       this.#journeys!.update(offerId, journey.journeyVersion, (value) => ({
-        ...value,
-        stage: "reconciliation_required",
+        // Unguarded stage write, no from-stage check (issue 17). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
+        ...this.#setStage(value, "reconciliation_required"),
         compensation: {
           ...value.compensation,
           status: "reconciliation_required",
@@ -1206,8 +1204,8 @@ export class BankTransferPaymentManager {
     const obligationId = `payment-compensation:${offerId}:stay`;
     if (!reference || !this.#compensationRefundProvider) {
       this.#journeys?.update(offerId, journey.journeyVersion, (value) => ({
-        ...value,
-        stage: "reconciliation_required",
+        // Unguarded stage write, no from-stage check (issue 17). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
+        ...this.#setStage(value, "reconciliation_required"),
         compensation: {
           ...value.compensation,
           stay: {
@@ -1243,8 +1241,8 @@ export class BankTransferPaymentManager {
         throw new Error("Compensation provider mismatch");
     } catch {
       this.#journeys?.update(offerId, journey.journeyVersion, (value) => ({
-        ...value,
-        stage: "reconciliation_required",
+        // Unguarded stage write, no from-stage check (issue 17). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
+        ...this.#setStage(value, "reconciliation_required"),
         compensation: {
           ...value.compensation,
           stay: {
@@ -1283,13 +1281,8 @@ export class BankTransferPaymentManager {
         status: deriveCompensationStatus({ ...value.compensation, stay }),
       };
       return {
-        ...value,
-        stage:
-          compensation.status === "pending"
-            ? "compensation_pending"
-            : compensation.status === "reconciliation_required"
-              ? "reconciliation_required"
-              : "compensated",
+        // Unguarded stage write, no from-stage check (issue 17). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
+        ...this.#setStage(value, compensation.status === "pending" ? "compensation_pending" : compensation.status === "reconciliation_required" ? "reconciliation_required" : "compensated"),
         compensation,
       };
     });

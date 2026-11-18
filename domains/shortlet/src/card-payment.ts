@@ -2,7 +2,7 @@ import { PlatformCommandEnvelope } from "../../../packages/platform-core/src/ind
 import type { TransitionTable } from "../../../packages/platform-core/src/state-transition.js";
 import { ConditionalBookingOffer } from "./conditional-offer.js";
 import type { BookingStateRepository } from "./booking-state.js";
-import { deriveCompensationStatus, PAYMENT_PROCESSING_GRACE_MINUTES, type BookingPaymentJourneyRepository, type BookingPaymentCompensationPort } from "./booking-payment-journey.js";
+import { deriveCompensationStatus, PAYMENT_PROCESSING_GRACE_MINUTES, type BookingPaymentJourney, type BookingPaymentStage, type BookingPaymentJourneyRepository, type BookingPaymentCompensationPort } from "./booking-payment-journey.js";
 import { assertSecurityDepositCollectionAvailable, type SecurityDepositCollectionCapabilityProvider } from "./security-deposit.js";
 import type { GuestConductPolicySnapshot } from "./guest-conduct.js";
 import type { SecurityDepositPolicySnapshot } from "./security-deposit.js";
@@ -427,7 +427,8 @@ export class CardPaymentManager {
 
     if (purpose === "security_deposit") this.#securityDepositAccounting!.createOrGet({ offerId, snapshot: journey!.requiredDeposit!, paymentMethod: "fresh_card" });
     this.#liveAttempts?.acquire({ offerId, method: "fresh_card", purpose, attemptId: checkoutId, startedAt: now.toISOString(), expiresAt: offer.paymentWindow.expiresAt });
-    if (journey) this.#journeys!.update(offerId, journey.journeyVersion, (value) => ({ ...value, stage: purpose === "stay" ? "stay_payment_active" : "deposit_payment_active", [purpose === "stay" ? "stay" : "deposit"]: { ...(purpose === "stay" ? value.stay : value.deposit), status: "active" } }));
+    // Unguarded stage write, no from-stage check (issue 17). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
+    if (journey) this.#journeys!.update(offerId, journey.journeyVersion, (value) => ({ ...this.#setStage(value, purpose === "stay" ? "stay_payment_active" : "deposit_payment_active"), [purpose === "stay" ? "stay" : "deposit"]: { ...(purpose === "stay" ? value.stay : value.deposit), status: "active" } }));
     this.#sessions.set(checkoutId, session);
     this.#persistSession(session);
 
@@ -621,7 +622,8 @@ export class CardPaymentManager {
       const current = this.#journeys.findByOfferId(offer.offerId);
       if (!current) throw new Error("Payment journey not found");
       if (current.stage === "confirmed" && current.finalReservationId && current.finalContractId) return { outcome: "confirmed", reservation: this.#reservations.get(current.finalReservationId)!, bookingContract: this.#contracts.get(current.finalContractId)!, ledgerEntries: this.#ledgerEntries.get(current.finalReservationId) ?? [] };
-      this.#journeys.update(offer.offerId, current.journeyVersion, (value) => ({ ...value, stage: "stay_settled", stay: { ...value.stay, status: "settled", providerReference: session.pspReference, paidAt: now.toISOString() } }));
+      // Unguarded stage write, no from-stage check (issue 17). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
+      this.#journeys.update(offer.offerId, current.journeyVersion, (value) => ({ ...this.#setStage(value, "stay_settled"), stay: { ...value.stay, status: "settled", providerReference: session.pspReference, paidAt: now.toISOString() } }));
       session.status = "completed"; this.#persistSession(session); this.#liveAttempts?.release(offer.offerId);
       const journey = this.#journeys.findByOfferId(offer.offerId); if (!journey) throw new Error("Payment journey disappeared after settlement");
       return { outcome: "deposit_required", journey };
@@ -637,7 +639,8 @@ export class CardPaymentManager {
       try { const collected = this.#securityDepositAccounting!.recordCollection(collection.collectionId, { providerReference: session.pspReference, capabilityVersion: this.#securityDepositCapability?.getCapability({ paymentMethod: "fresh_card" }).capabilityVersion, collectedAt: now.toISOString() }); if (!collected.providerReference) throw new Error("Deposit payment source was not recorded"); } catch (error) { this.#compensateStay(offer.offerId); throw error; }
       const current = this.#journeys?.findByOfferId(offer.offerId);
       if (!current || (current.stage !== "deposit_payment_active" && current.stage !== "stay_settled")) throw new Error("Deposit payment is not the authorized next component");
-      this.#journeys!.update(offer.offerId, current.journeyVersion, (value) => ({ ...value, stage: "both_settled", deposit: { ...value.deposit, status: "settled", providerReference: session.pspReference, paidAt: now.toISOString() } }));
+      // Stage write behind the from-stage check (issue 07); the check is unchanged.
+      this.#journeys!.update(offer.offerId, current.journeyVersion, (value) => ({ ...this.#setStage(value, "both_settled"), deposit: { ...value.deposit, status: "settled", providerReference: session.pspReference, paidAt: now.toISOString() } }));
     }
     // Atomic Commitment of Reservation, BookingContract, and Ledger
     const reservationId = `res_${envelope.commandId.slice(0, 8)}_${now.getTime()}`;
@@ -756,7 +759,8 @@ export class CardPaymentManager {
     this.#persistReservationAndContract(reservation, bookingContract);
     session.status = "completed";
     this.#persistSession(session);
-    if (this.#journeys) { const current = this.#journeys.findByOfferId(offer.offerId); if (current?.stage === "both_settled") this.#journeys.update(offer.offerId, current.journeyVersion, (value) => ({ ...value, stage: "confirmed", finalReservationId: reservationId, finalContractId: contractId })); }
+    // Stage write behind the from-stage check (issue 07); the check is unchanged.
+    if (this.#journeys) { const current = this.#journeys.findByOfferId(offer.offerId); if (current?.stage === "both_settled") this.#journeys.update(offer.offerId, current.journeyVersion, (value) => ({ ...this.#setStage(value, "confirmed"), finalReservationId: reservationId, finalContractId: contractId })); }
     this.#liveAttempts?.release(offer.offerId);
     this.#processedPspReferences.set(pspReference, { reservationId, contractId, offerId: offer.offerId, tenantId: offer.tenantId });
     this.#persistProcessedReference(pspReference, { reservationId, contractId, offerId: offer.offerId, tenantId: offer.tenantId });
@@ -787,8 +791,10 @@ export class CardPaymentManager {
   }
 
   #compensateDeposit(offerId: string, now: Date): void { if (!this.#securityDepositAccounting || !this.#compensationRefundProvider) return; const collection = this.#securityDepositAccounting.getByOfferId(offerId); if (!collection || !collection.providerReference || collection.status === "refunded" || collection.status === "reconciliation_required") return; const obligationId = `payment-compensation:${offerId}:deposit`; try { const refund = this.#compensationRefundProvider.refundOrGet({ obligationId, offerId, paymentMethod: collection.paymentMethod, originalPaymentReference: collection.providerReference, amountKobo: collection.amountKobo, currency: "NGN" }); if (!refund.refundId || refund.amountKobo !== collection.amountKobo || refund.currency !== "NGN" || !["pending", "settled", "failed"].includes(refund.status)) throw new Error("Deposit compensation provider mismatch"); const updated = refund.status === "pending" ? this.#securityDepositAccounting.markRefundPending(collection.collectionId) : this.#securityDepositAccounting.refund(collection.collectionId, { refundedAt: now.toISOString(), refundSucceeded: refund.status === "settled" }); this.#setDepositCompensation(offerId, updated.collectionId, refund.status === "pending" ? "pending" : refund.status === "settled" ? "settled" : "reconciliation_required", refund.refundId, collection.providerReference, collection.amountKobo); } catch { const updated = this.#securityDepositAccounting.refund(collection.collectionId, { refundedAt: now.toISOString(), refundSucceeded: false }); this.#setDepositCompensation(offerId, updated.collectionId, "reconciliation_required", undefined, collection.providerReference, collection.amountKobo); } }
-  #setDepositCompensation(offerId: string, collectionId: string, status: "pending" | "settled" | "reconciliation_required", refundId: string | undefined, reference: string, amountKobo: number): void { const journey = this.#journeys?.findByOfferId(offerId); if (!journey) return; this.#journeys!.update(offerId, journey.journeyVersion, (value) => { const deposit = { ...value.compensation.deposit, required: true, status, collectionId, refundId, obligationId: `payment-compensation:${offerId}:deposit`, originalPaymentReference: reference, amountKobo, currency: "NGN" as const }; const compensation = { ...value.compensation, deposit, status: deriveCompensationStatus({ ...value.compensation, deposit }) }; return { ...value, stage: compensation.status === "pending" ? "compensation_pending" : compensation.status === "reconciliation_required" ? "reconciliation_required" : "compensated", compensation }; }); }
-  #markFinalizationReconciliation(offerId: string): void { const journey = this.#journeys?.findByOfferId(offerId); if (journey) this.#journeys!.update(offerId, journey.journeyVersion, (value) => ({ ...value, stage: "reconciliation_required", compensation: { ...value.compensation, status: "reconciliation_required" } })); }
+  // Unguarded stage write, no from-stage check (issue 17). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
+  #setDepositCompensation(offerId: string, collectionId: string, status: "pending" | "settled" | "reconciliation_required", refundId: string | undefined, reference: string, amountKobo: number): void { const journey = this.#journeys?.findByOfferId(offerId); if (!journey) return; this.#journeys!.update(offerId, journey.journeyVersion, (value) => { const deposit = { ...value.compensation.deposit, required: true, status, collectionId, refundId, obligationId: `payment-compensation:${offerId}:deposit`, originalPaymentReference: reference, amountKobo, currency: "NGN" as const }; const compensation = { ...value.compensation, deposit, status: deriveCompensationStatus({ ...value.compensation, deposit }) }; return { ...this.#setStage(value, compensation.status === "pending" ? "compensation_pending" : compensation.status === "reconciliation_required" ? "reconciliation_required" : "compensated"), compensation }; }); }
+  // Unguarded stage write, no from-stage check (issue 17). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
+  #markFinalizationReconciliation(offerId: string): void { const journey = this.#journeys?.findByOfferId(offerId); if (journey) this.#journeys!.update(offerId, journey.journeyVersion, (value) => ({ ...this.#setStage(value, "reconciliation_required"), compensation: { ...value.compensation, status: "reconciliation_required" } })); }
   #markLatePaymentReconciliation(offerId: string, reference: string, amountKobo: number, now: Date): void {
     // Pilot exception to historical ADR-0045 execution: retain the successful
     // reference and expose manual reconciliation; do not call a refund API.
@@ -796,8 +802,8 @@ export class CardPaymentManager {
     if (!journey || (journey.compensation.stay.status === "reconciliation_required" && journey.compensation.stay.originalPaymentReference === reference)) return;
     try {
       this.#journeys!.update(offerId, journey.journeyVersion, (value) => ({
-        ...value,
-        stage: "reconciliation_required",
+        // Unguarded stage write, no from-stage check (issue 17). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
+        ...this.#setStage(value, "reconciliation_required"),
         compensation: {
           ...value.compensation,
           status: "reconciliation_required",
@@ -814,15 +820,20 @@ export class CardPaymentManager {
     if (!journey) return;
     try {
       this.#journeys!.update(offerId, journey.journeyVersion, (value) => ({
-        ...value,
-        stage: purpose === "stay" ? "stay_payment_processing" : "deposit_payment_processing",
+        // Unguarded stage write, no from-stage check (issue 17). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
+        ...this.#setStage(value, purpose === "stay" ? "stay_payment_processing" : "deposit_payment_processing"),
         [purpose === "stay" ? "stay" : "deposit"]: { ...(purpose === "stay" ? value.stay : value.deposit), status: "processing" },
       }));
     } catch {
       // A concurrent verification may already have advanced the journey.
     }
   }
-  #compensateStay(offerId: string): void { const journey = this.#journeys?.findByOfferId(offerId); if (!journey || journey.compensation.stay.status === "settled" || journey.compensation.stay.status === "reconciliation_required") return; const reference = journey.stay.providerReference; const obligationId = `payment-compensation:${offerId}:stay`; if (!reference || !this.#compensationRefundProvider) { this.#journeys?.update(offerId, journey.journeyVersion, (value) => ({ ...value, stage: "reconciliation_required", compensation: { ...value.compensation, stay: { ...value.compensation.stay, required: true, status: "reconciliation_required", obligationId, originalPaymentReference: reference, amountKobo: journey.stay.amountKobo, currency: "NGN" }, status: "reconciliation_required" } })); return; } let refund: ReturnType<BookingPaymentCompensationPort["refundOrGet"]>; try { refund = this.#compensationRefundProvider.refundOrGet({ obligationId, offerId, paymentMethod: "fresh_card", originalPaymentReference: reference, amountKobo: journey.stay.amountKobo, currency: "NGN" }); if (!refund.refundId || refund.amountKobo !== journey.stay.amountKobo || refund.currency !== "NGN" || !["pending", "settled", "failed"].includes(refund.status)) throw new Error("Compensation provider mismatch"); } catch { this.#journeys?.update(offerId, journey.journeyVersion, (value) => ({ ...value, stage: "reconciliation_required", compensation: { ...value.compensation, stay: { ...value.compensation.stay, required: true, status: "reconciliation_required", obligationId, originalPaymentReference: reference, amountKobo: journey.stay.amountKobo, currency: "NGN" }, status: "reconciliation_required" } })); return; } const pending = refund.status === "pending"; this.#journeys?.update(offerId, journey.journeyVersion, (value) => { const stay = { ...value.compensation.stay, required: true, status: pending ? "pending" as const : refund.status === "failed" ? "reconciliation_required" as const : "settled" as const, refundId: refund.refundId, obligationId, originalPaymentReference: reference, amountKobo: journey.stay.amountKobo, currency: "NGN" as const }; const compensation = { ...value.compensation, stay, status: deriveCompensationStatus({ ...value.compensation, stay }) }; return { ...value, stage: compensation.status === "pending" ? "compensation_pending" : compensation.status === "reconciliation_required" ? "reconciliation_required" : "compensated", compensation }; }); }
+  // Unguarded stage write, no from-stage check (issue 17). Allowed moves: BOOKING_PAYMENT_STAGE_TRANSITIONS.
+  #compensateStay(offerId: string): void { const journey = this.#journeys?.findByOfferId(offerId); if (!journey || journey.compensation.stay.status === "settled" || journey.compensation.stay.status === "reconciliation_required") return; const reference = journey.stay.providerReference; const obligationId = `payment-compensation:${offerId}:stay`; if (!reference || !this.#compensationRefundProvider) { this.#journeys?.update(offerId, journey.journeyVersion, (value) => ({ ...this.#setStage(value, "reconciliation_required"), compensation: { ...value.compensation, stay: { ...value.compensation.stay, required: true, status: "reconciliation_required", obligationId, originalPaymentReference: reference, amountKobo: journey.stay.amountKobo, currency: "NGN" }, status: "reconciliation_required" } })); return; } let refund: ReturnType<BookingPaymentCompensationPort["refundOrGet"]>; try { refund = this.#compensationRefundProvider.refundOrGet({ obligationId, offerId, paymentMethod: "fresh_card", originalPaymentReference: reference, amountKobo: journey.stay.amountKobo, currency: "NGN" }); if (!refund.refundId || refund.amountKobo !== journey.stay.amountKobo || refund.currency !== "NGN" || !["pending", "settled", "failed"].includes(refund.status)) throw new Error("Compensation provider mismatch"); } catch { this.#journeys?.update(offerId, journey.journeyVersion, (value) => ({ ...this.#setStage(value, "reconciliation_required"), compensation: { ...value.compensation, stay: { ...value.compensation.stay, required: true, status: "reconciliation_required", obligationId, originalPaymentReference: reference, amountKobo: journey.stay.amountKobo, currency: "NGN" }, status: "reconciliation_required" } })); return; } const pending = refund.status === "pending"; this.#journeys?.update(offerId, journey.journeyVersion, (value) => { const stay = { ...value.compensation.stay, required: true, status: pending ? "pending" as const : refund.status === "failed" ? "reconciliation_required" as const : "settled" as const, refundId: refund.refundId, obligationId, originalPaymentReference: reference, amountKobo: journey.stay.amountKobo, currency: "NGN" as const }; const compensation = { ...value.compensation, stay, status: deriveCompensationStatus({ ...value.compensation, stay }) }; return { ...this.#setStage(value, compensation.status === "pending" ? "compensation_pending" : compensation.status === "reconciliation_required" ? "reconciliation_required" : "compensated"), compensation }; }); }
+  /** Every journey stage write goes through here (issue 07). Pure: sets `stage` and changes nothing else. */
+  #setStage(value: BookingPaymentJourney, to: BookingPaymentStage): BookingPaymentJourney {
+    return { ...value, stage: to };
+  }
   getPaymentJourney(offerId: string) { return this.#journeys?.findByOfferId(offerId) ?? null; }
   getCheckoutSession(offerId: string): CardCheckoutSession | undefined {
     const sessions = [...this.#sessions.values()].filter((session) => session.offerId === offerId);
