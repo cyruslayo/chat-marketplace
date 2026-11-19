@@ -1,6 +1,7 @@
 import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
 import type { CheckInSupportArtifact } from "../../web/src/checkin-support-artifact.js";
 import { CHECK_IN_CONFIRM_ACCESS_EVENT, CHECK_IN_REPORT_PROBLEM_EVENT, CHECK_IN_REQUEST_SUPPORT_EVENT } from "../../web/src/checkin-support-actions.js";
+import { surfaceMessages } from "./a2ui-surface.js";
 export function checkInSupportArtifactToA2UI({ artifact, surfaceId }: { readonly artifact: CheckInSupportArtifact; readonly surfaceId: string }): readonly A2UIServerMessage[] {
   const { facts } = artifact; const children = ["checkin-title", "checkin-window", "checkin-support", "checkin-access", "checkin-complaint"];
   const components: A2UIComponent[] = [
@@ -12,6 +13,6 @@ export function checkInSupportArtifactToA2UI({ artifact, surfaceId }: { readonly
     { id: "checkin-complaint", component: "Text", text: facts.hasBlockingComplaint ? `Blocking complaint: ${facts.complaintCategory}; relevant revenue remains held.` : "No blocking complaint is open." },
     ...artifact.actions.flatMap((action): A2UIComponent[] => { const event = action.type === "confirm_access" ? CHECK_IN_CONFIRM_ACCESS_EVENT : action.type === "request_human_support" ? CHECK_IN_REQUEST_SUPPORT_EVENT : CHECK_IN_REPORT_PROBLEM_EVENT; const label = action.type === "confirm_access" ? "Confirm access" : action.type === "request_human_support" ? "Request Human Support" : "Report an access problem"; return [{ id: `checkin-${action.type}`, component: "Button", child: `checkin-${action.type}-label`, variant: "primary", action: { event: { name: event, context: { artifactId: action.artifactId, reservationId: action.reservationId, expectedStatus: action.expectedStatus, projectionVersion: action.projectionVersion } } }, accessibility: { label } }, { id: `checkin-${action.type}-label`, component: "Text", text: label }]; }),
   ];
-  return Object.freeze([{ version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } }, { version: "v0.9.1", updateComponents: { surfaceId, components } }]);
+  return Object.freeze(surfaceMessages(surfaceId, A2UI_V091_BASIC_CATALOG_ID, components));
 }
 export { checkInSupportArtifactToA2UI as checkinSupportArtifactToA2UI };

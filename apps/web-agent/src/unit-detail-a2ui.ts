@@ -14,6 +14,7 @@ import {
   UNIT_DETAIL_SHEET_COMPONENT,
   UNIT_GALLERY_COMPONENT,
 } from "./shortlet-catalogs.js";
+import { surfaceMessages } from "./a2ui-surface.js";
 
 export const REQUEST_TO_BOOK_EVENT = "shortlet.unit-detail.request-to-book";
 /** Issue 08: returns to the results of the same search; the server validates the discovery artifact id. */
@@ -106,10 +107,7 @@ export function unitDetailArtifactToA2UI({ artifact, surfaceId, backToResults, d
       { id: `${prefix}-back-label`, component: "Text" as const, text: GUEST_JOURNEY.backToResults },
     ] : []),
   ];
-  return [
-    { version: "v0.9.1", createSurface: { surfaceId, catalogId: SHORTLET_DISCOVERY_CATALOG_ID } },
-    { version: "v0.9.1", updateComponents: { surfaceId, components } },
-  ];
+  return surfaceMessages(surfaceId, SHORTLET_DISCOVERY_CATALOG_ID, components);
 }
 
 /**

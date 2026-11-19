@@ -3,6 +3,7 @@ import type { RequestDraftArtifact } from "../../web/src/request-draft-artifact.
 import { bookingProgressText, formatBookingMoney, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";
 import { billingPeriodLines } from "./extended-stay-presentation.js";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, accommodationProviderLine, guestDisclosure, guestFact, guestReservationStatus } from "./guest-content.js";
+import { surfaceMessages } from "./a2ui-surface.js";
 
 export const REQUEST_DRAFT_REVIEW_EVENT = "shortlet.request-draft.review";
 export const REQUEST_DRAFT_SUBMIT_EVENT = "shortlet.request-draft.submit";
@@ -48,5 +49,5 @@ export function requestDraftArtifactToA2UI({ artifact, surfaceId }: { readonly a
     ...(!action ? [{ id: "draft-blocked", component: "Text" as const, text: "This request cannot be continued in the current session." }] : []),
     ...(action ? [{ id: "draft-action-button", component: "Button" as const, child: "draft-action-label", variant: "primary" as const, action: { event: { name: action.type === "submit" ? REQUEST_DRAFT_SUBMIT_EVENT : REQUEST_DRAFT_REVIEW_EVENT, context: { artifactId: action.artifactId, draftId: action.draftId, expectedStatus: action.expectedStatus, projectionVersion: action.projectionVersion } } }, accessibility: { label: action.type === "submit" ? "Submit Booking Request" : "Review request" } }, { id: "draft-action-label", component: "Text" as const, text: action.type === "submit" ? "Submit Booking Request" : "Review request" }] : []),
   ];
-  return [{ version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } }, { version: "v0.9.1", updateComponents: { surfaceId, components } }];
+  return surfaceMessages(surfaceId, A2UI_V091_BASIC_CATALOG_ID, components);
 }

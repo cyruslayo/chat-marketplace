@@ -8078,6 +8078,173 @@ Known schemas:
     }
   }
 
+  // node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/producer.js
+  var VERSION = "v0.9.1";
+  function createA2UIV091Producer() {
+    return {
+      createSurface: buildCreateSurface,
+      updateComponents: buildUpdateComponents,
+      updateDataModel: buildUpdateDataModel,
+      deleteSurface: buildDeleteSurface
+    };
+  }
+  function buildCreateSurface(input) {
+    assertInputObject(input, "createSurface");
+    const payload = {
+      surfaceId: input.surfaceId,
+      catalogId: input.catalogId
+    };
+    if (hasOwn(input, "theme"))
+      payload.theme = input.theme;
+    if (hasOwn(input, "sendDataModel"))
+      payload.sendDataModel = input.sendDataModel;
+    return validateAndOwn({
+      version: VERSION,
+      createSurface: payload
+    });
+  }
+  function buildUpdateComponents(input) {
+    assertInputObject(input, "updateComponents");
+    return validateAndOwn({
+      version: VERSION,
+      updateComponents: {
+        surfaceId: input.surfaceId,
+        components: input.components
+      }
+    });
+  }
+  function buildUpdateDataModel(input) {
+    assertInputObject(input, "updateDataModel");
+    const payload = { surfaceId: input.surfaceId };
+    if (hasOwn(input, "path"))
+      payload.path = input.path;
+    if (hasOwn(input, "value"))
+      payload.value = input.value;
+    return validateAndOwn({
+      version: VERSION,
+      updateDataModel: payload
+    });
+  }
+  function buildDeleteSurface(input) {
+    assertInputObject(input, "deleteSurface");
+    return validateAndOwn({
+      version: VERSION,
+      deleteSurface: { surfaceId: input.surfaceId }
+    });
+  }
+  function validateAndOwn(input) {
+    const owned = cloneJsonValue(input);
+    const validation = validateA2UIServerMessage(owned);
+    if (!validation.ok) {
+      const firstIssue = validation.issues[0];
+      throw new TypeError(`Invalid A2UI v0.9.1 producer input at ${firstIssue.path}: ${firstIssue.message}`);
+    }
+    return owned;
+  }
+  function cloneJsonValue(value) {
+    if (value === null || typeof value === "string" || typeof value === "boolean")
+      return value;
+    if (typeof value === "number") {
+      if (Number.isFinite(value))
+        return value;
+      throw new TypeError("A2UI producer input must contain finite JSON numbers");
+    }
+    if (typeof value !== "object") {
+      throw new TypeError("A2UI producer input must contain JSON values");
+    }
+    const root = Array.isArray(value) ? [] : {};
+    const active = /* @__PURE__ */ new Set([value]);
+    const frames = [
+      Array.isArray(value) ? { source: value, target: root, index: 0 } : {
+        source: value,
+        target: root,
+        keys: Object.keys(value),
+        index: 0
+      }
+    ];
+    while (frames.length > 0) {
+      const frame = frames[frames.length - 1];
+      let key3;
+      let entry;
+      if (Array.isArray(frame.source)) {
+        if (frame.index === frame.source.length) {
+          active.delete(frame.source);
+          frames.pop();
+          continue;
+        }
+        key3 = frame.index;
+        entry = frame.source[frame.index];
+        frame.index += 1;
+      } else {
+        if (frame.keys === void 0)
+          throw new TypeError("A2UI producer input must contain JSON values");
+        if (frame.index === frame.keys.length) {
+          active.delete(frame.source);
+          frames.pop();
+          continue;
+        }
+        key3 = frame.keys[frame.index];
+        entry = frame.source[key3];
+        frame.index += 1;
+      }
+      let cloned;
+      if (entry === null || typeof entry === "string" || typeof entry === "boolean")
+        cloned = entry;
+      else if (typeof entry === "number") {
+        if (!Number.isFinite(entry))
+          throw new TypeError("A2UI producer input must contain finite JSON numbers");
+        cloned = entry;
+      } else {
+        if (typeof entry !== "object")
+          throw new TypeError("A2UI producer input must contain JSON values");
+        if (active.has(entry))
+          throw new TypeError("A2UI producer input must not contain cycles");
+        if (!Array.isArray(entry)) {
+          const prototype = Object.getPrototypeOf(entry);
+          if (prototype !== Object.prototype && prototype !== null) {
+            throw new TypeError("A2UI producer input must contain plain JSON objects");
+          }
+        }
+        const child = Array.isArray(entry) ? [] : {};
+        if (Array.isArray(frame.target))
+          frame.target[key3] = child;
+        else
+          Object.defineProperty(frame.target, key3, {
+            configurable: true,
+            enumerable: true,
+            value: child,
+            writable: true
+          });
+        active.add(entry);
+        frames.push(Array.isArray(entry) ? { source: entry, target: child, index: 0 } : {
+          source: entry,
+          target: child,
+          keys: Object.keys(entry),
+          index: 0
+        });
+        continue;
+      }
+      if (Array.isArray(frame.target))
+        frame.target[key3] = cloned;
+      else
+        Object.defineProperty(frame.target, key3, {
+          configurable: true,
+          enumerable: true,
+          value: cloned,
+          writable: true
+        });
+    }
+    return root;
+  }
+  function assertInputObject(value, name) {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      throw new TypeError(`${name} producer input must be an object`);
+    }
+  }
+  function hasOwn(value, key3) {
+    return Object.hasOwn(value, key3);
+  }
+
   // node_modules/@cylayo/weaver-core/dist/protocol/a2ui/v0_9_1/outbound/client-capabilities.js
   function buildA2UIClientCapabilities(input) {
     return { "v0.9": { supportedCatalogIds: [...input.supportedCatalogIds] } };
@@ -8911,7 +9078,7 @@ Known schemas:
             return { ok: false, error: { code: "STALE_RENDER_INTERACTION" } };
           return this.#runtime.writeInput({ surfaceId, sourceComponentId: instance.sourceComponentId, scopePath: instance.scopePath, property, value });
         },
-        getLocalState: (key3, fallback2) => cloneJsonValue(renderedState.get(key3) ?? fallback2),
+        getLocalState: (key3, fallback2) => cloneJsonValue2(renderedState.get(key3) ?? fallback2),
         setLocalState: (key3, value) => {
           if (!isCurrent())
             return { ok: false, error: { code: "STALE_RENDER_INTERACTION" } };
@@ -8922,7 +9089,7 @@ Known schemas:
             state = /* @__PURE__ */ new Map();
             localState.set(instanceIdentity, state);
           }
-          state.set(key3, cloneJsonValue(value));
+          state.set(key3, cloneJsonValue2(value));
           requestRefresh();
           return { ok: true };
         },
@@ -8973,10 +9140,10 @@ Known schemas:
     const clone = /* @__PURE__ */ new Map();
     if (state !== void 0)
       for (const [key3, value] of state)
-        clone.set(key3, cloneJsonValue(value));
+        clone.set(key3, cloneJsonValue2(value));
     return clone;
   }
-  function cloneJsonValue(value) {
+  function cloneJsonValue2(value) {
     return structuredClone(value);
   }
   function isJsonValue2(value, seen = /* @__PURE__ */ new Set()) {
@@ -10059,6 +10226,9 @@ Known schemas:
     failed: { label: "Payment was not verified \xB7 Booking not confirmed", detail: "Payment was not verified. No Reservation was created. Check the current booking status before retrying." },
     confirmed: { label: "Booking confirmed", detail: "Payment verified and Reservation confirmed.", progress: "confirmed" }
   };
+
+  // apps/web-agent/src/a2ui-surface.ts
+  var A2UI_PRODUCER = createA2UIV091Producer();
 
   // apps/web-agent/src/discovery-a2ui.ts
   function formatNgnKobo(kobo) {
@@ -12413,7 +12583,7 @@ Known schemas:
       return;
     }
     if (createdSurfaceIds.has(surface.surfaceId)) {
-      weaver.runtime.process({ version: "v0.9.1", deleteSurface: { surfaceId: surface.surfaceId } });
+      weaver.runtime.process(A2UI_PRODUCER.deleteSurface({ surfaceId: surface.surfaceId }));
       createdSurfaceIds.delete(surface.surfaceId);
     }
     for (const message of surface.a2uiMessages) {

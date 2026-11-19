@@ -1,6 +1,7 @@
 import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
 import { formatBookingMoney, formatStayDates } from "./booking-presentation.js";
 import { GUEST_GLOSSARY, guestReservationStatus } from "./guest-content.js";
+import { surfaceMessages } from "./a2ui-surface.js";
 
 /** Issue 14: accept the proposed replacement Request Draft. */
 export const DRAFT_REPLACEMENT_ACCEPT_EVENT = "shortlet.request-draft.replacement.accept";
@@ -78,8 +79,5 @@ export function draftReplacementToA2UI({ proposal, surfaceId }: { readonly propo
     },
     { id: "replacement-keep-label", component: "Text", text: "Keep my current draft" },
   ];
-  return [
-    { version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } },
-    { version: "v0.9.1", updateComponents: { surfaceId, components } },
-  ];
+  return surfaceMessages(surfaceId, A2UI_V091_BASIC_CATALOG_ID, components);
 }

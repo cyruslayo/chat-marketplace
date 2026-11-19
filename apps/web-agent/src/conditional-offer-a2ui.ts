@@ -4,6 +4,7 @@ import type { ConditionalOfferArtifact } from "../../web/src/conditional-offer-a
 import { bookingProgressText, formatBookingDeadline, formatBookingMoney, formatStayDates, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";
 import { billingPeriodLines } from "./extended-stay-presentation.js";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_PAYMENT_COPY, accommodationProviderLine, guestDisclosure, guestFact, guestReservationStatus } from "./guest-content.js";
+import { surfaceMessages } from "./a2ui-surface.js";
 
 export function conditionalOfferArtifactToA2UI({ artifact, surfaceId }: { readonly artifact: ConditionalOfferArtifact; readonly surfaceId: string }): readonly A2UIServerMessage[] {
   const { facts } = artifact;
@@ -46,8 +47,5 @@ export function conditionalOfferArtifactToA2UI({ artifact, surfaceId }: { readon
       { id: "conditional-offer-accept-label", component: "Text" as const, text: GUEST_PAYMENT_COPY.accept },
     ] : []),
   ];
-  return [
-    { version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } },
-    { version: "v0.9.1", updateComponents: { surfaceId, components } },
-  ];
+  return surfaceMessages(surfaceId, A2UI_V091_BASIC_CATALOG_ID, components);
 }

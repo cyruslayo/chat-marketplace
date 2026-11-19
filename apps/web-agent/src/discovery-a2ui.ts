@@ -6,6 +6,7 @@ import { formatMoney } from "../../web/src/ui-kit.js";
 import { GUEST_COMPARE_LABELS, GUEST_FACT_LABELS, GUEST_GLOSSARY, formatGuestDate, guestAmenityLabel, stayTotalLabel } from "./guest-content.js";
 import { monthlyPriceFact, utilitiesFact, type ExtendedStayUnitFacts } from "./extended-stay-presentation.js";
 import { SHORTLET_DISCOVERY_CATALOG_ID, STAY_CARD_COMPONENT, STAY_COMPARISON_COMPONENT, STAY_RESULTS_COMPONENT } from "./shortlet-catalogs.js";
+import { surfaceMessages } from "./a2ui-surface.js";
 
 export interface DiscoveryLocationProjection {
   readonly city: string;
@@ -346,16 +347,7 @@ export function discoveryArtifactToA2UI({
     })),
   ];
 
-  return [
-    {
-      version: "v0.9.1",
-      createSurface: { surfaceId, catalogId: SHORTLET_DISCOVERY_CATALOG_ID },
-    },
-    {
-      version: "v0.9.1",
-      updateComponents: { surfaceId, components },
-    },
-  ];
+  return surfaceMessages(surfaceId, SHORTLET_DISCOVERY_CATALOG_ID, components);
 }
 
 export interface CompareArtifactToA2UIInput {
@@ -471,10 +463,7 @@ export function compareArtifactToA2UI({ artifact, unitIds, surfaceId }: CompareA
     },
     { id: "compare-back-label", component: "Text", text: "Back to results" },
   ];
-  return [
-    { version: "v0.9.1", createSurface: { surfaceId, catalogId: SHORTLET_DISCOVERY_CATALOG_ID } },
-    { version: "v0.9.1", updateComponents: { surfaceId, components } },
-  ];
+  return surfaceMessages(surfaceId, SHORTLET_DISCOVERY_CATALOG_ID, components);
 }
 
 function discoveryContext(filters: Readonly<Record<string, unknown>>): string {

@@ -2,6 +2,7 @@ import { type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core"
 import { COMMERCE_CART_CATALOG_ID, COMMERCE_DISCOVERY_CATALOG_ID, COMMERCE_ORDER_CATALOG_ID } from "./commerce-catalogs.js";
 import { formatMoney, formatWatDateTime } from "../../web/src/ui-kit.js";
 import { COMMERCE_GUEST_COPY, commerceSoldBy } from "./guest-content.js";
+import { surfaceMessages } from "./a2ui-surface.js";
 export const COMMERCE_CHECKOUT_CONFIRM_ACTION = "commerce.checkout.confirm";
 
 /** Technical interaction budgets; IDs and authoritative numeric facts are never truncated. */
@@ -104,7 +105,7 @@ export function commerceCheckoutPresentation(checkout: CommerceCheckoutPresentat
 function messages(surfaceId: string, catalogId: string, title: string, lines: readonly string[]): readonly A2UIServerMessage[] {
   // Weaver resolves the A2UI tree from the protocol's canonical root component ID.
   const components: A2UIComponent[] = [{ id: "root", component: "Column", children: ["commerce-title", ...lines.map((_, i) => `commerce-line-${i}`)] }, { id: "commerce-title", component: "Text", text: title, variant: "h2" }, ...lines.map((text, i) => ({ id: `commerce-line-${i}`, component: "Text" as const, text }))];
-  return [{ version: "v0.9.1", createSurface: { surfaceId, catalogId } }, { version: "v0.9.1", updateComponents: { surfaceId, components } }];
+  return surfaceMessages(surfaceId, catalogId, components);
 }
 
 export function commerceDiscoverySurface(artifact: unknown, surfaceId: string, limits = DEFAULT_COMMERCE_PROJECTION_LIMITS): readonly unknown[] {
@@ -156,5 +157,5 @@ export function commerceCheckoutSurface(checkout: CommerceCheckoutPresentation, 
     ...confirmation,
     ...confirmLabels,
   ];
-  return [{ version: "v0.9.1", createSurface: { surfaceId, catalogId: COMMERCE_CART_CATALOG_ID } }, { version: "v0.9.1", updateComponents: { surfaceId, components } }];
+  return surfaceMessages(surfaceId, COMMERCE_CART_CATALOG_ID, components);
 }

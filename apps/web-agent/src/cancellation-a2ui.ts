@@ -3,6 +3,7 @@ import type { CancellationArtifact } from "../../web/src/cancellation-artifact.j
 import { CANCELLATION_CANCEL_EVENT, CANCELLATION_NO_SHOW_EVENT, CANCELLATION_REVIEW_EVENT, cancellationActionContext } from "../../web/src/cancellation-actions.js";
 import { GUEST_GLOSSARY } from "./guest-content.js";
 import { formatMoney } from "../../web/src/ui-kit.js";
+import { surfaceMessages } from "./a2ui-surface.js";
 export function cancellationArtifactToA2UI({ artifact, surfaceId }: { readonly artifact: CancellationArtifact; readonly surfaceId: string }): readonly A2UIServerMessage[] {
   const f = artifact.facts; const r = f.currentRefundEstimate; const components: A2UIComponent[] = [
     { id: "cancellation-root", component: "Column", children: ["cancellation-title", "cancellation-policy", "cancellation-effect", "cancellation-components", "cancellation-status", ...(artifact.actions.length ? ["cancellation-action", "cancellation-action-label"] : [])] },
@@ -13,5 +14,5 @@ export function cancellationArtifactToA2UI({ artifact, surfaceId }: { readonly a
     { id: "cancellation-status", component: "Text", text: f.case ? `Reservation ${f.reservationStatus}; stay refund status: ${f.case.refundStatus}; deposit refund status: ${f.case.depositRefundStatus ?? "not_applicable"}.` : "No cancellation has been committed." }
   ];
   for (const [index, action] of artifact.actions.entries()) { const event = action.type === "confirm_no_show" ? CANCELLATION_NO_SHOW_EVENT : action.type === "apply_reviewed_cancellation" ? CANCELLATION_REVIEW_EVENT : CANCELLATION_CANCEL_EVENT; const label = action.type === "confirm_no_show" ? "Confirm No-Show" : action.type === "apply_reviewed_cancellation" ? "Apply reviewed cancellation" : "Cancel booking"; components.push({ id: `cancellation-action-${index}`, component: "Button", child: `cancellation-action-label-${index}`, variant: "primary", action: { event: { name: event, context: cancellationActionContext(action) } }, accessibility: { label } }, { id: `cancellation-action-label-${index}`, component: "Text", text: label }); }
-  return Object.freeze([{ version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } }, { version: "v0.9.1", updateComponents: { surfaceId, components } }]);
+  return Object.freeze(surfaceMessages(surfaceId, A2UI_V091_BASIC_CATALOG_ID, components));
 }

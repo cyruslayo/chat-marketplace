@@ -6,6 +6,7 @@ import {
 import type { PendingAssistantAction } from "./pending-actions.js";
 import { GUEST_EXTENSION_COPY, GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_NOTICE_COPY, extensionFactRows, noticeFactRows, type ExtensionFactRow, type NoticeFactRow } from "../../../web-agent/src/guest-content.js";
 import { formatMoney } from "../../../web/src/ui-kit.js";
+import { surfaceMessages } from "../../../web-agent/src/a2ui-surface.js";
 
 export const ASSISTANT_CONFIRM_ACTION_EVENT = "shortlet.assistant.confirm-action";
 export const ASSISTANT_CANCEL_ACTION_EVENT = "shortlet.assistant.cancel-action";
@@ -152,14 +153,5 @@ export function pendingActionToA2UI({
     { id: `${prefix}-cancel-label`, component: "Text", text: cancelLabel },
   ];
 
-  return [
-    {
-      version: "v0.9.1",
-      createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID },
-    },
-    {
-      version: "v0.9.1",
-      updateComponents: { surfaceId, components },
-    },
-  ];
+  return surfaceMessages(surfaceId, A2UI_V091_BASIC_CATALOG_ID, components);
 }

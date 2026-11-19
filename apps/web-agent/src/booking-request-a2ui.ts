@@ -10,6 +10,7 @@ import {
 import type { BookingRequestArtifact } from "../../web/src/booking-request-artifact.js";
 import { bookingProgressText, formatBookingDateTime, formatBookingDeadline, formatBookingMoney, guestRequestStatus, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, guestFact } from "./guest-content.js";
+import { surfaceMessages } from "./a2ui-surface.js";
 
 export interface BookingRequestArtifactToA2UIInput {
   readonly artifact: BookingRequestArtifact;
@@ -74,8 +75,5 @@ export function bookingRequestArtifactToA2UI({
     ...actionButton(artifact, "confirm"),
     ...actionButton(artifact, "decline"),
   ];
-  return [
-    { version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } },
-    { version: "v0.9.1", updateComponents: { surfaceId, components: details } },
-  ];
+  return surfaceMessages(surfaceId, A2UI_V091_BASIC_CATALOG_ID, details);
 }

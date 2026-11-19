@@ -3,6 +3,7 @@ import { BANK_TRANSFER_INITIALIZE_EVENT } from "../../web/src/bank-transfer-acti
 import type { BankTransferArtifact } from "../../web/src/bank-transfer-artifact.js";
 import { formatBookingDeadline, formatBookingMoney, nightsBetween, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, guestFact } from "./guest-content.js";
+import { surfaceMessages } from "./a2ui-surface.js";
 
 /** Guest words for each transfer state (P3). The raw status stays in the artifact, never in guest copy. */
 const TRANSFER_STATUS_LABELS: Readonly<Record<string, string>> = Object.freeze({
@@ -50,5 +51,5 @@ export function bankTransferArtifactToA2UI({ artifact, surfaceId }: { readonly a
     { id: "bank-transfer-actions", component: "Row", children: artifact.actions.length ? ["bank-transfer-initialize"] : [] },
     ...(artifact.actions.length ? [{ id: "bank-transfer-initialize", component: "Button" as const, child: "bank-transfer-initialize-label", variant: "primary" as const, action: { event: { name: BANK_TRANSFER_INITIALIZE_EVENT, context: { artifactId: artifact.id, offerId: facts.offerId, expectedStatus: artifact.actions[0]?.expectedStatus ?? "ready", expectedPurpose: artifact.actions[0]?.expectedPurpose ?? "stay", expectedJourneyVersion: facts.journeyVersion ?? 1, expectedStage: facts.journeyStage ?? facts.status, depositPolicyVersion: facts.depositPolicyVersion ?? "", projectionVersion: artifact.projectionVersion } } }, accessibility: { label: facts.status === "deposit_required" ? "Continue to refundable deposit transfer" : "Initialize bank transfer" } }, { id: "bank-transfer-initialize-label", component: "Text" as const, text: "Show transfer instructions" }] : []),
   ];
-  return [{ version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } }, { version: "v0.9.1", updateComponents: { surfaceId, components } }];
+  return surfaceMessages(surfaceId, A2UI_V091_BASIC_CATALOG_ID, components);
 }

@@ -3,6 +3,7 @@ import type { DepositClaimArtifact } from "../../web/src/deposit-claim-artifact.
 import { EVENTS } from "../../web/src/deposit-claim-actions.js";
 import { formatMoney } from "../../web/src/ui-kit.js";
 import { GUEST_DEPOSIT_CLAIM_COPY, GUEST_GLOSSARY } from "./guest-content.js";
+import { surfaceMessages } from "./a2ui-surface.js";
 
 function wat(iso: string | null): string {
   return iso ? `${new Date(iso).toLocaleString("en-NG", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" })} WAT` : "Not started";
@@ -60,8 +61,5 @@ export function depositClaimArtifactToA2UI({ artifact, surfaceId }: { readonly a
       },
     ]),
   ];
-  return Object.freeze([
-    { version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } },
-    { version: "v0.9.1", updateComponents: { surfaceId, components } },
-  ]);
+  return Object.freeze(surfaceMessages(surfaceId, A2UI_V091_BASIC_CATALOG_ID, components));
 }

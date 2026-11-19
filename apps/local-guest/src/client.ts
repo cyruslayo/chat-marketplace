@@ -4,6 +4,7 @@
  * browser never owns booking state or executes generated business logic.
  */
 import { createShortletWebRuntime } from "./shortlet-runtime.js";
+import { A2UI_PRODUCER } from "../../web-agent/src/a2ui-surface.js";
 import type { BasicWebRuntime } from "@cylayo/weaver-web";
 import { icon } from "../../web/src/ui-kit.js";
 import {
@@ -1694,7 +1695,7 @@ if (
     // ADR-0074: a refreshed server projection re-creates a surface this page
     // already holds. Weaver rejects duplicate createSurface ids, so the local
     // copy is removed first instead of falling back (issue 04a AC5).
-    weaver.runtime.process({ version: "v0.9.1", deleteSurface: { surfaceId: surface.surfaceId } });
+    weaver.runtime.process(A2UI_PRODUCER.deleteSurface({ surfaceId: surface.surfaceId }));
     createdSurfaceIds.delete(surface.surfaceId);
   }
   for (const message of surface.a2uiMessages) {

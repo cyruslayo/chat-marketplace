@@ -3,6 +3,7 @@ import type { BookingContractArtifact } from "../../web/src/booking-contract-art
 import { confirmationSteps } from "./confirmation-presentation.js";
 import { formatBookingMoney, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_NOTICE_COPY, accommodationProviderLine, guestFact, guestReservationStatus, noticeFactRows } from "./guest-content.js";
+import { surfaceMessages } from "./a2ui-surface.js";
 
 /** Issue 18: the chat event a booking surface sends to open the Notice to End card. The platform routes it by name. */
 export const NOTICE_OPEN_EVENT = "shortlet.assistant.open-notice";
@@ -41,5 +42,5 @@ export function bookingContractArtifactToA2UI({ artifact, surfaceId }: { readonl
     ...(!facts.noticeToEnd && facts.noticeToEndTerms ? [{ id: "booking-contract-notice-action", component: "Button" as const, child: "booking-contract-notice-label", action: { event: { name: NOTICE_OPEN_EVENT, context: { surfaceId } } }, accessibility: { label: GUEST_NOTICE_COPY.action } }, { id: "booking-contract-notice-label", component: "Text" as const, text: GUEST_NOTICE_COPY.action }] : []),
     { id: "booking-contract-references", component: "Text", text: `Booking reference and full contract are in your booking details.${facts.cardMetadata ? ` Card ending ${facts.cardMetadata.last4}.` : ""}` },
   ];
-  return [{ version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } }, { version: "v0.9.1", updateComponents: { surfaceId, components } }];
+  return surfaceMessages(surfaceId, A2UI_V091_BASIC_CATALOG_ID, components);
 }

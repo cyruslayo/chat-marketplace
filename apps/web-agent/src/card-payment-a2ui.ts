@@ -6,6 +6,7 @@ import { bookingProgressText, formatBookingDeadline, formatBookingMoney, guestPa
 import { billingPeriodLines, cardPaymentBillingPeriod } from "./extended-stay-presentation.js";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, guestFact } from "./guest-content.js";
 import { cardPaymentCopy, isCardPaymentProcessing } from "./payment-presentation.js";
+import { surfaceMessages } from "./a2ui-surface.js";
 
 export function cardPaymentArtifactToA2UI({ artifact, surfaceId }: { readonly artifact: CardPaymentArtifact; readonly surfaceId: string }): readonly A2UIServerMessage[] {
   const { facts } = artifact;
@@ -71,5 +72,5 @@ export function cardPaymentArtifactToA2UI({ artifact, surfaceId }: { readonly ar
       { id: "card-payment-action-label", component: "Text" as const, text: actionLabel },
     ] : []),
   ];
-  return [{ version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } }, { version: "v0.9.1", updateComponents: { surfaceId, components } }];
+  return surfaceMessages(surfaceId, A2UI_V091_BASIC_CATALOG_ID, components);
 }

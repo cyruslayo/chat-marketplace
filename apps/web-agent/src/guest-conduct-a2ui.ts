@@ -1,6 +1,7 @@
 import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
 import type { GuestConductArtifact } from "../../web/src/guest-conduct-artifact.js";
 import { GUEST_CONDUCT_APPLY_REVIEWED_EVENT, GUEST_CONDUCT_REQUEST_SUPPORT_EVENT } from "../../web/src/guest-conduct-actions.js";
+import { surfaceMessages } from "./a2ui-surface.js";
 export function guestConductArtifactToA2UI(input: { readonly artifact: GuestConductArtifact; readonly surfaceId: string }): readonly A2UIServerMessage[] {
   const { artifact: a, surfaceId } = input; const f = a.facts; const components: A2UIComponent[] = [
     { id: "conduct-root", component: "Column", children: ["conduct-title", "conduct-rules", "conduct-state", "conduct-remedy"] },
@@ -11,5 +12,5 @@ export function guestConductArtifactToA2UI(input: { readonly artifact: GuestCond
   ];
   const action = a.actions.find((x) => x.type === "apply_reviewed_decision") ?? a.actions.find((x) => x.type === "request_human_support");
   if (action) { const name = action.type === "apply_reviewed_decision" ? GUEST_CONDUCT_APPLY_REVIEWED_EVENT : GUEST_CONDUCT_REQUEST_SUPPORT_EVENT; components.push({ id: "conduct-action", component: "Button", child: "conduct-action-label", variant: "primary", action: { event: { name, context: { artifactId: action.artifactId, reservationId: action.reservationId, ...(action.allegationId ? { allegationId: action.allegationId, expectedAllegationVersion: action.expectedAllegationVersion, ruleVersion: action.ruleVersion, evidenceVersion: action.evidenceVersion } : {}), projectionVersion: action.projectionVersion } } }, accessibility: { label: action.type === "apply_reviewed_decision" ? "Apply reviewed decision" : "Request human support" } }, { id: "conduct-action-label", component: "Text", text: action.type === "apply_reviewed_decision" ? "Apply reviewed decision" : "Request human support" }); }
-  return Object.freeze([{ version: "v0.9.1", createSurface: { surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID } }, { version: "v0.9.1", updateComponents: { surfaceId, components } }]);
+  return Object.freeze(surfaceMessages(surfaceId, A2UI_V091_BASIC_CATALOG_ID, components));
 }

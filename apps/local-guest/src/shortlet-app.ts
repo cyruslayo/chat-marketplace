@@ -318,6 +318,7 @@ import {
   renderSignInUnavailableHtml,
   type AccountFormError,
 } from "./guest-account-pages.js";
+import { A2UI_PRODUCER } from "../../web-agent/src/a2ui-surface.js";
 
 export function committedWorkScope(
   env: LocalGuestEnvironment,
@@ -5598,23 +5599,11 @@ export class LocalGuestApp {
           conventionalRouteLabel:
             kind === "phone" ? "Edit phone number" : "Edit email address",
           textFallback: `${baseLabel} is required. ${kind === "phone" ? "Use a Nigerian mobile number, for example +234 801 234 5678." : "It is used for checkout and your receipt."} Open Contact details to save it.`,
+          // Weaver catalogues issue 02: producer-built envelopes; the data model is set before the components that bind it.
           a2uiMessages: [
-            {
-              version: "v0.9.1",
-              createSurface: {
-                surfaceId,
-                catalogId: A2UI_V091_BASIC_CATALOG_ID,
-              },
-            },
-            {
-              version: "v0.9.1",
-              updateDataModel: {
-                surfaceId,
-                path: "/contactValue",
-                value: currentValue,
-              },
-            },
-            { version: "v0.9.1", updateComponents: { surfaceId, components } },
+            A2UI_PRODUCER.createSurface({ surfaceId, catalogId: A2UI_V091_BASIC_CATALOG_ID }),
+            A2UI_PRODUCER.updateDataModel({ surfaceId, path: "/contactValue", value: currentValue }),
+            A2UI_PRODUCER.updateComponents({ surfaceId, components }),
           ],
         },
       ],
