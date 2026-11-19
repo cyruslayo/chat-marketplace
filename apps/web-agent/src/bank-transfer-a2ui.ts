@@ -1,9 +1,10 @@
-import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
+import { type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
 import { BANK_TRANSFER_INITIALIZE_EVENT } from "../../web/src/bank-transfer-actions.js";
 import type { BankTransferArtifact } from "../../web/src/bank-transfer-artifact.js";
-import { formatBookingDeadline, formatBookingMoney, nightsBetween, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";
+import { bookingTicketComponents, formatBookingDeadline, formatBookingMoney, nightsBetween, priceBreakdownComponent } from "./booking-presentation.js";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, guestFact } from "./guest-content.js";
 import { surfaceMessages } from "./a2ui-surface.js";
+import { SHORTLET_BOOKING_CATALOG_ID } from "./shortlet-catalogs.js";
 
 /** Guest words for each transfer state (P3). The raw status stays in the artifact, never in guest copy. */
 const TRANSFER_STATUS_LABELS: Readonly<Record<string, string>> = Object.freeze({
@@ -30,7 +31,7 @@ export function bankTransferArtifactToA2UI({ artifact, surfaceId }: { readonly a
               : "Transfer the exact amount shown before the deadline.";
   // Guest UI consistency issue 04: each amount is its own label-prefixed Text, in canonical order (ADR 0015):
   // All-In Stay Total, the separate deposit, then one amount line (or what was paid once confirmed).
-  const moneyComponents: A2UIComponent[] = [
+  const moneyTexts: A2UIComponent[] = [
     ...(facts.allInStayTotalKobo === undefined ? [] : [{ id: "bank-transfer-total", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.allInStayTotal, money(facts.allInStayTotalKobo)) }]),
     ...(facts.refundableSecurityDepositKobo ? [{ id: "bank-transfer-deposit", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.refundableSecurityDeposit, money(facts.refundableSecurityDepositKobo)) }] : []),
     facts.status === "confirmed"
@@ -38,18 +39,29 @@ export function bankTransferArtifactToA2UI({ artifact, surfaceId }: { readonly a
       : { id: "bank-transfer-due", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.amountDueNow, money(facts.amountDueNowKobo)) },
     ...(facts.status !== "confirmed" && facts.currentComponent ? [{ id: "bank-transfer-next", component: "Text" as const, text: `${GUEST_FACT_LABELS.nextPayment}: ${facts.currentComponent === "stay" ? "stay payment" : GUEST_GLOSSARY.refundableSecurityDeposit} · ${money(facts.currentComponentAmountKobo ?? 0)}` }] : []),
   ];
-  const moneyIds = moneyComponents.map((component) => component.id);
+  // Weaver catalogues issue 04 (ADR 0102): typed StayTicket / PriceBreakdown in place of label-prefixed Texts.
+  const ticket = bookingTicketComponents("bank-transfer", facts.unit, { checkIn: facts.checkIn, checkOut: facts.checkOut, nights: nightsBetween(facts.checkIn, facts.checkOut), ...(facts.occupantCount === undefined ? {} : { guestCount: facts.occupantCount }) });
+  // With a total, the money lines are one PriceBreakdown (parts: total, deposit, paid or due, next); without one they stay Texts.
+  const moneyLines: readonly A2UIComponent[] = facts.allInStayTotalKobo === undefined ? moneyTexts : [
+    priceBreakdownComponent("bank-transfer", {
+      total: money(facts.allInStayTotalKobo),
+      ...(facts.refundableSecurityDepositKobo ? { deposit: money(facts.refundableSecurityDepositKobo) } : {}),
+      ...(facts.status === "confirmed" ? { paid: money(facts.amountPaidKobo ?? 0) } : { due: money(facts.amountDueNowKobo) }),
+      ...(facts.status !== "confirmed" && facts.currentComponent ? { next: `${facts.currentComponent === "stay" ? "stay payment" : GUEST_GLOSSARY.refundableSecurityDeposit} · ${money(facts.currentComponentAmountKobo ?? 0)}` } : {}),
+    }),
+  ];
+  const moneyIds = moneyLines.map((component) => component.id);
   const components: A2UIComponent[] = [
-    { id: "bank-transfer-root", component: "Column", children: ["bank-transfer-title", "bank-transfer-status", "bank-transfer-unit", ...ticketFactIds("bank-transfer"), ...moneyIds, "bank-transfer-deadline", "bank-transfer-content", "bank-transfer-actions"] },
+    { id: "bank-transfer-root", component: "Column", children: ["bank-transfer-title", "bank-transfer-status", ...ticket.ids, ...moneyIds, "bank-transfer-deadline", "bank-transfer-content", "bank-transfer-actions"] },
     { id: "bank-transfer-title", component: "Text", text: facts.status === "confirmed" ? `${GUEST_GLOSSARY.reservation} confirmed` : "Bank transfer payment", variant: "h2" },
     { id: "bank-transfer-status", component: "Text", text: TRANSFER_STATUS_LABELS[facts.status] ?? "Bank transfer payment" },
-    { id: "bank-transfer-unit", component: "Text", text: facts.unit, variant: "h3" },
-    ...ticketFactComponents("bank-transfer", { checkIn: facts.checkIn, checkOut: facts.checkOut, nights: nightsBetween(facts.checkIn, facts.checkOut), ...(facts.occupantCount === undefined ? {} : { guestCount: facts.occupantCount }) }),
-    ...moneyComponents,
+    ...ticket.components,
+    ...moneyLines,
     { id: "bank-transfer-deadline", component: "Text", text: formatBookingDeadline(facts.paymentWindowExpiresAt) },
     { id: "bank-transfer-content", component: "Text", text: content },
     { id: "bank-transfer-actions", component: "Row", children: artifact.actions.length ? ["bank-transfer-initialize"] : [] },
     ...(artifact.actions.length ? [{ id: "bank-transfer-initialize", component: "Button" as const, child: "bank-transfer-initialize-label", variant: "primary" as const, action: { event: { name: BANK_TRANSFER_INITIALIZE_EVENT, context: { artifactId: artifact.id, offerId: facts.offerId, expectedStatus: artifact.actions[0]?.expectedStatus ?? "ready", expectedPurpose: artifact.actions[0]?.expectedPurpose ?? "stay", expectedJourneyVersion: facts.journeyVersion ?? 1, expectedStage: facts.journeyStage ?? facts.status, depositPolicyVersion: facts.depositPolicyVersion ?? "", projectionVersion: artifact.projectionVersion } } }, accessibility: { label: facts.status === "deposit_required" ? "Continue to refundable deposit transfer" : "Initialize bank transfer" } }, { id: "bank-transfer-initialize-label", component: "Text" as const, text: "Show transfer instructions" }] : []),
   ];
-  return surfaceMessages(surfaceId, A2UI_V091_BASIC_CATALOG_ID, components);
+  // Weaver catalogues issue 04 (ADR 0102): typed StayTicket / PriceBreakdown in place of label-prefixed Texts.
+  return surfaceMessages(surfaceId, SHORTLET_BOOKING_CATALOG_ID, components);
 }

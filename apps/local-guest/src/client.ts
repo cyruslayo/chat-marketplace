@@ -22,7 +22,6 @@ import {
   GUEST_TASK_RAIL,
   GUEST_VERTICALS,
   UNIT_DETAIL_ABOUT_HEADING,
-  guestFactValue,
   guestNewConversationCopy,
   type GuestCommittedWorkKind,
   type ModePresentation,
@@ -50,13 +49,11 @@ import { createModeAnnouncements } from "./mode-announcement.js";
 import { LaneCache, planSwitch, serverRowsMatch, stripsControlsOnLeave, type SwitchOrigin, type SwitchPlan } from "./lane-cache.js";
 import { nextAgentMarkState, type AgentMarkEvent, type AgentMarkState } from "./agent-mark-state.js";
 import {
-  breakdownHtml,
   confirmationScreenHtml,
   offerScreenHtml,
   paymentScreenHtml,
   requestScreenHtml,
   signInOfferHtml,
-  ticketHtml,
   type SignInOfferContent,
 } from "./guest-kit.js";
 import type { ConfirmationContent } from "../../web-agent/src/confirmation-presentation.js";
@@ -322,120 +319,9 @@ function enhanceListingImages(mount: HTMLElement): void {
     enhanceListingGallery(gallery);
 }
 
-/** The first child whose text is the fact `label`, with its value: facts are found only through the shared label table. */
-function findFact(
-  children: readonly Element[],
-  label: string,
-): { readonly element: Element; readonly value: string } | undefined {
-  for (const child of children) {
-    const value = guestFactValue(child.textContent ?? "", label);
-    if (value !== undefined) return { element: child, value };
-  }
-  return undefined;
-}
 
-/** The day of the month in a ticket date such as "Thu, 10 Sept 2026": its first whole-number word. */
-function dayNumeral(date: string): string | undefined {
-  return date
-    .replaceAll(",", " ")
-    .split(" ")
-    .find((word) => word !== "" && Number.isInteger(Number(word)));
-}
 
-/**
- * Swaps the Weaver elements that carry one booking fact each for the shared kit markup (guest-kit.ts), so a surface in
- * the chat has the same DOM, classes and text as its standalone page. Presentation only (ADR 0072).
- */
-function replaceWithKitMarkup(
-  root: HTMLElement,
-  html: string,
-  consumed: readonly (Element | undefined)[],
-): void {
-  const present = consumed.filter(
-    (element): element is Element =>
-      element !== undefined && element.parentElement === root,
-  );
-  const template = document.createElement("template");
-  template.innerHTML = html;
-  const markup = template.content.firstElementChild;
-  if (present.length === 0 || markup === null) return;
-  root.insertBefore(markup, present[0]!);
-  for (const element of present) element.remove();
-}
 
-/**
- * Guest UI consistency issue 04: facts are found only through GUEST_FACT_LABELS, never by matching free wording. If a fact
- * is missing (no quote yet, an older surface) nothing partial is built and the surface stays as Weaver rendered it.
- */
-function organizeBookingTicket(mount: HTMLElement): void {
-  const root = mount.querySelector<HTMLElement>(
-    '[data-a2ui-component="Column"]',
-  );
-  if (!root) return;
-  const children = [...root.children];
-  const title = children.find(
-    (child) =>
-      child.tagName === "H3" &&
-      guestFactValue(
-        child.textContent ?? "",
-        GUEST_FACT_LABELS.allInStayTotal,
-      ) === undefined,
-  );
-  const checkIn = findFact(children, GUEST_FACT_LABELS.checkIn);
-  const checkOut = findFact(children, GUEST_FACT_LABELS.checkOut);
-  const stay = findFact(children, GUEST_FACT_LABELS.stay);
-  const checkInDay =
-    checkIn === undefined ? undefined : dayNumeral(checkIn.value);
-  const checkOutDay =
-    checkOut === undefined ? undefined : dayNumeral(checkOut.value);
-  if (title && checkIn && checkOut && stay && checkInDay && checkOutDay) {
-    replaceWithKitMarkup(
-      root,
-      ticketHtml({
-        title: title.textContent?.trim() ?? "",
-        checkIn: { day: checkInDay, date: checkIn.value },
-        checkOut: { day: checkOutDay, date: checkOut.value },
-        foot: stay.value,
-      }),
-      [title, checkIn.element, checkOut.element, stay.element],
-    );
-  }
-  const total = findFact(children, GUEST_FACT_LABELS.allInStayTotal);
-  if (!total) return;
-  const deposit = findFact(
-    children,
-    GUEST_FACT_LABELS.refundableSecurityDeposit,
-  );
-  const due = findFact(children, GUEST_FACT_LABELS.amountDueNow);
-  const paid = findFact(children, GUEST_FACT_LABELS.amountPaid);
-  const next = findFact(children, GUEST_FACT_LABELS.nextPayment);
-  const condition = children.find(
-    (child) =>
-      child.textContent?.trim() === GUEST_FACT_LABELS.ifRequestAccepted,
-  );
-  replaceWithKitMarkup(
-    root,
-    breakdownHtml({
-      ...(activePayload?.confirmation?.depositCollected
-        ? { depositCollected: true }
-        : {}),
-      ...(condition ? { condition: GUEST_FACT_LABELS.ifRequestAccepted } : {}),
-      total: total.value,
-      ...(deposit ? { deposit: deposit.value } : {}),
-      ...(due ? { due: due.value } : {}),
-      ...(paid ? { paid: paid.value } : {}),
-      ...(next ? { next: next.value } : {}),
-    }),
-    [
-      condition,
-      total.element,
-      deposit?.element,
-      due?.element,
-      paid?.element,
-      next?.element,
-    ],
-  );
-}
 
 /** Issue 08: the offer sits beneath the request-sent or confirmation screen, from the same kit helper the page uses. */
 function organizeSignInOffer(mount: HTMLElement, content: SignInOfferContent): void {
@@ -704,7 +590,6 @@ function enhanceSurfacePresentation(mount: HTMLElement, kind: string): void {
     if (/^No stays match|^No current matches/i.test(value))
       text.classList.add("empty-state-title");
   }
-  if (kind === "booking" || kind === "request-draft" || kind === "payment") organizeBookingTicket(mount);
   if (activePayload?.requestScreen)
     organizeRequestScreen(mount, activePayload.requestScreen);
   if (activePayload?.confirmation)

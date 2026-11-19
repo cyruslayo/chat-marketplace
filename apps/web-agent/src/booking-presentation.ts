@@ -3,6 +3,7 @@ import type { CardPaymentStatus } from "../../web/src/card-payment-artifact.js";
 import type { A2UIComponent } from "@cylayo/weaver-core";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, guestFact, guestReservationStatus } from "./guest-content.js";
 import { formatWatDateTime } from "../../web/src/ui-kit.js";
+import { PRICE_BREAKDOWN_COMPONENT, STAY_TICKET_COMPONENT } from "./shortlet-catalogs.js";
 
 export type BookingProgressStage = "request" | "operator-review" | "offer" | "payment" | "payment-processing" | "confirmed";
 
@@ -116,17 +117,83 @@ export function formatStayFoot(nights: number, guestCount?: number): string {
   return `${nights} ${nights === 1 ? "night" : "nights"}${guests}`;
 }
 
-/** The three ticket facts of a booking surface as separate Text components: check-in, check-out, stay and party. */
-export function ticketFactComponents(prefix: string, stay: { readonly checkIn: string; readonly checkOut: string; readonly nights: number; readonly guestCount?: number }): readonly A2UIComponent[] {
-  return [
-    { id: `${prefix}-check-in`, component: "Text", text: guestFact(GUEST_FACT_LABELS.checkIn, formatTicketDate(stay.checkIn)) },
-    { id: `${prefix}-check-out`, component: "Text", text: guestFact(GUEST_FACT_LABELS.checkOut, formatTicketDate(stay.checkOut)) },
-    { id: `${prefix}-stay`, component: "Text", text: guestFact(GUEST_FACT_LABELS.stay, formatStayFoot(stay.nights, stay.guestCount)) },
-  ];
+/** One end of the stay ticket. */
+export interface TicketDatePart {
+  readonly day: string;
+  readonly date: string;
+  readonly datetime?: string;
+  /** Shown only when supplied by the policy projection (ADR 0031/0032). */
+  readonly time?: string;
 }
 
-export function ticketFactIds(prefix: string): readonly string[] {
-  return [`${prefix}-check-in`, `${prefix}-check-out`, `${prefix}-stay`];
+/** The ticket's display text, shared by the standalone pages (`stayTicketHtml`) and the chat's typed StayTicket. */
+export interface TicketParts {
+  readonly title: string;
+  readonly checkIn: TicketDatePart;
+  readonly checkOut: TicketDatePart;
+  readonly foot: string;
+}
+
+/** The breakdown's display text: money already formatted, in the order the section shows it (ADR 0015). */
+export interface BreakdownParts {
+  readonly depositCollected?: boolean;
+  readonly condition?: string;
+  readonly total?: string;
+  readonly totalLabel?: string;
+  readonly deposit?: string;
+  readonly due?: string;
+  readonly thisPayment?: string;
+  readonly paid?: string;
+  readonly next?: string;
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A plain calendar date as a ticket end: the day of the month, the formatted date and the machine-readable datetime. */
+export function ticketDatePart(iso: string): TicketDatePart {
+  return { day: iso.slice(8, 10), date: formatTicketDate(iso), datetime: iso };
+}
+
+export interface TicketStay {
+  readonly checkIn?: string;
+  readonly checkOut?: string;
+  readonly nights: number;
+  readonly guestCount?: number;
+}
+
+/**
+ * Weaver catalogues issue 04: the ticket parts, or undefined when either date is missing or not a calendar date. A ticket is
+ * never drawn half built; the caller then shows the facts it has as text (ADR 0074).
+ */
+export function ticketParts(title: string, stay: TicketStay): TicketParts | undefined {
+  if (title.trim() === "" || stay.checkIn === undefined || stay.checkOut === undefined || !ISO_DATE.test(stay.checkIn) || !ISO_DATE.test(stay.checkOut)) return undefined;
+  return { title, checkIn: ticketDatePart(stay.checkIn), checkOut: ticketDatePart(stay.checkOut), foot: formatStayFoot(stay.nights, stay.guestCount) };
+}
+
+/**
+ * Weaver catalogues issue 04 (ADR 0102): a booking surface's ticket as one typed StayTicket in the title's place. Without
+ * both dates it falls back to the title and the facts it has as Basic Texts, so meaning is never dropped (ADR 0074).
+ */
+export function bookingTicketComponents(prefix: string, title: string, stay: TicketStay): { readonly ids: readonly string[]; readonly components: readonly A2UIComponent[] } {
+  const parts = ticketParts(title, stay);
+  if (parts) {
+    return {
+      ids: [`${prefix}-ticket`],
+      components: [{ id: `${prefix}-ticket`, component: STAY_TICKET_COMPONENT, title: parts.title, checkIn: { ...parts.checkIn }, checkOut: { ...parts.checkOut }, foot: parts.foot }],
+    };
+  }
+  const facts: A2UIComponent[] = [
+    { id: `${prefix}-unit`, component: "Text", text: title, variant: "h3" },
+    ...(stay.checkIn ? [{ id: `${prefix}-check-in`, component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.checkIn, formatTicketDate(stay.checkIn)) }] : []),
+    ...(stay.checkOut ? [{ id: `${prefix}-check-out`, component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.checkOut, formatTicketDate(stay.checkOut)) }] : []),
+    { id: `${prefix}-stay`, component: "Text", text: guestFact(GUEST_FACT_LABELS.stay, formatStayFoot(stay.nights, stay.guestCount)) },
+  ];
+  return { ids: facts.map((component) => component.id), components: facts };
+}
+
+/** Weaver catalogues issue 04: the surface's money lines as one typed PriceBreakdown, every amount formatted here (ADR 0077). */
+export function priceBreakdownComponent(prefix: string, parts: BreakdownParts): A2UIComponent {
+  return { id: `${prefix}-breakdown`, component: PRICE_BREAKDOWN_COMPONENT, ...parts };
 }
 
 /** Whole nights between two plain calendar dates (0 when they are not a valid stay). */

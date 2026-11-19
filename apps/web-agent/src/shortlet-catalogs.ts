@@ -25,6 +25,8 @@ export const UNIT_ACTION_BAR_COMPONENT = "UnitActionBar";
 export const STAY_CARD_COMPONENT = "StayCard";
 export const STAY_RESULTS_COMPONENT = "StayResults";
 export const STAY_COMPARISON_COMPONENT = "StayComparison";
+export const STAY_TICKET_COMPONENT = "StayTicket";
+export const PRICE_BREAKDOWN_COMPONENT = "PriceBreakdown";
 
 const COMPONENT_ID: JsonObject = { $ref: "common_types.json#/$defs/ComponentId" };
 const CHILD_LIST: JsonObject = { $ref: "common_types.json#/$defs/ChildList" };
@@ -151,6 +153,37 @@ const DISCOVERY_COMPONENTS: Readonly<Record<string, JsonObject>> = {
   }, ["heads", "rows"]),
 };
 
+const TICKET_DATE: JsonObject = {
+  type: "object",
+  properties: { day: TEXT, date: TEXT, datetime: TEXT },
+  required: ["day", "date"],
+  additionalProperties: false,
+};
+
+/**
+ * Weaver catalogues issue 04 (ADR 0102): the typed components of `shortlet-booking/v1`, mirroring the kit's TicketParts and
+ * BreakdownParts. Every value is a display string formatted on the server (ADR 0077); the order is breakdownHtml's (ADR 0015).
+ */
+const BOOKING_COMPONENTS: Readonly<Record<string, JsonObject>> = {
+  [STAY_TICKET_COMPONENT]: componentSchema(STAY_TICKET_COMPONENT, {
+    title: TEXT,
+    checkIn: TICKET_DATE,
+    checkOut: TICKET_DATE,
+    foot: TEXT,
+  }, ["title", "checkIn", "checkOut", "foot"]),
+  [PRICE_BREAKDOWN_COMPONENT]: componentSchema(PRICE_BREAKDOWN_COMPONENT, {
+    condition: TEXT,
+    total: TEXT,
+    totalLabel: TEXT,
+    deposit: TEXT,
+    depositCollected: { type: "boolean" },
+    due: TEXT,
+    thisPayment: TEXT,
+    paid: TEXT,
+    next: TEXT,
+  }, []),
+};
+
 /** Adds typed components to a Basic-derived schema: both the component table and the `anyComponent` union list them. */
 function withComponents(schema: JsonObject, components: Readonly<Record<string, JsonObject>>): JsonObject {
   const table = schema["components"] as JsonObject;
@@ -172,5 +205,4 @@ function shortletCatalog(catalogId: string, components: Readonly<Record<string, 
 }
 
 export const SHORTLET_DISCOVERY_CATALOG = shortletCatalog(SHORTLET_DISCOVERY_CATALOG_ID, DISCOVERY_COMPONENTS);
-// Issue 04 adds StayTicket and PriceBreakdown to the booking catalogue.
-export const SHORTLET_BOOKING_CATALOG = shortletCatalog(SHORTLET_BOOKING_CATALOG_ID);
+export const SHORTLET_BOOKING_CATALOG = shortletCatalog(SHORTLET_BOOKING_CATALOG_ID, BOOKING_COMPONENTS);

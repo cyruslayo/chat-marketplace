@@ -6,10 +6,13 @@ import type {
   WebRenderedRelationship,
 } from "@cylayo/weaver-web";
 import {
+  PRICE_BREAKDOWN_COMPONENT,
+  SHORTLET_BOOKING_CATALOG_ID,
   SHORTLET_DISCOVERY_CATALOG_ID,
   STAY_CARD_COMPONENT,
   STAY_COMPARISON_COMPONENT,
   STAY_RESULTS_COMPONENT,
+  STAY_TICKET_COMPONENT,
   UNIT_ACTION_BAR_COMPONENT,
   UNIT_DETAIL_COMPONENT,
   UNIT_DETAIL_SHEET_COMPONENT,
@@ -20,11 +23,15 @@ import {
   demoListingChipHtml,
   resultRowPartsHtml,
   stayCardInnerHtml,
+  ticketHtml,
   unitAboutHtml,
   unitLocationHtml,
   unitTilesHtml,
   unitTitleHtml,
+  type BreakdownParts,
   type StayCardParts,
+  type TicketDatePart,
+  type TicketParts,
 } from "./guest-kit.js";
 import { icon } from "../../web/src/ui-kit.js";
 import { buildListingGallery } from "./listing-gallery.js";
@@ -388,10 +395,61 @@ function renderStayComparison({ document, properties, relationships }: WebCompon
   return table;
 }
 
+/** One end of the stay ticket from its typed props; undefined when the day or the date is missing. */
+function ticketEnd(value: HydratedValue | undefined): TicketDatePart | undefined {
+  const end = record(value);
+  const day = text(end?.["day"]);
+  const date = text(end?.["date"]);
+  if (day === undefined || date === undefined) return undefined;
+  const datetime = text(end?.["datetime"]);
+  return { day, date, ...(datetime === undefined ? {} : { datetime }) };
+}
+
+/**
+ * Weaver catalogues issue 04 (ADR 0102): the kit's ticket from typed props; every value is escaped by the kit (ADR 0075);
+ * no amounts are computed here (ADR 0077).
+ */
+function renderStayTicket({ document, properties }: WebComponentRenderInput): Node {
+  const title = text(properties["title"]);
+  const checkIn = ticketEnd(properties["checkIn"]);
+  const checkOut = ticketEnd(properties["checkOut"]);
+  const foot = text(properties["foot"]);
+  if (title === undefined || checkIn === undefined || checkOut === undefined || foot === undefined) {
+    return document.createElement("div");
+  }
+  const parts: TicketParts = { title, checkIn, checkOut, foot };
+  return fromKit(document, ticketHtml(parts)).firstElementChild ?? document.createElement("div");
+}
+
+/**
+ * Weaver catalogues issue 04 (ADR 0102): the kit's price breakdown from typed props; every value is escaped by the kit
+ * (ADR 0075); no amounts are computed here (ADR 0077).
+ */
+function renderPriceBreakdown({ document, properties }: WebComponentRenderInput): Node {
+  const parts: BreakdownParts = {
+    ...(properties["depositCollected"] === true ? { depositCollected: true } : {}),
+    ...optionalText("condition", text(properties["condition"])),
+    ...optionalText("total", text(properties["total"])),
+    ...optionalText("totalLabel", text(properties["totalLabel"])),
+    ...optionalText("deposit", text(properties["deposit"])),
+    ...optionalText("due", text(properties["due"])),
+    ...optionalText("thisPayment", text(properties["thisPayment"])),
+    ...optionalText("paid", text(properties["paid"])),
+    ...optionalText("next", text(properties["next"])),
+  };
+  return fromKit(document, breakdownHtml(parts)).firstElementChild ?? document.createElement("div");
+}
+
+function optionalText<K extends keyof BreakdownParts>(key: K, value: string | undefined): Partial<Pick<BreakdownParts, K>> {
+  return value === undefined ? {} : ({ [key]: value } as Pick<BreakdownParts, K>);
+}
+
 /** Every typed component of the `shortlet-*` catalogues, bound to the host's resource policy. */
 export function createShortletRenderers(options: ShortletRendererOptions = {}): readonly RendererRegistration[] {
   const catalogId = SHORTLET_DISCOVERY_CATALOG_ID;
   return [
+    { catalogId: SHORTLET_BOOKING_CATALOG_ID, component: STAY_TICKET_COMPONENT, render: renderStayTicket },
+    { catalogId: SHORTLET_BOOKING_CATALOG_ID, component: PRICE_BREAKDOWN_COMPONENT, render: renderPriceBreakdown },
     { catalogId, component: UNIT_DETAIL_COMPONENT, render: renderUnitDetail },
     { catalogId, component: UNIT_GALLERY_COMPONENT, render: renderUnitGallery(options.resourcePolicy) },
     { catalogId, component: UNIT_DETAIL_SHEET_COMPONENT, render: renderUnitDetailSheet },

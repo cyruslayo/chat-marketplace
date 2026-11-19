@@ -29,8 +29,12 @@ import { formatNgnKobo } from "../../web-agent/src/discovery-a2ui.js";
 import {
   formatBookingDeadline,
   formatStayFoot,
-  formatTicketDate,
+  ticketDatePart,
+  type BreakdownParts,
+  type TicketDatePart,
+  type TicketParts,
 } from "../../web-agent/src/booking-presentation.js";
+export type { TicketDatePart, TicketParts, BreakdownParts } from "../../web-agent/src/booking-presentation.js";
 import {
   appBarHtml,
   escapeHtml,
@@ -81,22 +85,6 @@ export interface StayTicketFacts {
 const CHECK_IN_LABEL = GUEST_FACT_LABELS.checkIn;
 const CHECK_OUT_LABEL = GUEST_FACT_LABELS.checkOut;
 
-export interface TicketDatePart {
-  readonly day: string;
-  readonly date: string;
-  readonly datetime?: string;
-  /** Shown only when supplied by the policy projection (ADR 0031/0032). */
-  readonly time?: string;
-}
-
-/** The ticket's display text. The chat organizers build it from the label-prefixed Text components, the pages from the projection. */
-export interface TicketParts {
-  readonly title: string;
-  readonly checkIn: TicketDatePart;
-  readonly checkOut: TicketDatePart;
-  readonly foot: string;
-}
-
 function ticketDate(label: string, part: TicketDatePart, end: boolean): string {
   const time =
     part.datetime === undefined
@@ -110,12 +98,7 @@ export function ticketHtml(parts: TicketParts): string {
 }
 
 export function stayTicketHtml(facts: StayTicketFacts): string {
-  const part = (iso: string, time: string | undefined): TicketDatePart => ({
-    day: iso.slice(8, 10),
-    date: formatTicketDate(iso),
-    datetime: iso,
-    ...(time === undefined ? {} : { time }),
-  });
+  const part = (iso: string, time: string | undefined): TicketDatePart => ({ ...ticketDatePart(iso), ...(time === undefined ? {} : { time }) });
   return ticketHtml({
     title: facts.unitTitle,
     checkIn: part(facts.checkIn, facts.arrivalTime),
@@ -141,19 +124,6 @@ export interface PriceBreakdownInput {
   readonly totalLabel?: string;
   readonly depositCollected?: boolean;
   /** The component the guest pays next, for example "stay payment · ₦370,000" (issue 09). */
-  readonly next?: string;
-}
-
-/** The breakdown's display text: money already formatted, in the order the section shows it (ADR 0015). */
-export interface BreakdownParts {
-  readonly depositCollected?: boolean;
-  readonly condition?: string;
-  readonly total?: string;
-  readonly totalLabel?: string;
-  readonly deposit?: string;
-  readonly due?: string;
-  readonly thisPayment?: string;
-  readonly paid?: string;
   readonly next?: string;
 }
 

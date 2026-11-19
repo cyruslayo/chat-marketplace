@@ -1,12 +1,13 @@
-import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
+import { type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
 import { CARD_PAYMENT_INITIALIZE_CHECKOUT_EVENT, CARD_PAYMENT_VERIFY_RETURN_EVENT } from "../../web/src/card-payment-actions.js";
 import type { CardPaymentArtifact } from "../../web/src/card-payment-artifact.js";
 
-import { bookingProgressText, formatBookingDeadline, formatBookingMoney, guestPaymentStatus, nightsBetween, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";
+import { bookingProgressText, bookingTicketComponents, formatBookingDeadline, formatBookingMoney, guestPaymentStatus, nightsBetween, priceBreakdownComponent } from "./booking-presentation.js";
 import { billingPeriodLines, cardPaymentBillingPeriod } from "./extended-stay-presentation.js";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, guestFact } from "./guest-content.js";
 import { cardPaymentCopy, isCardPaymentProcessing } from "./payment-presentation.js";
 import { surfaceMessages } from "./a2ui-surface.js";
+import { SHORTLET_BOOKING_CATALOG_ID } from "./shortlet-catalogs.js";
 
 export function cardPaymentArtifactToA2UI({ artifact, surfaceId }: { readonly artifact: CardPaymentArtifact; readonly surfaceId: string }): readonly A2UIServerMessage[] {
   const { facts } = artifact;
@@ -39,24 +40,40 @@ export function cardPaymentArtifactToA2UI({ artifact, surfaceId }: { readonly ar
   const scheduleIds = schedulePeriods.map((_, index) => `card-payment-period-${index}`);
   const currentPeriod = cardPaymentBillingPeriod(facts);
   const currentPeriodText = currentPeriod === undefined ? undefined : `This payment is for ${GUEST_FACT_LABELS.billingPeriod} ${currentPeriod.index}.`;
+  // Weaver catalogues issue 04 (ADR 0102): typed StayTicket / PriceBreakdown in place of label-prefixed Texts.
+  const ticket = bookingTicketComponents("card-payment", facts.unit, { checkIn: facts.checkIn, checkOut: facts.checkOut, nights: nightsBetween(facts.checkIn, facts.checkOut), ...(facts.occupantCount === undefined ? {} : { guestCount: facts.occupantCount }) });
+  // With a total, the money lines are one PriceBreakdown; without one they stay Texts, as before. The "Next payment" line
+  // (not while processing) is the breakdown's `next` part.
+  const totalKobo = facts.allInStayTotalKobo;
+  const depositKobo = facts.refundableSecurityDepositKobo;
+  const componentNext = componentText === undefined || isProcessing || componentAmount === undefined ? undefined : `${componentLabel} · ${formatBookingMoney(componentAmount)}`;
+  const moneyTexts: A2UIComponent[] = [
+    ...(totalKobo === undefined ? [] : [{ id: "card-payment-total", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.allInStayTotal, formatBookingMoney(totalKobo)), variant: "h3" as const }]),
+    ...(depositKobo === undefined || depositKobo <= 0 ? [] : [{ id: "card-payment-deposit", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.refundableSecurityDeposit, formatBookingMoney(depositKobo)) }]),
+    ...(showTotalRequirement ? [{ id: "card-payment-amount-due", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.amountDueNow, formatBookingMoney(facts.amountDueNowKobo)) }] : []),
+    ...(componentText ? [{ id: "card-payment-component", component: "Text" as const, text: componentText }] : []),
+  ];
+  const money: readonly A2UIComponent[] = totalKobo === undefined ? moneyTexts : [
+    priceBreakdownComponent("card-payment", {
+      ...(componentNext === undefined ? {} : { next: componentNext }),
+      total: formatBookingMoney(totalKobo),
+      ...(depositKobo === undefined || depositKobo <= 0 ? {} : { deposit: formatBookingMoney(depositKobo) }),
+      ...(showTotalRequirement ? { due: formatBookingMoney(facts.amountDueNowKobo) } : {}),
+    }),
+    ...moneyTexts.filter((component) => component.id === "card-payment-component" && componentNext === undefined),
+  ];
+  const moneyIds = money.map((component) => component.id);
   const components: A2UIComponent[] = [
     { id: "root", component: "Column", children: [
-      "card-payment-title", "card-payment-status", "card-payment-unit", ...ticketFactIds("card-payment"),
-      ...(facts.allInStayTotalKobo === undefined ? [] : ["card-payment-total"]),
-      ...(facts.refundableSecurityDepositKobo === undefined || facts.refundableSecurityDepositKobo <= 0 ? [] : ["card-payment-deposit"]),
-      ...(showTotalRequirement ? ["card-payment-amount-due"] : []),
-      ...(componentText ? ["card-payment-component"] : []),
+      "card-payment-title", "card-payment-status", ...ticket.ids,
+      ...moneyIds,
       ...(schedulePeriods.length > 0 ? ["card-payment-schedule-heading", ...(currentPeriodText === undefined ? [] : ["card-payment-current-period"]), ...scheduleIds, "card-payment-first-period"] : []),
       "card-payment-deadline", ...(stage ? ["card-payment-progress"] : []), "card-payment-content", "card-payment-actions",
     ] },
     { id: "card-payment-title", component: "Text", text: copy.title, variant: "h2" },
     { id: "card-payment-status", component: "Text", text: copy.status },
-    { id: "card-payment-unit", component: "Text", text: facts.unit, variant: "h3" },
-    ...ticketFactComponents("card-payment", { checkIn: facts.checkIn, checkOut: facts.checkOut, nights: nightsBetween(facts.checkIn, facts.checkOut), ...(facts.occupantCount === undefined ? {} : { guestCount: facts.occupantCount }) }),
-    ...(facts.allInStayTotalKobo === undefined ? [] : [{ id: "card-payment-total", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.allInStayTotal, formatBookingMoney(facts.allInStayTotalKobo)), variant: "h3" as const }]),
-    ...(facts.refundableSecurityDepositKobo === undefined || facts.refundableSecurityDepositKobo <= 0 ? [] : [{ id: "card-payment-deposit", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.refundableSecurityDeposit, formatBookingMoney(facts.refundableSecurityDepositKobo)) }]),
-    ...(showTotalRequirement ? [{ id: "card-payment-amount-due", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.amountDueNow, formatBookingMoney(facts.amountDueNowKobo)) }] : []),
-    ...(componentText ? [{ id: "card-payment-component", component: "Text" as const, text: componentText }] : []),
+    ...ticket.components,
+    ...money,
     ...(schedulePeriods.length > 0 ? [
       { id: "card-payment-schedule-heading", component: "Text" as const, text: GUEST_FACT_LABELS.paymentSchedule, variant: "h3" as const },
       ...(currentPeriodText === undefined ? [] : [{ id: "card-payment-current-period", component: "Text" as const, text: currentPeriodText }]),
@@ -72,5 +89,6 @@ export function cardPaymentArtifactToA2UI({ artifact, surfaceId }: { readonly ar
       { id: "card-payment-action-label", component: "Text" as const, text: actionLabel },
     ] : []),
   ];
-  return surfaceMessages(surfaceId, A2UI_V091_BASIC_CATALOG_ID, components);
+  // Weaver catalogues issue 04 (ADR 0102): typed StayTicket / PriceBreakdown in place of label-prefixed Texts.
+  return surfaceMessages(surfaceId, SHORTLET_BOOKING_CATALOG_ID, components);
 }

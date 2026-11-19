@@ -9275,6 +9275,8 @@ Known schemas:
   var STAY_CARD_COMPONENT = "StayCard";
   var STAY_RESULTS_COMPONENT = "StayResults";
   var STAY_COMPARISON_COMPONENT = "StayComparison";
+  var STAY_TICKET_COMPONENT = "StayTicket";
+  var PRICE_BREAKDOWN_COMPONENT = "PriceBreakdown";
   var COMPONENT_ID = { $ref: "common_types.json#/$defs/ComponentId" };
   var CHILD_LIST = { $ref: "common_types.json#/$defs/ChildList" };
   var TEXT = { type: "string", minLength: 1 };
@@ -9387,6 +9389,31 @@ Known schemas:
       actions: CHILD_LIST
     }, ["heads", "rows"])
   };
+  var TICKET_DATE = {
+    type: "object",
+    properties: { day: TEXT, date: TEXT, datetime: TEXT },
+    required: ["day", "date"],
+    additionalProperties: false
+  };
+  var BOOKING_COMPONENTS = {
+    [STAY_TICKET_COMPONENT]: componentSchema(STAY_TICKET_COMPONENT, {
+      title: TEXT,
+      checkIn: TICKET_DATE,
+      checkOut: TICKET_DATE,
+      foot: TEXT
+    }, ["title", "checkIn", "checkOut", "foot"]),
+    [PRICE_BREAKDOWN_COMPONENT]: componentSchema(PRICE_BREAKDOWN_COMPONENT, {
+      condition: TEXT,
+      total: TEXT,
+      totalLabel: TEXT,
+      deposit: TEXT,
+      depositCollected: { type: "boolean" },
+      due: TEXT,
+      thisPayment: TEXT,
+      paid: TEXT,
+      next: TEXT
+    }, [])
+  };
   function withComponents(schema, components) {
     const table = schema["components"];
     const anyComponent = schema["$defs"]["anyComponent"];
@@ -9405,7 +9432,7 @@ Known schemas:
     return { catalogId, schema: defineShortletCatalog(withComponents(schema, components)) };
   }
   var SHORTLET_DISCOVERY_CATALOG = shortletCatalog(SHORTLET_DISCOVERY_CATALOG_ID, DISCOVERY_COMPONENTS);
-  var SHORTLET_BOOKING_CATALOG = shortletCatalog(SHORTLET_BOOKING_CATALOG_ID);
+  var SHORTLET_BOOKING_CATALOG = shortletCatalog(SHORTLET_BOOKING_CATALOG_ID, BOOKING_COMPONENTS);
 
   // apps/web/src/ui-kit.ts
   function escapeHtml(value) {
@@ -9805,11 +9832,6 @@ Known schemas:
     unpick: "Remove from compare"
   });
   var UNIT_DETAIL_ABOUT_HEADING = "About this apartment";
-  function guestFactValue(text2, label) {
-    const prefix = `${label}: `;
-    const trimmed = text2.trim();
-    return trimmed.startsWith(prefix) ? trimmed.slice(prefix.length) : void 0;
-  }
   var GUEST_ACCOUNT_COPY = Object.freeze({
     signInTitle: "Sign in",
     signInIntro: "We'll email you a six-digit code. Enter it here to sign in on this device.",
@@ -11086,9 +11108,47 @@ Known schemas:
     }
     return table;
   }
+  function ticketEnd(value) {
+    const end = record(value);
+    const day = text(end?.["day"]);
+    const date2 = text(end?.["date"]);
+    if (day === void 0 || date2 === void 0) return void 0;
+    const datetime = text(end?.["datetime"]);
+    return { day, date: date2, ...datetime === void 0 ? {} : { datetime } };
+  }
+  function renderStayTicket({ document: document2, properties }) {
+    const title = text(properties["title"]);
+    const checkIn = ticketEnd(properties["checkIn"]);
+    const checkOut = ticketEnd(properties["checkOut"]);
+    const foot = text(properties["foot"]);
+    if (title === void 0 || checkIn === void 0 || checkOut === void 0 || foot === void 0) {
+      return document2.createElement("div");
+    }
+    const parts = { title, checkIn, checkOut, foot };
+    return fromKit(document2, ticketHtml(parts)).firstElementChild ?? document2.createElement("div");
+  }
+  function renderPriceBreakdown({ document: document2, properties }) {
+    const parts = {
+      ...properties["depositCollected"] === true ? { depositCollected: true } : {},
+      ...optionalText("condition", text(properties["condition"])),
+      ...optionalText("total", text(properties["total"])),
+      ...optionalText("totalLabel", text(properties["totalLabel"])),
+      ...optionalText("deposit", text(properties["deposit"])),
+      ...optionalText("due", text(properties["due"])),
+      ...optionalText("thisPayment", text(properties["thisPayment"])),
+      ...optionalText("paid", text(properties["paid"])),
+      ...optionalText("next", text(properties["next"]))
+    };
+    return fromKit(document2, breakdownHtml(parts)).firstElementChild ?? document2.createElement("div");
+  }
+  function optionalText(key3, value) {
+    return value === void 0 ? {} : { [key3]: value };
+  }
   function createShortletRenderers(options = {}) {
     const catalogId = SHORTLET_DISCOVERY_CATALOG_ID;
     return [
+      { catalogId: SHORTLET_BOOKING_CATALOG_ID, component: STAY_TICKET_COMPONENT, render: renderStayTicket },
+      { catalogId: SHORTLET_BOOKING_CATALOG_ID, component: PRICE_BREAKDOWN_COMPONENT, render: renderPriceBreakdown },
       { catalogId, component: UNIT_DETAIL_COMPONENT, render: renderUnitDetail },
       { catalogId, component: UNIT_GALLERY_COMPONENT, render: renderUnitGallery(options.resourcePolicy) },
       { catalogId, component: UNIT_DETAIL_SHEET_COMPONENT, render: renderUnitDetailSheet },
@@ -11677,89 +11737,6 @@ Known schemas:
     for (const gallery of mount.querySelectorAll(".listing-gallery"))
       enhanceListingGallery(gallery);
   }
-  function findFact(children2, label) {
-    for (const child of children2) {
-      const value = guestFactValue(child.textContent ?? "", label);
-      if (value !== void 0) return { element: child, value };
-    }
-    return void 0;
-  }
-  function dayNumeral(date2) {
-    return date2.replaceAll(",", " ").split(" ").find((word) => word !== "" && Number.isInteger(Number(word)));
-  }
-  function replaceWithKitMarkup(root, html, consumed) {
-    const present = consumed.filter(
-      (element2) => element2 !== void 0 && element2.parentElement === root
-    );
-    const template = document.createElement("template");
-    template.innerHTML = html;
-    const markup = template.content.firstElementChild;
-    if (present.length === 0 || markup === null) return;
-    root.insertBefore(markup, present[0]);
-    for (const element2 of present) element2.remove();
-  }
-  function organizeBookingTicket(mount) {
-    const root = mount.querySelector(
-      '[data-a2ui-component="Column"]'
-    );
-    if (!root) return;
-    const children2 = [...root.children];
-    const title = children2.find(
-      (child) => child.tagName === "H3" && guestFactValue(
-        child.textContent ?? "",
-        GUEST_FACT_LABELS.allInStayTotal
-      ) === void 0
-    );
-    const checkIn = findFact(children2, GUEST_FACT_LABELS.checkIn);
-    const checkOut = findFact(children2, GUEST_FACT_LABELS.checkOut);
-    const stay = findFact(children2, GUEST_FACT_LABELS.stay);
-    const checkInDay = checkIn === void 0 ? void 0 : dayNumeral(checkIn.value);
-    const checkOutDay = checkOut === void 0 ? void 0 : dayNumeral(checkOut.value);
-    if (title && checkIn && checkOut && stay && checkInDay && checkOutDay) {
-      replaceWithKitMarkup(
-        root,
-        ticketHtml({
-          title: title.textContent?.trim() ?? "",
-          checkIn: { day: checkInDay, date: checkIn.value },
-          checkOut: { day: checkOutDay, date: checkOut.value },
-          foot: stay.value
-        }),
-        [title, checkIn.element, checkOut.element, stay.element]
-      );
-    }
-    const total = findFact(children2, GUEST_FACT_LABELS.allInStayTotal);
-    if (!total) return;
-    const deposit = findFact(
-      children2,
-      GUEST_FACT_LABELS.refundableSecurityDeposit
-    );
-    const due = findFact(children2, GUEST_FACT_LABELS.amountDueNow);
-    const paid = findFact(children2, GUEST_FACT_LABELS.amountPaid);
-    const next = findFact(children2, GUEST_FACT_LABELS.nextPayment);
-    const condition = children2.find(
-      (child) => child.textContent?.trim() === GUEST_FACT_LABELS.ifRequestAccepted
-    );
-    replaceWithKitMarkup(
-      root,
-      breakdownHtml({
-        ...activePayload?.confirmation?.depositCollected ? { depositCollected: true } : {},
-        ...condition ? { condition: GUEST_FACT_LABELS.ifRequestAccepted } : {},
-        total: total.value,
-        ...deposit ? { deposit: deposit.value } : {},
-        ...due ? { due: due.value } : {},
-        ...paid ? { paid: paid.value } : {},
-        ...next ? { next: next.value } : {}
-      }),
-      [
-        condition,
-        total.element,
-        deposit?.element,
-        due?.element,
-        paid?.element,
-        next?.element
-      ]
-    );
-  }
   function organizeSignInOffer(mount, content) {
     const root = mount.querySelector('[data-a2ui-component="Column"]');
     root?.insertAdjacentHTML("beforeend", signInOfferHtml(content));
@@ -11977,7 +11954,6 @@ Known schemas:
       if (/^No stays match|^No current matches/i.test(value))
         text2.classList.add("empty-state-title");
     }
-    if (kind === "booking" || kind === "request-draft" || kind === "payment") organizeBookingTicket(mount);
     if (activePayload?.requestScreen)
       organizeRequestScreen(mount, activePayload.requestScreen);
     if (activePayload?.confirmation)

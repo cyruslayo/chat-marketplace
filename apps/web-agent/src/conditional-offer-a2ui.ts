@@ -1,10 +1,11 @@
-import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
+import { type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
 import { CONDITIONAL_OFFER_ACCEPT_EVENT } from "../../web/src/conditional-offer-actions.js";
 import type { ConditionalOfferArtifact } from "../../web/src/conditional-offer-artifact.js";
-import { bookingProgressText, formatBookingDeadline, formatBookingMoney, formatStayDates, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";
+import { bookingProgressText, bookingTicketComponents, formatBookingDeadline, formatBookingMoney, formatStayDates, priceBreakdownComponent } from "./booking-presentation.js";
 import { billingPeriodLines } from "./extended-stay-presentation.js";
-import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_PAYMENT_COPY, accommodationProviderLine, guestDisclosure, guestFact, guestReservationStatus } from "./guest-content.js";
+import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_PAYMENT_COPY, accommodationProviderLine, guestDisclosure, guestReservationStatus } from "./guest-content.js";
 import { surfaceMessages } from "./a2ui-surface.js";
+import { SHORTLET_BOOKING_CATALOG_ID } from "./shortlet-catalogs.js";
 
 export function conditionalOfferArtifactToA2UI({ artifact, surfaceId }: { readonly artifact: ConditionalOfferArtifact; readonly surfaceId: string }): readonly A2UIServerMessage[] {
   const { facts } = artifact;
@@ -18,18 +19,18 @@ export function conditionalOfferArtifactToA2UI({ artifact, surfaceId }: { readon
   const schedulePeriods = billingPeriodLines(facts.billingPeriods);
   const extendedRange = facts.stayType === "extended" ? formatStayDates(facts.checkIn, facts.checkOut) : undefined;
   const scheduleIds = schedulePeriods.map((_, index) => `conditional-offer-period-${index}`);
+  // Weaver catalogues issue 04 (ADR 0102): typed StayTicket / PriceBreakdown in place of label-prefixed Texts.
+  const ticket = bookingTicketComponents("conditional-offer", facts.unitTitle, { checkIn: facts.checkIn, checkOut: facts.checkOut, nights: facts.nights, guestCount: facts.occupants.length });
   const components: A2UIComponent[] = [
-    { id: "root", component: "Column", children: ["conditional-offer-title", "conditional-offer-status", "conditional-offer-unit", "conditional-offer-provider", ...ticketFactIds("conditional-offer"), "conditional-offer-total", ...(facts.refundableSecurityDepositKobo > 0 ? ["conditional-offer-deposit"] : []), "conditional-offer-due", "conditional-offer-expiry", "conditional-offer-progress", "conditional-offer-consequence", ...(schedulePeriods.length > 0 ? ["conditional-offer-schedule-heading", ...scheduleIds, "conditional-offer-first-period"] : []), "conditional-offer-cancellation", "conditional-offer-conduct", "conditional-offer-disclosures", "conditional-offer-actions"] },
+    { id: "root", component: "Column", children: ["conditional-offer-title", "conditional-offer-status", ...ticket.ids, "conditional-offer-provider", "conditional-offer-breakdown", "conditional-offer-expiry", "conditional-offer-progress", "conditional-offer-consequence", ...(schedulePeriods.length > 0 ? ["conditional-offer-schedule-heading", ...scheduleIds, "conditional-offer-first-period"] : []), "conditional-offer-cancellation", "conditional-offer-conduct", "conditional-offer-disclosures", "conditional-offer-actions"] },
     { id: "conditional-offer-title", component: "Text", text: facts.status === "issued" ? GUEST_GLOSSARY.offerReadyHeading : GUEST_GLOSSARY.conditionalBookingOffer, variant: "h2" },
     { id: "conditional-offer-status", component: "Text", text: statusLabel },
-    { id: "conditional-offer-unit", component: "Text", text: facts.unitTitle, variant: "h3" },
     // ADR-0006: accepting this offer and paying forms the contract with this Operator.
     { id: "conditional-offer-provider", component: "Text", text: accommodationProviderLine(facts.operatorName) },
-    ...ticketFactComponents("conditional-offer", { checkIn: facts.checkIn, checkOut: facts.checkOut, nights: facts.nights, guestCount: facts.occupants.length }),
+    ...ticket.components,
     { id: "conditional-offer-expiry", component: "Text", text: `${formatBookingDeadline(facts.paymentWindowExpiresAt)}. This deadline comes from the current offer.` },
-    { id: "conditional-offer-total", component: "Text", text: guestFact(GUEST_FACT_LABELS.allInStayTotal, formatBookingMoney(facts.allInStayTotalKobo)), variant: "h3" },
-    { id: "conditional-offer-deposit", component: "Text", text: guestFact(GUEST_FACT_LABELS.refundableSecurityDeposit, formatBookingMoney(facts.refundableSecurityDepositKobo)) },
-    { id: "conditional-offer-due", component: "Text", text: guestFact(GUEST_FACT_LABELS.amountDueNow, formatBookingMoney(facts.totalAmountDueNowKobo)) },
+    // Weaver catalogues issue 04 (ADR 0102): the money lines are one typed PriceBreakdown (parts: total, deposit, due).
+    priceBreakdownComponent("conditional-offer", { total: formatBookingMoney(facts.allInStayTotalKobo), ...(facts.refundableSecurityDepositKobo > 0 ? { deposit: formatBookingMoney(facts.refundableSecurityDepositKobo) } : {}), due: formatBookingMoney(facts.totalAmountDueNowKobo) }),
     { id: "conditional-offer-progress", component: "Text", text: bookingProgressText("offer") },
     { id: "conditional-offer-consequence", component: "Text", text: guestReservationStatus(facts.status === "issued" ? "offer-issued" : facts.status === "accepted" ? "offer-accepted" : "offer-closed") },
     ...(extendedRange === undefined ? [] : [{ id: "conditional-offer-extended-range", component: "Text" as const, text: `${GUEST_FACT_LABELS.stayDates}: ${extendedRange}` }]),
@@ -47,5 +48,6 @@ export function conditionalOfferArtifactToA2UI({ artifact, surfaceId }: { readon
       { id: "conditional-offer-accept-label", component: "Text" as const, text: GUEST_PAYMENT_COPY.accept },
     ] : []),
   ];
-  return surfaceMessages(surfaceId, A2UI_V091_BASIC_CATALOG_ID, components);
+  // Weaver catalogues issue 04 (ADR 0102): typed StayTicket / PriceBreakdown in place of label-prefixed Texts.
+  return surfaceMessages(surfaceId, SHORTLET_BOOKING_CATALOG_ID, components);
 }

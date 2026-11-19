@@ -1,9 +1,10 @@
-import { A2UI_V091_BASIC_CATALOG_ID, type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
+import { type A2UIComponent, type A2UIServerMessage } from "@cylayo/weaver-core";
 import type { BookingContractArtifact } from "../../web/src/booking-contract-artifact.js";
 import { confirmationSteps } from "./confirmation-presentation.js";
-import { formatBookingMoney, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";
+import { bookingTicketComponents, formatBookingMoney, priceBreakdownComponent } from "./booking-presentation.js";
 import { GUEST_FACT_LABELS, GUEST_GLOSSARY, GUEST_NOTICE_COPY, accommodationProviderLine, guestFact, guestReservationStatus, noticeFactRows } from "./guest-content.js";
 import { surfaceMessages } from "./a2ui-surface.js";
+import { SHORTLET_BOOKING_CATALOG_ID } from "./shortlet-catalogs.js";
 
 /** Issue 18: the chat event a booking surface sends to open the Notice to End card. The platform routes it by name. */
 export const NOTICE_OPEN_EVENT = "shortlet.assistant.open-notice";
@@ -20,18 +21,32 @@ export function bookingContractArtifactToA2UI({ artifact, surfaceId }: { readonl
   // Issue 18: a recorded notice shows its facts (the same helper as the page); an Extended Stay without one offers the action.
   const noticeRows = facts.noticeToEnd ? noticeFactRows(facts.noticeToEnd, formatBookingMoney) : [];
   const noticeIds = facts.noticeToEnd ? ["booking-contract-notice-recorded", ...noticeRows.map((row) => `booking-contract-notice-${row.key}`)] : facts.noticeToEndTerms ? ["booking-contract-notice-action"] : [];
-  const components: A2UIComponent[] = [
-    { id: "root", component: "Column", children: ["booking-contract-title", "booking-contract-status", "booking-contract-unit", "booking-contract-provider", ...ticketFactIds("booking-contract"), ...(guestNames.length > 0 ? ["booking-contract-guests"] : []), ...(facts.allInStayTotalKobo === undefined ? [] : ["booking-contract-total"]), ...((facts.refundableSecurityDepositKobo ?? 0) > 0 ? ["booking-contract-deposit"] : []), "booking-contract-paid", ...(depositCollected ? ["booking-contract-deposit-collected"] : []), "booking-contract-arrival", "booking-contract-checkout", "booking-contract-policies", ...noticeIds, "booking-contract-references"] },
-    { id: "booking-contract-title", component: "Text", text: "Your booking", variant: "h2" },
-    { id: "booking-contract-status", component: "Text", text: guestReservationStatus("confirmed") },
-    { id: "booking-contract-unit", component: "Text", text: facts.unitTitle ?? "Your stay", variant: "h3" },
-    // ADR-0006: the Booking Contract is with this Operator as accommodation provider.
-    { id: "booking-contract-provider", component: "Text", text: accommodationProviderLine(facts.accommodationProvider.name) },
-    ...ticketFactComponents("booking-contract", { checkIn: facts.checkIn, checkOut: facts.checkOut, nights: facts.nights, guestCount: facts.occupants.length }),
-    ...(guestNames.length > 0 ? [{ id: "booking-contract-guests", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.guests, guestNames.join(", ")) }] : []),
+  // Weaver catalogues issue 04 (ADR 0102): typed StayTicket / PriceBreakdown in place of label-prefixed Texts.
+  const ticket = bookingTicketComponents("booking-contract", facts.unitTitle ?? "Your stay", { checkIn: facts.checkIn, checkOut: facts.checkOut, nights: facts.nights, guestCount: facts.occupants.length });
+  // Without a total the money lines stay Texts; with one they are one PriceBreakdown (parts: depositCollected, total, deposit, paid).
+  const moneyTexts: A2UIComponent[] = [
     ...(facts.allInStayTotalKobo === undefined ? [] : [{ id: "booking-contract-total", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.allInStayTotal, formatBookingMoney(facts.allInStayTotalKobo)), variant: "h3" as const }]),
     ...((facts.refundableSecurityDepositKobo ?? 0) > 0 ? [{ id: "booking-contract-deposit", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.refundableSecurityDeposit, formatBookingMoney(facts.refundableSecurityDepositKobo!)) }] : []),
     { id: "booking-contract-paid", component: "Text", text: guestFact(GUEST_FACT_LABELS.amountPaid, formatBookingMoney(facts.amountPaidKobo)) },
+  ];
+  const moneyLines: readonly A2UIComponent[] = facts.allInStayTotalKobo === undefined ? moneyTexts : [
+    priceBreakdownComponent("booking-contract", {
+      ...(depositCollected ? { depositCollected: true } : {}),
+      total: formatBookingMoney(facts.allInStayTotalKobo),
+      ...((facts.refundableSecurityDepositKobo ?? 0) > 0 ? { deposit: formatBookingMoney(facts.refundableSecurityDepositKobo!) } : {}),
+      paid: formatBookingMoney(facts.amountPaidKobo),
+    }),
+  ];
+  const moneyIds = moneyLines.map((component) => component.id);
+  const components: A2UIComponent[] = [
+    { id: "root", component: "Column", children: ["booking-contract-title", "booking-contract-status", ...ticket.ids, "booking-contract-provider", ...(guestNames.length > 0 ? ["booking-contract-guests"] : []), ...moneyIds, ...(depositCollected ? ["booking-contract-deposit-collected"] : []), "booking-contract-arrival", "booking-contract-checkout", "booking-contract-policies", ...noticeIds, "booking-contract-references"] },
+    { id: "booking-contract-title", component: "Text", text: "Your booking", variant: "h2" },
+    { id: "booking-contract-status", component: "Text", text: guestReservationStatus("confirmed") },
+    // ADR-0006: the Booking Contract is with this Operator as accommodation provider.
+    { id: "booking-contract-provider", component: "Text", text: accommodationProviderLine(facts.accommodationProvider.name) },
+    ...ticket.components,
+    ...(guestNames.length > 0 ? [{ id: "booking-contract-guests", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.guests, guestNames.join(", ")) }] : []),
+    ...moneyLines,
     // ADR-0015/0016/0085: collected only when the contract projection confirms the deposit is held.
     ...(depositCollected ? [{ id: "booking-contract-deposit-collected", component: "Text" as const, text: `${GUEST_GLOSSARY.refundableSecurityDeposit} collected: ${formatBookingMoney(facts.refundableSecurityDepositKobo!)}` }] : []),
     { id: "booking-contract-arrival", component: "Text", text: accessText },
@@ -42,5 +57,6 @@ export function bookingContractArtifactToA2UI({ artifact, surfaceId }: { readonl
     ...(!facts.noticeToEnd && facts.noticeToEndTerms ? [{ id: "booking-contract-notice-action", component: "Button" as const, child: "booking-contract-notice-label", action: { event: { name: NOTICE_OPEN_EVENT, context: { surfaceId } } }, accessibility: { label: GUEST_NOTICE_COPY.action } }, { id: "booking-contract-notice-label", component: "Text" as const, text: GUEST_NOTICE_COPY.action }] : []),
     { id: "booking-contract-references", component: "Text", text: `Booking reference and full contract are in your booking details.${facts.cardMetadata ? ` Card ending ${facts.cardMetadata.last4}.` : ""}` },
   ];
-  return surfaceMessages(surfaceId, A2UI_V091_BASIC_CATALOG_ID, components);
+  // Weaver catalogues issue 04 (ADR 0102): typed StayTicket / PriceBreakdown in place of label-prefixed Texts.
+  return surfaceMessages(surfaceId, SHORTLET_BOOKING_CATALOG_ID, components);
 }

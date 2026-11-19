@@ -1,5 +1,4 @@
 import {
-  A2UI_V091_BASIC_CATALOG_ID,
   type A2UIComponent,
   type A2UIServerMessage,
 } from "@cylayo/weaver-core";
@@ -8,9 +7,10 @@ import {
   BOOKING_REQUEST_DECLINE_EVENT,
 } from "../../web/src/booking-request-actions.js";
 import type { BookingRequestArtifact } from "../../web/src/booking-request-artifact.js";
-import { bookingProgressText, formatBookingDateTime, formatBookingDeadline, formatBookingMoney, guestRequestStatus, ticketFactComponents, ticketFactIds } from "./booking-presentation.js";
-import { GUEST_FACT_LABELS, GUEST_GLOSSARY, guestFact } from "./guest-content.js";
+import { bookingProgressText, bookingTicketComponents, formatBookingDateTime, formatBookingDeadline, formatBookingMoney, guestRequestStatus, priceBreakdownComponent } from "./booking-presentation.js";
+import { GUEST_FACT_LABELS, GUEST_GLOSSARY } from "./guest-content.js";
 import { surfaceMessages } from "./a2ui-surface.js";
+import { SHORTLET_BOOKING_CATALOG_ID } from "./shortlet-catalogs.js";
 
 export interface BookingRequestArtifactToA2UIInput {
   readonly artifact: BookingRequestArtifact;
@@ -60,13 +60,15 @@ export function bookingRequestArtifactToA2UI({
     : facts.status === "disclosed"
       ? `Request delivery update due by ${formatBookingDeadline(facts.deliveryDeadlineAt).replace(/^Pay by /, "")}`
       : "";
+  // Weaver catalogues issue 04 (ADR 0102): typed StayTicket / PriceBreakdown in place of label-prefixed Texts.
+  const ticket = bookingTicketComponents("booking-request", facts.unitTitle ?? `Your selected ${GUEST_GLOSSARY.unit}`, { checkIn: facts.checkIn, checkOut: facts.checkOut, nights: facts.nights, guestCount: facts.occupantCount ?? facts.occupants.length });
   const details: A2UIComponent[] = [
-    { id: "root", component: "Column", children: ["booking-request-title", "booking-request-status", "booking-request-unit", ...ticketFactIds("booking-request"), ...(quote ? ["booking-request-condition", "booking-request-total", ...(quote.refundableSecurityDepositKobo > 0 ? ["booking-request-deposit"] : []), "booking-request-due"] : []), ...(facts.status === "disclosed" && facts.delivered ? ["booking-request-sent"] : []), ...(status.progress ? ["booking-request-progress"] : []), "booking-request-detail", ...(deadlineText ? ["booking-request-deadline"] : []), "booking-request-actions"] },
+    { id: "root", component: "Column", children: ["booking-request-title", "booking-request-status", ...ticket.ids, ...(quote ? ["booking-request-breakdown"] : []), ...(facts.status === "disclosed" && facts.delivered ? ["booking-request-sent"] : []), ...(status.progress ? ["booking-request-progress"] : []), "booking-request-detail", ...(deadlineText ? ["booking-request-deadline"] : []), "booking-request-actions"] },
     { id: "booking-request-title", component: "Text", text: facts.status === "declined" ? "Request declined" : facts.status === "expired" ? "Request expired" : GUEST_GLOSSARY.bookingRequest, variant: "h2" },
     { id: "booking-request-status", component: "Text", text: status.label },
-    { id: "booking-request-unit", component: "Text", text: facts.unitTitle ?? `Your selected ${GUEST_GLOSSARY.unit}`, variant: "h3" },
-    ...ticketFactComponents("booking-request", { checkIn: facts.checkIn, checkOut: facts.checkOut, nights: facts.nights, guestCount: facts.occupantCount ?? facts.occupants.length }),
-    ...(quote ? [{ id: "booking-request-condition", component: "Text" as const, text: GUEST_FACT_LABELS.ifRequestAccepted }, { id: "booking-request-total", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.allInStayTotal, formatBookingMoney(quote.allInStayTotalKobo, quote.currency)), variant: "h3" as const }, ...(quote.refundableSecurityDepositKobo > 0 ? [{ id: "booking-request-deposit", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.refundableSecurityDeposit, formatBookingMoney(quote.refundableSecurityDepositKobo, quote.currency)) }] : []), { id: "booking-request-due", component: "Text" as const, text: guestFact(GUEST_FACT_LABELS.amountDueNow, formatBookingMoney(quote.totalAmountDueNowKobo, quote.currency)) }] : []),
+    ...ticket.components,
+    // Weaver catalogues issue 04 (ADR 0102): the money lines are one typed PriceBreakdown (parts: condition, total, deposit, due).
+    ...(quote ? [priceBreakdownComponent("booking-request", { condition: GUEST_FACT_LABELS.ifRequestAccepted, total: formatBookingMoney(quote.allInStayTotalKobo, quote.currency), ...(quote.refundableSecurityDepositKobo > 0 ? { deposit: formatBookingMoney(quote.refundableSecurityDepositKobo, quote.currency) } : {}), due: formatBookingMoney(quote.totalAmountDueNowKobo, quote.currency) })] : []),
     ...(status.progress ? [{ id: "booking-request-progress", component: "Text" as const, text: bookingProgressText(status.progress) }] : []),
     ...(facts.status === "disclosed" && facts.delivered ? [{ id: "booking-request-sent", component: "Text" as const, text: `Request sent: ${formatBookingDateTime(facts.disclosedAt)}` }] : []),
     { id: "booking-request-detail", component: "Text", text: status.detail },
@@ -75,5 +77,6 @@ export function bookingRequestArtifactToA2UI({
     ...actionButton(artifact, "confirm"),
     ...actionButton(artifact, "decline"),
   ];
-  return surfaceMessages(surfaceId, A2UI_V091_BASIC_CATALOG_ID, details);
+  // Weaver catalogues issue 04 (ADR 0102): typed StayTicket / PriceBreakdown in place of label-prefixed Texts.
+  return surfaceMessages(surfaceId, SHORTLET_BOOKING_CATALOG_ID, details);
 }
