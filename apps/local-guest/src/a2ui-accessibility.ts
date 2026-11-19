@@ -1,6 +1,6 @@
 /**
  * Issue 13 (ADR 0074, 0078, 0081; guideline §6 item 10, §12): the browser applies the A2UI `accessibility.label`
- * metadata that Weaver 0.2.1 ignores. The visible label always stays part of the accessible name (WCAG 2.5.3).
+ * metadata that Weaver 0.3.1 still ignores. The visible label always stays part of the accessible name (WCAG 2.5.3).
  */
 
 interface A2UIComponentLike {

@@ -36,7 +36,7 @@ async function sourceFiles(directory: string, ancestors: readonly string[] = [])
   return files.flat();
 }
 
-test("AC1 — package.json pins both Weaver 0.2.1 dependencies and the lockfile resolves registry integrity", async () => {
+test("AC1 — package.json pins both Weaver 0.3.1 dependencies and the lockfile resolves registry integrity", async () => {
   const manifest = JSON.parse(await readFile(path.join(repositoryRoot, "package.json"), "utf8")) as {
     dependencies: Record<string, string>;
   };
@@ -44,9 +44,9 @@ test("AC1 — package.json pins both Weaver 0.2.1 dependencies and the lockfile 
     packages: Record<string, { version?: string; resolved?: string; integrity?: string }>;
   };
   for (const name of ["@cylayo/weaver-core", "@cylayo/weaver-web"]) {
-    assert.equal(manifest.dependencies[name], "0.2.1", `${name} must be exactly pinned`);
+    assert.equal(manifest.dependencies[name], "0.3.1", `${name} must be exactly pinned`);
     const resolved = lock.packages[`node_modules/${name}`];
-    assert.equal(resolved?.version, "0.2.1");
+    assert.equal(resolved?.version, "0.3.1");
     assert.match(resolved?.resolved ?? "", /^https:\/\/registry\.npmjs\.org\//);
     assert.match(resolved?.integrity ?? "", /^sha512-/);
   }

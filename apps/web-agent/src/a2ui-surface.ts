@@ -18,7 +18,7 @@ export const A2UI_PRODUCER = createA2UIV091Producer();
 export type SurfaceMessages = readonly [CreateSurfaceMessage, UpdateComponentsMessage];
 
 export function surfaceMessages(surfaceId: string, catalogId: string, components: readonly A2UIComponent[]): SurfaceMessages {
-  // Weaver 0.2.1's producer accepts an empty or blank id; a surface with no identity is refused here, fail closed.
+  // Weaver 0.3.1's producer still accepts an empty or blank id; a surface with no identity is refused here, fail closed.
   if (surfaceId.trim() === "") throw new TypeError("A2UI surface id must not be empty");
   if (catalogId.trim() === "") throw new TypeError("A2UI catalogue id must not be empty");
   return Object.freeze([

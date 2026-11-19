@@ -111,6 +111,7 @@
   var basicRadius = "var(--a2ui-radius, 8px)";
   var basicOutline = "var(--a2ui-color-outline, rgba(0, 0, 0, 0.22))";
   var basicControl = "var(--a2ui-color-control, rgba(127, 127, 127, 0.10))";
+  var basicPrimaryFallback = "#0969da";
   var basicCardShadow = "var(--a2ui-card-shadow, 0 1px 3px rgba(0, 0, 0, 0.12))";
   function appendBasicStyle(element2, declarations) {
     const existing = element2.getAttribute("style");
@@ -287,7 +288,7 @@
       button.setAttribute("aria-selected", index === selectedIndex ? "true" : "false");
       button.tabIndex = index === selectedIndex ? 0 : -1;
       if (index === selectedIndex) {
-        button.setAttribute("style", "color: var(--a2ui-color-primary, #17e); border-block-end: solid var(--a2ui-color-primary, #17e)");
+        button.setAttribute("style", `color: var(--a2ui-color-primary, ${basicPrimaryFallback}); border-block-end: solid var(--a2ui-color-primary, ${basicPrimaryFallback})`);
       }
       if (typeof tab === "object" && tab !== null && !Array.isArray(tab) && typeof tab.title === "string")
         button.textContent = tab.title;
@@ -464,7 +465,7 @@
     button.setAttribute("data-a2ui-variant", variant);
     button.style.cursor = "pointer";
     if (variant === "primary")
-      appendBasicStyle(button, "background-color: var(--a2ui-color-primary, #17e); color: var(--a2ui-color-on-primary, white); border: 1px solid transparent");
+      appendBasicStyle(button, `background-color: var(--a2ui-color-primary, ${basicPrimaryFallback}); color: var(--a2ui-color-on-primary, white); border: 1px solid transparent`);
     else if (variant === "borderless")
       appendBasicStyle(button, "background-color: transparent; color: inherit; border: 1px solid transparent");
     else
@@ -476,6 +477,7 @@
     button.disabled = children2.length === 0 || checks !== void 0 && checks.status !== "valid";
     if (button.disabled)
       appendBasicStyle(button, "opacity: 0.6");
+    interactions.registerControl(button, "action");
     button.addEventListener("click", () => {
       interactions.dispatchAction("action");
     });
@@ -645,7 +647,7 @@
         if (displayStyle === "chips") {
           row.style.display = "inline-flex";
           row.style.alignItems = "center";
-          appendBasicStyle(row, `border: 1px solid ${control.checked ? "var(--a2ui-color-primary, #17e)" : basicOutline}; border-radius: 999px; padding: calc(${basicSpace} / 2) ${basicSpace}; background: ${control.checked ? "var(--a2ui-color-control, rgba(127, 127, 127, 0.16))" : basicControl}`);
+          appendBasicStyle(row, `border: 1px solid ${control.checked ? `var(--a2ui-color-primary, ${basicPrimaryFallback})` : basicOutline}; border-radius: 999px; padding: calc(${basicSpace} / 2) ${basicSpace}; background: ${control.checked ? "var(--a2ui-color-control, rgba(127, 127, 127, 0.16))" : basicControl}`);
         } else {
           row.style.display = "block";
           appendBasicStyle(row, `padding: calc(${basicSpace} / 2)`);
@@ -755,7 +757,7 @@
     return { TextField: renderTextField, CheckBox: renderCheckBox, Slider: renderSlider, ChoicePicker: renderChoicePicker, DateTimeInput: renderDateTimeInput };
   }
   function applyPrimaryAccent(control) {
-    control.style.accentColor = "var(--a2ui-color-primary, #17e)";
+    control.style.accentColor = `var(--a2ui-color-primary, ${basicPrimaryFallback})`;
   }
   function componentWrapper(document2, component, variant) {
     const wrapper = document2.createElement("div");
@@ -4807,6 +4809,14 @@
     };
   }
 
+  // node_modules/@cylayo/weaver-core/dist/catalog/definition.js
+  function defineCatalog(schema) {
+    return {
+      catalogId: schema.catalogId,
+      schema
+    };
+  }
+
   // node_modules/@cylayo/weaver-core/dist/catalog/schema.js
   var A2UI_CATALOG_SCHEMA = {
     $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -8594,14 +8604,106 @@ Known schemas:
   function cloneRuntimeJson(value) {
     return cloneJson(value);
   }
+  function isJsonValue2(root, allowUndefined = false) {
+    const stack = [
+      { value: root, leave: false }
+    ];
+    const ancestors = /* @__PURE__ */ new Set();
+    while (stack.length > 0) {
+      const frame = stack.pop();
+      if (frame.leave) {
+        ancestors.delete(frame.value);
+        continue;
+      }
+      const value = frame.value;
+      if (value === void 0 && allowUndefined)
+        continue;
+      if (value === null || typeof value === "string" || typeof value === "boolean")
+        continue;
+      if (typeof value === "number") {
+        if (Number.isFinite(value))
+          continue;
+        return false;
+      }
+      if (typeof value !== "object" || ancestors.has(value))
+        return false;
+      const isArray = Array.isArray(value);
+      const prototype = Object.getPrototypeOf(value);
+      if (!isArray && prototype !== Object.prototype && prototype !== null)
+        return false;
+      ancestors.add(value);
+      stack.push({ value, leave: true });
+      const children2 = isArray ? Array.from(value) : Object.keys(value).map((key3) => value[key3]);
+      for (const child of children2)
+        stack.push({ value: child, leave: false });
+    }
+    return true;
+  }
+  function observedValue(value) {
+    if (!isJsonValue2(value))
+      return { unserializable: true };
+    return cloneRuntimeJson(value);
+  }
+  function observedResult(result) {
+    if (!isJsonValue2(result, true))
+      throw new TypeError("Core result is not JSON-safe");
+    return cloneRuntimeJson(result);
+  }
+  function observedField(value) {
+    return isJsonValue2(value) ? value : "";
+  }
+  function observedActionRequest(request) {
+    if (isJsonValue2(request))
+      return cloneRuntimeJson(request);
+    return {
+      surfaceId: observedField(request.surfaceId),
+      sourceComponentId: observedField(request.sourceComponentId),
+      scopePath: observedField(request.scopePath),
+      actionProperty: observedField(request.actionProperty)
+    };
+  }
+  function observedInputResult(result) {
+    return result.ok ? { ok: true, value: { ...result.value, value: observedValue(result.value.value) } } : result;
+  }
+  function observedActionResult(result) {
+    if (!result.ok || result.value.kind !== "localFunction")
+      return result;
+    const value = result.value.value;
+    return {
+      ok: true,
+      value: {
+        kind: "localFunction",
+        value: value === void 0 ? void 0 : observedValue(value)
+      }
+    };
+  }
   var WeaverRuntime = class {
     #services;
     /** @internal Construct runtimes through createWeaverRuntime(). */
     constructor(services) {
       this.#services = services;
     }
+    /**
+     * Delivers an event to the observer. The event is built lazily, so nothing is
+     * copied when no observer is configured. Observer exceptions are ignored.
+     */
+    #observe(build) {
+      const observer = this.#services.observer;
+      if (observer === void 0)
+        return;
+      try {
+        observer(build());
+      } catch {
+      }
+    }
     process(input) {
-      return this.#services.processor.process(input);
+      const result = this.#services.processor.process(input);
+      this.#observe(() => ({
+        kind: "message",
+        input: observedValue(input),
+        result: observedResult(result)
+      }));
+      return result;
     }
     processMany(inputs) {
       return inputs.map((input) => this.process(input));
@@ -8662,6 +8764,30 @@ Known schemas:
       };
     }
     writeInput(request) {
+      const result = this.#writeInput(request);
+      this.#observe(() => ({
+        kind: "input",
+        request: {
+          surfaceId: observedField(request.surfaceId),
+          sourceComponentId: observedField(request.sourceComponentId),
+          scopePath: observedField(request.scopePath),
+          property: observedField(request.property),
+          value: observedValue(request.value)
+        },
+        result: observedResult(observedInputResult(result))
+      }));
+      return result;
+    }
+    dispatchAction(request) {
+      const result = this.#dispatchAction(request);
+      this.#observe(() => ({
+        kind: "action",
+        request: observedActionRequest(request),
+        result: observedResult(observedActionResult(result))
+      }));
+      return result;
+    }
+    #writeInput(request) {
       const current = this.#resolveCurrentInstance(request);
       if (!current.ok)
         return current;
@@ -8676,7 +8802,7 @@ Known schemas:
         error: { code: "INPUT_WRITE_FAILED", cause: written.error }
       };
     }
-    dispatchAction(request) {
+    #dispatchAction(request) {
       const current = this.#resolveCurrentInstance(request);
       if (!current.ok)
         return current;
@@ -8793,10 +8919,110 @@ Known schemas:
         actions: new ActionDispatcher(catalogs, functionEvaluator, checks, {
           ...config.now === void 0 ? {} : { now: config.now }
         }),
-        safety: safety.value
+        safety: safety.value,
+        ...config.observer === void 0 ? {} : { observer: config.observer }
       })
     };
   }
+
+  // node_modules/@cylayo/weaver-core/dist/prompt/basicExamples.js
+  var producer = createA2UIV091Producer();
+  function deepFreeze(value) {
+    if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+      Object.freeze(value);
+      for (const child of Object.values(value))
+        deepFreeze(child);
+    }
+    return value;
+  }
+  var A2UI_V091_BASIC_PROMPT_EXAMPLES = deepFreeze([
+    {
+      title: "Simple card",
+      messages: [
+        producer.createSurface({
+          surfaceId: "notice",
+          catalogId: A2UI_V091_BASIC_CATALOG_ID
+        }),
+        producer.updateComponents({
+          surfaceId: "notice",
+          components: [
+            { id: "root", component: "Card", child: "message" },
+            {
+              id: "message",
+              component: "Text",
+              text: "Your order has shipped.",
+              variant: "h3"
+            }
+          ]
+        })
+      ]
+    },
+    {
+      title: "Form with a bound field and a button action",
+      messages: [
+        producer.createSurface({
+          surfaceId: "signup",
+          catalogId: A2UI_V091_BASIC_CATALOG_ID
+        }),
+        producer.updateDataModel({
+          surfaceId: "signup",
+          path: "/form/name",
+          value: ""
+        }),
+        producer.updateComponents({
+          surfaceId: "signup",
+          components: [
+            { id: "root", component: "Column", children: ["name-field", "submit"] },
+            {
+              id: "name-field",
+              component: "TextField",
+              label: "Name",
+              value: { path: "/form/name" }
+            },
+            {
+              id: "submit",
+              component: "Button",
+              variant: "primary",
+              child: "submit-label",
+              action: {
+                event: {
+                  name: "submit_signup",
+                  context: { name: { path: "/form/name" } }
+                }
+              }
+            },
+            { id: "submit-label", component: "Text", text: "Sign up" }
+          ]
+        })
+      ]
+    },
+    {
+      title: "Edit mode: change one value with updateDataModel",
+      messages: [
+        producer.createSurface({
+          surfaceId: "order",
+          catalogId: A2UI_V091_BASIC_CATALOG_ID
+        }),
+        producer.updateComponents({
+          surfaceId: "order",
+          components: [
+            { id: "root", component: "Text", text: { path: "/status" } }
+          ]
+        }),
+        producer.updateDataModel({
+          surfaceId: "order",
+          path: "/status",
+          value: "Packed"
+        }),
+        // The edit: only this updateDataModel is sent for the change.
+        producer.updateDataModel({
+          surfaceId: "order",
+          path: "/status",
+          value: "Shipped"
+        })
+      ]
+    }
+  ]);
 
   // node_modules/@cylayo/weaver-web/dist/renderers/errors.js
   var RendererRegistryConfigurationError = class extends Error {
@@ -8930,7 +9156,7 @@ Known schemas:
     #render(surfaceId, container, document2, generation, isCurrent, requestRefresh, localState, renderedIdentities, controlMetadata, controls, appliedThemeProperties) {
       const resolved = this.#runtime.resolveSurface(surfaceId);
       if (!resolved.ok)
-        return { ok: false, error: { code: "SURFACE_RESOLUTION_FAILED", cause: resolved.error } };
+        return { ok: false, error: { code: "SURFACE_RESOLUTION_FAILED", surfaceId, cause: resolved.error } };
       const theme = this.#resolveTheme(resolved.value);
       if (!theme.ok)
         return theme;
@@ -9082,7 +9308,7 @@ Known schemas:
         setLocalState: (key3, value) => {
           if (!isCurrent())
             return { ok: false, error: { code: "STALE_RENDER_INTERACTION" } };
-          if (!isJsonValue2(value))
+          if (!isJsonValue3(value))
             return { ok: false, error: { code: "INVALID_LOCAL_STATE_VALUE" } };
           let state = localState.get(instanceIdentity);
           if (state === void 0) {
@@ -9146,7 +9372,7 @@ Known schemas:
   function cloneJsonValue2(value) {
     return structuredClone(value);
   }
-  function isJsonValue2(value, seen = /* @__PURE__ */ new Set()) {
+  function isJsonValue3(value, seen = /* @__PURE__ */ new Set()) {
     if (value === null || typeof value === "string" || typeof value === "boolean")
       return true;
     if (typeof value === "number")
@@ -9156,10 +9382,10 @@ Known schemas:
     seen.add(value);
     let valid;
     if (Array.isArray(value))
-      valid = value.every((entry) => isJsonValue2(entry, seen));
+      valid = value.every((entry) => isJsonValue3(entry, seen));
     else {
       const prototype = Object.getPrototypeOf(value);
-      valid = (prototype === Object.prototype || prototype === null) && Object.values(value).every((entry) => isJsonValue2(entry, seen));
+      valid = (prototype === Object.prototype || prototype === null) && Object.values(value).every((entry) => isJsonValue3(entry, seen));
     }
     seen.delete(value);
     return valid;
@@ -9265,7 +9491,14 @@ Known schemas:
   var SHORTLET_CATALOG_NAMESPACE = "urn:chat-marketplace:shortlet";
   var SHORTLET_DISCOVERY_CATALOG_ID = `${SHORTLET_CATALOG_NAMESPACE}/discovery/v1`;
   var SHORTLET_BOOKING_CATALOG_ID = `${SHORTLET_CATALOG_NAMESPACE}/booking/v1`;
-  function defineShortletCatalog(schema) {
+  function isJsonObject(value) {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  }
+  function asCatalogSchema(schema, catalogId) {
+    const defs = schema["$defs"];
+    if (schema["$schema"] !== "https://json-schema.org/draft/2020-12/schema" || schema["catalogId"] !== catalogId || !isJsonObject(schema["components"]) || !isJsonObject(defs) || !isJsonObject(defs["theme"])) {
+      throw new TypeError(`Catalogue ${catalogId} is not an A2UI v0.9.1 catalogue document`);
+    }
     return schema;
   }
   var UNIT_DETAIL_COMPONENT = "UnitDetail";
@@ -9429,7 +9662,7 @@ Known schemas:
     const schema = structuredClone(basic.schema);
     schema["$id"] = catalogId;
     schema["catalogId"] = catalogId;
-    return { catalogId, schema: defineShortletCatalog(withComponents(schema, components)) };
+    return defineCatalog(asCatalogSchema(withComponents(schema, components), catalogId));
   }
   var SHORTLET_DISCOVERY_CATALOG = shortletCatalog(SHORTLET_DISCOVERY_CATALOG_ID, DISCOVERY_COMPONENTS);
   var SHORTLET_BOOKING_CATALOG = shortletCatalog(SHORTLET_BOOKING_CATALOG_ID, BOOKING_COMPONENTS);
@@ -10028,9 +10261,9 @@ Known schemas:
   var COMPOSER_KEYS = ["label", "ariaLabel", "placeholder", "hint", "inputMode"];
   var WORKSPACE_KEYS = ["regionLabel", "reopenLabel", "returnedAnnouncement", "readyAnnouncement", "workingStatus"];
   var CRITERIA_KEYS = ["regionLabel", "editLabel"];
-  function deepFreeze(value) {
+  function deepFreeze2(value) {
     if (typeof value !== "object" || value === null) return;
-    for (const child of Object.values(value)) deepFreeze(child);
+    for (const child of Object.values(value)) deepFreeze2(child);
     Object.freeze(value);
   }
   var STAYS_PRESENTATION = {
@@ -10062,7 +10295,7 @@ Known schemas:
     },
     criteria: { regionLabel: "Your search", editLabel: "Edit search" }
   };
-  deepFreeze(STAYS_PRESENTATION);
+  deepFreeze2(STAYS_PRESENTATION);
   var GUEST_MODES = Object.freeze({ stays: STAYS_PRESENTATION });
   function isPlainRecord(value) {
     if (typeof value !== "object" || value === null) return false;
@@ -10160,7 +10393,7 @@ Known schemas:
       workspace: { regionLabel, reopenLabel, returnedAnnouncement, readyAnnouncement, workingStatus: workingStatus2 },
       ...criteria === void 0 ? {} : { criteria }
     };
-    deepFreeze(presentation);
+    deepFreeze2(presentation);
     return presentation;
   }
   var GUEST_NOTICE_COPY = Object.freeze({

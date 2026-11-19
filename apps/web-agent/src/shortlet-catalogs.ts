@@ -1,6 +1,8 @@
 import {
   createBasicCatalogV091Registration,
-  type CatalogRegistration,
+  defineCatalog,
+  type A2UIV091CatalogSchema,
+  type CatalogDefinition,
   type JsonObject,
 } from "@cylayo/weaver-core";
 
@@ -9,9 +11,26 @@ export const SHORTLET_CATALOG_NAMESPACE = "urn:chat-marketplace:shortlet";
 export const SHORTLET_DISCOVERY_CATALOG_ID = `${SHORTLET_CATALOG_NAMESPACE}/discovery/v1`;
 export const SHORTLET_BOOKING_CATALOG_ID = `${SHORTLET_CATALOG_NAMESPACE}/booking/v1`;
 
-export function defineShortletCatalog<TSchema extends JsonObject>(schema: TSchema): TSchema {
-  // Replace with Weaver's defineCatalog when a published release includes it (not present in 0.2.1).
-  return schema;
+function isJsonObject(value: unknown): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Narrows a Basic-derived schema to the catalogue document shape `defineCatalog` takes (Weaver 0.3.0+). `defineCatalog`
+ * does not validate; registration does. This check only refuses a document whose identity does not match, fail closed.
+ */
+function asCatalogSchema(schema: JsonObject, catalogId: string): A2UIV091CatalogSchema {
+  const defs = schema["$defs"];
+  if (
+    schema["$schema"] !== "https://json-schema.org/draft/2020-12/schema" ||
+    schema["catalogId"] !== catalogId ||
+    !isJsonObject(schema["components"]) ||
+    !isJsonObject(defs) ||
+    !isJsonObject(defs["theme"])
+  ) {
+    throw new TypeError(`Catalogue ${catalogId} is not an A2UI v0.9.1 catalogue document`);
+  }
+  return schema as A2UIV091CatalogSchema;
 }
 
 /**
@@ -196,12 +215,12 @@ function withComponents(schema: JsonObject, components: Readonly<Record<string, 
   return schema;
 }
 
-function shortletCatalog(catalogId: string, components: Readonly<Record<string, JsonObject>> = {}): CatalogRegistration {
+function shortletCatalog(catalogId: string, components: Readonly<Record<string, JsonObject>> = {}): CatalogDefinition {
   const basic = createBasicCatalogV091Registration();
   const schema = structuredClone(basic.schema);
   schema["$id"] = catalogId;
   schema["catalogId"] = catalogId;
-  return { catalogId, schema: defineShortletCatalog(withComponents(schema, components)) };
+  return defineCatalog(asCatalogSchema(withComponents(schema, components), catalogId));
 }
 
 export const SHORTLET_DISCOVERY_CATALOG = shortletCatalog(SHORTLET_DISCOVERY_CATALOG_ID, DISCOVERY_COMPONENTS);

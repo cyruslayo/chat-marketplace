@@ -47,8 +47,8 @@
     "assistant:live-smoke": "node --import tsx scripts/assistant-live-smoke.ts"
   },
   "dependencies": {
-    "@cylayo/weaver-core": "0.2.1",
-    "@cylayo/weaver-web": "0.2.1",
+    "@cylayo/weaver-core": "0.3.1",
+    "@cylayo/weaver-web": "0.3.1",
     "@google/genai": "^2.21.0",
     "esbuild": "^0.28.2",
     "tsx": "^4.23.1"
