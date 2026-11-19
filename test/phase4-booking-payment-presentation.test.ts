@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { A2UI_V091_BASIC_CATALOG_ID, createBasicCatalogV091Registration, createWeaverRuntime, type A2UIServerMessage } from "@cylayo/weaver-core";
+import { type A2UIServerMessage } from "@cylayo/weaver-core";
 import { bookingContractArtifactToA2UI, bookingRequestArtifactToA2UI, cardPaymentArtifactToA2UI, conditionalOfferArtifactToA2UI, requestDraftArtifactToA2UI } from "../apps/web-agent/src/index.js";
 import { cardPaymentArtifactFromState } from "../apps/web/src/card-payment-artifact.js";
 import type { BookingContractArtifact, BookingRequestArtifact, CardPaymentArtifact, ConditionalOfferArtifact } from "../apps/web/src/index.js";
 import type { RequestDraftArtifact } from "../apps/web/src/request-draft-artifact.js";
 import { renderGuestContactHtml } from "../apps/local-guest/src/guest-server.js";
 import { bookingProgressText } from "../apps/web-agent/src/booking-presentation.js";
+import { SHORTLET_BOOKING_CATALOG_ID } from "../apps/web-agent/src/shortlet-catalogs.js";
+import { validateShortletMessages } from "../apps/web-agent/src/validate-shortlet-messages.js";
+import { priceBreakdown, stayTicket, surfaceCatalogId } from "./helpers/booking-components.js";
 
 function componentText(messages: readonly A2UIServerMessage[]): string {
   return messages.flatMap((message) => "updateComponents" in message ? message.updateComponents.components : []).filter((component) => component.component === "Text").map((component) => "text" in component && typeof component.text === "string" ? component.text : "").join(" ");
@@ -57,7 +60,15 @@ test("A. Request Draft explicitly says it is not reserved or confirmed", () => {
 
 test("B and H. Booking review preserves Unit, dates, guests and separate All-In Stay Total and deposit", () => {
   const text = componentText(requestDraftArtifactToA2UI({ artifact: draftArtifact("review"), surfaceId: "review" }));
-  for (const fact of ["Garden Stay, Ikoyi", "Check-in: Thu, 24 Sept 2026", "Check-out: Sun, 27 Sept 2026", "Ada Guest", "Tunde Guest", "All-In Stay Total: ₦202,000", "Refundable Security Deposit (separate): ₦50,000"]) assert.ok(text.includes(fact), `review includes ${fact}`);
+  // Weaver catalogues issue 04: the ticket and money are typed StayTicket / PriceBreakdown props.
+  const messages = requestDraftArtifactToA2UI({ artifact: draftArtifact("review"), surfaceId: "review" });
+  const ticket = stayTicket(messages);
+  assert.equal(ticket.title, "Garden Stay, Ikoyi");
+  assert.equal(ticket.checkIn.date, "Thu, 24 Sept 2026");
+  assert.equal(ticket.checkOut.date, "Sun, 27 Sept 2026");
+  for (const fact of ["Ada Guest", "Tunde Guest"]) assert.ok(text.includes(fact), `review includes ${fact}`);
+  assert.equal(priceBreakdown(messages).total, "₦202,000");
+  assert.equal(priceBreakdown(messages).deposit, "₦50,000");
   assert.match(text, /Your dates are not reserved/i);
 });
 
@@ -76,8 +87,9 @@ test("D, E and M. Conditional Offer shows absolute WAT expiry and offers one dir
   const text = componentText(messages);
   assert.match(text, /Offer available/i);
   assert.match(text, /Pay by .* WAT, 24 Sept 2026/i);
-  assert.match(text, /All-In Stay Total: ₦202,000/);
-  assert.match(text, /Refundable Security Deposit \(separate\): ₦50,000/);
+  // Weaver catalogues issue 04: the money is typed PriceBreakdown props.
+  assert.equal(priceBreakdown(messages).total, "₦202,000");
+  assert.equal(priceBreakdown(messages).deposit, "₦50,000");
   assert.match(text, /becomes a Reservation only after payment is verified/i);
   const buttons = messages.flatMap((message) => "updateComponents" in message ? message.updateComponents.components : []).filter((component) => component.component === "Button");
   assert.equal(buttons.length, 1);
@@ -90,10 +102,12 @@ test("D, E and M. Conditional Offer shows absolute WAT expiry and offers one dir
 test("I and N. Payment-required surface states amount due and never claims payment success", () => {
   const text = componentText(cardPaymentArtifactToA2UI({ artifact: paymentArtifact("ready"), surfaceId: "payment" }));
   assert.match(text, /Payment required/i);
-  assert.match(text, /Total to complete booking: ₦252,000/);
-  assert.match(text, /Next payment: stay payment · ₦202,000/);
-  assert.match(text, /All-In Stay Total: ₦202,000/);
-  assert.match(text, /Refundable Security Deposit \(separate\): ₦50,000/);
+  // Weaver catalogues issue 04: the money is typed PriceBreakdown props.
+  const money = priceBreakdown(cardPaymentArtifactToA2UI({ artifact: paymentArtifact("ready"), surfaceId: "payment" }));
+  assert.equal(money.due, "₦252,000");
+  assert.equal(money.next, "stay payment · ₦202,000");
+  assert.equal(money.total, "₦202,000");
+  assert.equal(money.deposit, "₦50,000");
   assert.match(text, /Continue to stay payment · ₦202,000/i);
   assert.doesNotMatch(text, /Payment status: ready|Payment succeeded|Booking confirmed|Reservation confirmed/i);
 });
@@ -128,10 +142,13 @@ test("J2. Payment processing is recoverable while reconciliation and failure rem
 test("K. Confirmed booking presents reservation and contract facts without leading with identifiers", () => {
   const text = componentText(bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: "confirmed" }));
   assert.match(text, /Reservation confirmed/);
-  assert.match(text, /Check-in: Thu, 24 Sept 2026/);
-  assert.match(text, /Check-out: Sun, 27 Sept 2026/);
-  assert.match(text, /Stay payment paid: ₦202,000/);
-  assert.match(text, /Refundable Security Deposit collected: ₦50,000/);
+  // Weaver catalogues issue 04: the ticket and money are typed StayTicket / PriceBreakdown props.
+  const contractMessages = bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: "confirmed" });
+  assert.equal(stayTicket(contractMessages).checkIn.date, "Thu, 24 Sept 2026");
+  assert.equal(stayTicket(contractMessages).checkOut.date, "Sun, 27 Sept 2026");
+  assert.equal(priceBreakdown(contractMessages).paid, "₦202,000");
+  assert.equal(priceBreakdown(contractMessages).depositCollected, true);
+  assert.equal(priceBreakdown(contractMessages).deposit, "₦50,000");
   assert.match(text, /Booking reference/);
   assert.match(text, /access.*not available|access.*authorized|not.*access/i);
   assert.match(text, /booking details/i);
@@ -141,7 +158,8 @@ test("K. Confirmed booking presents reservation and contract facts without leadi
 test("Draft uses a concise stay summary and humanizes placeholder guest names", () => {
   const artifact = { ...draftArtifact("draft"), facts: { ...draftArtifact("draft").facts, primaryGuestName: "Guest", occupants: ["Guest", "Companion 1"] } };
   const text = componentText(requestDraftArtifactToA2UI({ artifact, surfaceId: "humanized-draft" }));
-  assert.match(text, /2 guests/);
+  // Weaver catalogues issue 04: the party size is the StayTicket foot.
+  assert.equal(stayTicket(requestDraftArtifactToA2UI({ artifact, surfaceId: "humanized-draft" })).foot, "3 nights · 2 guests");
   assert.doesNotMatch(text, /Primary Guest: Guest|Companion 1|Prepared booking details/);
   assert.match(text, /What happens next/);
   assert.match(text, /Review request/);
@@ -150,15 +168,20 @@ test("Draft uses a concise stay summary and humanizes placeholder guest names", 
 test("Payment checkout shows the exact current component amount separately from the total requirement", () => {
   const deposit = { ...paymentArtifact("deposit_required"), facts: { ...paymentArtifact("deposit_required").facts, currentComponent: "security_deposit" as const, currentComponentAmountKobo: 5000000 } };
   const text = componentText(cardPaymentArtifactToA2UI({ artifact: deposit, surfaceId: "deposit-required" }));
-  assert.match(text, /Total to complete booking: ₦252,000/);
-  assert.match(text, /Next payment: Refundable Security Deposit · ₦50,000/);
+  // Weaver catalogues issue 04: the money is typed PriceBreakdown props.
+  const money = priceBreakdown(cardPaymentArtifactToA2UI({ artifact: deposit, surfaceId: "deposit-required" }));
+  assert.equal(money.due, "₦252,000");
+  assert.equal(money.next, "Refundable Security Deposit · ₦50,000");
   assert.doesNotMatch(text, /Amount Due Now: ₦252,000/);
 });
 
 test("Confirmed booking summary distinguishes stay payment from a separately collected deposit", () => {
   const text = componentText(bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: "confirmed-money" }));
-  assert.match(text, /Stay payment paid: ₦202,000/);
-  assert.match(text, /Refundable Security Deposit collected: ₦50,000/);
+  // Weaver catalogues issue 04: the money is typed PriceBreakdown props.
+  const money = priceBreakdown(bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: "confirmed-money" }));
+  assert.equal(money.paid, "₦202,000");
+  assert.equal(money.depositCollected, true);
+  assert.equal(money.deposit, "₦50,000");
   assert.doesNotMatch(text, /Payment verified: ₦252,000/);
 });
 
@@ -205,12 +228,10 @@ test("P. Every booking and payment surface remains Weaver Basic Catalog compatib
     cardPaymentArtifactToA2UI({ artifact: paymentArtifact("ready"), surfaceId: "payment" }),
     bookingContractArtifactToA2UI({ artifact: contractArtifact, surfaceId: "confirmed" }),
   ];
-  const runtime = createWeaverRuntime({ catalogs: [createBasicCatalogV091Registration()] });
-  assert.equal(runtime.ok, true);
-  if (!runtime.ok) return;
+  // Weaver catalogues issue 04: every surface is on the shortlet booking catalogue and validates against the shortlet runtime.
   for (const messages of surfaces) {
-    assert.equal(messages[0] && "createSurface" in messages[0] ? messages[0].createSurface.catalogId : undefined, A2UI_V091_BASIC_CATALOG_ID);
-    for (const message of messages) assert.equal(runtime.value.process(message).ok, true);
+    assert.equal(surfaceCatalogId(messages), SHORTLET_BOOKING_CATALOG_ID);
+    assert.equal(validateShortletMessages(messages).ok, true);
   }
 });
 

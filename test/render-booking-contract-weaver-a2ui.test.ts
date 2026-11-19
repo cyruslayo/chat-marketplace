@@ -1,7 +1,9 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { A2UI_V091_BASIC_CATALOG_ID } from "@cylayo/weaver-core";
 import { bookingContractArtifactToA2UI } from "../apps/web-agent/src/booking-contract-a2ui.js";
+import { SHORTLET_BOOKING_CATALOG_ID } from "../apps/web-agent/src/shortlet-catalogs.js";
+import { validateShortletMessages } from "../apps/web-agent/src/validate-shortlet-messages.js";
+import { surfaceCatalogId, typedComponent } from "./helpers/booking-components.js";
 import type { BookingContractArtifact } from "../apps/web/src/booking-contract-artifact.js";
 
 const artifact = { id: "booking-contract:ctr-a2ui", kind: "shortlet.booking-contract", schemaVersion: "shortlet.booking-contract/v1", projectionVersion: 12, domainReferences: [], policyVersions: { contract: "2" }, disclosures: ["Captured disclosure"], facts: { contractId: "ctr-a2ui", reservationId: "res-a2ui", offerId: "off-a2ui", unitId: "unit-a2ui", primaryGuest: { id: "guest", name: "Guest" }, accommodationProvider: { id: "operator", name: "Provider" }, checkIn: "2026-09-01", checkOut: "2026-09-03", nights: 2, occupants: ["Guest"], allInStayTotalKobo: 20000, refundableSecurityDepositKobo: 5000, amountPaidKobo: 25000, currency: "NGN", paymentMethod: "fresh_card", cardMetadata: { brand: "Visa", last4: "4242" }, cancellationPolicy: { version: "v2", summary: "Captured cancellation terms" }, guestConductRules: ["Be considerate"], contractVersion: 2, addressAvailability: "available", accessAvailability: "locked", locationReferenceId: "opaque-location", accessReferenceId: "opaque-access" }, sensitivity: "booking-sensitive" } satisfies BookingContractArtifact;
@@ -9,7 +11,10 @@ const artifact = { id: "booking-contract:ctr-a2ui", kind: "shortlet.booking-cont
 describe("Booking Contract Weaver presentation", () => {
   it("uses the Basic Catalog and contains the same safe meaning without protected values", () => {
     const messages = bookingContractArtifactToA2UI({ artifact, surfaceId: "surface-a2ui" });
-    assert.equal(messages[0] && "createSurface" in messages[0] ? messages[0].createSurface.catalogId : undefined, A2UI_V091_BASIC_CATALOG_ID);
+    // Weaver catalogues issue 04: the surface is on the shortlet booking catalogue, and its money is one PriceBreakdown.
+    assert.equal(surfaceCatalogId(messages), SHORTLET_BOOKING_CATALOG_ID);
+    assert.equal(validateShortletMessages(messages).ok, true);
+    assert.equal(typedComponent(messages, "PriceBreakdown").paid, "₦250");
     const text = JSON.stringify(messages);
     assert.match(text, /Booking confirmed|Provider|2026-09-01|Visa|Captured cancellation terms/);
     assert.match(text, /access details are in secure booking details|check-in details will be shared/i);

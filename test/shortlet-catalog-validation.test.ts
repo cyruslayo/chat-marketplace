@@ -55,7 +55,10 @@ test("AC2 - shortlet catalogues preserve all Basic schemas and render Basic surf
   const discoveryComponents = SHORTLET_DISCOVERY_CATALOG.schema.components as Record<string, unknown>;
   for (const [name, schema] of Object.entries(basicComponents)) assert.deepEqual(discoveryComponents[name], schema, `Basic ${name} is unchanged`);
   assert.deepEqual(Object.keys(discoveryComponents).filter((name) => !(name in basicComponents)), ["UnitDetail", "UnitGallery", "UnitDetailSheet", "UnitActionBar", "StayCard", "StayResults", "StayComparison"]);
-  assert.deepEqual(SHORTLET_BOOKING_CATALOG.schema.components, basic.schema.components);
+  // Weaver catalogues issue 04: the booking catalogue adds the typed StayTicket and PriceBreakdown on top of every unchanged Basic component.
+  const bookingComponents = SHORTLET_BOOKING_CATALOG.schema.components as Record<string, unknown>;
+  for (const [name, schema] of Object.entries(basicComponents)) assert.deepEqual(bookingComponents[name], schema, `Basic ${name} is unchanged`);
+  assert.deepEqual(Object.keys(bookingComponents).filter((name) => !(name in basicComponents)), ["StayTicket", "PriceBreakdown"]);
   for (const catalogId of [SHORTLET_DISCOVERY_CATALOG_ID, SHORTLET_BOOKING_CATALOG_ID]) {
     const runtime = createShortletWebRuntime();
     const messages = surface(catalogId, `custom-${catalogId}`, "Same Basic rendering");

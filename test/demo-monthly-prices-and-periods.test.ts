@@ -11,6 +11,7 @@ import { escapeHtml } from "../apps/web/src/ui-kit.js";
 import { unitDetailArtifactToA2UI } from "../apps/web-agent/src/unit-detail-a2ui.js";
 import { requestDraftArtifactToA2UI } from "../apps/web-agent/src/request-draft-a2ui.js";
 import { GUEST_FACT_LABELS } from "../apps/web-agent/src/guest-content.js";
+import { priceBreakdown } from "./helpers/booking-components.js";
 import { requestDraftArtifactFromProjection, type RequestDraftProjectionInput } from "../apps/web/src/request-draft-artifact.js";
 import { unitDetailArtifactFromProjection } from "../apps/web/src/unit-detail-artifact.js";
 import { DEFAULT_MONTHLY, DEFAULT_UTILITIES, SYNTHETIC_NOW, addDays, extendedStayUnit } from "./helpers/demo-extended-journey.js";
@@ -111,8 +112,10 @@ test("AC2: a 180-night request review shows the All-In Stay Total and all six Bi
     amountDueNowKobo: quote.billingPeriods[0]!.amountKobo,
     billingPeriods: quote.billingPeriods,
   }), GUEST);
-  const review = texts(requestDraftArtifactToA2UI({ artifact: draft, surfaceId: "ac2-review" }));
-  assert.ok(review.some((text) => text.startsWith(`${GUEST_FACT_LABELS.allInStayTotal}: `)), "the whole-stay total");
+  const reviewMessages = requestDraftArtifactToA2UI({ artifact: draft, surfaceId: "ac2-review" });
+  const review = texts(reviewMessages);
+  // Weaver catalogues issue 04: the whole-stay total is the typed PriceBreakdown's total prop.
+  assert.equal(priceBreakdown(reviewMessages).total, formatNgnKobo(quote.allInStayTotalKobo), "the whole-stay total");
   const schedule = review.filter((text) => text.startsWith(`${GUEST_FACT_LABELS.billingPeriod} `));
   assert.equal(schedule.length, 6, "six period lines");
   quote.billingPeriods.forEach((period, index) => {

@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { A2UI_V091_BASIC_CATALOG_ID, createBasicCatalogV091Registration, createWeaverRuntime } from "@cylayo/weaver-core";
 import { conditionalOfferArtifactToA2UI } from "../apps/web-agent/src/index.js";
+import { SHORTLET_BOOKING_CATALOG_ID } from "../apps/web-agent/src/shortlet-catalogs.js";
+import { validateShortletMessages } from "../apps/web-agent/src/validate-shortlet-messages.js";
 import type { ConditionalOfferArtifact } from "../apps/web/src/index.js";
+import { surfaceCatalogId, typedComponent } from "./helpers/booking-components.js";
 
 function artifact(status: "issued" | "accepted", withAction: boolean): ConditionalOfferArtifact {
   return {
@@ -29,11 +31,14 @@ test("Conditional Offer A2UI is deterministic, Basic Catalog v0.9.1, and only au
   const active = artifact("issued", true);
   const first = conditionalOfferArtifactToA2UI({ artifact: active, surfaceId: "conditional-offer-surface" });
   assert.deepEqual(first, conditionalOfferArtifactToA2UI({ artifact: active, surfaceId: "conditional-offer-surface" }));
-  assert.equal(first[0] && "createSurface" in first[0] ? first[0].createSurface.catalogId : undefined, A2UI_V091_BASIC_CATALOG_ID);
+  // Weaver catalogues issue 04: the surface is on the shortlet booking catalogue.
+  assert.equal(surfaceCatalogId(first), SHORTLET_BOOKING_CATALOG_ID);
   assert.match(JSON.stringify(first), /Conditional Booking Offer/);
-  assert.match(JSON.stringify(first), /All-In Stay Total: ₦100,000/);
-  assert.match(JSON.stringify(first), /Refundable Security Deposit \(separate\): ₦20,000/);
-  assert.match(JSON.stringify(first), /Total to complete booking: ₦120,000/);
+  // Weaver catalogues issue 04: the ticket and money are typed StayTicket / PriceBreakdown props.
+  const breakdown = typedComponent(first, "PriceBreakdown");
+  assert.equal(breakdown.total, "₦100,000");
+  assert.equal(breakdown.deposit, "₦20,000");
+  assert.equal(breakdown.due, "₦120,000");
   assert.match(JSON.stringify(first), /Pay by .* WAT/);
   assert.match(JSON.stringify(first), /Accept/);
   const visibleText = first.flatMap((message) => "updateComponents" in message ? message.updateComponents.components : []).filter((component) => component.component === "Text").map((component) => "text" in component ? component.text : "").join(" ");
@@ -41,8 +46,6 @@ test("Conditional Offer A2UI is deterministic, Basic Catalog v0.9.1, and only au
   const terminal = conditionalOfferArtifactToA2UI({ artifact: artifact("accepted", false), surfaceId: "conditional-offer-surface" });
   assert.doesNotMatch(JSON.stringify(terminal), /Accept/);
 
-  const runtimeResult = createWeaverRuntime({ catalogs: [createBasicCatalogV091Registration()] });
-  assert.equal(runtimeResult.ok, true);
-  if (!runtimeResult.ok) return;
-  for (const message of first) assert.equal(runtimeResult.value.process(message).ok, true);
+  // Weaver catalogues issue 04: validated against the shortlet runtime's catalogue set.
+  assert.equal(validateShortletMessages(first).ok, true);
 });

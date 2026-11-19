@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { cardPaymentArtifactToA2UI } from "../apps/web-agent/src/index.js";
-import { A2UI_V091_BASIC_CATALOG_ID } from "@cylayo/weaver-core";
+import { SHORTLET_BOOKING_CATALOG_ID } from "../apps/web-agent/src/shortlet-catalogs.js";
+import { surfaceCatalogId } from "./helpers/booking-components.js";
 import type { CardPaymentArtifact } from "../apps/web/src/card-payment-artifact.js";
 
 function artifact(status: CardPaymentArtifact["facts"]["status"], authorized = true): CardPaymentArtifact {
@@ -12,7 +13,8 @@ function text(messages: ReturnType<typeof cardPaymentArtifactToA2UI>): string { 
 
 test("Card payment A2UI is deterministic, v0.9.1 Basic Catalog, and never renders card credentials", () => {
   const ready = cardPaymentArtifactToA2UI({ artifact: artifact("ready"), surfaceId: "surface" });
-  assert.equal(ready[0] && "createSurface" in ready[0] ? ready[0].createSurface.catalogId : undefined, A2UI_V091_BASIC_CATALOG_ID);
+  // Weaver catalogues issue 04: the surface is on the shortlet booking catalogue.
+  assert.equal(surfaceCatalogId(ready), SHORTLET_BOOKING_CATALOG_ID);
   assert.deepEqual(ready, cardPaymentArtifactToA2UI({ artifact: artifact("ready"), surfaceId: "surface" }));
   assert.match(text(ready), /Total to complete booking: ₦100/);
   assert.match(text(ready), /Continue to stay payment · ₦100/);

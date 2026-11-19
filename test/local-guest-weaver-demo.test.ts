@@ -9,6 +9,7 @@ import {
 } from "../apps/local-guest/src/guest-server.js";
 import { LocalGuestEnvironment } from "../apps/local-guest/src/fixture.js";
 import type { A2UIServerMessage, A2UIClientActionMessage } from "@cylayo/weaver-core";
+import { priceBreakdown } from "./helpers/booking-components.js";
 
 const CANONICAL_PROMPT = "I need an apartment in Ikoyi from 10 Sept for 3 nights for 2 people";
 const IKOYI_TITLE = "Luxury 2-Bedroom Apartment in Old Ikoyi";
@@ -330,9 +331,15 @@ test("Guest Request Draft remains separate from Booking Request until review and
     const offerTarget = journey.harness.mounted[4]!.target;
     const offerText = offerTarget.textContent ?? "";
     assert.ok(offerText.includes("Conditional Booking Offer"));
-    assert.ok(offerText.includes(`All-In Stay Total: ${ALL_IN_TOTAL_NGN}`));
+    // Weaver catalogues issue 04: the money is the typed PriceBreakdown, drawn by the kit (the total's label sits above
+    // its amount, so there is no "Label: amount" colon on the total). Check what the guest sees and the props it came from.
+    assert.match(offerText, new RegExp(`All-In Stay Total\\s*${ALL_IN_TOTAL_NGN.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
     assert.ok(offerText.includes("Refundable Security Deposit (separate): ₦20,000"));
     assert.ok(offerText.includes("Total to complete booking: ₦390,000"));
+    const offerMoney = priceBreakdown(offerSurface.a2uiMessages as readonly A2UIServerMessage[]);
+    assert.equal(offerMoney.total, ALL_IN_TOTAL_NGN);
+    assert.equal(offerMoney.deposit, "₦20,000");
+    assert.equal(offerMoney.due, "₦390,000");
     assert.ok(offerText.includes("Cancellation:"));
     assert.match(offerText, /Pay by .* WAT/);
     assert.ok([...offerTarget.querySelectorAll("button")].some((button) => button.textContent?.includes("Accept")));
