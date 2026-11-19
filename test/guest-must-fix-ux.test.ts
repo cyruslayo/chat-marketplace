@@ -11,6 +11,8 @@ import { restartFixture } from "./helpers/guest-restart.js";
 import { PUBLIC_ORIGIN, cookieFrom, productionFixture } from "./helpers/pilot-fixture.js";
 import { approvingPaystack, guestEvent, postJson, provisionOperatorToken, surfaceAction } from "./helpers/guest-journey.js";
 import { operatorCookieFrom, postOperatorLogin } from "./helpers/operator-session.js";
+import { stayTicket } from "./helpers/booking-components.js";
+import type { A2UIServerMessage } from "@cylayo/weaver-core";
 
 // Launch-readiness issue 10: must-fix guest and back-office UX before real guests see the app.
 
@@ -171,11 +173,14 @@ test("Production journey for the title and name criteria", async () => {
 test("Booking request status and confirmation screens show the apartment title, not the unit id", () => {
   assert.ok(journeyProof, "the production journey ran");
   const { unitTitle, statusScreen, confirmationScreen } = journeyProof;
-  assert.match(statusScreen, new RegExp(`"id":"booking-request-unit","component":"Text","text":"${unitTitle}"`));
-  assert.match(confirmationScreen, new RegExp(`"id":"booking-contract-unit","component":"Text","text":"${unitTitle}"`));
+  // Weaver catalogues issue 04: the unit title / total is a typed StayTicket / PriceBreakdown prop.
+  const statusMessages = (JSON.parse(statusScreen) as { surfaces: readonly { a2uiMessages: A2UIServerMessage[] }[] }).surfaces.flatMap((surface) => surface.a2uiMessages);
+  const confirmationMessages = (JSON.parse(confirmationScreen) as { a2uiMessages: A2UIServerMessage[] }).a2uiMessages;
+  assert.equal(stayTicket(statusMessages).title, unitTitle);
+  assert.equal(stayTicket(confirmationMessages).title, unitTitle);
   assert.match(confirmationScreen, new RegExp(`Booking confirmed for ${unitTitle}\\.`));
   for (const screen of [statusScreen, confirmationScreen]) {
-    assert.doesNotMatch(screen, /Unit: unit-|"text":"unit-[a-z0-9-]+"/, "no raw unit id is shown as text");
+    assert.doesNotMatch(screen, /Unit: unit-|"text":"unit-[a-z0-9-]+"|"title":"unit-[a-z0-9-]+"/, "no raw unit id is shown as text or as a ticket title");
     assert.doesNotMatch(screen, /Your selected apartment|"text":"Your stay"/, "the generic fallback is not used when the title is known");
   }
 });

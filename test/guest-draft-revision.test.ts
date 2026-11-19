@@ -13,6 +13,7 @@ import type { GuestSurfacePayload, GuestTurnResult, GuestTurnSuccess } from "../
 import { guestAction, restartFixture } from "./helpers/guest-restart.js";
 import { getBookingRequestManager } from "../apps/web/src/index.js";
 import { repricedByOwner } from "./helpers/owner-terms.js";
+import { priceBreakdown } from "./helpers/booking-components.js";
 
 const TWO_NIGHTS = "I need an apartment in Ikoyi from 10 Sept for 2 nights for 2 people";
 
@@ -83,7 +84,8 @@ test("AC3: \"make it 3 nights\" on a draft proposes a re-quoted draft that needs
     assert.equal(replacement.occupants.length, 2);
     assert.deepEqual(accepted.receipts, ["Draft updated"]);
     assert.match(accepted.messages[0]!, /now covers .+ for 2 guests\. Review it before you send it\.$/);
-    assert.ok(texts(next).includes(`All-In Stay Total: ${formatNgnKobo(quote.allInStayTotalKobo)}`));
+    // Weaver catalogues issue 04: the unit title / total is a typed StayTicket / PriceBreakdown prop.
+    assert.equal(priceBreakdown(next.a2uiMessages).total, formatNgnKobo(quote.allInStayTotalKobo));
     // The criteria follow the accepted stay.
     const after = await fixture.state();
     assert.equal(after.ok && after.criteria?.when?.nights, 3);

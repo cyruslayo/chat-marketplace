@@ -34,6 +34,7 @@ import type { BookingContract } from "../domains/shortlet/src/card-payment.js";
 import { openNodeSqliteDatabase } from "../packages/platform-core/src/node-sqlite-database.js";
 import { coldApp, EMAIL, JOURNEY_SCRIPT, journeyToReservation, PHONE, successOf, tap, type Surface } from "./helpers/assistant-stage-journey.js";
 import { addDays, extendUnit } from "./helpers/demo-extended-journey.js";
+import { stayTicket } from "./helpers/booking-components.js";
 import { datedFixture, firstButtonAction, LIVE_LIKE_CLOCK, restartedDatedApp, scriptedPlanner, wireDatedApp, type DatedFixture, type ScriptedTurn } from "./helpers/guest-date-fixtures.js";
 
 // Monthly-stays issue 18 (ADR 0106, ADR 0092 amended, ADR 0060, ADR 0074, ADR 0077/0080). A Notice to End from the chat:
@@ -352,25 +353,13 @@ test("After Give notice, the event response shows the unit's real title", async 
     assert.ok(unitTitle, "the unit has a title");
     const bookingSurface = given.surfaces.find((surface) => surface.surfaceId.includes(":booking:"));
     assert.ok(bookingSurface, "the give-notice response re-presents the booking surface");
-    const titles = textOfComponent(bookingSurface.a2uiMessages, "booking-contract-unit");
-    assert.deepEqual(titles, [unitTitle], "the event response titles the unit as the restored state does");
+    // Weaver catalogues issue 04: the unit title / total is a typed StayTicket / PriceBreakdown prop.
+    assert.equal(stayTicket(bookingSurface.a2uiMessages).title, unitTitle, "the event response titles the unit as the restored state does");
     const restored = coldApp(f, threadId).app.getState(threadId)!.surfaces.find((surface) => surface.surfaceId.includes(":booking:"));
-    assert.deepEqual(textOfComponent(restored?.a2uiMessages, "booking-contract-unit"), [unitTitle], "the restored state carries the same title");
+    assert.ok(restored, "the restored state carries the booking surface");
+    assert.equal(stayTicket(restored.a2uiMessages).title, unitTitle, "the restored state carries the same title");
   } finally {
     f.close();
   }
 });
 
-/** The text of every A2UI Text component with `id` in a surface's messages. */
-function textOfComponent(messages: unknown, id: string): string[] {
-  const found: string[] = [];
-  const walk = (node: unknown): void => {
-    if (node === null || typeof node !== "object") return;
-    if (Array.isArray(node)) { node.forEach(walk); return; }
-    const record = node as Record<string, unknown>;
-    if (record.id === id && typeof record.text === "string") found.push(record.text);
-    Object.values(record).forEach(walk);
-  };
-  walk(messages);
-  return found;
-}
