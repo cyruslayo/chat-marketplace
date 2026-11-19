@@ -1,6 +1,6 @@
 # PRD: Weaver 0.2.1 and the `shortlet-*` catalogues
 
-Status: ready-for-agent
+Status: complete (19 Nov 2026, branch `claude/wonderful-thompson-iicglk`; awaiting merge approval)
 Requested: 6 Oct 2026
 
 ## Problem
