@@ -34,3 +34,24 @@ test("AC4: the retired classes are gone from the rendered search page and every 
     });
   }
 });
+
+// Weaver catalogues issue 08 (AC1): the chat's rich screens are typed `shortlet-*` components (ADR 0102). The browser
+// organizers and the label matcher that rebuilt Weaver's DOM were retired, so client.ts must not define them again.
+const RETIRED_CLIENT_IDENTIFIERS = [
+  "organizeUnitDetail",
+  "organizeBookingTicket",
+  "decorateDiscoveryCards",
+  "decorateComparison",
+  "findFact",
+  "viewUnitIds",
+  "replaceWithKitMarkup",
+  "UNIT_TILE_FACTS",
+  "guestFactValue",
+];
+
+test("Weaver catalogues 08 AC1: client.ts defines none of the retired organizers or the label matcher", () => {
+  const source = readFileSync("apps/local-guest/src/client.ts", "utf8");
+  for (const name of RETIRED_CLIENT_IDENTIFIERS) {
+    assert.doesNotMatch(source, new RegExp(`\\b${name}\\b`), `client.ts still has ${name}; render a typed shortlet-* component instead (ADR 0102)`);
+  }
+});

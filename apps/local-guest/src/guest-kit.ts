@@ -1,6 +1,7 @@
 /**
  * Server-side markup for the guest UI kit (guest-ui-consistency issue 02). One source per component: the standalone
- * pages call these helpers, and the chat organizers in client.ts produce the same DOM and classes from Weaver output.
+ * pages call these helpers, and in the chat the typed catalogue renderers in shortlet-renderers.ts call the same helpers
+ * from schema-validated props (ADR 0102), so chat and page share one markup source.
  * Styling lives in apps/web/src/shortlet-foundations.css (`ui-*`). Every value is escaped here; helpers never build URLs.
  */
 import {

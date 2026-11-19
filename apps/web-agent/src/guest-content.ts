@@ -617,12 +617,6 @@ export function guestFact(label: string, value: string): string {
 }
 
 /** The value of a fact Text that starts with `label`, or undefined when the text is not that fact. */
-export function guestFactValue(text: string, label: string): string | undefined {
-  const prefix = `${label}: `;
-  const trimmed = text.trim();
-  return trimmed.startsWith(prefix) ? trimmed.slice(prefix.length) : undefined;
-}
-
 /** The label under a stay's money figure: the All-In Stay Total for the searched nights, or the indicative nightly rate when unquoted. */
 export function stayTotalLabel(quoted: boolean, nights?: number): string {
   if (!quoted) return "Indicative nightly rate";

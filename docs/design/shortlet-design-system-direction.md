@@ -166,6 +166,24 @@ Dark mode comes from the semantic tokens only (`prefers-color-scheme: dark` and 
 
 On a phone, a focused task owns one viewport and one scroll area. Its contextual bar shows Back, the current stage, and Ask Shortlet. The conversation composer appears when the guest returns to chat. A task's primary action uses the shared `.ui-action-bar`; it stays within the task scroll area. Reopening the same task preserves its scroll and unsent message. Desktop keeps the conversation and workspace columns visible together. The conventional route keeps the same server-projected facts and actions (ADRs 0074, 0077, 0078, 0080).
 
+#### Typed chat components (ADR 0102)
+
+In the chat, the rich screens are typed components of the `shortlet-discovery/v1` and `shortlet-booking/v1` catalogues. Each renders through a trusted renderer in `apps/local-guest/src/shortlet-renderers.ts`, which calls the same kit helpers in `guest-kit.ts` as the standalone pages, so chat and page share one markup source.
+
+| Catalogue | Component | Kit helper(s) it renders | Builder |
+| --- | --- | --- | --- |
+| `shortlet-discovery/v1` | `UnitDetail` | none (layout root that places its children) | `unit-detail-a2ui.ts` |
+| `shortlet-discovery/v1` | `UnitGallery` | `buildListingGallery` (`listing-gallery.ts`) | `unit-detail-a2ui.ts` |
+| `shortlet-discovery/v1` | `UnitDetailSheet` | `unitLocationHtml`, `unitTitleHtml`, `unitTilesHtml`, `breakdownHtml`, `unitAboutHtml`, `demoListingChipHtml` | `unit-detail-a2ui.ts` |
+| `shortlet-discovery/v1` | `UnitActionBar` | none (renderer builds the `.ui-action-bar` markup directly) | `unit-detail-a2ui.ts` |
+| `shortlet-discovery/v1` | `StayCard` | `stayCardInnerHtml` | `discovery-a2ui.ts` |
+| `shortlet-discovery/v1` | `StayResults` | `resultRowPartsHtml` | `discovery-a2ui.ts` |
+| `shortlet-discovery/v1` | `StayComparison` | none (renderer builds the `.ui-compare` table directly) | `discovery-a2ui.ts` (`compareArtifactToA2UI`) |
+| `shortlet-booking/v1` | `StayTicket` | `ticketHtml` | `booking-presentation.ts` (`bookingTicketComponents`) |
+| `shortlet-booking/v1` | `PriceBreakdown` | `breakdownHtml` | `booking-presentation.ts` (`priceBreakdownComponent`) |
+
+A new rich chat screen adds a typed component to a `shortlet-*` catalogue (schema in `shortlet-catalogs.ts`, renderer in `shortlet-renderers.ts`, both validated) instead of patching Weaver's DOM after render.
+
 ### Foundation implementation entry points
 
 The shared semantic tokens and opt-in presentation primitives live in `apps/web/src/shortlet-foundations.css`. Conventional Guest and Operator pages consume it through `/shortlet-foundations.css`; use the semantic variables for approved roles and the `ui-*` classes for reusable controls, status, money and image treatments. Weaver Basic Catalog content inherits the document typography, text color and focus indication where browser semantics permit; keep its renderer and component tree untouched, and verify generated controls in the rendered accessibility tree before relying on generated labels or component-specific styling.

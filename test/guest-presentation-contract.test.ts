@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import type { A2UIServerMessage } from "@cylayo/weaver-core";
-import { GUEST_FACT_LABELS, guestFactValue } from "../apps/web-agent/src/guest-content.js";
+import { GUEST_FACT_LABELS } from "../apps/web-agent/src/guest-content.js";
 import { bankTransferArtifactToA2UI } from "../apps/web-agent/src/bank-transfer-a2ui.js";
 import type { BankTransferArtifact } from "../apps/web/src/bank-transfer-artifact.js";
 import type { GuestSurfacePayload } from "../apps/local-guest/src/guest-server.js";
@@ -61,10 +61,6 @@ test("The label table is frozen and reuses the glossary terms", () => {
   assert.ok(Object.isFrozen(GUEST_FACT_LABELS));
   assert.equal(GUEST_FACT_LABELS.allInStayTotal, "All-In Stay Total");
   assert.equal(GUEST_FACT_LABELS.refundableSecurityDeposit, "Refundable Security Deposit (separate)");
-  assert.equal(guestFactValue("Check-in: Thu, 10 Sept 2026", GUEST_FACT_LABELS.checkIn), "Thu, 10 Sept 2026");
-  // Failure path: a text that only looks similar, or has no label, is not the fact.
-  assert.equal(guestFactValue("Check-in Thu, 10 Sept 2026", GUEST_FACT_LABELS.checkIn), undefined);
-  assert.equal(guestFactValue("Refundable Security Deposit collected: ₦20,000", GUEST_FACT_LABELS.refundableSecurityDeposit), undefined);
 });
 
 test("AC1 (request draft builder): the ticket and money facts are a typed StayTicket and PriceBreakdown in canonical order", async () => {
