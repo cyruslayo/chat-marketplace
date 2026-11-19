@@ -2,6 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { launchRealBrowser } from "./helpers/chrome-devtools.js";
 import { withStagePage, type StagePageSpec } from "./helpers/guest-stage-pages.js";
+import { bookingTicketComponents } from "../apps/web-agent/src/booking-presentation.js";
+
+/** A component as the state endpoint sends it: the props the StayTicket and the Column carry, as JSON. */
+interface WireComponent {
+  readonly id: string;
+  readonly component?: string;
+  readonly title?: string;
+  readonly checkIn?: { readonly datetime?: string };
+  readonly children?: readonly string[];
+}
 
 /** The kit sections of the page in the chat workspace and on its standalone page, with per-request attributes removed. */
 const KIT_SECTIONS = `(async (pagePath) => {
@@ -44,22 +54,28 @@ test("AC3: the workspace's organized ticket and price breakdown match the conven
   }
 });
 
-test("AC4: when a builder omits a fact, the organizer builds nothing partial, the Weaver output stays visible, and no error is thrown", async () => {
+test("AC4: when the projection lacks a date, no partial ticket is drawn, the facts stay readable as text, and no error is thrown", async () => {
   await withStagePage({ label: "request review", stage: "review" }, async ({ fixture, threadId }) => {
     const browser = await launchRealBrowser();
     try {
       const tab = await browser.createTab();
       await tab.setViewport(390, 900);
       await tab.setExtraHeaders({ cookie: fixture.cookie });
-      // The server projection reaches the page without its Check-out fact (an older or partial surface).
+      // The server projection reaches the page without its check-out date, so the builder emits the plain facts it has
+      // (as it does for any projection that lacks a date) rather than a StayTicket.
       await tab.interceptRequests(async (url) => {
         if (!url.includes("/api/state")) return undefined;
         const response = await fetch(`${fixture.base}/api/state?threadId=${threadId}`, { headers: { cookie: fixture.cookie } });
-        const state = await response.json() as { surfaces: { a2uiMessages: { updateComponents?: { components: { id: string; children?: string[] }[] } }[] }[] };
+        const state = await response.json() as { surfaces: { a2uiMessages: { updateComponents?: { components: WireComponent[] } }[] }[] };
         for (const surface of state.surfaces) for (const message of surface.a2uiMessages) {
           const components = message.updateComponents?.components;
           if (!components) continue;
-          message.updateComponents!.components = components.filter((component) => component.id !== "draft-check-out").map((component) => component.children ? { ...component, children: component.children.filter((id) => id !== "draft-check-out") } : component);
+          const ticket = components.find((component) => component.id === "draft-ticket" && component.component === "StayTicket");
+          if (!ticket) continue;
+          const plain = bookingTicketComponents("draft", ticket.title ?? "", { checkIn: ticket.checkIn?.datetime, nights: 3, guestCount: 2 });
+          const replacement = plain.components as unknown as WireComponent[];
+          message.updateComponents!.components = components.flatMap((component) => component.id === "draft-ticket" && component.component === "StayTicket" ? replacement : [component])
+            .map((component) => component.children ? { ...component, children: component.children.flatMap((id) => id === "draft-ticket" ? [...plain.ids] : [id]) } : component);
         }
         return { status: 200, headers: [{ name: "content-type", value: "application/json" }], body: new TextEncoder().encode(JSON.stringify(state)) };
       });

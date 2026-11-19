@@ -17,6 +17,7 @@ import { guestAction, restartFixture, stages } from "./helpers/guest-restart.js"
 import { unitDetailArtifactToA2UI } from "../apps/web-agent/src/unit-detail-a2ui.js";
 import { compareArtifactToA2UI, stayComparisonProps } from "../apps/web-agent/src/discovery-a2ui.js";
 import { quotedUnitDetailArtifact } from "./helpers/unit-detail-fixture.js";
+import { surfaceCatalogId } from "./helpers/booking-components.js";
 
 function surface(catalogId: string, surfaceId: string, text: string): readonly A2UIServerMessage[] {
   return [
@@ -213,6 +214,45 @@ test("Weaver catalogues 07 AC4 - the comparison validates on shortlet-discovery/
       { version: "v0.9.1", updateComponents: { surfaceId, components: [JSON.parse(JSON.stringify(invalid))] } },
     ]);
     assert.equal(result.ok, false, `invalid comparison ${index} is rejected`);
+  }
+});
+
+test("Weaver catalogues 04 AC4 - every switched booking builder validates on shortlet-booking/v1, and a StayTicket or PriceBreakdown with an extra or missing required property is rejected", async () => {
+  const fixture = await restartFixture();
+  const validated: string[] = [];
+  try {
+    await fixture.advance("confirmed", (stage, result) => {
+      if (!["draft", "review", "offer", "payment-ready", "confirmed"].includes(stage)) return;
+      for (const guestSurface of result.surfaces) {
+        if (surfaceCatalogId(guestSurface.a2uiMessages) !== SHORTLET_BOOKING_CATALOG_ID) continue;
+        assert.deepEqual(validateShortletMessages(guestSurface.a2uiMessages), { ok: true }, `${stage}/${guestSurface.surfaceId} validates`);
+        validated.push(`${stage}/${guestSurface.surfaceId}`);
+      }
+    });
+    assert.ok(validated.length > 0, "at least one booking surface is validated across the journey");
+  } finally {
+    await fixture.close();
+  }
+  const ticket = { id: "root", component: "StayTicket", title: "Flat", checkIn: { day: "10", date: "Thu, 10 Sept 2026", datetime: "2026-09-10" }, checkOut: { day: "13", date: "Sun, 13 Sept 2026", datetime: "2026-09-13" }, foot: "3 nights · 2 guests" };
+  const breakdown = { id: "root", component: "PriceBreakdown", total: "₦202,000", deposit: "₦50,000", depositCollected: true };
+  const { foot: _foot, ...withoutFoot } = ticket;
+  const { checkOut: _checkOut, ...withoutCheckOut } = ticket;
+  const { day: _day, ...checkInWithoutDay } = ticket.checkIn;
+  for (const [index, invalid] of [
+    withoutFoot,
+    withoutCheckOut,
+    { ...ticket, html: "<b>raw</b>" },
+    { ...ticket, checkIn: checkInWithoutDay },
+    { ...breakdown, discount: "₦1" },
+    { ...breakdown, total: "" },
+    { ...breakdown, depositCollected: "yes" },
+  ].entries()) {
+    const surfaceId = `booking-invalid-${index}`;
+    const result = validateShortletMessages([
+      { version: "v0.9.1", createSurface: { surfaceId, catalogId: SHORTLET_BOOKING_CATALOG_ID } },
+      { version: "v0.9.1", updateComponents: { surfaceId, components: [JSON.parse(JSON.stringify(invalid))] } },
+    ]);
+    assert.equal(result.ok, false, `invalid booking component ${index} is rejected`);
   }
 });
 
