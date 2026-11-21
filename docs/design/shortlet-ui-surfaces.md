@@ -116,7 +116,7 @@ Each row is one surface. **Type** is the Designing Interfaces screen type. **Bin
 
 | Surface | Type | Binds to | One primary action | Pattern | Status |
 | --- | --- | --- | --- | --- | --- |
-| **Home** | Overview (action inbox) | `/operator` | Open the most urgent item | Dashboard (sorted by deadline); Cards | Keep. Order the items by deadline, not by kind, and show the deadline in WAT on each card. |
+| **Home** | Overview (action inbox) | `/operator` | Open the most urgent item | Dashboard (sorted by deadline); Cards | Keep. The code already sorts by deadline (`waitingItems()`). Change: items with no deadline (refunds, over-payments) sort last, and each item shows an overdue tag and the time left. See `xenia-ui-kit-parity-audit.md` §4.2. |
 | **Requests list and detail** | Overview → Do | `/operator/requests`, `…/:id`, `confirm` / `decline` | Confirm **or** Decline, as two separate buttons | One-Window Drilldown; Button Groups; Preview of the decision's effect | Keep. Issue 26 covers its clarity. |
 | **Bookings list and detail** | Overview → Focus | `/operator/bookings`, `…/:id` | Record verified access | Titled Sections; Action Panel for less frequent actions (complaint, refund) | Keep. Group the rare actions (complaint dismiss / uphold, guest refund) into an Action Panel below the stay facts so they never compete with the main one. |
 | **Transfers** | Overview → Do | `/operator/transfers`, `receipt`, `confirm` / `reject` / `late-credit` | Confirm the credit against the receipt | Two-Panel Selector (receipt beside the expected amount) | Keep. Show the receipt and the expected amount side by side; the decision is a comparison (ADR 0090). |
@@ -161,7 +161,7 @@ No conflict with an accepted ADR was found. If an implementation issue finds one
 
 1. **Your stays overview** (guest, bucket b). Add a read route at `/account/stays` over `findThreadsForPrincipal`, the existing stay card markup, a chat parity card (after surface library phase 1), and link it from the app bar, the account page and the committed-work banner. Test with a cold restore, as for the concierge assistant path. Severity P1: the returning-guest job cannot be completed without an old link.
 2. **Extended-stay period card in chat** (guest, bucket b). A read-only card that deep-links to `/bookings/periods/:id`. P2.
-3. **Operator home sorted by deadline, plus booking-detail Action Panel and the transfer side-by-side** (Operator). Fold into issue 26 if it is still open. P2.
+3. **Operator home (items with no deadline last, overdue tag), plus booking-detail Action Panel and the transfer side-by-side** (Operator). The deadline sort already exists. Fold into issue 26 if it is still open. P2.
 4. **Active Hours shown before submit** on the review screen (guest). P2: today the window is only learned through a refusal.
 5. **Bucket (c) triage.** One `needs-triage` issue per row of §6, starting with cancellation, which is the most likely guest question after "where's my booking?". Each starts with its ADR, not a screen.
 
