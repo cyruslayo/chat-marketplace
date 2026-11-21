@@ -161,14 +161,16 @@ The copy board labels each string New (the designer's), Code, or Brief. **Brief 
 
 ## 8. Defined work
 
-### Owner decisions (before engineering starts)
+### Owner decisions (settled 21 November 2026)
 
-| # | Decision | Recommendation |
+The owner accepted the recommendations below after discussing them.
+
+| # | Decision | Settled as |
 | --- | --- | --- |
-| D1 | Does "high-fidelity kit" cover the existing guest journey in the Xenia palette, or only the six groups in the brief? | Yes, cover it: the front-end team cannot rebrand the guest screens from a green canvas without guessing. Do it after the component layer, as one pass over the guest UI canvas |
-| D2 | Where does the kit's source of truth live? | The brand design system artifact (components under `project/components/`), with the boards as a separate artifact linked from it. Do not commit the 6 MB export to the repo |
-| D3 | Guest names on Operator records (§4.4) | Check ADR 0075 and 0082 first; until then, design apartment-first titles |
-| D4 | The copy rows in §6 | Code wording by default |
+| D1 | Does the kit cover the existing guest journey in the Xenia palette? | **Partly.** After the component layer, the design session redraws only the four screens where the palette changes more than colour: stay card, stay ticket with the money band, Conditional Offer, and Reservation confirmed. The other guest screens follow the token mapping in §5 and are checked in captures. |
+| D2 | Where does the kit's source of truth live? | **The brand design system artifact** (<https://claude.ai/artifact/XH7yVkfLzKG357Gxqc1F3d>, components under `project/components/`). The repo keeps the written specs (this audit, the surface plan) and a pointer. The 6 MB export is not committed. |
+| D3 | Guest names on Operator records | **Apartment and stay dates as the title** (for example "2-bedroom, Admiralty Way · 3–6 Dec"). The product never collects a guest name: sign-in is email and code (ADR 0093), and staging records every guest as "Guest" (`apps/cloudflare/src/shortlet-pilot-do.ts`). Collecting names is a separate question, probably tied to check-in identity (ADR 0085). |
+| D4 | Operator copy | **"Decline"** (not "Reject"), and **"Owner payouts"** in the nav (a code change from "Payouts"). For the confirm button, the code's **"Confirm payment"** stays until the owner chooses "Confirm credit"; the helper text says "credit". All New strings go to owner review. |
 
 ### Design work (the next round for the design session)
 
@@ -193,14 +195,71 @@ The copy board labels each string New (the designer's), Code, or Brief. **Brief 
 
 Each UI issue ends with the captures and reflow checks in AGENTS.md ("Guest UI work"). Operator screens use the same widths.
 
-## 9. Prompt for the design session's next round
+## 9. Prompt for the design workspace (next round)
 
-> The Operator boards (home, booking detail, transfer check) are accepted for fidelity and backend accuracy. Next round, in this order:
->
-> 1. **Components first.** Publish every component the boards use as a component in the Xenia design system (https://claude.ai/artifact/XH7yVkfLzKG357Gxqc1F3d, under `project/components/`). That means Side navigation, Queue item, Deadline, Tag, Status word, Facts list, Banner, Button, Labelled field, Disclosure confirm, Skeleton, Empty, Breadcrumb, Record check-in and Verify a manual transfer. Give each its anatomy, variants, every state (idle, focus, busy, success, invalid, disabled, stale), the tokens it uses, its accessible name and role, and a preview.
-> 2. **Receipt preview**: image receipt; PDF receipt as a file card with "Open the receipt" (Android Chrome won't show PDFs inline); "Deleted after 90 days"; loading.
-> 3. **Missing Operator states**: receipt deleted; a record with no guest name, using the apartment as the title; a home item with no reminder and one at the second reminder; and a compact navigation below 768px, so the page title stays above the fold at 320px.
-> 4. **Guest groups 1–3** from the first brief: Your stays, the extended-stay period card in chat, and Review request with Operator Active Hours. Same standard: four widths, light and dark, every state, a spec board and a copy board.
-> 5. **Copy.** Use the code's words where they exist: "Confirm payment", "Decline this transfer…", "Payouts". Keep marking every new string for review.
->
-> Your two questions: Decline stays behind a closed disclosure with Confirm as the one primary action, and items with no deadline sort last, oldest first. Both readings were right.
+Paste the block below into the Claude design workspace that holds the kit.
+
+```text
+Next round for the Xenia kit. The three Operator boards (home by deadline, booking detail with the action panel, transfer check side by side) are accepted for fidelity and backend accuracy. This round turns the boards into a real component kit, applies the owner's decisions, and adds the screens that are still missing. Work in the order below and finish each part before starting the next.
+
+WHERE THE KIT LIVES
+The source of truth is the Xenia design system: https://claude.ai/artifact/XH7yVkfLzKG357Gxqc1F3d. Read project/README.md, tokens.json, voice.md, colour.md and open-decisions.md first. Components go under project/components/<Name>/ (README.md plus preview.html), and the design system's own instructions say how. Boards stay as screens and use those components by name. Use only the existing tokens; do not add or change a token. If a component needs one, list it under "Token needed" with the reason.
+
+OWNER DECISIONS (settled 21 Nov 2026), apply them everywhere
+1. Guest names: the product never collects a guest's name. Sign-in is email and a code, and every guest is recorded as "Guest". So no Operator screen may show a guest's name. Title each record by apartment and stay dates, e.g. "2-bedroom apartment, Admiralty Way · Thu 3 Dec to Sun 6 Dec". Breadcrumbs use the apartment: "Transfers / 2-bedroom apartment, Admiralty Way". Effect text says "the Guest", never a name: "Makes the Reservation and tells the Guest it is confirmed." The guest phone stays on the booking detail; it is real data. Rework the three Operator boards to this rule.
+2. Copy:
+   - "Decline", never "Reject": "Decline this transfer…" (disclosure) and "Decline transfer" (button). Reasons: "Not received", "Amount doesn't match".
+   - The confirm button reads "Confirm payment". The helper text keeps "credit": "Confirm only after you see the matching credit in the business account. The receipt alone is not proof of payment."
+   - Navigation: Home · Requests · Bookings · Transfers · Owner payouts · Calendar.
+   - Keep marking every string you wrote as New on the copy board for owner review.
+3. Your earlier questions: Confirm stays the one primary action and Decline stays behind a closed disclosure. Items with no deadline (refunds, over-payments) sort last, oldest first. Both of your readings were right.
+
+PART 1. THE COMPONENT LAYER
+Publish each component the boards use as a design system component:
+Button (primary, quiet, secondary, block, small), Labelled field (with hint and error), Banner (neutral, info, success, warning, danger), Status word, Tag (Overdue), Deadline (absolute WAT time, time left, overdue), Facts list (stacked and two-column), Queue item, Side navigation (and its compact form, Part 3), Breadcrumb, Disclosure confirm, Record check-in, Verify a manual transfer, Skeleton, Empty state.
+For each one: a first-sentence summary; anatomy; variants; every state (idle, hover, focus, busy, success, invalid, disabled, stale); the tokens it uses; its accessible name and role and its keyboard behaviour; minimum 44px targets; light and dark previews; and the existing code class it maps to where one exists (.ui-button, .ui-field, .ui-banner, .ui-status, .ui-facts, .ui-confirm, .ui-empty, .bo-waiting__item). Rules: money never uses ink-muted or meta text; danger is for declines and failures only; warning for deadlines and holds, always with a clock icon and an absolute time; colour is never the only signal.
+
+PART 2. RECEIPT PREVIEW (new component)
+It shows the Guest's uploaded receipt inline on the transfer check, at a readable size, with an "Illustration" or file-type label and "Open the receipt full size". The backend serves the upload with its own content type and no caching. States:
+- image receipt;
+- PDF receipt, as a file card with the file name, its size and "Open the receipt", because Android Chrome won't show a PDF inline;
+- "Deleted after 90 days" (the retention rule), with no open link;
+- loading;
+- failed to load, with a retry.
+
+PART 3. MISSING OPERATOR STATES
+- Compact navigation below 768px, so the page title stays above the fold at 320px. The wrapped tab rows are not acceptable.
+- Transfer check: the receipt deleted after 90 days, on an old declined transfer.
+- Home: a Booking Request item with no reminder, one at the first reminder and one at the second.
+- Fix the 320px bank transaction reference field so the placeholder isn't cut off: shorten it or rely on the hint.
+- Redraw the three Operator boards with the decisions above: titles, copy and navigation.
+
+PART 4. GUEST SCREENS
+4a. Your stays (new). A list for the returning guest at /account/stays, plus a matching chat card.
+- One card per stay: apartment name, area, dates, the current step as a status word, and the next action with its deadline. Examples: "Offer ready · Accept by 4:00 PM WAT", "Booking Request sent · Waiting for the Operator", "Reservation confirmed · Arrival steps".
+- Order: needs action, then upcoming, then past or ended (muted).
+- A card opens that stay's existing screen.
+- States: several stays across stages, one stay, empty ("No stays yet" with "Find a stay"), signed out (sign in, then return here), loading, error.
+- Entry points: the app bar's account action, a "Your stays" link on the Account page, and the "still active" banner.
+4b. Extended-stay period card in chat (new). A read-only card for a monthly stay: the next period due with its amount and due date, the periods paid so far, and one action, "Pay this period", which opens the existing period payment page. States: due soon, paid, overdue (with its consequence written out), every period paid.
+4c. Review request with Operator Active Hours (change). Add a calm notice near "Submit Booking Request": requests can be sent from 8:00 AM to 7:30 PM WAT, and by 10:55 AM WAT on the check-in date. States: inside the window (an information note); outside the window (the button is disabled and says when sending opens again, and the draft is kept).
+Guest rules: the journey rail is Search · Stay · Request · Offer · Pay · Confirmed. Use these terms exactly: Booking Request, Conditional Offer, Reservation, Operator, All-In Stay Total, Refundable Security Deposit. Amount labels: "Total to complete booking", "This payment", "Stay payment paid". The persona label is "Concierge · Stays". Where chat is involved (4a's card, 4b), compose from existing components; any new chat component must be a shared component, not a one-off.
+
+PART 5. FOUR GUEST SCREENS IN THE XENIA PALETTE
+The other guest screens will move to Adire Indigo through the tokens alone. Redraw only these four, where the change is more than colour:
+- the stay card (search results);
+- the stay ticket with the money band on indigo-deep (apartment detail and review);
+- the Conditional Offer, live and expired, with its WAT countdown;
+- Reservation confirmed.
+Use the current screens on https://claude.ai/artifact/TKQCWTF4SWNscKrjLkN1zX as the content source. Keep their facts, order and copy; change only the visual language.
+
+FOR EVERY SCREEN
+- 320, 390, 768 and 1280 wide; light and dark; no horizontal scroll; targets 44px or more.
+- Every state: loading, empty, error (problem → effect → next action), and stale or expired where relevant. No modal for information.
+- Synthetic data only: Lagos and Abuja apartments, phone +234 801 234 5678, labelled illustrations instead of photos.
+- A spec board per group: screen type, primary action, components used by name, focus order, states.
+- A copy board per group: every string with its source (Code, Brand/Language page, or New).
+
+DELIVER
+The components published in the design system; the updated and new boards; one list of "Token needed" and "Copy for review"; and a short note of anything you could not do and why.
+```
