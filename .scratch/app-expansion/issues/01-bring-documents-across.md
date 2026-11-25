@@ -1,6 +1,6 @@
 # Bring the design and surface documents onto this branch
 
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: none (D1 accepted 25 Nov 2026)
 
@@ -24,4 +24,14 @@ Blocked by: none (D1 accepted 25 Nov 2026)
 
 Documents only: `npm run check` and `npx tsx --test test/state-machine-inventory.test.ts`.
 
+## Answer
+
+Resolved 25 Nov 2026. The four commits were cherry-picked (19cd946, 4cbc1aa, ab719bc, be8f60c). Conflicts were only in weaver-catalogues 04-07: `main`'s text was kept and the branch's comment added below it, with a dated note that the typed components landed first.
+
 ## Comments
+
+- AC1: met with one correction to its wording. `git diff main -- apps domains packages test` shows only `packages/platform-core/CONTEXT.md` (12 glossary lines from 69c9ac4). No code or test differs.
+- AC2: met. All four keep `Status: resolved`.
+- AC3: `npm run check` clean; `npx tsx --test test/state-machine-inventory.test.ts` passes.
+- Documents only, so there are no per-criterion tests and the full suite was not run.
+- `.scratch/surface-catalogue-library/map.md` still lists its issues 01-05 as ready-for-agent; they are resolved on `feat/surface-kit-phase-1` (issue 02).

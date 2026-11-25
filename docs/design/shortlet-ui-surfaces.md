@@ -166,3 +166,7 @@ No conflict with an accepted ADR was found. If an implementation issue finds one
 5. **Bucket (c) triage.** One `needs-triage` issue per row of §6, starting with cancellation, which is the most likely guest question after "where's my booking?". Each starts with its ADR, not a screen.
 
 Each UI issue ends with the capture and reflow checks in `AGENTS.md` ("Guest UI work").
+
+## Note, 25 Nov 2026
+
+This document was written against 69c9ac4, which is behind `main`. On `main` at d1d5955 a guest can already extend an Extended Stay and give a Notice to End (monthly-stays 09, 17, 18), so the §4.5 and §6 rows for those no longer hold. Application code also exists, unconnected, for cancellation, booking changes, check-in support, mid-stay problems and deposit claims. The current plan is `.scratch/app-expansion/`.

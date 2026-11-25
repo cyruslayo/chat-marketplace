@@ -10,7 +10,7 @@ Two lanes run in parallel: **Rules** (2, 4) and **Design system** (1b, 2b). They
 
 | # | Issue | Type | Status | Blocked by |
 | --- | --- | --- | --- | --- |
-| 01 | [Bring the design and surface documents onto this branch](issues/01-bring-documents-across.md) | task | claimed | – |
+| 01 | [Bring the design and surface documents onto this branch](issues/01-bring-documents-across.md) | task | resolved | – |
 | 02 | [Reconcile the shared component library with the typed components on main](issues/02-reconcile-surface-kit.md) | research | ready-for-agent | – |
 
 ## Phase 1: rules and checks
@@ -90,3 +90,5 @@ After each phase: `npm run check`, `npm run test:workers`, the full `npm test` (
 ## Context pointers
 
 (One line per resolved issue.)
+
+- 01: ADR 0108, the surface plan, the kit audit and the library plan are on this branch; see the issue for the one glossary file that differs from `main`.

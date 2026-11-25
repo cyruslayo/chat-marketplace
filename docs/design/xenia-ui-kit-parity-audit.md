@@ -263,3 +263,7 @@ FOR EVERY SCREEN
 DELIVER
 The components published in the design system; the updated and new boards; one list of "Token needed" and "Copy for review"; and a short note of anything you could not do and why.
 ```
+
+## Note, 25 Nov 2026
+
+The §5 token mapping is still the one to use (`.scratch/app-expansion/issues/07-xenia-tokens.md`). `main` now has its own mode tokens (`--mode-accent`, `--mode-accent-subtle`, `--mode-on-accent`, `--mode-tint`); keep those names. The §9 prompt is followed by `.scratch/app-expansion/design-prompt-12.md`.

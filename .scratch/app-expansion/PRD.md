@@ -88,7 +88,7 @@ Three places, one concierge, short tasks. The reasons are in the prototype notes
 | 0099, 0101, 0104, 0107, 0108 | Packs, platform services, commerce off, modes, shared components | Rows, chooser, chat components |
 | 0102, 0106 | Typed catalogue components; cold restore; date authority | All chat work |
 
-ADR 0108 exists only on `docs/ux-guidelines` and `feat/surface-kit-phase-1`. Issue 01 brings it across.
+ADR 0108 reached this branch with issue 01; it is not on `main` yet.
 
 **Conflicts found, not resolved here:**
 - ADR 0066 says the full address follows payment. ADR 0085 keeps protected arrival data closed until the identity procedure exists (D7).
