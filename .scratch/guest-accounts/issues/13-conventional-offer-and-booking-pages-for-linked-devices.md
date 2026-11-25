@@ -1,6 +1,6 @@
 # Conventional offer and booking pages for linked devices and the offer's own Guest
 
-Status: ready-for-human
+Status: ready-for-agent
 Type: task
 Blocked by: 06
 Requested: 11 Oct 2026
@@ -46,3 +46,4 @@ Issue 06 lists "Decision: conventional detail pages for linked principals" as a 
 
 - 11 Oct 2026, filed from issue 06 Comments Q3 and Needs human ("Decision: conventional detail pages for linked principals"), issue 07 Comments (the 06 Q3 note, which hands it to issue 08), and issue 08 Comments (b). Lines re-checked on `origin/main` 8b23923.
 - Pre-existing on `origin/main`: the refusal is not a regression from issue 06.
+- 25 Nov 2026, owner accepted `.scratch/app-expansion/decisions.md` D21: a signed-in second device may open and act on its own request, offer and booking pages, as this issue proposes. Questions 1 and 2: yes. Question 3: the preferred option, built from the records under the same authorization check. `.scratch/app-expansion` issues 11 and 13 wait for this one. Line numbers above predate d1d5955; find code by symbol.
