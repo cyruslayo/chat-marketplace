@@ -17,7 +17,7 @@ Two lanes run in parallel: **Rules** (2, 4) and **Design system** (1b, 2b). They
 
 | # | Issue | Type | Status | Blocked by |
 | --- | --- | --- | --- | --- |
-| 03 | [Exploration harness and the two trial checks](issues/03-exploration-harness.md) | task | ready-for-agent | – |
+| 03 | [Exploration harness and the two trial checks](issues/03-exploration-harness.md) | task | resolved | – |
 | 04 | [A cancelled Reservation accepts no change](issues/04-cancelled-accepts-no-change.md) | task | ready-for-agent | 03 |
 | 05 | [A half-done cancellation is always finished](issues/05-cancellation-always-finishes.md) | task | ready-for-agent | 03, 04 |
 | 06 | [Close rules page 01: settle 26 cells and 8 scenarios](issues/06-close-rules-01.md) | grilling | ready-for-human | – |
@@ -92,3 +92,4 @@ After each phase: `npm run check`, `npm run test:workers`, the full `npm test` (
 (One line per resolved issue.)
 
 - 01: ADR 0108, the surface plan, the kit audit and the library plan are on this branch; see the issue for the one glossary file that differs from `main`.
+- 03: `test/helpers/explore.ts` (`exploreOrders`, `exploreFailures` with digest pruning and `check.reads` guard), `test/helpers/booking-state-fixture.ts`, `scripts/explore-after-booking.ts`, `test/explore-helper.test.ts`, and `test/after-booking-exploration.test.ts` (recording `KNOWN DEFECT` issue 04 & 05 baselines on `SqliteBookingStateRepository`).
