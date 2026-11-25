@@ -19,6 +19,7 @@ import { OPERATOR_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { REVENUE_ACCOUNTING_SCHEMA, REVENUE_COMPATIBILITY_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { RESERVE_PAYOUT_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { UNIT_SCHEMA } from "../../../domains/shortlet/src/index.js";
+import { PARTNER_APPLICATION_SCHEMA } from "../../local-guest/src/partner-application-store.js";
 import { PILOT_NOTIFICATIONS_SCHEMA } from "../../pilot/src/notifications/pilot-notifier.js";
 import { GUEST_ACCOUNT_SCHEMA } from "../../../packages/platform-core/src/accounts/authority.js";
 import { GUEST_ACCOUNT_LINK_SCHEMA } from "../../../packages/platform-core/src/accounts/links.js";
@@ -90,6 +91,8 @@ export const SHORTLET_SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
   { version: 4, name: "guest accounts: identity assurance anchored to the account", statements: [GUEST_IDENTITY_ASSURANCE_SCHEMA] },
   // Demo-launch issue 11: each owner payout and recovery is bound to one Billing Period. Ids and period numbers only.
   { version: 5, name: "owner ledger entries bound to a Billing Period", statements: [OWNER_LEDGER_PERIOD_SCHEMA] },
+  // Personal-data table (landing issue 17): applicants' names and contacts. Exported daily like the other personal-data tables, flagged for the DPIA.
+  { version: 6, name: "founding partner applications", statements: [PARTNER_APPLICATION_SCHEMA] },
 ];
 
 /** The version the import checks for before it writes anything (ops-import.ts). */

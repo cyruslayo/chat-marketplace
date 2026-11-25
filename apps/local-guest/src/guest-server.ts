@@ -9,7 +9,7 @@ import type {
   HttpRequestLike,
   HttpResponseLike,
 } from "../../../packages/platform-core/src/http-like.js";
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import {
   A2UI_V091_BASIC_CATALOG_ID,
   type A2UIComponent,
@@ -35,6 +35,8 @@ import { createGuestShell, type RouteModule, type StaticAsset } from "./guest-sh
 import type { GuestCommerceModule, PaymentReferenceKeys } from "./commerce-port.js";
 import { MAX_TURN_TEXT_LENGTH } from "./turn-limits.js";
 import { createLandingRouteModule } from "./landing-route-module.js";
+import { createPartnersRouteModule } from "./partners-route-module.js";
+import { SqlitePartnerApplicationStore } from "./partner-application-store.js";
 import { nodeLandingAssetLoader } from "./node-landing-assets.js";
 import type { LandingBinaryAssetLoader } from "./landing-assets.js";
 import { commerceEnabledFromEnv } from "../../../packages/commerce-switch/src/commerce-switch.js";
@@ -1073,11 +1075,14 @@ function readRawBody(req: HttpRequestLike): Promise<Buffer> {
   return readBoundedBody(req, PROVIDER_BODY_LIMIT_BYTES);
 }
 
+/** The founding partner form holds one free-text answer; URL encoding can triple its bytes. A bound, not a policy value. */
+const MAX_PARTNER_FORM_BYTES = 32 * 1024;
+
 /**
  * Form posts are small (ADR 0080 no-JS forms); chunks are collected as Buffer bytes so the same reader works
- * without node:http (slice 08a) and the 4 KiB ceiling counts bytes, not decoded characters.
+ * without node:http (slice 08a) and the ceiling (4 KiB unless given) counts bytes, not decoded characters.
  */
-function readFormBody(req: HttpRequestLike): Promise<URLSearchParams> {
+function readFormBody(req: HttpRequestLike, maxBytes = 4096): Promise<URLSearchParams> {
   return new Promise((resolve, reject) => {
     const buffers: Buffer[] = [];
     let size = 0;
@@ -1085,7 +1090,7 @@ function readFormBody(req: HttpRequestLike): Promise<URLSearchParams> {
     req.on("data", (chunk: Buffer) => {
       if (refused) return;
       size += chunk.length;
-      if (size > 4096) {
+      if (size > maxBytes) {
         refused = true;
         reject(new Error("Form is too large"));
         return;
@@ -2358,6 +2363,8 @@ export interface GuestRequestHandlerOptions {
   assets?: AssetLoader;
   /** Owner-approved labelled illustrations; never seeds inventory or changes transaction authority. */
   landingDemo?: boolean;
+  /** Landing issue 17: the privacy notice the founding partner application links to. Absent or null: the form is closed. */
+  partnerPrivacyNoticeUrl?: string | null;
   /** ADR 0095: Node reads lazily; the Workers host injects its own binary loader. */
   landingBinaryAssets?: LandingBinaryAssetLoader;
   modelClient?: AssistantModelClient;
@@ -5875,6 +5882,30 @@ export function createGuestRequestHandler(
         originAccepted: (req) =>
           browserOriginAccepted(req, options.publicOrigin),
         readForm: readFormBody,
+      }),
+      createPartnersRouteModule({
+        assets,
+        intake:
+          options.partnerPrivacyNoticeUrl == null
+            ? null
+            : {
+                privacyNoticeUrl: options.partnerPrivacyNoticeUrl,
+                // Built per save: /api/reset replaces the local environment and its database.
+                store: {
+                  save: (submission) =>
+                    new SqlitePartnerApplicationStore(
+                      defaultApp.environment.database,
+                      {
+                        clock: () => defaultApp.environment.clock(),
+                        newId: randomUUID,
+                      },
+                    ).save(submission),
+                },
+                newFormKey: randomUUID,
+              },
+        originAccepted: (req) =>
+          browserOriginAccepted(req, options.publicOrigin),
+        readForm: (req) => readFormBody(req, MAX_PARTNER_FORM_BYTES),
       }),
       ...commerceRouteModules,
       {

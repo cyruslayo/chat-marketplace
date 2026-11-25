@@ -54,6 +54,8 @@ export const SHORTLET_EXPORT_TABLES = [
   "owner_payout_recoveries",
   "owner_ledger_period_bindings",
   "owner_period_notice_adjustments",
+  // Landing issue 17: applicants' names and contacts. Collected only while a privacy notice is configured (ADR 0075, ADR 0095).
+  "partner_applications",
   "pilot_notifications",
   "reserve_payout_records",
   "revenue_adjustments",

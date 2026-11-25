@@ -114,6 +114,8 @@ function workerFor(environment: PilotEnvironment) {
       // ADR 0105: the staging-only public demo switch; the shared loader refuses it when SHORTLET_DEPLOYMENT is production.
       ...optionalText("SHORTLET_DEMO"),
       ...optionalText("SHORTLET_DEMO_ACCEPT_DELAY_SECONDS"),
+      // Landing issue 17: the privacy notice address opens the founding partner application; unset keeps it closed.
+      ...optionalText("SHORTLET_PARTNER_PRIVACY_URL"),
       // Non-secret notification settings the operator supplies at deploy time.
       ...optionalText("SHORTLET_NOTIFICATION_FROM"),
       ...optionalText("SHORTLET_OPERATOR_ALERT_EMAILS"),

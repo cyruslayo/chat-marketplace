@@ -8,7 +8,8 @@ import {
   LANDING_BINARY_ASSETS,
   type LandingBinaryAssetLoader,
 } from "./landing-assets.js";
-import { renderLandingHtml, type LandingTheme } from "./landing-page-html.js";
+import { renderLandingHtml } from "./landing-page-html.js";
+import { landingThemeFromCookie } from "./landing-theme.js";
 import type { RouteModule } from "./guest-shell.js";
 
 export interface LandingRouteOptions {
@@ -20,17 +21,6 @@ export interface LandingRouteOptions {
   /** Reuse the host's existing origin and bounded form-reader rules, without changing stays behavior. */
   readonly originAccepted: (req: HttpRequestLike) => boolean;
   readonly readForm: (req: HttpRequestLike) => Promise<URLSearchParams>;
-}
-
-function themeFromCookie(req: HttpRequestLike): LandingTheme {
-  const cookie = req.headers.cookie;
-  if (typeof cookie !== "string") return "system";
-  const value = cookie
-    .split(";")
-    .map((part) => part.trim())
-    .find((part) => part.startsWith("shortlet_theme="))
-    ?.slice("shortlet_theme=".length);
-  return value === "light" || value === "dark" ? value : "system";
 }
 
 function notFound(res: HttpResponseLike): void {
@@ -53,7 +43,7 @@ export function createLandingRouteModule(
           Vary: "Cookie",
         });
         res.end(
-          renderLandingHtml(themeFromCookie(req), {
+          renderLandingHtml(landingThemeFromCookie(req), {
             demo: options.demo === true,
           }),
         );

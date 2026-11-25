@@ -31,6 +31,9 @@ export function nodeAssetLoader(
     "shortlet-landing.css": () =>
       join(REPO_ROOT, "apps", "web", "src", "shortlet-landing.css"),
     "landing.js": () => join(scriptDirectory, "landing.js"),
+    "xenia-partners.css": () =>
+      join(REPO_ROOT, "apps", "web", "src", "xenia-partners.css"),
+    "partners.js": () => join(scriptDirectory, "partners.js"),
     "client.js": () => clientScriptPath,
     "gallery.js": () => join(scriptDirectory, "gallery.js"),
     "offer.js": () => join(scriptDirectory, "offer.js"),
