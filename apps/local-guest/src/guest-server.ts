@@ -3691,7 +3691,10 @@ export function createGuestRequestHandler(
         for (const openThreadId of [...session.threadIds].reverse()) {
           if (!(await threadReadable(runtime.environment, session, openThreadId)))
             continue;
-          const openState = await runtime.app.getStateAsync(openThreadId);
+          const openState = await runtime.app.getStateAsync(
+            openThreadId,
+            session.identity?.principalIds,
+          );
           if (openState && openState.timeline.length > 0) {
             res.writeHead(200, LANDING_START_HTML_HEADERS);
             res.end(
@@ -5522,7 +5525,7 @@ export function createGuestRequestHandler(
           return;
         }
         const state = (await threadReadable(app.environment, session, threadId))
-          ? await app.getStateAsync(threadId)
+          ? await app.getStateAsync(threadId, session.identity?.principalIds)
           : undefined;
         const committedWork = await app.committedWork(
           {
@@ -5586,7 +5589,10 @@ export function createGuestRequestHandler(
       }
       const text = form.get("message") ?? "";
       if (text.trim() === "" || text.length > MAX_TURN_TEXT_LENGTH) {
-        const state = await app.getStateAsync(threadId);
+        const state = await app.getStateAsync(
+          threadId,
+          session.identity?.principalIds,
+        );
         res.writeHead(400, GUEST_HTML_HEADERS);
         res.end(
           renderNoScriptConversationHtml({
@@ -5605,7 +5611,10 @@ export function createGuestRequestHandler(
       const result = await app.handleTurn(threadId, text);
       if (!result.ok) {
         // The same rejection the JavaScript client announces, keeping the draft.
-        const state = await app.getStateAsync(threadId);
+        const state = await app.getStateAsync(
+          threadId,
+          session.identity?.principalIds,
+        );
         res.writeHead(422, GUEST_HTML_HEADERS);
         res.end(
           renderNoScriptConversationHtml({
@@ -5703,7 +5712,10 @@ export function createGuestRequestHandler(
         });
         return;
       }
-      const state = await app.getStateAsync(threadId);
+      const state = await app.getStateAsync(
+        threadId,
+        session.identity?.principalIds,
+      );
       if (!state) {
         sendJson(res, 200, {
           ok: true,

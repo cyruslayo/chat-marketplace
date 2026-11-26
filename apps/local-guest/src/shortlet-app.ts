@@ -2077,8 +2077,8 @@ export class LocalGuestApp {
     return { mode: this.#modeFor(threadId), ...(this.#assistantRuntime ? { verticals: this.#verticals() } : {}) };
   }
 
-  getState(threadId: string): GuestStateSnapshot | undefined {
-    const thread = this.#threads.get(threadId) ?? (this.#environment.guestDataIsRemote ? null : this.#loadThread(threadId));
+  getState(threadId: string, principalIds?: readonly string[]): GuestStateSnapshot | undefined {
+    const thread = this.#threads.get(threadId) ?? (this.#environment.guestDataIsRemote ? null : this.#loadThread(threadId, principalIds));
     if (!thread) return undefined;
     this.#rebuildAssistantDiscovery(thread);
     this.#refreshAssistantSurface(thread);
@@ -2795,10 +2795,10 @@ export class LocalGuestApp {
     return this.#hydrateProjection(record, projection, activeRead);
   }
 
-  async getStateAsync(threadId: string): Promise<GuestStateSnapshot | undefined> {
+  async getStateAsync(threadId: string, principalIds?: readonly string[]): Promise<GuestStateSnapshot | undefined> {
     await this.#hydrateRemoteContact();
-    if (this.#environment.guestDataIsRemote && !this.#threads.has(threadId)) await this.#loadRemoteThread(threadId);
-    const state = this.getState(threadId);
+    if (this.#environment.guestDataIsRemote && !this.#threads.has(threadId)) await this.#loadRemoteThread(threadId, principalIds);
+    const state = this.getState(threadId, principalIds);
     if (this.#environment.guestDataIsRemote) await this.#persistRemoteThread(threadId);
     return state;
   }
