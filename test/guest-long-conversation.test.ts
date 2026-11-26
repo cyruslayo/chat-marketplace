@@ -24,8 +24,11 @@ test("AC3: Opening or closing the workspace does not shift the layout when a scr
 });
 
 test("AC4: The skeleton animates opacity, not background position", () => {
-  assert.match(CSS, /\.ui-skeleton \{[^}]*animation: ui-pulse/);
-  assert.match(CSS, /@keyframes ui-pulse \{ from \{ opacity: 1; \} to \{ opacity: 0\.55; \} \}/);
+  // Issue 2b-01 (round-12 bundle.css) replaced the ui-pulse opacity pulse with a static placeholder (reduced motion by default).
+  const skeletonRule = /\.ui-skeleton\s*\{([^}]*)\}/.exec(CSS);
+  assert.ok(skeletonRule, ".ui-skeleton rule exists");
+  assert.match(skeletonRule[1]!, /background:\s*var\(--color-surface-subtle\)/);
+  assert.doesNotMatch(skeletonRule[1]!, /\banimation\b/);
   // Failure path: the old background-position shimmer is gone.
   assert.doesNotMatch(CSS, /ui-shimmer/);
   assert.doesNotMatch(CSS, /background-position: -200% 0/);
