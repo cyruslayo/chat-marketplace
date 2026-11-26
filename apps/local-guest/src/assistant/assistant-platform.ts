@@ -9,6 +9,7 @@ import type { CommandPrincipal } from "../../../../packages/platform-core/src/en
 import { MAX_PLANNER_TOOL_ROUNDS } from "../turn-budget.js";
 import { validateModePresentation, type ModePresentation } from "../../../web-agent/src/guest-content.js";
 export type { ModePresentation } from "../../../web-agent/src/guest-content.js";
+export type { ComposedPlanRows, PlanRow, PlanRowGroup, PlanRowNextStep, PlanRowScope, PlanRowStatus, PlanRowTone, PlanRowsDiagnostic } from "./plan-rows.js";
 
 /**
  * The platform half of the concierge agent (ADR 0099: the platform owns the Agent; a pack
@@ -183,6 +184,8 @@ export interface AssistantDomainPack {
   turnContext?(now: Date): string | undefined;
   /** Where a task in this domain is right now, for the shell task rail. */
   taskSummary(taskState: AssistantTaskState): AssistantTaskSummary;
+  /** Rules 02 / ADR 0099 decision 5: redacted, link-only rows for the guest's list ("Your stays" / "Your plans"). */
+  planRows?(scope: import("./plan-rows.js").PlanRowScope, now: Date): Promise<readonly import("./plan-rows.js").PlanRow[]> | readonly import("./plan-rows.js").PlanRow[];
   /** Projections the runtime renders for this pack's authoritative results. */
   discoverySurface(artifact: unknown, surfaceId: string): readonly unknown[];
   unitDetailSurface(input: { readonly unitId: string; readonly checkIn: string; readonly checkOut: string; readonly surfaceId: string }): readonly unknown[];

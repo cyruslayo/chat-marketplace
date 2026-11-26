@@ -54,6 +54,7 @@ import {
 } from "./assistant-platform.js";
 import type { AssistantToolResult } from "./assistant-model.js";
 import { dateShowBackStage, sentStage, shortletTaskStatus } from "../guest-stage.js";
+import { shortletPlanRows } from "./shortlet-plan-rows.js";
 
 /** The closed neighbourhood list (SEARCH_AREAS, ADR-0080): the names the tool description offers the model. */
 const NEIGHBOURHOOD_NAMES: readonly string[] = [...new Set(SEARCH_AREAS.flatMap((area) => (area.neighbourhood === undefined ? [] : [area.neighbourhood])))];
@@ -2048,6 +2049,7 @@ export function createShortletAssistantPack(environment: LocalGuestEnvironment):
     },
     projectStateSummary: (state, limits) => ({ city: state.stayIntent.location === "Lagos" || state.stayIntent.location === "Abuja" ? state.stayIntent.location : null, hasShortlist: state.shortlist.length > 0, shortlistRefs: state.shortlist.slice(0, limits.maxItems).map((stay) => stay.stayRef), selectedStayRef: state.selectedStayRef ?? null, checkIn: state.stayIntent.checkIn ?? null, checkOut: state.stayIntent.checkOut ?? null, nights: state.stayIntent.nights ?? null, partySize: state.stayIntent.partySize ?? null, hasSelectedStay: Boolean(state.selectedStayRef), hasPendingAction: Boolean(state.pendingAction), openQuestion: state.openQuestion ?? null }),
     taskSummary: (state) => shortletTaskSummary(state, environment),
+    planRows: (scope, now) => shortletPlanRows(environment, scope, now),
     renderReply: (plan, results, text, taskState) => renderShortletReply(plan, results, text, environment.clock(), taskState),
     // ADR 0106: a booking status with no active booking is reported as its own control outcome.
     replyControlOutcome: (results) => results.some((result) => result.name === "get_booking_status" && result.result.status === "no_active_booking")

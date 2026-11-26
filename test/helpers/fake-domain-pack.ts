@@ -1,4 +1,4 @@
-import type { AssistantDomainPack } from "../../apps/local-guest/src/assistant/assistant-platform.js";
+import type { AssistantDomainPack, PlanRow, PlanRowScope } from "../../apps/local-guest/src/assistant/assistant-platform.js";
 import type { AssistantTaskState } from "../../apps/local-guest/src/assistant/assistant-state.js";
 import type { ModePresentation } from "../../apps/web-agent/src/guest-content.js";
 
@@ -36,7 +36,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * A minimal second-domain pack for router, task-switching and contract tests. It implements the neutral hooks of issue 03a
  * (presentation, state, scope facts, at-risk) and no booking method, so it proves the contract without stubbing booking.
  */
-export function createFakeShopPack(options: { readonly omitIntentMap?: boolean } = {}): AssistantDomainPack {
+export function createFakeShopPack(
+  options: {
+    readonly omitIntentMap?: boolean;
+    readonly planRows?: (scope: PlanRowScope, now: Date) => Promise<readonly PlanRow[]> | readonly PlanRow[];
+  } = {},
+): AssistantDomainPack {
   return {
     id: "shop",
     label: "Shop",
@@ -69,5 +74,6 @@ export function createFakeShopPack(options: { readonly omitIntentMap?: boolean }
     stateSummary: (state: unknown) => (isRecord(state) && Array.isArray(state.items) ? { label: "Shopping", status: "Browse" } : undefined),
     scopeFacts: (state: AssistantTaskState) => ({ hasCart: Boolean(state.currentDraftId) }),
     atRisk: (state: AssistantTaskState) => Boolean(state.pendingAction),
+    ...(options.planRows === undefined ? {} : { planRows: options.planRows }),
   };
 }

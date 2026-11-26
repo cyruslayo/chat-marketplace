@@ -2034,6 +2034,11 @@ export class AssistantRuntime {
     });
   }
 
+  /** Registered packs for platform composition (e.g. planRows). */
+  registeredPacks(): readonly AssistantDomainPack[] {
+    return this.#packs.ids().map((id) => this.#packs.packFor(id)).filter((pack): pack is AssistantDomainPack => pack !== undefined);
+  }
+
   /** Registered verticals for starter cards and mode choices (only meaningful with more than one domain). */
   registeredVerticals(): readonly AssistantVertical[] {
     return this.#packs.ids().map((id) => {
