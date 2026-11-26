@@ -106,7 +106,7 @@
 .ui-queue-item__title{font:600 19px/26px var(--font-sans)}
 .ui-queue-item__detail{font:400 14px/20px var(--font-sans);color:var(--ink-secondary)}
 .ui-queue-item__action{display:flex}
-@container (min-width:40rem){.ui-queue-item{grid-template-columns:minmax(0,1fr) 210px auto;align-items:center;gap:var(--space-4)} }
+@container (min-width:40rem){.ui-queue-item{grid-template-columns:minmax(0,1fr) 210px auto;align-items:center;gap:var(--space-4)}}
 
 /* Side navigation · .ui-sidenav and its compact form */
 .ui-sidenav{display:none;flex-direction:column;gap:var(--space-4);padding:var(--space-6) var(--space-4)}
@@ -125,11 +125,11 @@
 .ui-sidenav-compact__toggle{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 12px;border-radius:var(--radius-md);box-shadow:inset 0 0 0 1px var(--border);font:600 15px/20px var(--font-sans);color:var(--ink);cursor:pointer}
 .ui-sidenav-compact[open] .ui-sidenav-compact__toggle{background:var(--indigo-subtle);color:var(--indigo);box-shadow:none}
 .ui-sidenav-compact .ui-sidenav__list{padding:0 12px 12px}
-@container (min-width:48rem){.ui-sidenav{display:flex;flex:none;width:232px;border-right:1px solid var(--border-subtle)}.ui-sidenav-compact{display:none} }
+@container (min-width:48rem){.ui-sidenav{display:flex;flex:none;width:232px;border-right:1px solid var(--border-subtle)}.ui-sidenav-compact{display:none}}
 .ui-shell{display:flex;flex-direction:column;min-height:100%}
-@container (min-width:48rem){.ui-shell{flex-direction:row} }
+@container (min-width:48rem){.ui-shell{flex-direction:row}}
 .ui-shell__main{flex:1;min-width:0;display:flex;flex-direction:column;gap:var(--space-6);padding:var(--space-4) var(--space-4) 40px;max-width:1040px}
-@container (min-width:48rem){.ui-shell__main{padding:28px var(--space-8) var(--space-12)} }
+@container (min-width:48rem){.ui-shell__main{padding:28px var(--space-8) var(--space-12)}}
 
 /* Breadcrumb · .ui-breadcrumb */
 .ui-breadcrumb{font:400 14px/20px var(--font-sans);color:var(--ink-secondary)}
@@ -163,7 +163,7 @@
 
 /* Verify a manual transfer · .ui-transfer (receipt beside the expected credit from 48rem) */
 .ui-transfer{display:grid;grid-template-columns:minmax(0,1fr);gap:20px;align-items:start}
-@container (min-width:48rem){.ui-transfer{grid-template-columns:minmax(0,5fr) minmax(0,6fr)} }
+@container (min-width:48rem){.ui-transfer{grid-template-columns:minmax(0,5fr) minmax(0,6fr)}}
 .ui-transfer__side{display:flex;flex-direction:column;gap:12px}
 .ui-reference{font-family:ui-monospace,Consolas,monospace;font-weight:600;color:var(--ink)}
 
@@ -208,7 +208,7 @@
 .ui-mode-label{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:var(--radius-sm);background:var(--mode-subtle,var(--surface-subtle));color:var(--ink);font:700 13px/16px var(--font-sans);white-space:nowrap}
 .ui-mode-label__mark{width:9px;height:9px;border-radius:2px;background:var(--mode-accent,var(--ink-secondary))}
 .ui-mode-label__mode{color:var(--mode-accent,var(--ink-secondary))}
-@container (min-width:40rem){.ui-appbar{padding-inline:var(--space-6)}.ui-appbar__label{display:inline} }
+@container (min-width:40rem){.ui-appbar{padding-inline:var(--space-6)}.ui-appbar__label{display:inline}}
 
 /* Journey rail · .ui-rail-nav with the full .ui-rail and a compact line below 640px */
 .ui-rail-nav{padding:10px var(--space-4);border-bottom:1px solid var(--border-subtle);background:var(--canvas)}
@@ -228,7 +228,7 @@
 .ui-rail-nav__bar span.is-done{background:var(--ink-secondary)}
 .ui-rail-nav__bar span.is-now{background:var(--indigo)}
 .ui-rail-nav__bar span.is-failed{background:var(--danger)}
-@container (min-width:40rem){.ui-rail-nav{padding-inline:var(--space-6)}.ui-rail{display:flex}.ui-rail-nav__compact{display:none} }
+@container (min-width:40rem){.ui-rail-nav{padding-inline:var(--space-6)}.ui-rail{display:flex}.ui-rail-nav__compact{display:none}}
 
 /* Stay card · .ui-stay-card */
 .ui-stay-card{display:flex;flex-direction:column;border-radius:var(--radius-lg);background:var(--surface);box-shadow:inset 0 0 0 1px var(--border-subtle);overflow:hidden;color:var(--ink)}
@@ -337,7 +337,7 @@
 .ui-action-bar__sum span:last-child{font:400 14px/20px var(--font-sans);color:var(--ink-secondary)}
 .ui-action-bar>.ui-button{flex:1 1 200px}
 .ui-action-bar--sticky{position:sticky;bottom:0}
-@container (min-width:48rem){.ui-action-bar{border:0;border-radius:var(--radius-lg);box-shadow:inset 0 0 0 1px var(--border-subtle)}.ui-action-bar--sticky{position:static} }
+@container (min-width:48rem){.ui-action-bar{border:0;border-radius:var(--radius-lg);box-shadow:inset 0 0 0 1px var(--border-subtle)}.ui-action-bar--sticky{position:static}}
 
 /* Steps · .ui-steps (what happens next: Newsreader numerals in sand-ink, hairline rules; type: body 16/24) */
 .ui-steps{display:flex;flex-direction:column;border-top:1px solid var(--ink)}
@@ -363,12 +363,12 @@
 .ui-app__foot{flex:none;background:var(--canvas)}
 
 /* App bar at 320px: Back replaces the wordmark; a page with no Back keeps it. Find in the tab bar is the way home. */
-@container (max-width:23rem){.ui-appbar__action+.ui-appbar__brand{display:none} }
+@container (max-width:23rem){.ui-appbar__action+.ui-appbar__brand{display:none}}
 .ui-mode-label--control{min-height:44px;padding:4px 8px;border:0;border-radius:var(--radius-md);background:transparent;box-shadow:inset 0 0 0 1px var(--border);text-decoration:none;cursor:pointer}
 .ui-mode-label--control:hover{background:var(--surface-subtle)}
 .ui-mode-label--control .ui-icon{width:16px;height:16px}
 .ui-mode-label--control .ui-agent-mark{width:20px;height:20px}
-@container (max-width:26rem){.ui-mode-label__prefix{display:none} }
+@container (max-width:26rem){.ui-mode-label__prefix{display:none}}
 
 /* Agent Mark, still form · .ui-agent-mark (64-unit rig, ADR 0107) */
 .ui-agent-mark{width:28px;height:28px;flex:none;fill:var(--mode-accent,var(--ink-secondary));stroke:var(--mode-accent,var(--ink-secondary));stroke-width:3;stroke-linejoin:round}
@@ -441,7 +441,7 @@ a.ui-list__row:hover{background:var(--surface-subtle)}
 .ui-chooser__option:has(input:disabled){color:var(--ink-secondary);cursor:not-allowed}
 .ui-chooser__text{display:flex;flex-direction:column;gap:2px;min-width:0}
 .ui-chooser__line{font:400 14px/20px var(--font-sans);color:var(--ink-secondary)}
-@container (max-width:26rem){.ui-chooser__options{grid-auto-flow:row;grid-template-columns:repeat(2,minmax(0,1fr))}.ui-chooser__option{flex-direction:row;justify-content:flex-start;min-height:52px;padding:8px 12px} }
+@container (max-width:26rem){.ui-chooser__options{grid-auto-flow:row;grid-template-columns:repeat(2,minmax(0,1fr))}.ui-chooser__option{flex-direction:row;justify-content:flex-start;min-height:52px;padding:8px 12px}}
 .ui-chooser--dialog .ui-chooser__options{grid-auto-flow:row;grid-template-columns:minmax(0,1fr)}
 .ui-chooser--dialog .ui-chooser__option{display:grid;grid-template-columns:28px minmax(0,1fr) auto;justify-content:stretch;gap:12px;min-height:64px;padding:12px;text-align:left;font-size:16px}
 
@@ -465,7 +465,7 @@ a.ui-list__row:hover{background:var(--surface-subtle)}
 
 /* Short phones (under 600px tall): the bars give back height, the targets stay 44px.
    .ui-page--short is the same rule for a fixed frame in a preview or board. */
-@media (max-height:37.49rem){.ui-app .ui-appbar{min-height:52px;padding-block:4px}.ui-app .ui-ask{padding-block:2px}.ui-app .ui-composer--link{padding-block:0}.ui-app .ui-tabbar a{min-height:50px;padding-block:1px 2px} }
+@media (max-height:37.49rem){.ui-app .ui-appbar{min-height:52px;padding-block:4px}.ui-app .ui-ask{padding-block:2px}.ui-app .ui-composer--link{padding-block:0}.ui-app .ui-tabbar a{min-height:50px;padding-block:1px 2px}}
 .ui-page--short .ui-appbar{min-height:52px;padding-block:4px}
 .ui-page--short .ui-ask{padding-block:2px}
 .ui-page--short .ui-composer--link{padding-block:0}
@@ -481,4 +481,4 @@ a.ui-list__row:hover{background:var(--surface-subtle)}
 .ui-ask>.ui-composer{max-width:756px}
 }
 
-@media (prefers-reduced-motion:reduce){.ui-page *{transition:none!important;animation:none!important} }
+@media (prefers-reduced-motion:reduce){.ui-page *{transition:none!important;animation:none!important}}

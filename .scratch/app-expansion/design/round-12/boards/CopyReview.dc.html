@@ -1,271 +1,15 @@
-<!DOCTYPE html>
-<html lang="en"><head><style data-dc-design-system-vars="">@layer{:root{--canvas:#f8f5ef;--surface:#ffffff;--surface-subtle:#ede9e1;--ink:#181e2c;--ink-secondary:#464d5e;--ink-muted:#5d6372;--border:#757a87;--border-subtle:#d8d4cc;--indigo:#283f92;--indigo-hover:#1c2f7a;--indigo-pressed:#152461;--on-indigo:#ffffff;--indigo-subtle:#e8eefe;--indigo-deep:#111e47;--on-indigo-deep:#f8f5ee;--sand:#ebcc99;--sand-ink:#815b1f;--focus:#995600;--success:#106c3e;--success-surface:#ddf6e4;--warning:#8a5601;--warning-surface:#fdecd5;--danger:#a12628;--danger-surface:#fee9e7;--stays-accent:#934319;--stays-subtle:#fee5db;--events-accent:#973069;--events-subtle:#fce3ee;--community-accent:#046c68;--community-subtle:#d6f2ef;--services-accent:#596517;--services-subtle:#e9efd5;--space-1:4px;--space-2:8px;--space-4:16px;--space-6:24px;--space-8:32px;--space-12:48px;--radius-sm:4px;--radius-md:8px;--radius-lg:12px;--radius-xl:16px;--radius-pill:999px;--font-display:Newsreader, Georgia, serif;--font-sans:"Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;--text-display:500 40px/46px var(--font-display);--text-h1:500 32px/38px var(--font-display);--text-h2:500 24px/30px var(--font-display);--text-money-total:500 24px/30px var(--font-display);--text-h3:600 19px/26px var(--font-sans);--text-body:400 16px/24px var(--font-sans);--text-label:600 16px/20px var(--font-sans);--text-small:400 14px/20px var(--font-sans);--text-meta:400 12px/16px var(--font-sans);}}</style>
-
-
+<!doctype html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
 <title>Copy for review</title>
-<script src="6755f3aa-172d-45a0-8e5d-2ac167b6398d"></script>
-<style>/* Theme pinning: the exact values of ds/xenia/tokens.json, so light and dark frames sit side by side on one board. */
-:root,[data-theme="light"]{--canvas:#f8f5ef;--surface:#ffffff;--surface-subtle:#ede9e1;--ink:#181e2c;--ink-secondary:#464d5e;--ink-muted:#5d6372;--border:#757a87;--border-subtle:#d8d4cc;--indigo:#283f92;--indigo-hover:#1c2f7a;--indigo-pressed:#152461;--on-indigo:#ffffff;--indigo-subtle:#e8eefe;--indigo-deep:#111e47;--on-indigo-deep:#f8f5ee;--sand:#ebcc99;--sand-ink:#815b1f;--focus:#995600;--success:#106c3e;--success-surface:#ddf6e4;--warning:#8a5601;--warning-surface:#fdecd5;--danger:#a12628;--danger-surface:#fee9e7;--stays-accent:#934319;--stays-subtle:#fee5db;--events-accent:#973069;--events-subtle:#fce3ee;--community-accent:#046c68;--community-subtle:#d6f2ef;--services-accent:#596517;--services-subtle:#e9efd5;color-scheme:light}
-[data-theme="dark"]{--canvas:#0c0f17;--surface:#141822;--surface-subtle:#1d212c;--ink:#efebe2;--ink-secondary:#cecac2;--ink-muted:#a7abb5;--border:#6f7481;--border-subtle:#2e333d;--indigo:#9cb5f8;--indigo-hover:#b0c6fe;--indigo-pressed:#c3d4fe;--on-indigo:#0a1023;--indigo-subtle:#1c253f;--indigo-deep:#162146;--on-indigo-deep:#efebe2;--sand:#ebcc99;--sand-ink:#ebcc99;--focus:#f0a556;--success:#73ce95;--success-surface:#102a1a;--warning:#edbb64;--warning-surface:#312108;--danger:#f08f87;--danger-surface:#371b19;--stays-accent:#eda382;--stays-subtle:#372016;--events-accent:#ed9ac1;--events-subtle:#351e29;--community-accent:#6ccac4;--community-subtle:#0f2c2a;--services-accent:#b1c075;--services-subtle:#252915;color-scheme:dark}
-:root{--space-1:4px;--space-2:8px;--space-4:16px;--space-6:24px;--space-8:32px;--space-12:48px;--radius-sm:4px;--radius-md:8px;--radius-lg:12px;--radius-xl:16px;--radius-pill:999px;--font-display:Newsreader,Georgia,serif;--font-sans:"Hanken Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif}
-
-/* Page layout for the screens (no component lives here). Type: h1 32/38, h2 24/30, h3 19/26, body 16/24, small 14/20. */
-.ui-page .xk-head{display:flex;flex-direction:column;gap:4px}
-.ui-page .xk-head h1{font:500 32px/38px var(--font-display);text-wrap:balance}
-.ui-page .xk-h2{font:500 24px/30px var(--font-display)}
-.ui-page .xk-h3{font:600 19px/26px var(--font-sans)}
-.xk-sec{color:var(--ink-secondary)}
-.xk-small{font:400 14px/20px var(--font-sans);color:var(--ink-secondary)}
-.xk-note{display:flex;gap:8px;font:400 14px/20px var(--font-sans);color:var(--ink-secondary)}
-.xk-note .ui-link{min-height:0;display:inline}
-.xk-group{display:flex;flex-direction:column;gap:8px}
-.xk-stack{display:flex;flex-direction:column;gap:12px}
-.xk-owner{display:inline-flex;min-height:24px;align-items:center;padding:2px 8px;border-radius:4px;box-shadow:inset 0 0 0 1px var(--border);font:400 14px/20px var(--font-sans);color:var(--ink-secondary)}
-.xk-money{display:flex;flex-direction:column;gap:14px;padding:16px;border-radius:12px;background:var(--surface);box-shadow:inset 0 0 0 1px var(--border-subtle)}
-.xk-money>div{display:flex;flex-direction:column;gap:4px}
-.ui-page fieldset.ui-panel{display:flex;flex-direction:column;gap:8px;padding:16px}
-.ui-page fieldset.ui-panel>legend{float:left;width:100%;font:600 16px/20px var(--font-sans)}
-.ui-page .ui-confirm>summary .ui-icon{flex:none}
-.xk-choice{align-items:flex-start;padding-block:10px}
-.xk-choice input{margin-top:2px}
-.xk-choice b{font-weight:600}
-.xk-choice span span{display:block;font:400 14px/20px var(--font-sans);color:var(--ink-secondary)}
-.ui-page .ui-message+.ui-persona{margin-top:4px}
-/* Gallery and photo viewer (board layout; the shipped classes are .listing-gallery) */
-.xk-gallery{position:relative;display:grid;gap:4px;margin:-16px -16px 0}
-.xk-photo{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:0;background:var(--mode-subtle,var(--surface-subtle));color:var(--ink-secondary);font:400 14px/20px var(--font-sans);text-align:center;text-decoration:none}
-.xk-photo .ui-icon{width:28px;height:28px}
-.xk-gallery .xk-photo{aspect-ratio:16/10}
-.xk-gallery .xk-photo+.xk-photo{display:none}
-.xk-gallery__count{position:absolute;left:12px;bottom:12px;background:var(--canvas)}
-.xk-gallery__all{position:absolute;right:12px;bottom:12px}
-.xk-gallery__save{position:absolute;right:12px;top:12px}
-@container (min-width:48rem){.xk-gallery{margin:0;grid-template-columns:2fr 1fr 1fr;grid-auto-rows:150px;border-radius:12px;overflow:hidden}.xk-gallery .xk-photo{aspect-ratio:auto}.xk-gallery .xk-photo+.xk-photo{display:flex}.xk-gallery .xk-photo:first-child{grid-row:span 2} }
-.xk-viewer{display:flex;flex-direction:column;height:100%;background:var(--indigo-deep);color:var(--on-indigo-deep)}
-.xk-viewer .ui-appbar{background:var(--indigo-deep);border-color:var(--border)}
-.xk-viewer .ui-appbar__action,.xk-viewer .ui-appbar__title{color:var(--on-indigo-deep)}
-.xk-viewer .ui-appbar__action:hover{background:transparent;box-shadow:inset 0 0 0 1px var(--sand)}
-.xk-viewer :focus-visible{outline-color:var(--sand)!important}
-.xk-viewer__photo{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:16px}
-.xk-viewer__photo .xk-photo{width:100%;max-width:960px;aspect-ratio:4/3;max-height:100%;border-radius:12px}
-.xk-viewer__foot{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 16px 20px;text-align:center}
-.xk-viewer .ui-button--quiet{color:var(--on-indigo-deep);box-shadow:inset 0 0 0 1px var(--on-indigo-deep)}
-.xk-viewer .ui-button--quiet:hover{background:transparent}
-/* Compare */
-.xk-compare{width:100%;border-collapse:collapse;table-layout:fixed;font:400 16px/24px var(--font-sans)}
-.xk-compare caption{text-align:left}
-.xk-compare th,.xk-compare td{padding:12px 8px 12px 0;vertical-align:top;text-align:left;border-bottom:1px solid var(--border-subtle);overflow-wrap:anywhere}
-.xk-compare tbody th{display:none}
-.xk-compare td::before{content:attr(data-l);display:block;font:400 14px/20px var(--font-sans);color:var(--ink-secondary)}
-.xk-compare thead th{font:600 19px/26px var(--font-sans);border-bottom-color:var(--ink)}
-@container (min-width:40rem){.xk-compare tbody th{display:table-cell;width:30%;font:400 14px/24px var(--font-sans);color:var(--ink-secondary)}.xk-compare td::before{display:none} }
-@container (max-width:39.99rem){.xk-compare thead td{display:none} }
-/* Cards */
-.xk-cards{display:grid;gap:16px}
-@container (min-width:48rem){.xk-cards{grid-template-columns:1fr 1fr}.xk-money--row{flex-direction:row;justify-content:space-between;align-items:center}.xk-2col{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start} }
-.xk-2col{display:grid;gap:16px}
-.ui-page .ui-tiles{align-items:stretch}
-@container (max-width:21rem){.ui-page .ui-tiles{grid-template-columns:1fr} }
-/* Task page foot: the action bar keeps the content column on wide screens */
-.xk-act{flex:none}
-@container (min-width:48rem){.xk-act{width:100%;max-width:640px;margin:0 auto 20px} }
-.xk-scrim{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;background:var(--indigo-deep)}
-.xk-scrim .ui-dialog{position:static;margin:0}
-.xk-split{flex:1;min-height:0;display:flex}
-.xk-chat{flex:1;min-width:0;display:flex;flex-direction:column}
-.xk-chat .ui-conversation{width:100%;max-width:640px}
-
-/* Board furniture */
-.bd{box-sizing:border-box;min-height:100%;padding:64px;background:var(--surface-subtle);color:var(--ink);font:400 16px/24px var(--font-sans)}
-.bd *{box-sizing:border-box}
-.bd-head{max-width:1500px;margin-bottom:8px}
-.bd-head h1{margin:0;font:500 40px/46px var(--font-display)}
-.bd-head p{margin:8px 0 0;font:400 19px/28px var(--font-sans);color:var(--ink-secondary)}
-.bd-frames{display:flex;flex-wrap:wrap;gap:40px 48px;align-items:flex-start}
-.bd-br{flex:0 0 100%;margin:24px 0 -16px;font:500 24px/30px var(--font-display)}
-.bd-cell{flex:none}
-.bd-cap{margin:0 0 8px;font:400 14px/20px var(--font-sans);color:var(--ink-secondary)}
-.bd-frame{overflow:hidden;border-radius:12px;box-shadow:0 0 0 1px var(--border)}
-.bd-spec{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,2fr);gap:64px;margin-top:56px;padding-top:24px;border-top:1px solid var(--ink)}
-.bd-spec h2{margin:0 0 12px;font:500 24px/30px var(--font-display)}
-.bd-spec ol,.bd-spec ul{margin:0;padding-left:22px}
-.bd-spec li{margin-bottom:4px}
-.bd-spec p{margin:0 0 12px}
-.bd-spec .bd-copy{padding:0;list-style:none;columns:2;column-gap:48px}
-.bd-copy li{display:grid;grid-template-columns:56px minmax(0,1fr);gap:8px;break-inside:avoid;padding:4px 0;border-bottom:1px solid var(--border-subtle);margin:0}
-.bd-copy b{font:700 14px/24px var(--font-sans);color:var(--sand-ink)}
-.bd-table{width:100%;border-collapse:collapse}
-.bd-table th,.bd-table td{padding:10px 16px 10px 0;text-align:left;vertical-align:top;border-bottom:1px solid var(--border-subtle)}
-.bd-table thead th{border-bottom-color:var(--ink);font-weight:600}
-</style>
+<script src="./support.js"></script>
+<link rel="stylesheet" href="xenia-kit.css">
 </head>
 <body>
 <x-dc>
 <helmet>
-<style>/* cyrillic-ext */
-@font-face {
-  font-family: 'Hanken Grotesk';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url(https://fonts.gstatic.com/l/font?kit=ieVd2YZDLWuGJpnzaiwFXS9tYvBRzyFLlZg_f_Ncs2Y46ti9FeTyLsmLx5RK8Jcxh5zk&skey=5b527bd9249b78de&v=v12) format('woff2');
-  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
-}
-/* vietnamese */
-@font-face {
-  font-family: 'Hanken Grotesk';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url(https://fonts.gstatic.com/l/font?kit=ieVd2YZDLWuGJpnzaiwFXS9tYvBRzyFLlZg_f_Ncs2Y46ti9FeTyLsmLx5RK8JUxh5zk&skey=5b527bd9249b78de&v=v12) format('woff2');
-  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
-}
-/* latin-ext */
-@font-face {
-  font-family: 'Hanken Grotesk';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("59f32a24-e1b8-4f61-aac8-ea76a1d3851e") format('woff2');
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
-}
-/* latin */
-@font-face {
-  font-family: 'Hanken Grotesk';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url("16e38317-7f1e-4214-a961-68fc9f008c23") format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-/* cyrillic-ext */
-@font-face {
-  font-family: 'Hanken Grotesk';
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url(https://fonts.gstatic.com/l/font?kit=ieVd2YZDLWuGJpnzaiwFXS9tYvBRzyFLlZg_f_Ncs2Y46ti9FeTyLsmLx5RK8Jcxh5zk&skey=5b527bd9249b78de&v=v12) format('woff2');
-  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
-}
-/* vietnamese */
-@font-face {
-  font-family: 'Hanken Grotesk';
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url(https://fonts.gstatic.com/l/font?kit=ieVd2YZDLWuGJpnzaiwFXS9tYvBRzyFLlZg_f_Ncs2Y46ti9FeTyLsmLx5RK8JUxh5zk&skey=5b527bd9249b78de&v=v12) format('woff2');
-  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
-}
-/* latin-ext */
-@font-face {
-  font-family: 'Hanken Grotesk';
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url("59f32a24-e1b8-4f61-aac8-ea76a1d3851e") format('woff2');
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
-}
-/* latin */
-@font-face {
-  font-family: 'Hanken Grotesk';
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url("16e38317-7f1e-4214-a961-68fc9f008c23") format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-/* cyrillic-ext */
-@font-face {
-  font-family: 'Hanken Grotesk';
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url(https://fonts.gstatic.com/l/font?kit=ieVd2YZDLWuGJpnzaiwFXS9tYvBRzyFLlZg_f_Ncs2Y46ti9FeTyLsmLx5RK8Jcxh5zk&skey=5b527bd9249b78de&v=v12) format('woff2');
-  unicode-range: U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F;
-}
-/* vietnamese */
-@font-face {
-  font-family: 'Hanken Grotesk';
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url(https://fonts.gstatic.com/l/font?kit=ieVd2YZDLWuGJpnzaiwFXS9tYvBRzyFLlZg_f_Ncs2Y46ti9FeTyLsmLx5RK8JUxh5zk&skey=5b527bd9249b78de&v=v12) format('woff2');
-  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
-}
-/* latin-ext */
-@font-face {
-  font-family: 'Hanken Grotesk';
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url("59f32a24-e1b8-4f61-aac8-ea76a1d3851e") format('woff2');
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
-}
-/* latin */
-@font-face {
-  font-family: 'Hanken Grotesk';
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url("16e38317-7f1e-4214-a961-68fc9f008c23") format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-/* vietnamese */
-@font-face {
-  font-family: 'Newsreader';
-  font-style: italic;
-  font-weight: 400;
-  font-display: swap;
-  src: url(https://fonts.gstatic.com/s/newsreader/v26/cY9kfjOCX1hbuyalUrK439vogqC9yFZCYg7oRZaLP4obnf7fTXglsMwoT9ZIFjSAgA.woff2) format('woff2');
-  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
-}
-/* latin-ext */
-@font-face {
-  font-family: 'Newsreader';
-  font-style: italic;
-  font-weight: 400;
-  font-display: swap;
-  src: url(https://fonts.gstatic.com/s/newsreader/v26/cY9kfjOCX1hbuyalUrK439vogqC9yFZCYg7oRZaLP4obnf7fTXglsMwoT9ZJFjSAgA.woff2) format('woff2');
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
-}
-/* latin */
-@font-face {
-  font-family: 'Newsreader';
-  font-style: italic;
-  font-weight: 400;
-  font-display: swap;
-  src: url(https://fonts.gstatic.com/s/newsreader/v26/cY9kfjOCX1hbuyalUrK439vogqC9yFZCYg7oRZaLP4obnf7fTXglsMwoT9ZHFjQ.woff2) format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-/* vietnamese */
-@font-face {
-  font-family: 'Newsreader';
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url(https://fonts.gstatic.com/s/newsreader/v26/cY9qfjOCX1hbuyalUrK49dLac06G1ZGsZBtoBCzBDXXD9JVF438wSo_wBOZFDjA.woff2) format('woff2');
-  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
-}
-/* latin-ext */
-@font-face {
-  font-family: 'Newsreader';
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url(https://fonts.gstatic.com/s/newsreader/v26/cY9qfjOCX1hbuyalUrK49dLac06G1ZGsZBtoBCzBDXXD9JVF438wSo_wBeZFDjA.woff2) format('woff2');
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
-}
-/* latin */
-@font-face {
-  font-family: 'Newsreader';
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url("88e3aa7c-79e3-467f-914d-7b30c91310ac") format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&amp;family=Newsreader:ital,wght@0,500;1,400&amp;display=swap">
 <style>
 body{margin:0}
 a{color:#283f92}a:hover{color:#1c2f7a}
@@ -275,16 +19,16 @@ a{color:#283f92}a:hover{color:#1c2f7a}
 <div class="bd cr" data-theme="light" style="width: 1800px; min-height: 4200px">
 <div class="bd-head"><h1>Copy for review</h1><p>Every New or Brand string from the boards, grouped by decision. Code strings ship today and are listed on each board. Nothing here is approved.</p></div>
 <h2>Needs an owner decision first</h2>
-<sc-raw-table class="bd-table"><sc-raw-thead><sc-raw-tr><sc-raw-th>String</sc-raw-th><sc-raw-th>Board</sc-raw-th><sc-raw-th>Waits on</sc-raw-th></sc-raw-tr></sc-raw-thead><sc-raw-tbody>
-<sc-raw-tr><sc-raw-td>The concierge is automated software. When a question needs a person, it goes to our team.</sc-raw-td><sc-raw-td>Find, Help, Domains</sc-raw-td><sc-raw-td>D13; second sentence only once D6 is true</sc-raw-td></sc-raw-tr>
-<sc-raw-tr><sc-raw-td>Are you unsafe or locked out? Contact the support team now.</sc-raw-td><sc-raw-td>Report</sc-raw-td><sc-raw-td>D6, D18</sc-raw-td></sc-raw-tr>
-<sc-raw-tr><sc-raw-td>A person on the support team takes it on and replies here. / We ask the Operator to fix it. / If it isn’t fixed in time, a person decides what you are owed under your stay terms.</sc-raw-td><sc-raw-td>Report sent</sc-raw-td><sc-raw-td>D18</sc-raw-td></sc-raw-tr>
-<sc-raw-tr><sc-raw-td>Refund being made. A person on our team pays it. No date is promised yet.</sc-raw-td><sc-raw-td>Cancel</sc-raw-td><sc-raw-td>D16, D20</sc-raw-td></sc-raw-tr>
-<sc-raw-tr><sc-raw-td>If you sent money after the deadline, it will be refunded. A late payment doesn’t confirm the booking.</sc-raw-td><sc-raw-td>Bank transfer</sc-raw-td><sc-raw-td>Pilot refund policy (manual)</sc-raw-td></sc-raw-tr>
-<sc-raw-tr><sc-raw-td>Not available yet. How to ask: Set by the owner (download, delete)</sc-raw-td><sc-raw-td>Account</sc-raw-td><sc-raw-td>guest-accounts 10, D15</sc-raw-td></sc-raw-tr>
-<sc-raw-tr><sc-raw-td>Your plans; Ask about your plans</sc-raw-td><sc-raw-td>Domains</sc-raw-td><sc-raw-td>D10</sc-raw-td></sc-raw-tr>
-<sc-raw-tr><sc-raw-td>Contact Xenia if you sent money after the deadline; Your Xenia sign-in code is …</sc-raw-td><sc-raw-td>Payments, Sign-in</sc-raw-td><sc-raw-td>D14 (code says Shortlet)</sc-raw-td></sc-raw-tr>
-</sc-raw-tbody></sc-raw-table>
+<table class="bd-table"><thead><tr><th>String</th><th>Board</th><th>Waits on</th></tr></thead><tbody>
+<tr><td>The concierge is automated software. When a question needs a person, it goes to our team.</td><td>Find, Help, Domains</td><td>D13; second sentence only once D6 is true</td></tr>
+<tr><td>Are you unsafe or locked out? Contact the support team now.</td><td>Report</td><td>D6, D18</td></tr>
+<tr><td>A person on the support team takes it on and replies here. / We ask the Operator to fix it. / If it isn’t fixed in time, a person decides what you are owed under your stay terms.</td><td>Report sent</td><td>D18</td></tr>
+<tr><td>Refund being made. A person on our team pays it. No date is promised yet.</td><td>Cancel</td><td>D16, D20</td></tr>
+<tr><td>If you sent money after the deadline, it will be refunded. A late payment doesn’t confirm the booking.</td><td>Bank transfer</td><td>Pilot refund policy (manual)</td></tr>
+<tr><td>Not available yet. How to ask: Set by the owner (download, delete)</td><td>Account</td><td>guest-accounts 10, D15</td></tr>
+<tr><td>Your plans; Ask about your plans</td><td>Domains</td><td>D10</td></tr>
+<tr><td>Contact Xenia if you sent money after the deadline; Your Xenia sign-in code is …</td><td>Payments, Sign-in</td><td>D14 (code says Shortlet)</td></tr>
+</tbody></table>
 <h2>Navigation and shell</h2>
 <ul class="bd-copy" style="columns: 3; column-gap: 48px; padding: 0; list-style: none">
 <li><b>New</b>Find · Your stays · Account (tab and side navigation)</li><li><b>New</b>1 needs your action; 2 need your action</li><li><b>New</b>Ask about this stay · these stays · this request · this payment · your stays · changing this stay</li><li><b>Brand</b>Ask the concierge</li><li><b>New</b>Close {task}; Help</li><li><b>New</b>Show this search as: Concierge, List</li><li><b>New</b>Loading list…</li><li><b>New</b>Concierge, Stays. Change concierge</li><li><b>New</b>3 conversation tasks; Current</li>
@@ -303,11 +47,10 @@ a{color:#283f92}a:hover{color:#1c2f7a}
 </ul>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script="" data-props="{&quot;$preview&quot;:{&quot;width&quot;:1800,&quot;height&quot;:4200}}">
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1800,"height":4200}}'>
 class Component extends DCLogic {
 renderVals() { return {}; }
 }
 </script>
-
-
-</body></html>
+</body>
+</html>

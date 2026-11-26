@@ -1,0 +1,25 @@
+{
+  "v": 3,
+  "assetGroups": {},
+  "blobs": {},
+  "createdOnFiles": {
+    "at": "2026-11-19T12:00:00Z",
+    "v": 1
+  },
+  "docs": {
+    "readme": "project/README.md",
+    "sections": []
+  },
+  "groups": [],
+  "lastChange": {
+    "at": "2026-11-26T00:40:00Z",
+    "by": "Claude",
+    "via": "Claude Code",
+    "note": "Criteria chip: no underline when the chip is a link (starters). No token changed."
+  },
+  "layout": "files",
+  "libraries": [],
+  "namespace": "Xenia",
+  "sections": {},
+  "title": "Xenia Brand & Design System"
+}
