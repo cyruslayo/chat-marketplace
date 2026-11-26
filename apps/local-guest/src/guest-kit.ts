@@ -94,8 +94,8 @@ function ticketDate(label: string, part: TicketDatePart, end: boolean): string {
   return `<div class="ui-ticket__date${end ? " ui-ticket__date--end" : ""}"><span class="ui-ticket__label">${label}</span><span class="ui-ticket__day">${escapeHtml(part.day)}</span>${time}${part.time === undefined ? "" : `<span class="ui-ticket__time">${escapeHtml(part.time)}</span>`}</div>`;
 }
 
-export function ticketHtml(parts: TicketParts): string {
-  return `<section class="ui-ticket" aria-label="Your stay"><div><p class="ui-ticket__label">Your stay</p><h2 class="ui-ticket__name">${escapeHtml(parts.title)}</h2></div><div class="ui-ticket__dates">${ticketDate(CHECK_IN_LABEL, parts.checkIn, false)}<span class="ui-ticket__arrow" aria-hidden="true">→</span>${ticketDate(CHECK_OUT_LABEL, parts.checkOut, true)}</div><p class="ui-ticket__foot">${escapeHtml(parts.foot)}</p></section>`;
+export function ticketHtml(parts: TicketParts & { readonly eyebrow?: string }): string {
+  return `<section class="ui-ticket" aria-label="Your stay"><div><p class="ui-ticket__eyebrow">${escapeHtml(parts.eyebrow ?? "Your stay")}</p><h2 class="ui-ticket__name">${escapeHtml(parts.title)}</h2></div><div class="ui-ticket__dates">${ticketDate(CHECK_IN_LABEL, parts.checkIn, false)}<span class="ui-ticket__arrow" aria-hidden="true">→</span>${ticketDate(CHECK_OUT_LABEL, parts.checkOut, true)}</div><p class="ui-ticket__foot">${escapeHtml(parts.foot)}</p></section>`;
 }
 
 export function stayTicketHtml(facts: StayTicketFacts): string {
@@ -126,9 +126,10 @@ export interface PriceBreakdownInput {
   readonly depositCollected?: boolean;
   /** The component the guest pays next, for example "stay payment · ₦370,000" (issue 09). */
   readonly next?: string;
+  readonly band?: boolean;
 }
 
-export function breakdownHtml(parts: BreakdownParts): string {
+export function breakdownHtml(parts: BreakdownParts & { readonly band?: boolean }): string {
   const money = (value: string): string =>
     `<span class="ui-price-breakdown__value">${escapeHtml(value)}</span>`;
   const total =
@@ -152,12 +153,14 @@ export function breakdownHtml(parts: BreakdownParts): string {
     parts.next === undefined
       ? ""
       : `<p class="ui-price-breakdown__row payment-current-component">${GUEST_FACT_LABELS.nextPayment}: ${money(parts.next)}</p>`;
-  return `<section class="ui-panel ui-price-breakdown" aria-label="Price breakdown">${parts.condition ? `<p class="ui-price-breakdown__condition">${escapeHtml(parts.condition)}</p>` : ""}${total}${deposit}${due}${thisPayment}${paid}${next}</section>`;
+  const classes = parts.band ? "ui-price-breakdown ui-price-breakdown--band" : "ui-panel ui-price-breakdown";
+  return `<section class="${classes}" aria-label="Price breakdown">${parts.condition ? `<p class="ui-price-breakdown__condition">${escapeHtml(parts.condition)}</p>` : ""}${total}${deposit}${due}${thisPayment}${paid}${next}</section>`;
 }
 
 /** ADR 0015: the All-In Stay Total leads, the deposit is separate, then one amount line. */
 export function priceBreakdownHtml(input: PriceBreakdownInput): string {
   return breakdownHtml({
+    ...(input.band ? { band: true } : {}),
     ...(input.depositCollected ? { depositCollected: true } : {}),
     ...(input.heading ? { condition: input.heading } : {}),
     ...(input.allInStayTotalKobo === undefined
@@ -378,8 +381,9 @@ export function paymentRecoveryActionsHtml(conversationHref: string): string {
 }
 
 /** "What happens next": a plain numbered list. */
-export function stepsHtml(items: readonly string[]): string {
-  return `<ol class="ui-steps">${items.map((item, index) => `<li><span class="ui-steps__number">${index + 1}</span><span>${escapeHtml(item)}</span></li>`).join("")}</ol>`;
+export function stepsHtml(items: readonly string[], options?: { readonly compact?: boolean }): string {
+  const cls = options?.compact ? "ui-steps ui-steps--compact" : "ui-steps";
+  return `<ol class="${cls}">${items.map((item, index) => `<li><span class="ui-steps__number">${index + 1}</span><span>${escapeHtml(item)}</span></li>`).join("")}</ol>`;
 }
 
 /** Issue 10: the confirmation uses the same kit sections on the page and in the workspace. */

@@ -140,6 +140,32 @@ const GROUP_2B_02_CLASSES = [
   ".ui-page--short",
 ] as const;
 
+const GROUP_2B_03_CLASSES = [
+  ".ui-ticket",
+  ".ui-ticket__eyebrow",
+  ".ui-ticket__name",
+  ".ui-ticket__dates",
+  ".ui-ticket__date",
+  ".ui-ticket__date--end",
+  ".ui-ticket__label",
+  ".ui-ticket__day",
+  ".ui-ticket__time",
+  ".ui-ticket__arrow",
+  ".ui-ticket__foot",
+  ".ui-price-breakdown",
+  ".ui-price-breakdown--band",
+  ".ui-price-breakdown__condition",
+  ".ui-price-breakdown__label",
+  ".ui-price-breakdown__row",
+  ".ui-price-breakdown__value",
+  ".ui-price-breakdown__due",
+  ".ui-price-breakdown__paid",
+  ".ui-tiles",
+  ".ui-tiles__tile",
+  ".ui-steps",
+  ".ui-steps--compact",
+] as const;
+
 test("I3: zero board-only classes (xk-*, bd-*) appear anywhere in apps/", () => {
   assert.ok(BOARD_ONLY_CLASSES.length >= 30, "extracted board-only class list from xenia-kit.css");
   const appFiles = walkTsCssHtml(new URL("../apps", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1"));
@@ -151,12 +177,15 @@ test("I3: zero board-only classes (xk-*, bd-*) appear anywhere in apps/", () => 
   }
 });
 
-test("I3 (2b-01 & 2b-02): every mapped class and preserved code-only class exists in shortlet-foundations.css", () => {
+test("I3 (2b-01..2b-03): every mapped class and preserved code-only class exists in shortlet-foundations.css", () => {
   for (const cls of GROUP_2B_01_CLASSES) {
     assert.ok(FOUNDATIONS_CSS.includes(cls), `missing 2b-01 class ${cls} in shortlet-foundations.css`);
   }
   for (const cls of GROUP_2B_02_CLASSES) {
     assert.ok(FOUNDATIONS_CSS.includes(cls), `missing 2b-02 class ${cls} in shortlet-foundations.css`);
+  }
+  for (const cls of GROUP_2B_03_CLASSES) {
+    assert.ok(FOUNDATIONS_CSS.includes(cls), `missing 2b-03 class ${cls} in shortlet-foundations.css`);
   }
   for (const cls of PRESERVED_CODE_CLASSES) {
     assert.ok(FOUNDATIONS_CSS.includes(cls), `missing preserved code-only class ${cls} in shortlet-foundations.css`);

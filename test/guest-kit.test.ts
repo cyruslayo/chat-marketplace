@@ -164,10 +164,12 @@ test("AC6: pill components use --radius-pill, never --radius-round", async () =>
     const rule = new RegExp(`${selector.replace(/[.>[\]()]/g, "\$&")} \{[^}]*\}`).exec(kit)?.[0] ?? "";
     assert.ok(rule, `${selector} has a rule`);
   }
-  for (const selector of [".ui-icon-button", ".ui-fact", ".ui-price-breakdown__condition", ".ui-segmented"]) {
+  for (const selector of [".ui-icon-button", ".ui-fact", ".ui-segmented"]) {
     const rule = new RegExp(`${selector.replace(/[.>[\]()]/g, "\$&")} \{[^}]*\}`).exec(kit)![0];
     assert.match(rule, /border-radius: var\(--radius-pill\)/, selector);
   }
+  const condRule = /\.ui-price-breakdown__condition \{[^}]*\}/.exec(kit)![0];
+  assert.match(condRule, /border-radius: var\(--radius-small\)/);
   assert.doesNotMatch(kit, /var\(--radius-round\)/);
   assert.match(css, /:where\(\.guest-editorial \.ui-chip, \.guest-editorial \.ui-button, \.guest-editorial \.ui-status\) \{ border-radius: var\(--radius-pill\); \}/);
 });
