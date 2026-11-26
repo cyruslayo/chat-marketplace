@@ -2,7 +2,7 @@
 
 Plan: [PRD.md](PRD.md) · Method: [method.md](method.md) · Owner answers: [decisions.md](decisions.md) · Rules: [rules/](rules/)
 
-**Frontier:** the first issue that is open, unblocked and unclaimed (currently `02` in Phase 0, `06` `ready-for-human` in Rules, `09` and `2b-01` in Design system). Each issue follows AGENTS.md "Implementation protocol", ends with `npm run check` and its own and affected tests, and records the commands and counts in its Comments. One writer per worktree.
+**Frontier:** the first issue that is open, unblocked and unclaimed (Phase 0 complete; currently `06` `ready-for-human` in Rules, `09` and `2b-01` in Design system, `10`, `12` and `13` in Phase 3). Each issue follows AGENTS.md "Implementation protocol", ends with `npm run check` and its own and affected tests, and records the commands and counts in its Comments. One writer per worktree.
 
 Two lanes run in parallel: **Rules** (2, 4) and **Design system** (1b, 2b). They meet at phase 3.
 
@@ -11,7 +11,7 @@ Two lanes run in parallel: **Rules** (2, 4) and **Design system** (1b, 2b). They
 | # | Issue | Type | Status | Blocked by |
 | --- | --- | --- | --- | --- |
 | 01 | [Bring the design and surface documents onto this branch](issues/01-bring-documents-across.md) | task | resolved | – |
-| 02 | [Reconcile the shared component library with the typed components on main](issues/02-reconcile-surface-kit.md) | research | ready-for-agent | – |
+| 02 | [Reconcile the shared component library with the typed components on main](issues/02-reconcile-surface-kit.md) | research | resolved | – |
 
 ## Phase 1: rules and checks
 
@@ -102,6 +102,7 @@ After each phase: `npm run check`, `npm run test:workers`, the full `npm test` (
 (One line per resolved issue.)
 
 - 01: ADR 0108, the surface plan, the kit audit and the library plan are on this branch; see the issue for the one glossary file that differs from `main`.
+- 02: Reconciled `feat/surface-kit-phase-1` (`5367de7`) against `feat/app-expansion`'s 9 typed components in [notes/02-surface-kit.md](notes/02-surface-kit.md) (14 git conflicts + 3 semantic conflicts; byte-identical `v1` schemas verified; recommended staged cherry-pick Follow-ups A–C; classified round-12 chat components and added dated reconciliation notes to `2b-05` and `2b-06`).
 - 03: `test/helpers/explore.ts` (`exploreOrders`, `exploreFailures` with digest pruning and `check.reads` guard), `test/helpers/booking-state-fixture.ts`, `scripts/explore-after-booking.ts`, `test/explore-helper.test.ts`, and `test/after-booking-exploration.test.ts` (recording `KNOWN DEFECT` issue 04 & 05 baselines on `SqliteBookingStateRepository`).
 - 08: Pinned round-12 delivery under `design/round-12/` (24 boards, `tokens.css`, `xenia-kit.css`, `bundle.css`, `README.md`, `fact-map.md`, `copy-decisions.md`, `class-map.md`), resolved 08 with Handover follow-ups recorded, and sliced Phase 2b (`issues/2b-01`–`2b-07`).
 - 07: Mapped Xenia light/dark/system-dark tokens onto semantic names in `apps/web/src/shortlet-foundations.css`, updated `--mode-*` stays tokens to clay, updated `apps/web/src/shortlet-landing.css` and `apps/local-guest/src/shell-theme-colour.ts`, added `test/shortlet-token-parity.test.ts` (kickoff I2), updated palette assertions, and verified `capture-11-all.sh` into `screenshots/07/`.
