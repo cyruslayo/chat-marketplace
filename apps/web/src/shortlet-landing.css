@@ -9,79 +9,79 @@
    WCAG AA 4.5:1 in light, dark and system-dark (Issue 07 AC4). The photo scrim and the on-deep text keep the same values
    in both themes because the photo sections stay dark. */
 :root {
-  --landing-ground: #F4EFE6;
-  --landing-paper: #FBF8F2;
-  --landing-ink: #14231C;
-  --landing-ink-muted: #55625A;
-  --landing-forest: #0B4A38;
-  --landing-on-forest: #FBF8F2;
-  --landing-forest-deep: #0B3D2E;
-  --landing-on-deep: #F4EFE6;
-  --landing-on-deep-muted: #CFD8D2;
-  --landing-accent: #E8C98A;
-  --landing-accent-ink: #856429;
-  --landing-scrim: rgba(7, 30, 23, 0.73);
+  --landing-ground: #F8F5EF;
+  --landing-paper: #FFFFFF;
+  --landing-ink: #181E2C;
+  --landing-ink-muted: #5D6372;
+  --landing-forest: #283F92;
+  --landing-on-forest: #FFFFFF;
+  --landing-forest-deep: #111E47;
+  --landing-on-deep: #F8F5EE;
+  --landing-on-deep-muted: #D2D8E8;
+  --landing-accent: #EBCC99;
+  --landing-accent-ink: #815B1F;
+  --landing-scrim: rgba(17, 30, 71, 0.73);
   /* Money band cards: the same values in every theme (the band stays dark, the highlight card stays cream). */
-  --landing-band-card: #0F4636;
-  --landing-band-highlight: #FBF8F2;
-  --landing-band-highlight-ink: #14231C;
-  --landing-band-highlight-accent: #856429;
-  --landing-band-status-ink: #7A4C00;
-  --landing-band-status-surface: #FFF2D6;
-  --landing-band-status-border: #EBC77F;
+  --landing-band-card: #162146;
+  --landing-band-highlight: #F8F5EF;
+  --landing-band-highlight-ink: #181E2C;
+  --landing-band-highlight-accent: #815B1F;
+  --landing-band-status-ink: #8A5601;
+  --landing-band-status-surface: #FDECD5;
+  --landing-band-status-border: #D5B88B;
   --landing-mark: var(--landing-forest);
   --landing-mark-cut: var(--landing-ground);
 }
 
 :root[data-theme="dark"] {
-  --landing-ground: #111814;
-  --landing-paper: #18211C;
-  --landing-ink: #E6EBE5;
-  --landing-ink-muted: #A3AFA7;
-  --landing-forest: #1E5E47;
-  --landing-on-forest: #E6EBE5;
-  --landing-forest-deep: #0B3D2E;
-  --landing-on-deep: #F4EFE6;
-  --landing-on-deep-muted: #CFD8D2;
-  --landing-accent: #E8C98A;
-  --landing-accent-ink: #E8C98A;
-  --landing-scrim: rgba(7, 30, 23, 0.73);
+  --landing-ground: #0C0F17;
+  --landing-paper: #141822;
+  --landing-ink: #EFEBE2;
+  --landing-ink-muted: #A7ABB5;
+  --landing-forest: #283F92;
+  --landing-on-forest: #EFEBE2;
+  --landing-forest-deep: #111E47;
+  --landing-on-deep: #EFEBE2;
+  --landing-on-deep-muted: #C6CFE6;
+  --landing-accent: #EBCC99;
+  --landing-accent-ink: #EBCC99;
+  --landing-scrim: rgba(17, 30, 71, 0.73);
   /* Money band cards: the same values in every theme (the band stays dark, the highlight card stays cream). */
-  --landing-band-card: #0F4636;
-  --landing-band-highlight: #FBF8F2;
-  --landing-band-highlight-ink: #14231C;
-  --landing-band-highlight-accent: #856429;
-  --landing-band-status-ink: #7A4C00;
-  --landing-band-status-surface: #FFF2D6;
-  --landing-band-status-border: #EBC77F;
-  /* Forest is a button fill, too dark to draw the mark on the dark grounds (about 2:1). The mark uses the brass accent. */
+  --landing-band-card: #162146;
+  --landing-band-highlight: #F8F5EF;
+  --landing-band-highlight-ink: #181E2C;
+  --landing-band-highlight-accent: #815B1F;
+  --landing-band-status-ink: #8A5601;
+  --landing-band-status-surface: #FDECD5;
+  --landing-band-status-border: #D5B88B;
+  /* Indigo is too low contrast to draw the mark on dark grounds; the mark uses the sand accent. */
   --landing-mark: var(--landing-accent);
   --landing-mark-cut: var(--landing-ground);
 }
 
 @media (prefers-color-scheme: dark) {
   :root[data-theme="system"] {
-    --landing-ground: #111814;
-    --landing-paper: #18211C;
-    --landing-ink: #E6EBE5;
-    --landing-ink-muted: #A3AFA7;
-    --landing-forest: #1E5E47;
-    --landing-on-forest: #E6EBE5;
-    --landing-forest-deep: #0B3D2E;
-    --landing-on-deep: #F4EFE6;
-    --landing-on-deep-muted: #CFD8D2;
-    --landing-accent: #E8C98A;
-    --landing-accent-ink: #E8C98A;
-    --landing-scrim: rgba(7, 30, 23, 0.73);
+    --landing-ground: #0C0F17;
+    --landing-paper: #141822;
+    --landing-ink: #EFEBE2;
+    --landing-ink-muted: #A7ABB5;
+    --landing-forest: #283F92;
+    --landing-on-forest: #EFEBE2;
+    --landing-forest-deep: #111E47;
+    --landing-on-deep: #EFEBE2;
+    --landing-on-deep-muted: #C6CFE6;
+    --landing-accent: #EBCC99;
+    --landing-accent-ink: #EBCC99;
+    --landing-scrim: rgba(17, 30, 71, 0.73);
     /* Money band cards: the same values in every theme (the band stays dark, the highlight card stays cream). */
-    --landing-band-card: #0F4636;
-    --landing-band-highlight: #FBF8F2;
-    --landing-band-highlight-ink: #14231C;
-    --landing-band-highlight-accent: #856429;
-    --landing-band-status-ink: #7A4C00;
-    --landing-band-status-surface: #FFF2D6;
-    --landing-band-status-border: #EBC77F;
-    /* Same as the dark set: the mark uses the brass accent on dark grounds (forest is about 2:1 there). */
+    --landing-band-card: #162146;
+    --landing-band-highlight: #F8F5EF;
+    --landing-band-highlight-ink: #181E2C;
+    --landing-band-highlight-accent: #815B1F;
+    --landing-band-status-ink: #8A5601;
+    --landing-band-status-surface: #FDECD5;
+    --landing-band-status-border: #D5B88B;
+    /* Same as the dark set: the mark uses the sand accent on dark grounds. */
     --landing-mark: var(--landing-accent);
     --landing-mark-cut: var(--landing-ground);
   }

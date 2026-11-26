@@ -31,33 +31,33 @@ function token(css: string, name: string): string {
 test("Shortlet foundation tokens use the approved semantic palette and pass specified contrast checks", async () => {
   const css = await readFile(FOUNDATION_CSS_URL, "utf8");
   const expected: Readonly<Record<string, string>> = {
-    "--color-canvas": "#F6F5F0",
+    "--color-canvas": "#F8F5EF",
     "--color-surface": "#FFFFFF",
-    "--color-surface-subtle": "#EEECE5",
+    "--color-surface-subtle": "#EDE9E1",
     "--color-surface-elevated": "#FFFFFF",
-    "--color-surface-inverse": "#063A2C",
-    "--color-border-inverse": "#0B5C46",
-    "--color-accent-on-inverse": "#5CC49A",
-    "--color-text-on-inverse": "#FFFFFF",
-    "--color-text-on-inverse-muted": "#D5EBE0",
-    "--color-surface-viewer": "#111814",
-    "--color-text-on-viewer": "#FFFFFF",
-    "--color-text": "#1D2923",
-    "--color-text-secondary": "#49574E",
-    "--color-text-muted": "#5D6A62",
-    "--color-border": "#747C75",
-    "--color-action": "#0B5C46",
-    "--color-action-hover": "#084735",
-    "--color-action-pressed": "#063A2C",
-    "--color-focus": "#995300",
-    "--color-success": "#176B49",
-    "--color-success-surface": "#EAF4EE",
-    "--color-warning": "#7A4C00",
-    "--color-warning-surface": "#FFF2D6",
-    "--color-danger": "#A12B2B",
-    "--color-danger-surface": "#FCECEC",
-    "--color-info": "#185F83",
-    "--color-info-surface": "#EAF3F8",
+    "--color-surface-inverse": "#111E47",
+    "--color-border-inverse": "#283F92",
+    "--color-accent-on-inverse": "#EBCC99",
+    "--color-text-on-inverse": "#F8F5EE",
+    "--color-text-on-inverse-muted": "#D2D8E8",
+    "--color-surface-viewer": "#0C0F17",
+    "--color-text-on-viewer": "#EFEBE2",
+    "--color-text": "#181E2C",
+    "--color-text-secondary": "#464D5E",
+    "--color-text-muted": "#5D6372",
+    "--color-border": "#757A87",
+    "--color-action": "#283F92",
+    "--color-action-hover": "#1C2F7A",
+    "--color-action-pressed": "#152461",
+    "--color-focus": "#995600",
+    "--color-success": "#106C3E",
+    "--color-success-surface": "#DDF6E4",
+    "--color-warning": "#8A5601",
+    "--color-warning-surface": "#FDECD5",
+    "--color-danger": "#A12628",
+    "--color-danger-surface": "#FEE9E7",
+    "--color-info": "#1E5B7A",
+    "--color-info-surface": "#E6F1F8",
   };
   for (const [name, value] of Object.entries(expected)) assert.equal(token(css, name).toUpperCase(), value);
   assert.match(css, /system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif/);
@@ -103,7 +103,7 @@ test("Guest and Operator conventional surfaces load the shared stylesheet", asyn
   assert.match(guestHome, /href="\/shortlet-foundations\.css"/);
   const guestCss = await fetch(`http://127.0.0.1:${guestPort}/shortlet-foundations.css`);
   assert.equal(guestCss.headers.get("content-type"), "text/css; charset=utf-8");
-  assert.match(await guestCss.text(), /--color-canvas:\s*#F6F5F0/);
+  assert.match(await guestCss.text(), /--color-canvas:\s*#F8F5EF/);
 
   const operatorLogin = await fetch(`http://127.0.0.1:${ownerPort}/operator/login`).then((response) => response.text());
   assert.match(operatorLogin, /href="\/shortlet-foundations\.css"/);
@@ -164,7 +164,7 @@ test("Real Chromium renders foundation without narrow viewport overflow and expo
   assert.equal(focus.visible, true);
   assert.equal(focus.outlineStyle, "solid", JSON.stringify(focus));
   assert.equal(focus.outlineWidth, "3px");
-  assert.equal(focus.outlineColor, "rgb(153, 83, 0)");
+  assert.equal(focus.outlineColor, "rgb(153, 86, 0)");
   await writeFile(join(evidenceDirectory, "focus-visible.png"), await focusGuest.captureScreenshot());
 
   await guest.setCssViewport(390, 900);

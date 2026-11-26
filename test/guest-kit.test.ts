@@ -28,7 +28,7 @@ test("AC1: shortlet-foundations.css defines every guest kit component with token
   const tokens = [...kit.matchAll(/var\((--[a-z0-9-]+)\)/g)].map((match) => match[1]!);
   for (const token of new Set(tokens)) assert.match(css.slice(0, css.indexOf("@layer shortlet-foundation")), new RegExp(`${token}:`), `${token} is an existing token`);
   // Existing light values stay authoritative.
-  for (const [name, value] of [["--color-surface-inverse", "#063A2C"], ["--color-text-on-inverse-muted", "#D5EBE0"], ["--color-accent-on-inverse", "#5CC49A"], ["--color-action", "#0B5C46"], ["--color-warning-surface", "#FFF2D6"]] as const) {
+  for (const [name, value] of [["--color-surface-inverse", "#111E47"], ["--color-text-on-inverse-muted", "#D2D8E8"], ["--color-accent-on-inverse", "#EBCC99"], ["--color-action", "#283F92"], ["--color-warning-surface", "#FDECD5"]] as const) {
     assert.match(css, new RegExp(`${name}: ${value};`));
   }
 });

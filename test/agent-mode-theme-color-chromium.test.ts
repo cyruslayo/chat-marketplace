@@ -41,7 +41,7 @@ async function switchToShop(tab: RealBrowserTab) {
   await tab.evaluate("document.querySelector('.mode-choice input[value=\"shop\"]').click()");
   // A preview is a user action: it never writes the theme colour (ADR 0107 decision 2), so the metas still hold the stays values.
   const preview = await tab.evaluate<{ media: string | null; content: string | null }[]>(READ_METAS);
-  assert.deepEqual(preview.map((meta) => meta.content), ["#F7E6D8", "#3A2518"], "a preview leaves the theme colour unchanged");
+  assert.deepEqual(preview.map((meta) => meta.content), ["#FEE5DB", "#372016"], "a preview leaves the theme colour unchanged");
   await tab.focus("#composer-input");
   await tab.insertText("Show me products");
   await tab.pressKey("Enter");
@@ -59,7 +59,7 @@ test("AC2 (runtime read, real Chrome): after a switch to shop, every theme-color
     await tab.evaluate("document.documentElement.dataset.theme = 'light'");
 
     const before = await tab.evaluate<{ media: string | null; content: string | null }[]>(READ_METAS);
-    assert.deepEqual(before.map((meta) => meta.content), ["#F7E6D8", "#3A2518"], "the first paint carries the stays values");
+    assert.deepEqual(before.map((meta) => meta.content), ["#FEE5DB", "#372016"], "the first paint carries the stays values");
 
     await switchToShop(tab);
     const tint = await tab.evaluate<string>(RESOLVED_TINT);

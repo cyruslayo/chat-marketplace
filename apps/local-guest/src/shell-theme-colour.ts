@@ -6,8 +6,8 @@
  * checks the light block and the dark blocks.
  */
 export const MODE_THEME_COLOUR_INITIAL: Readonly<Record<"light" | "dark", string>> = Object.freeze({
-  light: "#F7E6D8",
-  dark: "#3A2518",
+  light: "#FEE5DB",
+  dark: "#372016",
 });
 
 export type ShellTheme = "light" | "dark";

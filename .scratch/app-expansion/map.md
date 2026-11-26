@@ -2,7 +2,7 @@
 
 Plan: [PRD.md](PRD.md) · Method: [method.md](method.md) · Owner answers: [decisions.md](decisions.md) · Rules: [rules/](rules/)
 
-**Frontier:** the first issue that is open, unblocked and unclaimed (currently `02` in Phase 0, `04` in Rules, `07` in Design system). Each issue follows AGENTS.md "Implementation protocol", ends with `npm run check` and its own and affected tests, and records the commands and counts in its Comments. One writer per worktree.
+**Frontier:** the first issue that is open, unblocked and unclaimed (currently `02` in Phase 0, `04` in Rules, `09` and `2b-01` in Design system). Each issue follows AGENTS.md "Implementation protocol", ends with `npm run check` and its own and affected tests, and records the commands and counts in its Comments. One writer per worktree.
 
 Two lanes run in parallel: **Rules** (2, 4) and **Design system** (1b, 2b). They meet at phase 3.
 
@@ -26,7 +26,7 @@ Two lanes run in parallel: **Rules** (2, 4) and **Design system** (1b, 2b). They
 
 | # | Issue | Type | Status | Blocked by |
 | --- | --- | --- | --- | --- |
-| 07 | [Xenia tokens in the code's own token names](issues/07-xenia-tokens.md) | task | ready-for-agent | – |
+| 07 | [Xenia tokens in the code's own token names](issues/07-xenia-tokens.md) | task | resolved | – |
 | 08 | [Design round 12: missing boards and new components](issues/08-design-round-12.md) | task | resolved | – |
 | 09 | [Self-hosted type, measured on a slow phone](issues/09-self-hosted-type.md) | task | ready-for-agent | 07 |
 
@@ -104,3 +104,4 @@ After each phase: `npm run check`, `npm run test:workers`, the full `npm test` (
 - 01: ADR 0108, the surface plan, the kit audit and the library plan are on this branch; see the issue for the one glossary file that differs from `main`.
 - 03: `test/helpers/explore.ts` (`exploreOrders`, `exploreFailures` with digest pruning and `check.reads` guard), `test/helpers/booking-state-fixture.ts`, `scripts/explore-after-booking.ts`, `test/explore-helper.test.ts`, and `test/after-booking-exploration.test.ts` (recording `KNOWN DEFECT` issue 04 & 05 baselines on `SqliteBookingStateRepository`).
 - 08: Pinned round-12 delivery under `design/round-12/` (24 boards, `tokens.css`, `xenia-kit.css`, `bundle.css`, `README.md`, `fact-map.md`, `copy-decisions.md`, `class-map.md`), resolved 08 with Handover follow-ups recorded, and sliced Phase 2b (`issues/2b-01`–`2b-07`).
+- 07: Mapped Xenia light/dark/system-dark tokens onto semantic names in `apps/web/src/shortlet-foundations.css`, updated `--mode-*` stays tokens to clay, updated `apps/web/src/shortlet-landing.css` and `apps/local-guest/src/shell-theme-colour.ts`, added `test/shortlet-token-parity.test.ts` (kickoff I2), updated palette assertions, and verified `capture-11-all.sh` into `screenshots/07/`.

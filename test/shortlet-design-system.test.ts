@@ -65,9 +65,9 @@ test("Dark roles keep text at 4.5:1 and control edges and focus at 3:1", async (
       assert.ok(ratio >= minimum, `dark ${label} meets ${minimum}:1 (actual ${ratio.toFixed(2)}:1)`);
     }
   }
-  assert.equal(tokenIn(forced, "--color-surface-inverse").toUpperCase(), "#0E2A21");
-  assert.equal(tokenIn(forced, "--color-border-inverse").toUpperCase(), "#2F6B55");
-  assert.equal(tokenIn(forced, "--color-accent-on-inverse").toUpperCase(), "#5CC49A");
+  assert.equal(tokenIn(forced, "--color-surface-inverse").toUpperCase(), "#162146");
+  assert.equal(tokenIn(forced, "--color-border-inverse").toUpperCase(), "#3A529E");
+  assert.equal(tokenIn(forced, "--color-accent-on-inverse").toUpperCase(), "#EBCC99");
   // Every dark role must also exist in the light :root so no colour is dark-only.
   const light = css.slice(0, css.indexOf(':root[data-theme="dark"]'));
   for (const name of forced.match(/--color-[a-z-]+(?=:)/g) ?? []) assert.match(light, new RegExp(`${name}:`), `${name} has a light value`);
