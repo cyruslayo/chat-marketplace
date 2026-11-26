@@ -44,6 +44,7 @@ Each issue moves one group to [bundle.css](design/round-12/bundle.css) via [clas
 | 2b-06 | [Chat card, action bar, disclosure and commit panels](issues/2b-06-chat-card-action-bar-disclosure.md) | task | ready-for-agent | 07, 02, 2b-01 |
 | 2b-07 | [Operator shell, queue, transfer check and receipt preview](issues/2b-07-operator-shell-and-queue.md) | task | ready-for-agent | 07, 2b-01 |
 | 2b-08 | [Move /welcome to the Xenia brand layer](issues/2b-08-welcome-landing.md) | task | resolved | 07, 09, 2b-01, 2b-02 |
+| 26 | [Bring main in and renumber the cancellation migration to 7](issues/26-sync-main-schema-v7.md) | task | ready-for-agent | none (D1) |
 
 ## Phase 3: the frame
 
