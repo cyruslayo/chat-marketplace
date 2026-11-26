@@ -24,6 +24,7 @@ import { BOOKING_STAGE_PAGES, withStagePage } from "./helpers/guest-stage-pages.
 const REPO_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const GUEST_SERVER_PATH = join(REPO_ROOT, "apps/local-guest/src/guest-server.ts");
 const LANDING_ROUTE_PATH = join(REPO_ROOT, "apps/local-guest/src/landing-route-module.ts");
+const PARTNERS_ROUTE_PATH = join(REPO_ROOT, "apps/local-guest/src/partners-route-module.ts");
 
 export type NavKind = "section" | "task" | "state";
 export type NavRuleId = "N1" | "N2" | "N3" | "N4" | "N5" | "N7" | "N11";
@@ -67,6 +68,8 @@ export const NON_PAGE_GET_ROUTES: readonly NonPageRouteAllowance[] = [
   { route: "/landing.js", reason: "Static landing page enhancement script" },
   { route: "/landing/fonts/*", reason: "Static self-hosted landing font assets" },
   { route: "/landing/photos/*", reason: "Static approved landing photo assets" },
+  { route: "/xenia-partners.css", reason: "Static founding partners page stylesheet" },
+  { route: "/partners.js", reason: "Static founding partners page enhancement script" },
 ];
 
 const N1_HELP_GAP: NavGap = { rule: "N1", issue: "16", reason: "Help route /help and Help link in app bar are not built yet" };
@@ -83,7 +86,21 @@ export const GUEST_NAVIGATION_TABLE: readonly GuestNavigationRow[] = [
     id: "welcome",
     route: "/welcome",
     kind: "state",
-    expectedExits: ["/"],
+    expectedExits: ["/", "/partners"],
+    gaps: [N1_HELP_GAP, N3_PLANS_GAP],
+  },
+  {
+    id: "partners",
+    route: "/partners",
+    kind: "state",
+    expectedExits: ["/welcome"],
+    gaps: [N1_HELP_GAP, N3_PLANS_GAP],
+  },
+  {
+    id: "partners-applied",
+    route: "/partners/applied",
+    kind: "state",
+    expectedExits: ["/partners", "/welcome"],
     gaps: [N1_HELP_GAP, N3_PLANS_GAP],
   },
   {
@@ -259,6 +276,11 @@ const SERVED_ROUTE_PATTERNS: readonly RegExp[] = [
   /^\/welcome$/,
   /^\/welcome\/start$/,
   /^\/welcome\/theme$/,
+  /^\/partners$/,
+  /^\/partners\/applied$/,
+  /^\/partners\/apply$/,
+  /^\/xenia-partners\.css$/,
+  /^\/partners\.js$/,
   /^\/conversation$/,
   /^\/stays\/search$/,
   /^\/stays\/[^/]+$/,
@@ -296,9 +318,13 @@ export interface RouteInventoryReport {
  * Extracts normalized GET routes from guest-server.ts and landing-route-module.ts sources.
  * Normalizes dynamic parameter segments so static source checks catch any new route added to the server.
  */
-export function discoverGuestGetRoutes(sources: { readonly guestServer: string; readonly landingModule: string }): string[] {
+export function discoverGuestGetRoutes(sources: {
+  readonly guestServer: string;
+  readonly landingModule: string;
+  readonly partnersModule?: string;
+}): string[] {
   const routes = new Set<string>();
-  const { guestServer, landingModule } = sources;
+  const { guestServer, landingModule, partnersModule = "" } = sources;
 
   // 1. Static asset declarations in SHORTLET_STATIC_ASSETS
   for (const match of guestServer.matchAll(/path:\s*"(\/[^"]*)"/g)) {
@@ -364,6 +390,13 @@ export function discoverGuestGetRoutes(sources: { readonly guestServer: string; 
   }
   if (landingModule.includes('url.pathname.startsWith("/landing/fonts/")')) routes.add("/landing/fonts/*");
   if (landingModule.includes('url.pathname.startsWith("/landing/photos/")')) routes.add("/landing/photos/*");
+  // Partners route module GET routes (landing issue 17)
+  for (const match of partnersModule.matchAll(/req\.method === "GET"\s*&&[\s\S]{0,80}?url\.pathname === "(\/[^"]+)"/g)) {
+    routes.add(match[1]!);
+  }
+  for (const match of partnersModule.matchAll(/url\.pathname === "(\/xenia-partners\.css|\/partners\.js)"/g)) {
+    routes.add(match[1]!);
+  }
 
   return [...routes].sort();
 }
@@ -559,6 +592,14 @@ async function renderAllLiveGuestRoutesUncached(): Promise<RenderedLiveRoute[]> 
     assert.equal(welcome.statusCode, 200);
     rendered.push({ row: rowById("welcome"), path: "/welcome", html: welcome.bodyText });
 
+    const partners = await sendGuest(handler, "GET", "/partners");
+    assert.equal(partners.statusCode, 200);
+    rendered.push({ row: rowById("partners"), path: "/partners", html: partners.bodyText });
+
+    const partnersApplied = await sendGuest(handler, "GET", "/partners/applied");
+    assert.equal(partnersApplied.statusCode, 200);
+    rendered.push({ row: rowById("partners-applied"), path: "/partners/applied", html: partnersApplied.bodyText });
+
     const home = await sendGuest(handler, "GET", "/");
     assert.equal(home.statusCode, 200);
     const cookie = cookieOf(home);
@@ -724,14 +765,16 @@ test("AC1: A guest route missing from the table fails the test", () => {
   const synthetic = discoverGuestGetRoutes({
     guestServer: `${readFileSync(GUEST_SERVER_PATH, "utf8")}\nif (req.method === "GET" && url.pathname === "/unlisted-guest-screen") {}`,
     landingModule: readFileSync(LANDING_ROUTE_PATH, "utf8"),
+    partnersModule: readFileSync(PARTNERS_ROUTE_PATH, "utf8"),
   });
   const syntheticReport = compareRouteInventory(synthetic, GUEST_NAVIGATION_TABLE, NON_PAGE_GET_ROUTES);
   assert.deepEqual(syntheticReport.missingFromTable, ["/unlisted-guest-screen"]);
 
-  // Live check: every GET route in guest-server.ts and landing-route-module.ts is accounted for.
+  // Live check: every GET route in guest-server.ts, landing-route-module.ts, and partners-route-module.ts is accounted for.
   const live = discoverGuestGetRoutes({
     guestServer: readFileSync(GUEST_SERVER_PATH, "utf8"),
     landingModule: readFileSync(LANDING_ROUTE_PATH, "utf8"),
+    partnersModule: readFileSync(PARTNERS_ROUTE_PATH, "utf8"),
   });
   const liveReport = compareRouteInventory(live, GUEST_NAVIGATION_TABLE, NON_PAGE_GET_ROUTES);
   assert.deepEqual(liveReport.missingFromTable, [], "every live GET guest route is in GUEST_NAVIGATION_TABLE or NON_PAGE_GET_ROUTES");
