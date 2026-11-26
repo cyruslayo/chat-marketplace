@@ -1686,9 +1686,29 @@ function renderJourney(journey: GuestJourney | undefined): void {
   // Issue 07 review: a late webhook can confirm the booking after the callback said "not confirmed"; the server's journey
   // wins, so the stale banner goes once the booking is confirmed.
   if (journey.current === "confirmed") document.querySelector("[data-payment-notice]")?.remove();
+  const foundIndex = journey.steps.findIndex((step) => step.state === "current" || step.state === "failed");
+  const currentIndex = foundIndex >= 0 ? foundIndex : 0;
+  const activeStep = journey.steps[currentIndex] ?? journey.steps[0];
+  const compact = document.createElement("div");
+  compact.className = "ui-rail-nav__compact";
+  const countEl = document.createElement("b");
+  countEl.textContent = `Step ${currentIndex + 1} of ${journey.steps.length}`;
+  const labelEl = document.createElement("span");
+  labelEl.textContent = activeStep?.label ?? "";
+  const barEl = document.createElement("span");
+  barEl.className = "ui-rail-nav__bar";
+  barEl.setAttribute("aria-hidden", "true");
+  for (const step of journey.steps) {
+    const seg = document.createElement("span");
+    if (step.state === "done") seg.className = "is-done";
+    else if (step.state === "failed") seg.className = "is-failed";
+    else if (step.state === "current") seg.className = "is-now";
+    barEl.appendChild(seg);
+  }
+  compact.append(countEl, " · ", labelEl, barEl);
+
   const list = document.createElement("ol");
   list.className = "ui-rail";
-  let current: HTMLElement | undefined;
   for (const step of journey.steps) {
     const item = document.createElement("li");
     item.dataset.step = step.id;
@@ -1700,16 +1720,11 @@ function renderJourney(journey: GuestJourney | undefined): void {
     state.className = "ui-sr-only";
     state.textContent = ` (${JOURNEY_STATE_TEXT[step.state]})`;
     item.appendChild(state);
-    if (step.state === "current" || step.state === "failed") {
-      if (step.state === "current") item.setAttribute("aria-current", "step");
-      current = item;
-    }
+    if (step.state === "current") item.setAttribute("aria-current", "step");
     list.appendChild(item);
   }
-  journeyRail.replaceChildren(list);
+  journeyRail.replaceChildren(compact, list);
   journeyRail.hidden = false;
-  // Keep the current step visible at 320px without scrolling the page.
-  if (current) list.scrollLeft = Math.max(0, current.offsetLeft - list.offsetLeft - list.clientWidth / 2 + current.offsetWidth / 2);
 }
 
 const TASK_START_EVENT = "platform.task.start";

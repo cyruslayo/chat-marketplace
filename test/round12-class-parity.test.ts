@@ -84,6 +84,60 @@ const PRESERVED_CODE_CLASSES = [
   ".ui-upload",
   ".ui-status--neutral",
   ".ui-status--stale",
+  ".ui-task-rail",
+  ".ui-task-rail-nav",
+  ".ui-task-rail__item",
+  ".ui-task-rail__item--current",
+  ".ui-task-rail__status",
+  ".ui-task-badge",
+  ".agent-mark",
+  ".agent-mark__badge",
+  ".mode-choice",
+] as const;
+
+const GROUP_2B_02_CLASSES = [
+  ".ui-app",
+  ".ui-app__col",
+  ".ui-app__main",
+  ".ui-app__main--task",
+  ".ui-app__foot",
+  ".ui-appbar",
+  ".ui-appbar--root",
+  ".ui-appbar--task",
+  ".ui-appbar__brand",
+  ".ui-appbar__grow",
+  ".ui-appbar__action",
+  ".ui-appbar__help",
+  ".ui-appbar__label",
+  ".ui-appbar__title",
+  ".ui-mode-label",
+  ".ui-mode-label--control",
+  ".ui-mode-label__mark",
+  ".ui-mode-label__prefix",
+  ".ui-mode-label__mode",
+  ".ui-agent-mark",
+  ".ui-agent-mark__face",
+  ".ui-badge",
+  ".ui-rail-nav",
+  ".ui-rail",
+  ".ui-rail-nav__compact",
+  ".ui-rail-nav__bar",
+  ".ui-sidenav",
+  ".ui-sidenav--guest",
+  ".ui-sidenav__brand",
+  ".ui-brand",
+  ".ui-sidenav__list",
+  ".ui-sidenav__list--end",
+  ".ui-sidenav__who",
+  ".ui-sidenav-compact",
+  ".ui-sidenav-compact__bar",
+  ".ui-sidenav-compact__section",
+  ".ui-sidenav-compact__toggle",
+  ".ui-dialog",
+  ".ui-dialog__head",
+  ".ui-dialog__title",
+  ".ui-dialog__actions",
+  ".ui-page--short",
 ] as const;
 
 test("I3: zero board-only classes (xk-*, bd-*) appear anywhere in apps/", () => {
@@ -97,9 +151,12 @@ test("I3: zero board-only classes (xk-*, bd-*) appear anywhere in apps/", () => 
   }
 });
 
-test("I3 (2b-01): every mapped 2b-01 class and preserved code-only class exists in shortlet-foundations.css", () => {
+test("I3 (2b-01 & 2b-02): every mapped class and preserved code-only class exists in shortlet-foundations.css", () => {
   for (const cls of GROUP_2B_01_CLASSES) {
     assert.ok(FOUNDATIONS_CSS.includes(cls), `missing 2b-01 class ${cls} in shortlet-foundations.css`);
+  }
+  for (const cls of GROUP_2B_02_CLASSES) {
+    assert.ok(FOUNDATIONS_CSS.includes(cls), `missing 2b-02 class ${cls} in shortlet-foundations.css`);
   }
   for (const cls of PRESERVED_CODE_CLASSES) {
     assert.ok(FOUNDATIONS_CSS.includes(cls), `missing preserved code-only class ${cls} in shortlet-foundations.css`);

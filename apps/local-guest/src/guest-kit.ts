@@ -666,6 +666,18 @@ const JOURNEY_STATE_TEXT: Readonly<Record<JourneyStepState, string>> = {
 /** The journey rail from the server's projection; `data-state` is the contract shared with the chat's rail. */
 export function railHtml(journey: GuestJourney | undefined): string {
   if (!journey) return "";
+  const currentIndex = Math.max(
+    0,
+    journey.steps.findIndex((step) => step.state === "current" || step.state === "failed"),
+  );
+  const activeStep = journey.steps[currentIndex] ?? journey.steps[0]!;
+  const compactBar = journey.steps
+    .map((step) => {
+      const cls = step.state === "done" ? "is-done" : step.state === "failed" ? "is-failed" : step.state === "current" ? "is-now" : "";
+      return `<span${cls ? ` class="${cls}"` : ""}></span>`;
+    })
+    .join("");
+  const compact = `<div class="ui-rail-nav__compact"><b>Step ${currentIndex + 1} of ${journey.steps.length}</b> · <span>${escapeHtml(activeStep.label)}</span><span class="ui-rail-nav__bar" aria-hidden="true">${compactBar}</span></div>`;
   const steps = journey.steps
     .map((step) => {
       const tone =
@@ -673,7 +685,7 @@ export function railHtml(journey: GuestJourney | undefined): string {
       return `<li data-step="${step.id}" data-state="${step.state}"${tone === undefined ? "" : ` data-tone="${tone}"`}${step.state === "current" ? ' aria-current="step"' : ""}>${escapeHtml(step.label)}<span class="ui-sr-only"> (${JOURNEY_STATE_TEXT[step.state]})</span></li>`;
     })
     .join("");
-  return `<nav class="ui-rail-nav" aria-label="${GUEST_JOURNEY.railLabel}"><ol class="ui-rail">${steps}</ol></nav>`;
+  return `<nav class="ui-rail-nav" aria-label="${GUEST_JOURNEY.railLabel}">${compact}<ol class="ui-rail">${steps}</ol></nav>`;
 }
 
 const BACK_LABEL = "Back to your conversation";

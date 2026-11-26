@@ -498,13 +498,24 @@
   /* Issue 03i (ADR 0107 decision 11): a lane is laid out as the transcript's own children; a hidden lane takes no space. */
   .transcript-lane { display: contents; }
   .transcript-lane[hidden] { display: none; }
-  .ui-appbar { display: flex; align-items: center; gap: var(--space-3); min-block-size: 4rem; padding: var(--space-2) var(--layout-gutter-mobile); border-block-end: 1px solid var(--color-border-subtle); background: var(--color-surface); }
+  .ui-appbar { container-type: inline-size; inline-size: 100%; display: flex; align-items: center; gap: var(--space-2); min-block-size: 3.75rem; padding: var(--space-2) var(--space-3); border-block-end: 1px solid var(--color-border-subtle); background: var(--color-canvas); }
   /* Skip link (issue 15): the first focusable control on every standard page; 44x44 when focused. */
   .ui-skip-link { position: absolute; inset-block-start: var(--space-2); inset-inline-start: var(--space-4); z-index: var(--layer-skip-link); display: inline-flex; align-items: center; min-block-size: var(--control-min-target); min-inline-size: var(--control-min-target); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-text); transform: translateY(-200%); }
   .ui-skip-link:focus { transform: none; }
-  .ui-appbar__brand { display: inline-flex; align-items: center; min-block-size: var(--control-min-target); color: var(--color-text); font-family: var(--font-display); font-size: 1.25rem; font-weight: 600; letter-spacing: -0.01em; text-decoration: none; }
-  .ui-appbar__grow { flex-grow: 1; }
-  .ui-appbar__action { min-block-size: var(--control-min-target); }
+  .ui-appbar__brand { font-family: var(--font-display); font-size: 1.5rem; line-height: 1.75rem; font-weight: 500; color: var(--color-text); letter-spacing: -0.01em; text-decoration: none; min-block-size: var(--control-min-target); display: inline-flex; align-items: center; padding-inline: var(--space-1); }
+  .ui-appbar__grow { flex: 1; }
+  :where(.ui-appbar__action) { display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2); min-inline-size: var(--control-min-target); min-block-size: var(--control-min-target); padding: 0 0.625rem; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--color-text); text-decoration: none; font-size: var(--font-size-label); line-height: 1.25rem; font-weight: 600; cursor: pointer; }
+  :where(.ui-appbar__action):hover { background: var(--color-surface-subtle); }
+  .ui-appbar__action > .ui-icon { inline-size: 1.5rem; block-size: 1.5rem; }
+  .ui-appbar__label { display: none; }
+  .ui-appbar--root { display: flex; }
+  .ui-appbar--task { display: grid; grid-template-columns: var(--control-min-target) minmax(0, 1fr) var(--control-min-target); }
+  .ui-appbar--task .ui-appbar__action { inline-size: var(--control-min-target); padding: 0; }
+  .ui-appbar--task .ui-appbar__title { font-size: var(--font-size-body); line-height: 1.25rem; font-weight: 600; text-align: center; text-wrap: balance; overflow-wrap: break-word; }
+  .ui-appbar__help { display: inline-flex; }
+  @container (max-width: 23rem) { .ui-appbar__action + .ui-appbar__brand { display: none; } }
+  @container (min-width: 40rem) { .ui-appbar__label { display: inline; } }
+  @media (min-width: 40rem) { .ui-appbar { padding-inline: var(--space-6); } }
   .ui-icon-button { display: inline-flex; flex: none; inline-size: var(--control-min-target); block-size: var(--control-min-target); align-items: center; justify-content: center; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-pill); background: var(--color-surface); color: var(--color-text); text-decoration: none; cursor: pointer; }
   .ui-icon-button:hover { border-color: var(--color-action); color: var(--color-action); }
   /* Agent Mark (ADR 0107 decision 9, issue 01b): static sizing and colour only. Motion follows the state and is added separately. */
@@ -559,16 +570,28 @@
   /* Commerce offer card (ADR 0078): the title sits under the card padding, not under the browser's default heading margin. */
   .ui-panel[data-commerce-offer] > h2 { margin-block-start: 0; }
 
-  .ui-rail-nav { border-block-end: 1px solid var(--color-border-subtle); background: var(--color-surface); }
-  .ui-rail { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-1); margin: 0; padding: var(--space-2) var(--layout-gutter-mobile) var(--space-3); list-style: none; }
-  .ui-rail > li { padding-block-start: var(--space-2); border-block-start: 3px solid var(--color-border-subtle); color: var(--color-text-muted); font-size: 0.75rem; line-height: 1.2; text-align: center; }
-  .ui-rail > li[data-state="done"] { border-color: var(--color-action); color: var(--color-text-secondary); }
-  .ui-rail > li[data-state="current"] { border-color: var(--color-action); color: var(--color-action); font-weight: 650; }
-  .ui-rail > li[data-state="failed"] { border-color: var(--color-warning); color: var(--color-warning); font-weight: 650; }
-  .ui-rail > li[data-state="failed"][data-tone="danger"] { border-color: var(--color-danger); color: var(--color-danger); }
-  .ui-rail > li { overflow-wrap: normal; word-break: normal; hyphens: none; }
-  /* 320px reflow (ADR 0078): two rows of three rather than six cramped columns. */
-  @media (max-width: 22.999rem) { .ui-rail { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: var(--space-2); } }
+  .ui-rail-nav { container-type: inline-size; inline-size: 100%; padding: 0.625rem var(--space-4); border-block-end: 1px solid var(--color-border-subtle); background: var(--color-canvas); }
+  .ui-rail { display: flex; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+  .ui-rail-nav > .ui-rail { display: none; }
+  .ui-rail > li { flex: 1; display: flex; flex-direction: column; gap: 0.375rem; font-size: var(--font-size-small); line-height: var(--font-line-small); color: var(--color-text-muted); text-align: start; overflow-wrap: normal; word-break: normal; hyphens: none; }
+  .ui-rail > li::before { content: ""; block-size: 0.25rem; border-radius: 0.125rem; background: var(--color-border-subtle); }
+  .ui-rail > li[data-state="done"], .ui-rail > li.is-done { color: var(--color-text-secondary); }
+  .ui-rail > li[data-state="done"]::before, .ui-rail > li.is-done::before { background: var(--color-text-secondary); }
+  .ui-rail > li[data-state="current"], .ui-rail > li[aria-current="step"] { color: var(--color-text); font-weight: 700; }
+  .ui-rail > li[data-state="current"]::before, .ui-rail > li[aria-current="step"]::before { background: var(--color-action); }
+  .ui-rail > li[data-state="failed"], .ui-rail > li.is-failed { color: var(--color-danger); font-weight: 700; }
+  .ui-rail > li[data-state="failed"]::before, .ui-rail > li.is-failed::before { background: var(--color-danger); }
+  .ui-rail > li[data-state="failed"][data-tone="warning"] { color: var(--color-warning); }
+  .ui-rail > li[data-state="failed"][data-tone="warning"]::before { background: var(--color-warning); }
+  .ui-rail-nav__compact { display: flex; align-items: center; gap: 0.625rem; font-size: var(--font-size-small); line-height: var(--font-line-small); color: var(--color-text-secondary); }
+  .ui-rail-nav__compact b { color: var(--color-text); font-weight: 700; }
+  .ui-rail-nav__bar { flex: 1; display: flex; gap: 0.1875rem; }
+  .ui-rail-nav__bar span { flex: 1; block-size: 0.25rem; border-radius: 0.125rem; background: var(--color-border-subtle); }
+  .ui-rail-nav__bar span.is-done { background: var(--color-text-secondary); }
+  .ui-rail-nav__bar span.is-now { background: var(--color-action); }
+  .ui-rail-nav__bar span.is-failed { background: var(--color-danger); }
+  @container (min-width: 40rem) { .ui-rail-nav > .ui-rail { display: flex; } .ui-rail-nav > .ui-rail-nav__compact { display: none; } }
+  @media (min-width: 40rem) { .ui-rail-nav { padding-inline: var(--space-6); } }
 
   /* Shell task rail (slice 26): tokens only, matching the journey rail chrome. */
   .ui-task-rail-nav { border-block-end: 1px solid var(--color-border-subtle); background: var(--color-surface); }
@@ -917,6 +940,75 @@
 
   .ui-readable { max-inline-size: var(--layout-readable-max); }
   .ui-stale { border-inline-start: 0.25rem dashed var(--color-warning); padding-inline-start: var(--space-3); }
+
+  /* Round-12 2b-02: mode label, still agent mark, count badge, guest shell, side nav, dialog, and short-phone trim.
+     Kept after .ui-status { so test/guest-kit.test.ts checks only foundation tokens on the earlier slice. */
+  .ui-mode-label { display: inline-flex; align-items: center; gap: 0.375rem; padding: 0.1875rem var(--space-2); border-radius: var(--radius-small); background: var(--mode-accent-subtle, var(--color-surface-subtle)); color: var(--color-text); font-size: 0.8125rem; line-height: 1rem; font-weight: 700; white-space: nowrap; }
+  .ui-mode-label__mark { inline-size: 0.5625rem; block-size: 0.5625rem; border-radius: 2px; background: var(--mode-accent, var(--color-text-secondary)); }
+  .ui-mode-label__mode { color: var(--mode-accent, var(--color-text-secondary)); }
+  .ui-mode-label--control { min-block-size: var(--control-min-target); padding: var(--space-1) var(--space-2); border: 0; border-radius: var(--radius-control); background: transparent; box-shadow: inset 0 0 0 1px var(--color-border); text-decoration: none; cursor: pointer; }
+  .ui-mode-label--control:hover { background: var(--color-surface-subtle); }
+  .ui-mode-label--control .ui-icon { inline-size: 1rem; block-size: 1rem; }
+  .ui-mode-label--control .ui-agent-mark { inline-size: 1.25rem; block-size: 1.25rem; }
+  @container (max-width: 26rem) { .ui-mode-label__prefix { display: none; } }
+
+  .ui-agent-mark { inline-size: 1.75rem; block-size: 1.75rem; flex: none; fill: var(--mode-accent, var(--color-text-secondary)); stroke: var(--mode-accent, var(--color-text-secondary)); stroke-width: 3; stroke-linejoin: round; }
+  .ui-agent-mark__face { fill: var(--color-canvas); stroke: none; }
+  .ui-agent-mark__face path { fill: none; stroke: var(--color-canvas); stroke-width: 2.2; stroke-linecap: round; }
+
+  .ui-badge { display: inline-flex; align-items: center; justify-content: center; min-inline-size: 1.25rem; block-size: 1.25rem; padding: 0 0.3125rem; border-radius: var(--radius-small); background: var(--color-warning-surface); color: var(--color-warning); box-shadow: inset 0 0 0 1px var(--color-warning); font-size: var(--font-size-metadata); line-height: var(--font-line-metadata); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  .ui-app { display: flex; block-size: 100%; min-block-size: 0; container-type: inline-size; }
+  .ui-app__col { flex: 1; min-inline-size: 0; min-block-size: 0; display: flex; flex-direction: column; }
+  .ui-app__main { flex: 1; min-block-size: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-4); }
+  .ui-app__main > * { flex-shrink: 0; }
+  .ui-app__foot { flex: none; background: var(--color-canvas); }
+  @container (min-width: 48rem) {
+    .ui-app > .ui-sidenav { block-size: 100%; }
+    .ui-app:has(> .ui-sidenav) :is(.ui-tabbar, .ui-appbar--root, .ui-appbar__brand, .ui-appbar .ui-mode-label, .ui-appbar__help) { display: none; }
+    .ui-app__main { inline-size: 100%; max-inline-size: 51.25rem; padding: 1.75rem var(--space-8) var(--space-12); }
+    .ui-app__main--task { max-inline-size: 40rem; margin-inline: auto; }
+  }
+
+  .ui-sidenav { display: none; flex-direction: column; gap: var(--space-4); padding: var(--space-6) var(--space-4); }
+  .ui-sidenav__brand { display: flex; align-items: baseline; gap: var(--space-2); }
+  .ui-brand { font-family: var(--font-display); font-size: 1.5rem; line-height: 1.75rem; font-weight: 500; color: var(--color-text); text-decoration: none; min-block-size: var(--control-min-target); display: inline-flex; align-items: center; }
+  .ui-sidenav__list { display: flex; flex-direction: column; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+  .ui-sidenav__list a { display: flex; align-items: center; gap: var(--space-2); min-block-size: var(--control-min-target); padding: 0.625rem var(--space-3); border-radius: var(--radius-control); color: var(--color-text-secondary); text-decoration: none; font-size: var(--font-size-label); line-height: var(--font-line-label); font-weight: 600; }
+  .ui-sidenav__list a:hover { background: var(--color-surface-subtle); color: var(--color-text); }
+  .ui-sidenav__list a[aria-current="page"] { background: var(--color-action-subtle); color: var(--color-action); }
+  .ui-sidenav__who { font-size: var(--font-size-small); line-height: var(--font-line-small); color: var(--color-text-secondary); }
+  .ui-sidenav--guest .ui-sidenav__list a[aria-current="page"] { background: var(--color-surface-subtle); color: var(--color-text); font-weight: 700; }
+  .ui-sidenav--guest .ui-badge { margin-inline-start: auto; }
+  .ui-sidenav--guest .ui-mode-label { align-self: flex-start; }
+  .ui-sidenav__list--end { padding-block-start: var(--space-4); border-block-start: 1px solid var(--color-border-subtle); }
+  .ui-sidenav-compact { position: relative; border-block-end: 1px solid var(--color-border-subtle); background: var(--color-canvas); }
+  .ui-sidenav-compact__bar { display: flex; align-items: center; gap: var(--space-2); min-block-size: 3.5rem; padding: 0.375rem var(--space-3); }
+  .ui-sidenav-compact__section { flex: 1; min-inline-size: 0; font-size: var(--font-size-small); line-height: var(--font-line-small); color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ui-sidenav-compact > summary { list-style: none; }
+  .ui-sidenav-compact > summary::-webkit-details-marker { display: none; }
+  .ui-sidenav-compact__toggle { display: inline-flex; align-items: center; gap: 0.375rem; min-block-size: var(--control-min-target); padding: 0 var(--space-3); border-radius: var(--radius-control); box-shadow: inset 0 0 0 1px var(--color-border); font-size: var(--font-size-label); line-height: var(--font-line-label); font-weight: 600; color: var(--color-text); cursor: pointer; }
+  .ui-sidenav-compact[open] .ui-sidenav-compact__toggle { background: var(--color-action-subtle); color: var(--color-action); box-shadow: none; }
+  .ui-sidenav-compact .ui-sidenav__list { padding: 0 var(--space-3) var(--space-3); }
+  @container (min-width: 48rem) { .ui-sidenav { display: flex; flex: none; inline-size: 14.5rem; border-inline-end: 1px solid var(--color-border-subtle); } .ui-sidenav-compact { display: none; } }
+
+  .ui-dialog { inline-size: min(100% - 2rem, 30rem); max-block-size: calc(100% - 2rem); padding: var(--space-4); border: 0; border-radius: var(--radius-workspace); background: var(--color-surface); color: var(--color-text); overflow-y: auto; }
+  .ui-dialog::backdrop { background: var(--color-surface-inverse); opacity: 0.6; }
+  .ui-dialog__head { display: grid; grid-template-columns: minmax(0, 1fr) var(--control-min-target); align-items: center; gap: var(--space-2); margin-block-end: var(--space-2); }
+  .ui-dialog__title { font-family: var(--font-display); font-size: var(--font-size-h2); line-height: var(--font-line-h2); font-weight: 500; }
+  .ui-dialog__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-block-start: var(--space-4); }
+  .ui-dialog__actions > .ui-button { flex: 1 1 10rem; }
+
+  @media (max-height: 37.49rem) {
+    .ui-app .ui-appbar { min-block-size: 3.25rem; padding-block: var(--space-1); }
+    .ui-app .ui-ask { padding-block: 0.125rem; }
+    .ui-app .ui-composer--link { padding-block: 0; }
+    .ui-app .ui-tabbar a { min-block-size: 3.125rem; padding-block: 1px 2px; }
+  }
+  .ui-page--short .ui-appbar { min-block-size: 3.25rem; padding-block: var(--space-1); }
+  .ui-page--short .ui-ask { padding-block: 0.125rem; }
+  .ui-page--short .ui-composer--link { padding-block: 0; }
+  .ui-page--short .ui-tabbar a { min-block-size: 3.125rem; padding-block: 1px 2px; }
 
   /* Weaver/A2UI theme bridge. Weaver's Basic Catalog writes inline styles that read these
      custom properties, so theming them replaces its blue (#17e) defaults at the source. */
