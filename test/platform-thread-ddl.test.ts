@@ -16,8 +16,9 @@ const REPO_ROOT = fileURLToPath(new URL("../", import.meta.url));
 const PLATFORM_MODULE = "packages/platform-core/src/thread-schema.ts";
 
 // Hashes of JSON.stringify(list) on the base commit ccd04f3, before the move. A change here is a schema change, not a refactor.
+// Issue 27 (migration 7: cancellation cases) updated SHORTLET_MIGRATIONS_SHA256.
 const PLATFORM_MIGRATIONS_SHA256 = "028d0183668adb08c9dc2aa4372c6c65ee2c75184c5778aecb94b1179c4906f0";
-const SHORTLET_MIGRATIONS_SHA256 = "0f9f6bc21fb505b388a32f17d1a21887a291c19695680a5cfa8c8fa7def3fb86";
+const SHORTLET_MIGRATIONS_SHA256 = "b8b58deb4e5235b8d02cd5fe65970decabd3887a47c3f0c58afeb478d1b2bfb1";
 
 const THREAD_TABLE_DEFINITION = /CREATE\s+TABLE\s+(IF\s+NOT\s+EXISTS\s+)?(guest_threads|guest_thread_lane_events|guest_session_bindings)\b/i;
 

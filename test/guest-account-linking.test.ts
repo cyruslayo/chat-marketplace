@@ -494,8 +494,8 @@ test("AC5 authorization: a request the account claims is refused when it carries
 });
 
 test("Slice 17 ADR 0101: linked principals live on platform while immutable request contacts remain shortlet", () => {
-  // Demo-launch issue 11 added migration 5 (owner ledger period bindings); landing issue 17 added 6 (partner applications).
-  assert.equal(SHORTLET_SCHEMA_VERSION, 6);
+  // Demo-launch issue 11 added migration 5 (owner ledger period bindings); landing issue 17 added 6 (partner applications); issue 27 added 7 (cancellation cases).
+  assert.equal(SHORTLET_SCHEMA_VERSION, 7);
   const shortlet = openNodeSqliteDatabase(":memory:");
   const platform = openNodeSqliteDatabase(":memory:");
   try {
