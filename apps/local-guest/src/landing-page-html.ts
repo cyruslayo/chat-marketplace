@@ -45,8 +45,9 @@ import {
   photoRenders,
   type LandingPhoto,
 } from "./landing-photos.js";
+import type { LandingTheme } from "./landing-theme.js";
 
-export type LandingTheme = "light" | "dark" | "system";
+export type { LandingTheme } from "./landing-theme.js";
 
 const PHOTO_BASE = "/landing/photos";
 /** Call-to-action target: the guest app itself. No message text is carried into it yet (landing direction, decision 3). */
@@ -542,7 +543,10 @@ function footerSection(helpLinks: LandingHelpLinks): string {
     [LANDING_COPY.navYourMoney, "#money"],
     [LANDING_COPY.navQuestions, "#questions"],
   ] as const;
-  const links = anchors
+  const links = [
+    ...anchors,
+    [LANDING_COPY.footerPartners, "/partners"] as const,
+  ]
     .map(
       ([label, href]) =>
         `<li><a class="landing-link" href="${href}">${escapeHtml(label)}</a></li>`,

@@ -318,6 +318,8 @@ export class ShortletPilot extends DurableObject<CloudflareEnv> {
       commerce: GUEST_COMMERCE_COMPOSITION.disabled,
       production: true,
       publicOrigin: configuration.publicOrigin,
+      partnerPrivacyNoticeUrl: configuration.partnerPrivacyNoticeUrl,
+      partnerApplicationsOpen: configuration.partnerApplicationsOpen,
       secureCookie: true,
       sessionScopedGuestPrincipals: true,
       guestAccounts: {

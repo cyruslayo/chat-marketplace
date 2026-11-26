@@ -3,6 +3,8 @@ export type AssetName =
  | "shortlet-foundations.css"
  | "shortlet-landing.css"
  | "landing.js"
+ | "xenia-partners.css"
+ | "partners.js"
  | "client.js"
  | "gallery.js"
  | "offer.js"

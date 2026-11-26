@@ -43,6 +43,19 @@ await buildBundle({
   logLevel: "warning",
 });
 
+// The founding partners page's script (landing issue 17).
+await buildBundle({
+  entryPoints: ["apps/local-guest/src/partners-page.ts"],
+  bundle: true,
+  format: "iife",
+  platform: "browser",
+  target: "es2022",
+  outfile: "apps/local-guest/dist/partners.js",
+  minify: false,
+  sourcemap: false,
+  logLevel: "warning",
+});
+
 // The full apartment page's gallery script (guest-gallery issue 01), shared with the chat bundle's gallery.
 await buildBundle({
   entryPoints: ["apps/local-guest/src/gallery-page.ts"],
@@ -102,13 +115,18 @@ for (const name of [
   "payment.js",
   "client.js",
   "landing.js",
+  "partners.js",
 ]) {
   await copyOutput(
     `apps/local-guest/dist/${name}`,
     join("apps/cloudflare/public", name),
   );
 }
-for (const name of ["shortlet-foundations.css", "shortlet-landing.css"]) {
+for (const name of [
+  "shortlet-foundations.css",
+  "shortlet-landing.css",
+  "xenia-partners.css",
+]) {
   await copyOutput(
     join("apps/web/src", name),
     join("apps/cloudflare/public", name),
@@ -146,6 +164,13 @@ await writeOutput(
     "  Content-Type: text/javascript; charset=utf-8",
     "",
     "/shortlet-landing.css",
+    "  Content-Type: text/css; charset=utf-8",
+    "  Cache-Control: public, max-age=3600",
+    "",
+    "/partners.js",
+    "  Content-Type: text/javascript; charset=utf-8",
+    "",
+    "/xenia-partners.css",
     "  Content-Type: text/css; charset=utf-8",
     "  Cache-Control: public, max-age=3600",
     ...Object.entries(LANDING_BINARY_ASSETS).flatMap(([path, asset]) => [

@@ -383,10 +383,11 @@ test("AC5: The case survives a restart and is in the daily export", () => {
     assert.equal(resumed.facts.case?.refundStatus, "pending");
     db2.close();
 
-    // Schema migration v6 and daily export table list both include cancellation_cases.
-    const migrationStatements = SHORTLET_SCHEMA_MIGRATIONS.flatMap((m) => m.statements).join("\n");
-    assert.equal(SHORTLET_SCHEMA_VERSION >= 6, true);
-    assert.match(migrationStatements, /CREATE TABLE IF NOT EXISTS cancellation_cases/i);
+    // Schema migration 7 (app-expansion issue 27: main shipped partners as 6) and the daily export table list both include cancellation_cases.
+    const cancellationMigration = SHORTLET_SCHEMA_MIGRATIONS.find((m) => m.name === "durable cancellation cases");
+    assert.equal(cancellationMigration?.version, 7);
+    assert.ok(SHORTLET_SCHEMA_VERSION >= 7);
+    assert.match(cancellationMigration.statements.join("\n"), /CREATE TABLE IF NOT EXISTS cancellation_cases/i);
     assert.equal(SHORTLET_EXPORT_TABLES.includes("cancellation_cases"), true);
   } finally {
     rmSync(dir, { recursive: true, force: true });

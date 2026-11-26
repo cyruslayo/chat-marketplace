@@ -87,3 +87,26 @@ test("Landing 12 AC3: Landing stylesheet and script bytes on Cloudflare are iden
     expect(sha256, name).toBe(expected.sha256);
   }
 });
+
+test("Landing 17 AC1: GET /partners is public in Workers, its stylesheet and script are static assets, and with no privacy notice it collects nothing", async () => {
+  await provisionTenant();
+  const page = await SELF.fetch(`${ORIGIN}/partners`);
+  expect(page.status).toBe(200);
+  expect(page.headers.get("set-cookie")).toBeNull();
+  const html = await page.text();
+  // The hero headline since 1c49d97 (partners-copy.ts hero.headingBefore); the old "More guests for your apartments" is gone.
+  expect(html).toContain("Stop being an unpaid travel agent");
+  expect(html).not.toMatch(/<form|<input[^>]*name=/);
+  for (const [path, mime] of [["/xenia-partners.css", "text/css"], ["/partners.js", "text/javascript"]] as const) {
+    expect(html).toContain(`"${path}"`);
+    const asset = await env.ASSETS.fetch(`${ORIGIN}${path}`);
+    expect(asset.status, path).toBe(200);
+    expect(asset.headers.get("content-type"), path).toContain(mime);
+  }
+  const refused = await SELF.fetch(`${ORIGIN}/partners/apply`, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded", origin: ORIGIN },
+    body: "fullName=Test+Applicant",
+  });
+  expect(refused.status).toBe(503);
+});

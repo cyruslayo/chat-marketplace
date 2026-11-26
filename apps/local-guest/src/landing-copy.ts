@@ -171,6 +171,8 @@ export const LANDING_COPY = Object.freeze({
   /** Footer column headings and the copyright line. Structure from the direction doc (row 10), not from the issue 06 approvals. */
   footerCities: "Cities",
   footerBrand: "Xenia",
+  /** Landing issue 17 (owner, 25 Nov 2026: each page links to the other). Wording new; waits for approval. */
+  footerPartners: "For apartment operators",
   footerHelp: "Help",
   footerCopyright: "© 2026 Xenia",
   /** Help links, shown only once a URL is configured (direction doc row 10). Labels as the direction doc names them. */

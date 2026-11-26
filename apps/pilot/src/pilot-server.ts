@@ -213,6 +213,8 @@ export function startPilotServer(
       : { betaInviteCode: configuration.betaInviteCode }),
     production: true,
     publicOrigin: configuration.publicOrigin,
+    partnerPrivacyNoticeUrl: configuration.partnerPrivacyNoticeUrl,
+    partnerApplicationsOpen: configuration.partnerApplicationsOpen,
     secureCookie: true,
     sessionScopedGuestPrincipals: true,
     payments,

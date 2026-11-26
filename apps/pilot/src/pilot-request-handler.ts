@@ -69,6 +69,8 @@ function requestGuard(
   const turnsPerSession = new SlidingWindowRateLimiter({ limit: limits.chatTurnsPerSessionPerHour, windowMs: HOUR_MS }, clock);
   const turnsPerAddress = new SlidingWindowRateLimiter({ limit: limits.chatTurnsPerAddressPerHour, windowMs: HOUR_MS }, clock);
   const sessionsPerAddress = new SlidingWindowRateLimiter({ limit: limits.newSessionsPerAddressPerHour, windowMs: HOUR_MS }, clock);
+  // Landing issue 17: an application is an anonymous first write, so it takes the existing new-session allowance, counted apart.
+  const applicationsPerAddress = new SlidingWindowRateLimiter({ limit: limits.newSessionsPerAddressPerHour, windowMs: HOUR_MS }, clock);
   const loginsPerAddress = new SlidingWindowRateLimiter({ limit: limits.operatorLoginsPerAddressPerHour, windowMs: HOUR_MS }, clock);
   return (req, url) => {
     const address = clientAddress(req);
@@ -92,6 +94,7 @@ function requestGuard(
     }
     // A new Guest session starts at GET / without a session cookie; in staging this also bounds invite-code guessing.
     if (req.method === "GET" && url.pathname === "/" && guestSessionKey(req) === null) return refused(sessionsPerAddress.tryConsume(address));
+    if (req.method === "POST" && url.pathname === "/partners/apply") return refused(applicationsPerAddress.tryConsume(address));
     if (req.method === "POST" && url.pathname === "/operator/login") return refused(loginsPerAddress.tryConsume(address));
     return null;
   };
@@ -111,7 +114,7 @@ function sendRateLimited(
     res.end(JSON.stringify({ ok: false, code: "RATE_LIMITED", message: "Too many requests. Please wait a moment and try again." }));
     return;
   }
-  const html = errorPage({ status: 429, code: "RATE_LIMITED", title: "Please slow down", message: "Too many requests came from here in a short time. Wait a few minutes, then try again.", action: { href: url.pathname.startsWith("/operator") ? "/operator/login" : "/", label: "Try again" } });
+  const html = errorPage({ status: 429, code: "RATE_LIMITED", title: "Please slow down", message: "Too many requests came from here in a short time. Wait a few minutes, then try again.", action: { href: url.pathname.startsWith("/operator") ? "/operator/login" : url.pathname.startsWith("/partners") ? "/partners" : "/", label: "Try again" } });
   res.writeHead(429, { ...headers, "Content-Type": "text/html; charset=utf-8" });
   res.end(transformHtml ? transformHtml(html) : html);
 }
@@ -130,16 +133,21 @@ export function createPilotRequestHandler(
       sendHealth(res, deps.ready() && databaseHealthy(deps.database));
       return;
     }
+    const isPartnersRoute =
+      url.pathname === "/partners" ||
+      url.pathname === "/partners/applied" ||
+      url.pathname === "/partners/apply";
+    const bannerTransform = isPartnersRoute ? undefined : transformHtml;
     const refusal = guard(req, url);
     if (refusal) {
-      sendRateLimited(req, res, url, refusal.retryAfterSeconds, transformHtml);
+      sendRateLimited(req, res, url, refusal.retryAfterSeconds, bannerTransform);
       return;
     }
     if (url.pathname === "/operator" || url.pathname.startsWith("/operator/")) {
       await deps.owner.handle(req, transformHtml ? bannerWrapped(res, req.method ?? "", transformHtml) : res);
       return;
     }
-    await deps.guest.handle(req, transformHtml ? bannerWrapped(res, req.method ?? "", transformHtml) : res);
+    await deps.guest.handle(req, bannerTransform ? bannerWrapped(res, req.method ?? "", bannerTransform) : res);
   };
 
   return {

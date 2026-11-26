@@ -3,6 +3,7 @@ import { normalizeContactEmail } from "../../../domains/shortlet/src/index.js";
 import type { ManualTransferAccount } from "../../../domains/shortlet/src/index.js";
 import { loadConciergeConfiguration, type ConciergeConfiguration, type ConciergeEnvironmentSource } from "../../local-guest/src/assistant/concierge-configuration.js";
 import { DEFAULT_MODEL_REQUEST_QUOTA_LIMITS } from "../../../packages/platform-core/src/model-request-quota.js";
+import { partnerApplicationsOpen, partnerPrivacyNoticeUrl } from "../../local-guest/src/partner-privacy-notice.js";
 import { modelRequestQuotaLimitsFromEnvironment } from "../../../packages/platform-core/src/model-request-quota-config.js";
 
 export interface PilotEnvironmentSource extends PaystackEnvironmentSource, ConciergeEnvironmentSource {
@@ -23,6 +24,10 @@ export interface PilotEnvironmentSource extends PaystackEnvironmentSource, Conci
   readonly SHORTLET_DEMO?: string;
   /** ADR 0105: seconds between a submitted request's disclosure and its demo acceptance. Unset means zero. */
   readonly SHORTLET_DEMO_ACCEPT_DELAY_SECONDS?: string;
+  /** Landing issue 17: the privacy notice of the founding partner application. Unset keeps the application closed. */
+  readonly SHORTLET_PARTNER_PRIVACY_URL?: string;
+  /** Owner decision, 26 Nov 2026: "open" opens the founding partner application without a privacy notice. */
+  readonly SHORTLET_PARTNER_APPLICATIONS?: string;
   readonly SHORTLET_CHAT_TURNS_PER_SESSION_PER_HOUR?: string;
   readonly SHORTLET_CHAT_TURNS_PER_ADDRESS_PER_HOUR?: string;
   readonly SHORTLET_NEW_SESSIONS_PER_ADDRESS_PER_HOUR?: string;
@@ -115,6 +120,9 @@ export interface PilotCoreConfiguration {
   readonly concierge: ConciergeConfiguration;
   readonly limits: PilotLimits;
   readonly notifications: PilotNotificationConfiguration | null;
+  /** Landing issue 17: null keeps the founding partner application closed. */
+  readonly partnerPrivacyNoticeUrl: string | null;
+  readonly partnerApplicationsOpen: boolean;
 }
 
 export function required(source: PilotEnvironmentSource, key: keyof PilotEnvironmentSource): string {
@@ -222,6 +230,6 @@ export function loadPilotCoreConfiguration(source: PilotEnvironmentSource): Pilo
     limits: pilotLimits(source), notifications: notificationConfiguration(source),
     paystackTransfersEnabled: paystackTransfersEnabled(source.SHORTLET_PAYSTACK_TRANSFERS),
     manualTransferAccount: manualTransferAccount(source), receiptMaxBytes: receiptMaxBytes(source.SHORTLET_RECEIPT_MAX_BYTES),
-    publicOrigin: origin, paystack,
+    publicOrigin: origin, paystack, partnerPrivacyNoticeUrl: partnerPrivacyNoticeUrl(source.SHORTLET_PARTNER_PRIVACY_URL), partnerApplicationsOpen: partnerApplicationsOpen(source.SHORTLET_PARTNER_APPLICATIONS),
   });
 }

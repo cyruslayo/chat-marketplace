@@ -1,8 +1,8 @@
-# 26: Bring main into the app-expansion line and renumber the cancellation migration to 7
+# 27: Bring main into the app-expansion line and renumber the cancellation migration to 7
 
-Status: ready-for-agent
+Status: resolved
 Type: task
-Blocked by: none (owner decision D1 below shapes one AC)
+Blocked by: none (D1 decided: test-only)
 
 ## Why
 
@@ -71,3 +71,24 @@ Read ADRs 0058, 0075 and 0095 (cancellation cases), the data-migration ADR (slic
 - Record the commands and counts in `## Comments`. The full `npm test` and `test:workers` run at the batch gate.
 
 ## Comments
+
+- 26 Nov 2026, owner decision D1: test-only pin, no runtime name guard (AC6 not applicable).
+- 26 Nov 2026 (planned as 26, renumbered 27 because the map reserves 26 for the Events ADR), implementation in worktree `chat-marketplace-ae-sync`, branch `feat/app-expansion-main-sync` (from 448508c), merging `main` at 884dd15.
+  - Conflicts:
+    - `schema.ts`: partners kept as 6, cancellation cases moved to 7, with a comment giving the reason.
+    - `landing-copy.ts`: kept `footerBrand: "Xenia"` (2b-08) and main's `footerPartners`. The `/welcome` footer links to `/partners` again.
+    - Everything else merged cleanly. `do-export.ts` lists both `cancellation_cases` and `partner_applications`.
+  - New `test/schema-migration-pin.test.ts`:
+    - pins `[version, name]` 1–7 as append-only (AC3);
+    - checks partners = 6, cancellations = 7 and `SHORTLET_SCHEMA_VERSION` = 7 (AC1);
+    - checks the upgrade paths: main's 6 applies only 7, a fresh database applies 1–7, and a database at 5 applies 6–7, each ending with both tables (AC2).
+  - Test updates:
+    - `test/cancellation-always-finishes.test.ts` finds the migration by name and asserts version 7.
+    - `test/partners-page.test.ts` AC10 allows the `data-mode` attribute that `/welcome` now carries.
+  - A failure that was already on main, fixed here: `apps/cloudflare/test/landing-assets.spec.ts` (Landing 17 AC1) still expected "More guests for your apartments", which 1c49d97 replaced on main. It now expects the current hero headline. Main's own `test:workers` fails on this until this branch merges.
+  - Commands and counts:
+    - `npm run check`: clean.
+    - `npx tsx --test test/schema-migration-pin.test.ts test/cancellation-always-finishes.test.ts test/cutover-marker.test.ts test/partners-page.test.ts test/landing-page.test.ts test/landing-handoff.test.ts test/demo-mode-landing.test.ts test/landing-port.test.ts test/landing-monthly-copy.test.ts test/landing-page-motion.test.ts test/landing-chip-limit.test.ts test/round12-class-parity.test.ts`: 107 tests, 107 pass.
+    - `npm run test:workers -- apps/cloudflare/test/data-migration.spec.ts apps/cloudflare/test/landing-assets.spec.ts`: 2 files, 33/33 pass.
+    - `npx tsx --test test/landing-page-chromium.test.ts` (solo): 44 tests, 43 pass, 1 skipped, 0 fail.
+  - Not done here: the full `npm test` and `test:workers`. They run at the batch gate. No merge to main, push or deploy.
