@@ -5,7 +5,7 @@ import { TELEMETRY_SCHEMA } from "../../../packages/platform-core/src/sqlite-tel
 import { AVAILABILITY_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { BANK_TRANSFER_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { BOOKING_PAYMENT_JOURNEYS_SCHEMA } from "../../../domains/shortlet/src/index.js";
-import { BOOKING_STATE_SCHEMA } from "../../../domains/shortlet/src/index.js";
+import { BOOKING_STATE_SCHEMA, CANCELLATION_CASES_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { CHECKIN_SUPPORT_SCHEMA } from "../../../domains/shortlet/src/index.js";
 import { GUEST_IDENTITY_ASSURANCE_SCHEMA } from "../../../domains/shortlet/src/guest-identity-assurance.js";
 import { GUEST_INTERACTION_SCHEMA, GUEST_REQUEST_CONTACT_SCHEMA } from "../../../domains/shortlet/src/index.js";
@@ -90,6 +90,8 @@ export const SHORTLET_SCHEMA_MIGRATIONS: readonly SchemaMigration[] = [
   { version: 4, name: "guest accounts: identity assurance anchored to the account", statements: [GUEST_IDENTITY_ASSURANCE_SCHEMA] },
   // Demo-launch issue 11: each owner payout and recovery is bound to one Billing Period. Ids and period numbers only.
   { version: 5, name: "owner ledger entries bound to a Billing Period", statements: [OWNER_LEDGER_PERIOD_SCHEMA] },
+  // App-expansion issue 05 (ADR 0058, 0075, 0095): durable cancellation cases for idempotent resume and refund tracking.
+  { version: 6, name: "durable cancellation cases", statements: [CANCELLATION_CASES_SCHEMA] },
 ];
 
 /** The version the import checks for before it writes anything (ops-import.ts). */

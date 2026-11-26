@@ -66,6 +66,7 @@ import {
   OwnerPayoutError,
   OwnerRecoveryError,
   SqliteOwnerPayableLedger,
+  SqliteCancellationCaseRepository,
   NoticeToEndManager,
   ExtendedStayExtensionManager,
   checkInNoticePorts,
@@ -319,8 +320,9 @@ export const COMPLAINT_DISMISSAL_LABELS: Readonly<
 /** A check-in action refused because of the complaint's own state; nothing is recorded (409). */
 /** An upheld Blocking Fulfilment Complaint ended the stay (issue 14, ADR 0061, 0028). */
 export interface OperatorStayOutcome {
-  readonly complaintId: string;
-  readonly firstAffectedNight: string;
+  readonly source?: "upheld_complaint" | "cancellation" | "no_show";
+  readonly complaintId: string | null;
+  readonly firstAffectedNight: string | null;
   /** When the outcome was posted: the owner payable is due from then (ADR 0089). */
   readonly endedAt: string;
   readonly refundKobo: number;
@@ -596,6 +598,8 @@ export class LocalApartmentOwnerEnvironment {
   readonly #manualTransferStore: SqliteManualTransferStore;
   /** Cancellation outcomes and owner payouts (B7, ADR 0089); the cancellation ledger port posts here. */
   readonly ownerPayableLedger: SqliteOwnerPayableLedger;
+  /** App-expansion issue 05 (D4, ADR 0095): durable cancellation cases shared with the guest/web cancellation flow. */
+  readonly cancellationCases: SqliteCancellationCaseRepository;
   /** ADR 0092 Notice to End (monthly-stays issue 17): the same manager as the guest composition, over the shared tables. */
   readonly noticeToEnd: NoticeToEndManager;
   /** Monthly-stays issue 09: the Operator approves or declines extension requests in the back office (ADR 0092). */
@@ -655,6 +659,10 @@ export class LocalApartmentOwnerEnvironment {
       dependencies.receiptBlobs,
     );
     this.ownerPayableLedger = new SqliteOwnerPayableLedger(
+      this.#sqlDatabase,
+      this.clock,
+    );
+    this.cancellationCases = new SqliteCancellationCaseRepository(
       this.#sqlDatabase,
       this.clock,
     );
@@ -1646,7 +1654,10 @@ export class LocalApartmentOwnerEnvironment {
     principal: CommandPrincipal,
   ): OperatorReservation {
     const booking = this.operatorBooking(requestId, principal);
-    if (booking.stage !== "reservation_confirmed")
+    if (
+      booking.stage !== "reservation_confirmed" &&
+      !(booking.stage === "ended" && (booking.endedReason === "reservation_cancelled" || booking.endedReason === "no_show"))
+    )
       throw new Error("Booking not found");
     const offer =
       this.interactionStore.findConditionalOfferByRequestId(requestId);
@@ -1683,6 +1694,7 @@ export class LocalApartmentOwnerEnvironment {
     const stayOutcome = this.#stayOutcome(
       reservation.reservationId,
       checkIn.complaints,
+      reservation.status,
     );
     // ADR 0072: the version the check-in and refund forms were rendered from; any change to access, complaints or the
     // Guest's refunds makes it stale.
@@ -1971,15 +1983,31 @@ export class LocalApartmentOwnerEnvironment {
         /* observability cannot undo a recorded refund */
       }
     }
-    return this.operatorReservation(requestId, principal);
+    const updated = this.operatorReservation(requestId, principal);
+    if (updated.stayOutcome && updated.stayOutcome.refundOutstandingKobo === 0) {
+      const existingCase = this.cancellationCases.findByReservationId(current.reservationId);
+      if (existingCase && existingCase.refundStatus !== "settled") {
+        this.cancellationCases.update(current.reservationId, existingCase.caseVersion, (value) => ({
+          ...value,
+          caseVersion: value.caseVersion + 1,
+          refundStatus: "settled",
+        }));
+      }
+    }
+    return updated;
   }
 
-  /** Reservations you act for with a refund still owed to the Guest (issue 14), for Home. */
+  /** Reservations you act for with a refund still owed to the Guest (issue 14 & app-expansion issue 05 D4/D28 P2), for Home. */
   listGuestRefundsOwed(
     principal: CommandPrincipal,
   ): readonly OperatorReservation[] {
     return this.listOperatorBookings(principal).flatMap((booking) => {
-      if (booking.stage !== "reservation_confirmed") return [];
+      if (
+        booking.stage !== "reservation_confirmed" &&
+        !(booking.stage === "ended" && (booking.endedReason === "reservation_cancelled" || booking.endedReason === "no_show"))
+      ) {
+        return [];
+      }
       try {
         const reservation = this.operatorReservation(
           booking.requestId,
@@ -2002,28 +2030,44 @@ export class LocalApartmentOwnerEnvironment {
       readonly resolution?: string;
       readonly upheldFromNight?: string;
     }[],
+    reservationStatus: string,
   ): OperatorStayOutcome | null {
     const upheld = complaints.find(
       (complaint) => complaint.resolution === "upheld",
     );
     const cancellation =
       this.ownerPayableLedger.findCancellation(reservationId);
-    if (!upheld || !upheld.upheldFromNight || !cancellation) return null;
+    if (!cancellation) return null;
     const refunds = this.ownerPayableLedger.listGuestRefunds(reservationId);
     const refundedKobo = refunds.reduce(
       (sum, refund) => sum + refund.amountKobo,
       0,
     );
+    const refundOutstandingKobo = Math.max(
+      0,
+      cancellation.refundKobo - refundedKobo,
+    );
+    if (upheld && upheld.upheldFromNight) {
+      return Object.freeze({
+        source: "upheld_complaint" as const,
+        complaintId: upheld.complaintId,
+        firstAffectedNight: upheld.upheldFromNight,
+        endedAt: cancellation.postedAt,
+        refundKobo: cancellation.refundKobo,
+        refundedKobo,
+        refundOutstandingKobo,
+        refunds: Object.freeze([...refunds]),
+      });
+    }
+    if (cancellation.refundKobo <= 0) return null;
     return Object.freeze({
-      complaintId: upheld.complaintId,
-      firstAffectedNight: upheld.upheldFromNight,
+      source: reservationStatus === "no_show" ? ("no_show" as const) : ("cancellation" as const),
+      complaintId: null,
+      firstAffectedNight: null,
       endedAt: cancellation.postedAt,
       refundKobo: cancellation.refundKobo,
       refundedKobo,
-      refundOutstandingKobo: Math.max(
-        0,
-        cancellation.refundKobo - refundedKobo,
-      ),
+      refundOutstandingKobo,
       refunds: Object.freeze([...refunds]),
     });
   }

@@ -44,6 +44,7 @@ import {
   recordedNoticeRefundPort,
   SqliteCheckInSupportStore,
   SqliteOwnerPayableLedger,
+  SqliteCancellationCaseRepository,
 } from "../../../domains/shortlet/src/index.js";
 import {
   PaystackPayments,
@@ -364,6 +365,7 @@ export class LocalGuestEnvironment {
   readonly guestData: GuestDataPort;
   readonly guestDataIsRemote: boolean;
   readonly livePaymentAttempts: SqliteLivePaymentAttemptRegistry;
+  readonly cancellationCases: SqliteCancellationCaseRepository;
   readonly guestContactApp: GuestContactApplication;
   readonly remoteGuestContacts: RemoteGuestContactCache | null;
   #searchCounter = 0;
@@ -466,6 +468,10 @@ export class LocalGuestEnvironment {
       );
     this.livePaymentAttempts = new SqliteLivePaymentAttemptRegistry(
       this.interactionStore,
+    );
+    this.cancellationCases = new SqliteCancellationCaseRepository(
+      sqlDatabase,
+      this.clock,
     );
 
     this.grantStore = new SqliteOperatorRepresentativeGrantStore(

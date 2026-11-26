@@ -45,6 +45,7 @@ export * from "../../../packages/platform-core/src/accounts/contact.js";
 export * from "../../../packages/platform-core/src/accounts/account-contacts.js";
 export * from "./checkout-overstay.js";
 export * from "./cancellation-noshow.js";
+export * from "./cancellation-case-store.js";
 export * from "./deposit-claim.js";
 export * from "./revenue-release.js";
 export * from "./revenue-accounting.js";

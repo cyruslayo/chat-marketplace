@@ -119,6 +119,7 @@ function setupAmendmentOnSqlite(options: {
   const manager = new BookingAmendmentManager(deps);
   const cancelApp = new CancellationApplication({
     state: sqlite.state,
+    cases: sqlite.cases,
     manager: new CancellationNoShowManager(),
     amendments: manager,
     clock,
@@ -431,6 +432,7 @@ test("D29: A cancelled or no_show Reservation refuses Extension approve, Notice 
 
     const cancelApp = new CancellationApplication({
       state: sqlite.state,
+      cases: sqlite.cases,
       manager: new CancellationNoShowManager(),
       extensions,
       clock: () => new Date("2026-10-27T11:00:00Z"),

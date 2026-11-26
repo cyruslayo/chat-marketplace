@@ -23,7 +23,7 @@ import { confirmationContent } from "../apps/web-agent/src/confirmation-presenta
 import { SHORTLET_SCHEMA_MIGRATIONS } from "../apps/cloudflare/src/schema.js";
 import { SHORTLET_EXPORT_TABLES } from "../apps/cloudflare/src/do-export.js";
 import { PeriodPaymentManager } from "../domains/shortlet/src/period-payment.js";
-import { CancellationApplication } from "../apps/web/src/cancellation-application.js";
+import { CancellationApplication, InMemoryCancellationCaseRepository } from "../apps/web/src/cancellation-application.js";
 import { addDays, extendUnit, withConfirmedExtendedStay, type DemoJourneyContext } from "./helpers/demo-extended-journey.js";
 
 // Demo-launch issue 13 (ADR 0092 cancellation and Notice to End, ADR 0061 failure precedence, ADR 0060 versioned
@@ -137,6 +137,7 @@ function cancellationApp(context: Context, contract: BookingContract, at: string
   const state = new InMemoryBookingStateRepository({ contracts: [contract], reservations: [reservation] });
   return new CancellationApplication({
     state,
+    cases: new InMemoryCancellationCaseRepository(),
     manager: new CancellationNoShowManager(),
     timing: { getWindow: () => ({ startIso: WINDOW_START, timezone: "Africa/Lagos" as const }) },
     economics: { getEconomics: ({ contract: current }) => extendedCancellationEconomics({ contract: current, paidPeriodIndices: [1], commissionRate: COMMISSION_RATE }) },

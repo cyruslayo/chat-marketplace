@@ -5,6 +5,7 @@ import {
   type ReservationStatus,
 } from "../../domains/shortlet/src/index.js";
 import { SqliteBookingStateRepository } from "../../domains/shortlet/src/booking-state.js";
+import { SqliteCancellationCaseRepository } from "../../domains/shortlet/src/cancellation-case-store.js";
 import type { BookingContract, Reservation } from "../../domains/shortlet/src/card-payment.js";
 import { CancellationApplication } from "../../apps/web/src/cancellation-application.js";
 import {
@@ -127,6 +128,7 @@ export function createSqliteBookingState(
   options: { readonly storage?: "file" | "memory" } = {},
 ): {
   readonly state: SqliteBookingStateRepository;
+  readonly cases: SqliteCancellationCaseRepository;
   close(): void;
 } {
   const storage = options.storage ?? "file";
@@ -135,12 +137,14 @@ export function createSqliteBookingState(
       ? new NodeSqliteDatabase(":memory:")
       : openNodeSqliteDatabase(temporaryDatabasePath(`booking-state-${++sqliteSequence}.sqlite`));
   const state = new SqliteBookingStateRepository(database);
+  const cases = new SqliteCancellationCaseRepository(database);
   state.saveBookingAtomically({
     contract: structuredClone(seed.contract),
     reservation: structuredClone(seed.reservation),
   });
   return {
     state,
+    cases,
     close(): void {
       state.close();
       database.close();
@@ -188,6 +192,7 @@ export interface AmendmentViolationDetail {
 export function createAfterBookingWorld(options: {
   readonly faults?: FaultController;
   readonly storage?: "file" | "memory";
+  readonly withDeposit?: boolean;
 } = {}): AfterBookingWorld {
   const fixture = createBookingFixture({
     contractId: "c1",
@@ -199,10 +204,10 @@ export function createAfterBookingWorld(options: {
     dates: { checkIn: "2026-08-20", checkOut: "2026-08-25", nights: 5 },
     quote: {
       allInStayTotalKobo: 50000,
-      refundableSecurityDepositKobo: 10000,
+      refundableSecurityDepositKobo: options.withDeposit ? 10000 : 0,
       currency: "NGN",
     },
-    totalAmountDueNowKobo: 50000,
+    totalAmountDueNowKobo: options.withDeposit ? 60000 : 50000,
     paymentDetails: {
       paymentMethod: "fresh_card",
       pspReference: "original",
@@ -218,6 +223,18 @@ export function createAfterBookingWorld(options: {
       amendmentAdjustments: [],
     },
   });
+  if (options.withDeposit) {
+    fixture.contract = {
+      ...fixture.contract,
+      securityDeposit: {
+        policyVersion: "dep-v1",
+        amountKobo: 10000,
+        currency: "NGN",
+        collectionId: "col-1",
+        status: "held",
+      },
+    };
+  }
 
   const sqlite = createSqliteBookingState(fixture, {
     storage: options.storage ?? "file",
@@ -225,7 +242,7 @@ export function createAfterBookingWorld(options: {
   const calls: string[] = [];
   const faults = options.faults;
 
-  const portStep = (port: "ledger" | "release" | "refund"): void => {
+  const portStep = (port: "ledger" | "release" | "refund" | "depositRefund"): void => {
     if (faults) {
       faults.failIfArmed(port);
     }
@@ -290,6 +307,7 @@ export function createAfterBookingWorld(options: {
 
   const cancelApp = new CancellationApplication({
     state: sqlite.state,
+    cases: sqlite.cases,
     manager: new CancellationNoShowManager(),
     amendments: amendmentManager,
     clock: fixedAfterBookingNow,
@@ -326,6 +344,21 @@ export function createAfterBookingWorld(options: {
         };
       },
     },
+    ...(options.withDeposit
+      ? {
+          depositRefunds: {
+            initiateOrGetRefund: (input) => {
+              portStep("depositRefund");
+              return {
+                refundId: "drf1",
+                status: "pending",
+                amountKobo: input.amountKobo,
+                currency: "NGN",
+              };
+            },
+          },
+        }
+      : {}),
     ledger: {
       postCancellation: () => {
         portStep("ledger");

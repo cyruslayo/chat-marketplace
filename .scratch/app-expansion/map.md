@@ -2,7 +2,7 @@
 
 Plan: [PRD.md](PRD.md) · Method: [method.md](method.md) · Owner answers: [decisions.md](decisions.md) · Rules: [rules/](rules/)
 
-**Frontier:** the first issue that is open, unblocked and unclaimed (currently `02` in Phase 0, `05` in Rules, `09` and `2b-01` in Design system). Each issue follows AGENTS.md "Implementation protocol", ends with `npm run check` and its own and affected tests, and records the commands and counts in its Comments. One writer per worktree.
+**Frontier:** the first issue that is open, unblocked and unclaimed (currently `02` in Phase 0, `06` `ready-for-human` in Rules, `09` and `2b-01` in Design system). Each issue follows AGENTS.md "Implementation protocol", ends with `npm run check` and its own and affected tests, and records the commands and counts in its Comments. One writer per worktree.
 
 Two lanes run in parallel: **Rules** (2, 4) and **Design system** (1b, 2b). They meet at phase 3.
 
@@ -19,7 +19,7 @@ Two lanes run in parallel: **Rules** (2, 4) and **Design system** (1b, 2b). They
 | --- | --- | --- | --- | --- |
 | 03 | [Exploration harness and the two trial checks](issues/03-exploration-harness.md) | task | resolved | – |
 | 04 | [A cancelled Reservation accepts no change](issues/04-cancelled-accepts-no-change.md) | task | resolved | 03 |
-| 05 | [A half-done cancellation is always finished](issues/05-cancellation-always-finishes.md) | task | ready-for-agent | 03, 04 |
+| 05 | [A half-done cancellation is always finished](issues/05-cancellation-always-finishes.md) | task | resolved | 03, 04 |
 | 06 | [Close rules page 01: settle 26 cells and 8 scenarios](issues/06-close-rules-01.md) | grilling | ready-for-human | – |
 
 ## Phase 1b: the Xenia look, without moving anything
@@ -106,3 +106,4 @@ After each phase: `npm run check`, `npm run test:workers`, the full `npm test` (
 - 08: Pinned round-12 delivery under `design/round-12/` (24 boards, `tokens.css`, `xenia-kit.css`, `bundle.css`, `README.md`, `fact-map.md`, `copy-decisions.md`, `class-map.md`), resolved 08 with Handover follow-ups recorded, and sliced Phase 2b (`issues/2b-01`–`2b-07`).
 - 07: Mapped Xenia light/dark/system-dark tokens onto semantic names in `apps/web/src/shortlet-foundations.css`, updated `--mode-*` stays tokens to clay, updated `apps/web/src/shortlet-landing.css` and `apps/local-guest/src/shell-theme-colour.ts`, added `test/shortlet-token-parity.test.ts` (kickoff I2), updated palette assertions, and verified `capture-11-all.sh` into `screenshots/07/`.
 - 04: Added fail-closed Reservation `confirmed` guards in `BookingAmendmentManager`, `ExtendedStayExtensionManager`, `NoticeToEndManager`, and `CheckInSupportManager.upholdBlockingComplaintAsSupport`, added `"cancelled"` closure states to `AMENDMENT_TRANSITIONS` and `ExtensionStatus` (D3/D29), wired cancellation cleanup and in-flight settlement refusal in `CancellationApplication`, updated `docs/agents/state-machines.md`, and verified on SQLite (`28` explored / `22` pruned / `0` violations; mutation check `40` explored / `5` violations).
+- 05: Added durable `SqliteCancellationCaseRepository` (`cancellation_cases` migration v6 + DO export), independent ledger/date-release/refund steps with SQL CAS + per-DB resume guard in `CancellationApplication`, read-time retry on `getArtifact`, recorded stay/deposit refund obligation ports wired to Operator Home and `recordGuestRefund` (D4/D28 P2), guest artifact `dates`/`refunds` read model, and `CancellationCase` row in `docs/agents/state-machines.md`; verified on SQLite (`16` failure combos / `0` violations; mutation check `15` violations) and Worker specs.

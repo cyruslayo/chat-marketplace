@@ -21,6 +21,7 @@ export const SHORTLET_EXPORT_TABLES = [
   "booking_contracts",
   "booking_reservations",
   "bank_transfer_sessions",
+  "cancellation_cases",
   "checkin_support_state",
   "guest_booking_request_contacts",
   "guest_booking_requests",

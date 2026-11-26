@@ -23,17 +23,21 @@ interface CancellationEndState {
   readonly ledgerStatus: CancellationCase["ledgerStatus"] | null;
   readonly inventoryReleaseStatus: CancellationCase["inventoryReleaseStatus"] | null;
   readonly refundStatus: CancellationCase["refundStatus"] | null;
+  readonly depositRefundStatus: CancellationCase["depositRefundStatus"] | null;
   readonly guestActionsLeft: number;
 }
 
 function runAfterBookingCancellationFailures(): ExploreFailuresResult<CancellationEndState> {
   return exploreFailures<AfterBookingWorld, CancellationEndState>({
-    ports: ["ledger", "release", "refund"],
+    ports: ["ledger", "release", "refund", "depositRefund"],
     resumes: DEFAULT_AFTER_BOOKING_RESUMES,
-    newWorld: (faults) => createAfterBookingWorld({ faults, storage: "file" }),
+    newWorld: (faults) => createAfterBookingWorld({ faults, storage: "file", withDeposit: true }),
     disposeWorld: (w) => w.close(),
     run: (w) => {
       w.cancelApp.cancel("r1", afterBookingGuestPrincipal);
+    },
+    resume: (w) => {
+      w.cancelApp.resumeCancellation("r1", { id: "staff-1", role: "authorized_staff", tenantId: "t1" });
     },
     check: (w) => {
       const artifact = w.cancelApp.getArtifact("r1", afterBookingGuestPrincipal);
@@ -43,7 +47,8 @@ function runAfterBookingCancellationFailures(): ExploreFailuresResult<Cancellati
         cancelCase !== undefined &&
         cancelCase.ledgerStatus === "posted" &&
         cancelCase.inventoryReleaseStatus === "released" &&
-        (cancelCase.refundStatus === "pending" || cancelCase.refundStatus === "settled");
+        (cancelCase.refundStatus === "pending" || cancelCase.refundStatus === "settled") &&
+        (cancelCase.depositRefundStatus === "pending" || cancelCase.depositRefundStatus === "settled");
       if (finished) return null;
 
       return {
@@ -53,6 +58,7 @@ function runAfterBookingCancellationFailures(): ExploreFailuresResult<Cancellati
           ledgerStatus: cancelCase?.ledgerStatus ?? null,
           inventoryReleaseStatus: cancelCase?.inventoryReleaseStatus ?? null,
           refundStatus: cancelCase?.refundStatus ?? null,
+          depositRefundStatus: cancelCase?.depositRefundStatus ?? null,
           guestActionsLeft: artifact.actions.length,
         },
       };
@@ -83,71 +89,19 @@ test("AC2 (issue 04): The order check reports zero failing orders on SQLite, wit
   }
 });
 
-test("KNOWN DEFECT (issue 05): AC5: The cancellation check reports the seven unfinished combinations and their end state", () => {
+test("AC1 (issue 05): For every combination of one failure in ledger, dates, stay refund and deposit refund, resuming reaches ledger posted, dates released, and each refund settled or an open staff item", () => {
   const result = runAfterBookingCancellationFailures();
   cachedCheckB = result;
 
-  assert.equal(result.explored, 8);
-  assert.equal(result.violations.length, 7);
-  assert.equal(result.shortestFailure?.failingPorts.length, 1);
-
-  const byCombo = new Map<string, CancellationEndState | undefined>(
-    result.violations.map((v) => [v.failingPorts.join(","), v.detail]),
-  );
-
-  assert.equal(byCombo.has(""), false);
-  assert.deepEqual(byCombo.get("ledger"), {
-    reservationStatus: "cancelled",
-    ledgerStatus: "reconciliation_required",
-    inventoryReleaseStatus: "pending",
-    refundStatus: "not_started",
-    guestActionsLeft: 0,
-  });
-  assert.deepEqual(byCombo.get("release"), {
-    reservationStatus: "cancelled",
-    ledgerStatus: "posted",
-    inventoryReleaseStatus: "reconciliation_required",
-    refundStatus: "pending",
-    guestActionsLeft: 0,
-  });
-  assert.deepEqual(byCombo.get("refund"), {
-    reservationStatus: "cancelled",
-    ledgerStatus: "posted",
-    inventoryReleaseStatus: "released",
-    refundStatus: "failed",
-    guestActionsLeft: 0,
-  });
-  assert.deepEqual(byCombo.get("ledger,release"), {
-    reservationStatus: "cancelled",
-    ledgerStatus: "reconciliation_required",
-    inventoryReleaseStatus: "pending",
-    refundStatus: "not_started",
-    guestActionsLeft: 0,
-  });
-  assert.deepEqual(byCombo.get("ledger,refund"), {
-    reservationStatus: "cancelled",
-    ledgerStatus: "reconciliation_required",
-    inventoryReleaseStatus: "pending",
-    refundStatus: "not_started",
-    guestActionsLeft: 0,
-  });
-  assert.deepEqual(byCombo.get("release,refund"), {
-    reservationStatus: "cancelled",
-    ledgerStatus: "posted",
-    inventoryReleaseStatus: "reconciliation_required",
-    refundStatus: "failed",
-    guestActionsLeft: 0,
-  });
-  assert.deepEqual(byCombo.get("ledger,release,refund"), {
-    reservationStatus: "cancelled",
-    ledgerStatus: "reconciliation_required",
-    inventoryReleaseStatus: "pending",
-    refundStatus: "not_started",
-    guestActionsLeft: 0,
-  });
+  assert.equal(result.explored, 16);
+  assert.equal(result.violations.length, 0);
+  assert.equal(result.shortestFailure, null);
+  for (const portName of ["ledger", "release", "refund", "depositRefund"] as const) {
+    assert.ok((result.portSuccessCounts[portName] ?? 0) > 0, `Expected ${portName} to succeed`);
+  }
 });
 
-test("AC7: The default depth bounds stay deterministic (28 explored for check A, 8 for check B); wider depth runs only from scripts/explore-after-booking.ts, never from npm test", () => {
+test("AC7: The default depth bounds stay deterministic (28 explored for check A, 16 for check B); wider depth runs only from scripts/explore-after-booking.ts, never from npm test", () => {
   const checkA =
     cachedCheckA ??
     runAfterBookingChangeExploration({
@@ -160,7 +114,7 @@ test("AC7: The default depth bounds stay deterministic (28 explored for check A,
   assert.equal(DEFAULT_AFTER_BOOKING_DEPTH, 6);
   assert.equal(checkA.explored, 28);
   assert.equal(checkA.pruned, 22);
-  assert.equal(checkB.explored, 8);
+  assert.equal(checkB.explored, 16);
   assert.throws(
     () =>
       exploreOrders({

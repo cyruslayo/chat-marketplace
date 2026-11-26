@@ -474,7 +474,10 @@ function stayOutcomeHtml(reservation: OperatorReservation): string {
   const refunds = outcome.refunds.length === 0 ? "" : `<dt>Refunded</dt><dd><ul class="bo-payouts">${outcome.refunds.map((refund) => `<li>${formatMoney(refund.amountKobo)} refunded ${escapeHtml(formatPayoutDate(refund.refundedOn))}, reference <span class="bo-reference">${escapeHtml(refund.reference)}</span></li>`).join("")}</ul></dd>`;
   const remaining = outcome.refundOutstandingKobo === 0 ? `<dt>Guest refund</dt><dd>Refunded in full</dd>`
     : outcome.refundedKobo > 0 ? `<dt>Still to refund</dt><dd>${formatMoney(outcome.refundOutstandingKobo)}</dd>` : "";
-  return `<dt>Blocking Fulfilment Complaint upheld</dt><dd>The stay ended from the night of ${escapeHtml(formatNight(outcome.firstAffectedNight))}</dd><dt>Refund owed to the Guest</dt><dd class="ui-money-total">${formatMoney(outcome.refundKobo)}</dd>${refunds}${remaining}`;
+  const heading = outcome.firstAffectedNight !== null
+    ? `<dt>Blocking Fulfilment Complaint upheld</dt><dd>The stay ended from the night of ${escapeHtml(formatNight(outcome.firstAffectedNight))}</dd>`
+    : `<dt>${outcome.source === "no_show" ? "No-show" : "Reservation cancelled"}</dt><dd>The stay ended ${watTime(outcome.endedAt)}</dd>`;
+  return `${heading}<dt>Refund owed to the Guest</dt><dd class="ui-money-total">${formatMoney(outcome.refundKobo)}</dd>${refunds}${remaining}`;
 }
 
 function guestRefundForm(reservation: OperatorReservation, now: Date): string {
@@ -487,7 +490,7 @@ function operatorReservationHtml(env: LocalApartmentOwnerEnvironment, principal:
   const reservation = env.operatorReservation(requestId, commandPrincipal(principal));
   const window = reservation.checkInWindow ? `${reservation.checkInWindow.earliestAccessTime}–${reservation.checkInWindow.latestPermittedArrival} WAT` : "Not on file";
   const payable = reservation.stayOutcome && reservation.ownerPayableDueAt
-    ? `Due ${watTime(reservation.ownerPayableDueAt)}, when the upheld outcome was recorded`
+    ? `Due ${watTime(reservation.ownerPayableDueAt)}, when the ${reservation.stayOutcome.firstAffectedNight !== null ? "upheld" : "cancellation"} outcome was recorded`
     : reservation.openComplaints.length > 0
     ? "Not due while a Blocking Fulfilment Complaint is open"
     : reservation.ownerPayableDueAt ? `Due ${watTime(reservation.ownerPayableDueAt)}` : "Not due until Verified Access is recorded";
@@ -499,7 +502,7 @@ function operatorReservationHtml(env: LocalApartmentOwnerEnvironment, principal:
     viewer: viewer(env, principal),
     current: "bookings",
     style: DECISION_STYLE,
-    body: `<p><a class="ui-button ui-button--quiet" href="/operator/bookings">${icon("arrow-left")}Back to bookings</a></p><header class="ui-page__header"><p class="ui-eyebrow">Reservation</p><h1>${escapeHtml(reservation.apartmentTitle)}</h1><div class="ui-row">${bookingBadge(reservation)}</div></header>${error ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(error)}</span></p>` : ""}<section class="ui-panel" aria-label="Reservation facts">${facts}</section><section class="ui-panel" aria-label="Check-in status">${status}</section>${guestRefundForm(reservation, env.clock())}${checkInFormsHtml(reservation)}`,
+    body: `<p><a class="ui-button ui-button--quiet" href="/operator/bookings">${icon("arrow-left")}Back to bookings</a></p><header class="ui-page__header"><p class="ui-eyebrow">Reservation</p><h1>${escapeHtml(reservation.apartmentTitle)}</h1><div class="ui-row">${bookingBadge(reservation)}</div></header>${error ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(error)}</span></p>` : ""}<section class="ui-panel" aria-label="Reservation facts">${facts}</section><section class="ui-panel" aria-label="Check-in status">${status}</section>${guestRefundForm(reservation, env.clock())}${reservation.stage === "ended" ? "" : checkInFormsHtml(reservation)}`,
   });
 }
 
@@ -537,7 +540,12 @@ function checkInRefusal(error: unknown): string {
 
 function operatorBookingHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal, requestId: string): string {
   const booking = env.operatorBooking(requestId, commandPrincipal(principal));
-  if (booking.stage === "reservation_confirmed") return operatorReservationHtml(env, principal, requestId);
+  if (
+    booking.stage === "reservation_confirmed" ||
+    (booking.stage === "ended" && (booking.endedReason === "reservation_cancelled" || booking.endedReason === "no_show"))
+  ) {
+    return operatorReservationHtml(env, principal, requestId);
+  }
   const timing = bookingTiming(booking);
   const total = bookingTotal(booking);
   return backOfficePage({
