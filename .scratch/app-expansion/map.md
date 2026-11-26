@@ -2,7 +2,7 @@
 
 Plan: [PRD.md](PRD.md) · Method: [method.md](method.md) · Owner answers: [decisions.md](decisions.md) · Rules: [rules/](rules/)
 
-**Frontier:** the first issue that is open, unblocked and unclaimed (currently `02` in Phase 0, `06` `ready-for-human` in Rules, `09` and `2b-01` in Design system). Each issue follows AGENTS.md "Implementation protocol", ends with `npm run check` and its own and affected tests, and records the commands and counts in its Comments. One writer per worktree.
+**Frontier:** the first issue that is open, unblocked and unclaimed (currently `02` in Phase 0, `06` `ready-for-human` in Rules, `2b-02` in Design system). Each issue follows AGENTS.md "Implementation protocol", ends with `npm run check` and its own and affected tests, and records the commands and counts in its Comments. One writer per worktree.
 
 Two lanes run in parallel: **Rules** (2, 4) and **Design system** (1b, 2b). They meet at phase 3.
 
@@ -36,7 +36,7 @@ Each issue moves one group to [bundle.css](design/round-12/bundle.css) via [clas
 
 | # | Issue | Type | Status | Blocked by |
 | --- | --- | --- | --- | --- |
-| 2b-01 | [Buttons, links, fields, banners and status](issues/2b-01-buttons-links-fields-banners-status.md) | task | ready-for-agent | 07 |
+| 2b-01 | [Buttons, links, fields, banners and status](issues/2b-01-buttons-links-fields-banners-status.md) | task | resolved | 07 |
 | 2b-02 | [App bar and journey rail](issues/2b-02-app-bar-and-rail.md) | task | ready-for-agent | 07, 2b-01 |
 | 2b-03 | [Stay ticket and price band](issues/2b-03-stay-ticket-and-price-band.md) | task | ready-for-agent | 07, 2b-01 |
 | 2b-04 | [Result rows, list rows, view switch and stay cards](issues/2b-04-result-rows-and-stay-cards.md) | task | ready-for-agent | 07, 2b-01 |
@@ -106,5 +106,6 @@ After each phase: `npm run check`, `npm run test:workers`, the full `npm test` (
 - 08: Pinned round-12 delivery under `design/round-12/` (24 boards, `tokens.css`, `xenia-kit.css`, `bundle.css`, `README.md`, `fact-map.md`, `copy-decisions.md`, `class-map.md`), resolved 08 with Handover follow-ups recorded, and sliced Phase 2b (`issues/2b-01`–`2b-07`).
 - 07: Mapped Xenia light/dark/system-dark tokens onto semantic names in `apps/web/src/shortlet-foundations.css`, updated `--mode-*` stays tokens to clay, updated `apps/web/src/shortlet-landing.css` and `apps/local-guest/src/shell-theme-colour.ts`, added `test/shortlet-token-parity.test.ts` (kickoff I2), updated palette assertions, and verified `capture-11-all.sh` into `screenshots/07/`.
 - 09: Added self-hosted `@font-face` (`Newsreader` 500/400i, `Hanken Grotesk` 400–700, `font-display: swap`, metric-adjusted fallbacks) and Newsreader money rules in `shortlet-foundations.css`, served `/landing/fonts/*` on `local-owner-server.ts`, pointed `test/shortlet-token-parity.test.ts` at `design/round-12/tokens.json`, recorded Fast 3G before/after (max CLS `0.0203`), and verified `capture-11-all.sh` into `screenshots/09/`.
+- 2b-01: Ported atomic controls and status primitives (`.ui-visually-hidden`, `.ui-button*`, `.ui-link`, `.ui-field*`, `.ui-choice`, `.ui-legend`, `.ui-status*` incl. `--muted`, `.ui-tag*`, `.ui-deadline*`, `.ui-banner*`, `.ui-empty*`, static `.ui-skeleton*`) in `apps/web/src/shortlet-foundations.css`, added `test/round12-class-parity.test.ts` and `test/round12-2b-01.test.ts`, held back unapproved issue-07 tokens and copy, and verified 41/41 unit/browser checks + 21-group captures in `screenshots/2b-01/`.
 - 04: Added fail-closed Reservation `confirmed` guards in `BookingAmendmentManager`, `ExtendedStayExtensionManager`, `NoticeToEndManager`, and `CheckInSupportManager.upholdBlockingComplaintAsSupport`, added `"cancelled"` closure states to `AMENDMENT_TRANSITIONS` and `ExtensionStatus` (D3/D29), wired cancellation cleanup and in-flight settlement refusal in `CancellationApplication`, updated `docs/agents/state-machines.md`, and verified on SQLite (`28` explored / `22` pruned / `0` violations; mutation check `40` explored / `5` violations).
 - 05: Added durable `SqliteCancellationCaseRepository` (`cancellation_cases` migration v6 + DO export), independent ledger/date-release/refund steps with SQL CAS + per-DB resume guard in `CancellationApplication`, read-time retry on `getArtifact`, recorded stay/deposit refund obligation ports wired to Operator Home and `recordGuestRefund` (D4/D28 P2), guest artifact `dates`/`refunds` read model, and `CancellationCase` row in `docs/agents/state-machines.md`; verified on SQLite (`16` failure combos / `0` violations; mutation check `15` violations) and Worker specs.

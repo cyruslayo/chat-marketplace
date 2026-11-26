@@ -1,0 +1,124 @@
+import assert from "node:assert/strict";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+import test from "node:test";
+
+const FOUNDATIONS_CSS = readFileSync(new URL("../apps/web/src/shortlet-foundations.css", import.meta.url), "utf8");
+const CLASS_MAP_MD = readFileSync(new URL("../.scratch/app-expansion/design/round-12/class-map.md", import.meta.url), "utf8");
+
+function walkTsCssHtml(dir: string): string[] {
+  const files: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    if (entry === "node_modules" || entry === "dist" || entry === "public" || entry === ".cloudflare" || entry === ".wrangler") continue;
+    const full = join(dir, entry);
+    const st = statSync(full);
+    if (st.isDirectory()) files.push(...walkTsCssHtml(full));
+    else if (/\.(ts|tsx|css|html)$/.test(entry)) files.push(full);
+  }
+  return files;
+}
+
+const BOARD_ONLY_SECTION = CLASS_MAP_MD.split("## 2. Board-only classes")[1]?.split("## 3. Existing code-only classes")[0] ?? "";
+const BOARD_ONLY_CLASSES = [
+  ...new Set(
+    [...BOARD_ONLY_SECTION.matchAll(/`(bd(?:-[\w-]+)?|xk-[\w-]+)`/g)].map((m) => m[1]!),
+  ),
+].sort();
+
+const GROUP_2B_01_CLASSES = [
+  ".ui-visually-hidden",
+  ".ui-button",
+  ".ui-button--primary",
+  ".ui-button--secondary",
+  ".ui-button--quiet",
+  ".ui-button--pill",
+  ".ui-button--small",
+  ".ui-button--block",
+  ".ui-link",
+  ".ui-field",
+  ".ui-field__label",
+  ".ui-field__optional",
+  ".ui-field__hint",
+  ".ui-field__input",
+  ".ui-field__error",
+  ".ui-choice",
+  ".ui-legend",
+  ".ui-banner",
+  ".ui-banner__title",
+  ".ui-banner__body",
+  ".ui-banner__actions",
+  ".ui-banner--neutral",
+  ".ui-banner--info",
+  ".ui-banner--success",
+  ".ui-banner--warning",
+  ".ui-banner--danger",
+  ".ui-status",
+  ".ui-status--success",
+  ".ui-status--warning",
+  ".ui-status--info",
+  ".ui-status--danger",
+  ".ui-status--muted",
+  ".ui-tag",
+  ".ui-tag--overdue",
+  ".ui-deadline",
+  ".ui-deadline__at",
+  ".ui-deadline__left",
+  ".ui-deadline--info",
+  ".ui-deadline--overdue",
+  ".ui-facts",
+  ".ui-facts--stacked",
+  ".ui-money-total",
+  ".ui-empty",
+  ".ui-empty__title",
+  ".ui-empty__body",
+  ".ui-skeleton",
+  ".ui-skeleton--title",
+  ".ui-skeleton--card",
+  ".ui-skeleton--receipt",
+] as const;
+
+const PRESERVED_CODE_CLASSES = [
+  ".ui-button--destructive",
+  ".ui-sr-only",
+  ".ui-eyebrow",
+  ".ui-upload",
+  ".ui-status--neutral",
+  ".ui-status--stale",
+] as const;
+
+test("I3: zero board-only classes (xk-*, bd-*) appear anywhere in apps/", () => {
+  assert.ok(BOARD_ONLY_CLASSES.length >= 30, "extracted board-only class list from xenia-kit.css");
+  const appFiles = walkTsCssHtml(new URL("../apps", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1"));
+  const pattern = new RegExp(`(?<![\\w-])(?:${BOARD_ONLY_CLASSES.join("|")})(?![\\w-])`);
+  for (const file of appFiles) {
+    const content = readFileSync(file, "utf8");
+    const match = pattern.exec(content);
+    assert.equal(match, null, `${file} must never contain board-only class ${match?.[0]}`);
+  }
+});
+
+test("I3 (2b-01): every mapped 2b-01 class and preserved code-only class exists in shortlet-foundations.css", () => {
+  for (const cls of GROUP_2B_01_CLASSES) {
+    assert.ok(FOUNDATIONS_CSS.includes(cls), `missing 2b-01 class ${cls} in shortlet-foundations.css`);
+  }
+  for (const cls of PRESERVED_CODE_CLASSES) {
+    assert.ok(FOUNDATIONS_CSS.includes(cls), `missing preserved code-only class ${cls} in shortlet-foundations.css`);
+  }
+});
+
+test("I2: no raw hex colours outside the theme token blocks and no --mode-* on buttons, status, banners, or money", () => {
+  const outside = FOUNDATIONS_CSS
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/:root\s*\{[^}]*\}/g, "")
+    .replace(/:root\[data-theme="dark"\]\s*\{[^}]*\}/g, "")
+    .replace(/:root\[data-theme="system"\]\s*\{[^}]*\}/g, "");
+  assert.deepEqual(outside.match(/#[0-9A-Fa-f]{3,8}\b/g) ?? [], []);
+
+  for (const match of FOUNDATIONS_CSS.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const selector = match[1]!;
+    const body = match[2]!;
+    if (/\.ui-button|\.ui-money-|\.ui-status|\.ui-banner/.test(selector)) {
+      assert.doesNotMatch(body, /var\(--mode-/, `${selector.trim()} never uses a --mode-* token`);
+    }
+  }
+});
