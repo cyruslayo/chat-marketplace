@@ -171,6 +171,11 @@ test("Landing 17 AC1: GET /partners renders every section with its exact copy, p
         /(?:src|href)="https?:\/\/(?!example\.com\/privacy")/,
       );
       assert.equal((html.match(/<h1\b/g) ?? []).length, 1);
+      assert.doesNotMatch(html, /preserveAspectRatio="xMidYMid slice"/);
+      assert.match(html, /class="f-night"/);
+      assert.doesNotMatch(html, /Step 6 ·/);
+      assert.doesNotMatch(html, /<details open>/);
+      assert.equal((html.match(/class="xp-benefit xp-benefit--wide"/g) ?? []).length, 2);
     }
   });
   // Copy that depends on the form's state is checked with the form; the rest is on every page.
@@ -269,6 +274,8 @@ test("Landing 17 AC4: with no privacy notice the page shows no field and the POS
       assert.doesNotMatch(html, /<form|<input[^>]*name=|<select|<textarea/);
       assert.ok(html.includes(escapeHtml(PARTNERS_COPY.form.closedHeading)));
       assert.ok(!html.includes(PARTNERS_COPY.form.sentHeading));
+      assert.match(html, /class="xp-apply xp-apply--compact"/);
+      assert.match(html, /class="xp-wrap xp-split xp-split--48 xp-split--center"/);
     }
     const refused = await apply(VALID);
     assert.equal(refused.status, 503);

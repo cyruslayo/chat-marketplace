@@ -133,16 +133,21 @@ export function createPilotRequestHandler(
       sendHealth(res, deps.ready() && databaseHealthy(deps.database));
       return;
     }
+    const isPartnersRoute =
+      url.pathname === "/partners" ||
+      url.pathname === "/partners/applied" ||
+      url.pathname === "/partners/apply";
+    const bannerTransform = isPartnersRoute ? undefined : transformHtml;
     const refusal = guard(req, url);
     if (refusal) {
-      sendRateLimited(req, res, url, refusal.retryAfterSeconds, transformHtml);
+      sendRateLimited(req, res, url, refusal.retryAfterSeconds, bannerTransform);
       return;
     }
     if (url.pathname === "/operator" || url.pathname.startsWith("/operator/")) {
       await deps.owner.handle(req, transformHtml ? bannerWrapped(res, req.method ?? "", transformHtml) : res);
       return;
     }
-    await deps.guest.handle(req, transformHtml ? bannerWrapped(res, req.method ?? "", transformHtml) : res);
+    await deps.guest.handle(req, bannerTransform ? bannerWrapped(res, req.method ?? "", bannerTransform) : res);
   };
 
   return {

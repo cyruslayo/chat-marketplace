@@ -136,7 +136,7 @@ export const PARTNERS_COPY = Object.freeze({
 
   payment: {
     label: "Payment",
-    eyebrow: "Step 6 · Payment",
+    eyebrow: "Payment",
     body: "It’s due 24 hours after the guest gets in, or after the agreed check-in time if that’s later, unless they’ve raised a problem that’s still being resolved. We pay you by bank transfer.",
     figureLabel: "Example: payments to you, one row per booking",
     close:
@@ -222,7 +222,6 @@ export const PARTNERS_COPY = Object.freeze({
       },
       {
         question: "What do I need to join?",
-        open: true,
         paragraphs: [
           "You’ll need:",
           "We inspect every apartment in person before it goes live.",

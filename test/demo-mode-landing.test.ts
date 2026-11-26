@@ -20,6 +20,13 @@ test("AC3: in demo mode, /welcome shows the demo notice and the test-payment cop
         assert.doesNotMatch(body, /data-demo-banner/, "the landing page does not repeat the notice in a banner");
         const chat = (await sendDemoRequest(handler, "/")).body.toString("utf8");
         assert.equal(count(chat, "data-demo-banner"), 1, "the chat page keeps its one demo banner");
+        for (const path of ["/partners", "/partners/applied"]) {
+          const partners = await sendDemoRequest(handler, path);
+          assert.equal(partners.statusCode, 200, path);
+          const partnersHtml = partners.body.toString("utf8");
+          assert.doesNotMatch(partnersHtml, /data-demo-banner/, path);
+          assert.equal(partnersHtml.includes(GUEST_DEMO_COPY.banner), false, path);
+        }
       } finally {
         await handler.close();
       }

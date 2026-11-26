@@ -194,6 +194,10 @@ test("08c AC4: the beta banner wraps guest and operator HTML when staging, and n
     );
     const guest = await drive(handlerFor(database, staged, guestPage, ownerPage, () => "203.0.113.7"), "GET", "/some-stay");
     assert.ok(guest.body.toString("utf8").includes(BETA_BANNER_TEXT), "the guest page carries the banner");
+    for (const path of ["/partners", "/partners/applied"]) {
+      const partners = await drive(handlerFor(database, staged, guestPage, ownerPage, () => "203.0.113.7"), "GET", path);
+      assert.equal(partners.body.toString("utf8").includes(BETA_BANNER_TEXT), false, `${path} does not carry the staging beta banner`);
+    }
 
     const json = await drive(handlerFor(database, staged, guestJson, ownerPage, () => "203.0.113.7"), "GET", "/api/state");
     assert.equal(json.body.toString("utf8"), JSON.stringify({ ok: true }), "JSON is never banner-wrapped");

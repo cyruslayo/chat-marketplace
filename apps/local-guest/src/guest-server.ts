@@ -5934,10 +5934,18 @@ export function createGuestRequestHandler(
       return sessionRuntimesBuilt;
     },
     handle(req, res) {
+      const pathname = new URL(req.url ?? "/", "http://localhost").pathname;
+      // ADR 0105: /partners is an operator recruitment page whose embedded demo and mockups carry their own labels.
+      const isPartnersRoute =
+        pathname === "/partners" ||
+        pathname === "/partners/applied" ||
+        pathname === "/partners/apply";
       // ADR 0105: the staging demo banner covers every guest HTML response (chat, landing, results, unit detail, account).
       return shell.handle(
         req,
-        defaultApp.environment.config.demo === true ? bannerWrapped(res, req.method ?? "", withDemoBanner) : res,
+        defaultApp.environment.config.demo === true && !isPartnersRoute
+          ? bannerWrapped(res, req.method ?? "", withDemoBanner)
+          : res,
       );
     },
     close: () =>

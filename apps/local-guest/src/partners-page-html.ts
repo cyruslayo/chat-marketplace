@@ -102,7 +102,7 @@ function header(): string {
 
 function hero(): string {
   const copy = C.hero;
-  return `<section class="xp-hero" aria-labelledby="hero-title"><figure class="xp-hero__figure">${EVENING_ILLUSTRATION}<figcaption>${e(C.illustration)}</figcaption></figure><div class="xp-hero__text">${eyebrow(copy.eyebrow)}<h1 id="hero-title" class="xp-disp xp-h1">${e(copy.headingBefore)}<span class="xp-it xp-nowrap">${e(copy.headingAccent)}</span></h1><p class="xp-lede">${e(copy.lede)}</p><a href="#apply" class="xp-btn">${e(C.apply)}</a><p class="xp-soft">${e(copy.note)}</p></div></section>`;
+  return `<section class="xp-hero" aria-labelledby="hero-title"><figure class="xp-hero__figure xp-figure">${EVENING_ILLUSTRATION}<figcaption class="xp-meta">${e(C.illustration)}</figcaption></figure><div class="xp-hero__text">${eyebrow(copy.eyebrow)}<h1 id="hero-title" class="xp-disp xp-h1">${e(copy.headingBefore)}<span class="xp-it xp-nowrap">${e(copy.headingAccent)}</span></h1><p class="xp-lede">${e(copy.lede)}</p><a href="#apply" class="xp-btn">${e(C.apply)}</a><p class="xp-soft">${e(copy.note)}</p></div></section>`;
 }
 
 function problem(): string {
@@ -140,8 +140,8 @@ function benefits(): string {
   const copy = C.benefits;
   const items = copy.items
     .map(
-      (item) =>
-        `<div class="xp-benefit">${icon(item.icon as keyof typeof ICON, "md")}<h3 class="xp-h3 xp-h3--semi">${e(item.heading)}</h3><p class="xp-soft">${e(item.body)}</p></div>`,
+      (item, index) =>
+        `<div class="xp-benefit${index >= 3 ? " xp-benefit--wide" : ""}">${icon(item.icon as keyof typeof ICON, "md")}<h3 class="xp-h3 xp-h3--semi">${e(item.heading)}</h3><p class="xp-soft">${e(item.body)}</p></div>`,
     )
     .join("");
   return `<section id="benefits" aria-labelledby="benefits-title" class="xp-sec"><div class="xp-wrap xp-benefits"><div class="xp-benefits__head xp-stack">${eyebrow(copy.eyebrow)}<h2 id="benefits-title" class="xp-disp xp-h2 xp-h2--12">${e(copy.heading)}</h2></div><div class="xp-benefits__lead">${icon("money", "lg")}<h3 class="xp-disp">${e(copy.lead.heading)}</h3><p class="xp-lede">${e(copy.lead.body)}</p></div>${items}</div></section>`;
@@ -296,19 +296,20 @@ function applyCard(form: PartnerFormState): string {
   if (form.kind === "sent")
     return `<div class="xp-apply__sent" role="status"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${ICON.tick}</svg><p class="xp-disp">${e(copy.sentHeading)}</p><p class="xp-soft xp-large">${e(copy.sentBody)}</p></div>`;
   if (form.kind === "closed")
-    return `<div class="xp-apply__sent"><h3 class="xp-disp xp-h2--small">${e(C.apply)}</h3><p class="xp-strong">${e(copy.closedHeading)}</p><p class="xp-soft">${e(copy.closedBody)}</p></div>`;
+    return `<div class="xp-apply__sent xp-apply__sent--closed">${icon("clock", "lg")}<h3 class="xp-disp xp-h2--small">${e(C.apply)}</h3><p class="xp-strong">${e(copy.closedHeading)}</p><p class="xp-soft">${e(copy.closedBody)}</p></div>`;
   return openForm(form);
 }
 
 function join(form: PartnerFormState): string {
   const copy = C.join;
+  const compact = form.kind !== "open";
   const steps = copy.steps
     .map(
       (text, index) =>
         `<li><span class="xp-join__n" aria-hidden="true">${index + 1}</span><p>${e(text)}</p></li>`,
     )
     .join("");
-  return `<section id="apply" aria-labelledby="join-title" class="xp-sec xp-sec--rule"><div class="xp-wrap xp-split xp-split--48"><div class="xp-join xp-stack">${eyebrow(copy.eyebrow)}<h2 id="join-title" class="xp-disp xp-h2">${e(copy.heading)}</h2><ol class="xp-join__steps">${steps}</ol><figure class="xp-join__figure xp-figure">${DOOR_ILLUSTRATION}<figcaption class="xp-meta">${e(C.illustration)}</figcaption></figure></div><div class="xp-apply" id="application">${applyCard(form)}</div></div></section>`;
+  return `<section id="apply" aria-labelledby="join-title" class="xp-sec xp-sec--rule"><div class="xp-wrap xp-split xp-split--48${compact ? " xp-split--center" : ""}"><div class="xp-join xp-stack">${eyebrow(copy.eyebrow)}<h2 id="join-title" class="xp-disp xp-h2">${e(copy.heading)}</h2><ol class="xp-join__steps">${steps}</ol><figure class="xp-join__figure xp-figure">${DOOR_ILLUSTRATION}<figcaption class="xp-meta">${e(C.illustration)}</figcaption></figure></div><div class="xp-apply${compact ? " xp-apply--compact" : ""}" id="application">${applyCard(form)}</div></div></section>`;
 }
 
 function footer(): string {
