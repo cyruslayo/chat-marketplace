@@ -42,3 +42,11 @@ Port the summary and decision-commit containers — `.ui-chat-card*`, `.ui-actio
 `npm run check`, `test/assistant-cold-journey.test.ts`, `test/guest-retired-classes.test.ts`, offer/payment screen tests, and `capture-11-all.sh`. Record exact commands, counts, and capture findings in `## Comments`.
 
 ## Comments
+
+- 26 Nov 2026 (issue 02 reconciliation, see [notes/02-surface-kit.md](../notes/02-surface-kit.md)):
+  - **What `2b-06` must do differently:**
+    1. **Zero A2UI schema or catalogue ID changes:** Do **not** mint a new catalogue ID (`ADR 0073`) and do **not** add a `ChatCard` A2UI component to `apps/web-agent/src/shortlet-catalogs.ts` in `2b-06`. Port `.ui-action-bar--sticky` purely via `shortlet-foundations.css`, `guest-kit.ts`, `renderUnitActionBar` (`shortlet-renderers.ts`), and the 4 booking screen organizers in `client.ts` (`UnitActionBar`'s schema props stay unchanged).
+    2. **Author `chatCardHtml` ADR-0108-ready:** Any new `chatCardHtml(props)` helper added to `apps/local-guest/src/guest-kit.ts` for `.ui-chat-card*` must accept strict JSON-serialisable props, hold no hardcoded domain copy (labels passed from `guest-content.ts`, `ADR 0077`), escape every value (`ADR 0075`), and pair with a complete plain-text fallback helper `chatCardText(props)` (`ADR 0074`).
+    3. **Tier correction for `ChatCard`:** `design/round-12/design-system/components/ChatCard/README.md` cites "Your stays" + "period payment" as two uses for Tier 2, but both are inside Stays. Under `ADR 0108` decision 2, `ChatCard` will land as **Tier 3** (additive on `shortlet-booking/v1`) when Phase 3/4 emits those chat cards, promoting to Tier 2 only when a second real domain uses it (or Tier 1 only if platform-owned for `/plans` with zero domain vocabulary).
+    4. **Keep `Confirm` / `Panel` as kit helpers:** `.ui-confirm` / `.ui-effect` and `.ui-panel--commit` stay kit helpers + booking organizer DOM until Phase 3 retires the 4 remaining organizers (`organizeRequestScreen`, `organizeOfferScreen`, `organizePaymentScreen`, `organizeConfirmation`).
+    5. `2b-06` does **not** need to wait for Follow-ups A–C (surface-kit code landing) because it makes zero A2UI catalogue changes; only `07` and `2b-01` block it.

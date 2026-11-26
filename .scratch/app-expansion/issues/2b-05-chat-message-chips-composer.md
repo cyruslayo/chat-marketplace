@@ -42,3 +42,11 @@ Port the conversation primitives — chat message & persona (including the 24px 
 `npm run check`, `test/assistant-cold-journey.test.ts`, `test/guest-retired-classes.test.ts`, mode-chooser/switch tests, and `capture-11-all.sh`. Record exact commands, counts, and capture findings in `## Comments`.
 
 ## Comments
+
+- 26 Nov 2026 (issue 02 reconciliation, see [notes/02-surface-kit.md](../notes/02-surface-kit.md)):
+  - All 6 `2b-05` component families (`ChatMessage`/`Persona`, `CriteriaChip`, `Composer`, `ConciergeChooser`, `DomainTag`, `SwitchDivider`) are **shell/platform chrome** (`ADR 0106`, `ADR 0107`), **not** A2UI Surface Components.
+  - **What `2b-05` must do differently:**
+    1. Do **not** edit `apps/web-agent/src/shortlet-catalogs.ts`, `apps/local-guest/src/shortlet-renderers.ts`, or `packages/surface-kit`, and add **no** new catalogue IDs (`ADR 0073`) or A2UI schemas.
+    2. Satisfy AC3 by exporting/keeping these as shared kit & shell helpers (`apps/local-guest/src/guest-kit.ts`, `client.ts`, `guest-server.ts`, `apps/web/src/shortlet-foundations.css`) while keeping all existing `ADR 0102` / `ADR 0107` validations green (`test/shortlet-catalog-validation.test.ts`, `test/assistant-cold-journey.test.ts`).
+    3. Coordinate `.ui-chip--demo` (`demoListingChipHtml()` in `guest-kit.ts`) with `2b-04`, since `StayCard` (`StayCard`) and `UnitDetailSheet` render it inside A2UI discovery surfaces.
+    4. `2b-05` does **not** need to wait for Follow-ups A–C (surface-kit code landing) because it makes zero A2UI catalogue changes; only `07` and `2b-01` block it.
