@@ -2,7 +2,7 @@
 
 Plan: [PRD.md](PRD.md) · Method: [method.md](method.md) · Owner answers: [decisions.md](decisions.md) · Rules: [rules/](rules/)
 
-**Frontier:** the first issue that is open, unblocked and unclaimed. Each issue follows AGENTS.md "Implementation protocol", ends with `npm run check` and its own and affected tests, and records the commands and counts in its Comments. One writer per worktree.
+**Frontier:** the first issue that is open, unblocked and unclaimed (currently `02` in Phase 0, `04` in Rules, `07` in Design system). Each issue follows AGENTS.md "Implementation protocol", ends with `npm run check` and its own and affected tests, and records the commands and counts in its Comments. One writer per worktree.
 
 Two lanes run in parallel: **Rules** (2, 4) and **Design system** (1b, 2b). They meet at phase 3.
 
@@ -27,12 +27,22 @@ Two lanes run in parallel: **Rules** (2, 4) and **Design system** (1b, 2b). They
 | # | Issue | Type | Status | Blocked by |
 | --- | --- | --- | --- | --- |
 | 07 | [Xenia tokens in the code's own token names](issues/07-xenia-tokens.md) | task | ready-for-agent | – |
-| 08 | [Design round 12: missing boards and new components](issues/08-design-round-12.md) | task | ready-for-human | – |
+| 08 | [Design round 12: missing boards and new components](issues/08-design-round-12.md) | task | resolved | – |
 | 09 | [Self-hosted type, measured on a slow phone](issues/09-self-hosted-type.md) | task | ready-for-agent | 07 |
 
 ## Phase 2b: port the components, one group per issue
 
-To be sliced after 07. Order: buttons, links, fields, banners, status → app bar and rail → stay ticket and price band → result rows and stay cards → chat message, chips, composer → chat card, action bar, disclosure → Operator shell and queue (accepted boards). Each issue moves one group, changes no copy or behaviour, keeps the 47 to 48 code-only classes it meets unless a board replaces them, and ends with captures. Chat components land in the library format that 02 settles.
+Each issue moves one group to [bundle.css](design/round-12/bundle.css) via [class-map.md](design/round-12/class-map.md), changes no copy or behaviour, keeps code-only classes unless replaced, and ends with 320/390/768/1280 light & dark captures. Chat components (`2b-05`, `2b-06`) land in the library format that `02` settles.
+
+| # | Issue | Type | Status | Blocked by |
+| --- | --- | --- | --- | --- |
+| 2b-01 | [Buttons, links, fields, banners and status](issues/2b-01-buttons-links-fields-banners-status.md) | task | ready-for-agent | 07 |
+| 2b-02 | [App bar and journey rail](issues/2b-02-app-bar-and-rail.md) | task | ready-for-agent | 07, 2b-01 |
+| 2b-03 | [Stay ticket and price band](issues/2b-03-stay-ticket-and-price-band.md) | task | ready-for-agent | 07, 2b-01 |
+| 2b-04 | [Result rows, list rows, view switch and stay cards](issues/2b-04-result-rows-and-stay-cards.md) | task | ready-for-agent | 07, 2b-01 |
+| 2b-05 | [Chat message, persona, chips, composer and multi-domain controls](issues/2b-05-chat-message-chips-composer.md) | task | ready-for-agent | 07, 02, 2b-01 |
+| 2b-06 | [Chat card, action bar, disclosure and commit panels](issues/2b-06-chat-card-action-bar-disclosure.md) | task | ready-for-agent | 07, 02, 2b-01 |
+| 2b-07 | [Operator shell, queue, transfer check and receipt preview](issues/2b-07-operator-shell-and-queue.md) | task | ready-for-agent | 07, 2b-01 |
 
 ## Phase 3: the frame
 
@@ -93,3 +103,4 @@ After each phase: `npm run check`, `npm run test:workers`, the full `npm test` (
 
 - 01: ADR 0108, the surface plan, the kit audit and the library plan are on this branch; see the issue for the one glossary file that differs from `main`.
 - 03: `test/helpers/explore.ts` (`exploreOrders`, `exploreFailures` with digest pruning and `check.reads` guard), `test/helpers/booking-state-fixture.ts`, `scripts/explore-after-booking.ts`, `test/explore-helper.test.ts`, and `test/after-booking-exploration.test.ts` (recording `KNOWN DEFECT` issue 04 & 05 baselines on `SqliteBookingStateRepository`).
+- 08: Pinned round-12 delivery under `design/round-12/` (24 boards, `tokens.css`, `xenia-kit.css`, `bundle.css`, `README.md`, `fact-map.md`, `copy-decisions.md`, `class-map.md`), resolved 08 with Handover follow-ups recorded, and sliced Phase 2b (`issues/2b-01`–`2b-07`).
