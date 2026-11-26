@@ -16,7 +16,7 @@ export const BACK_OFFICE_NAV: readonly NavLink[] = Object.freeze([
   { section: "requests", href: "/operator/requests", label: "Requests", icon: "inbox" },
   { section: "bookings", href: "/operator/bookings", label: "Bookings", icon: "calendar" },
   { section: "transfers", href: "/operator/transfers", label: "Transfers", icon: "card" },
-  { section: "payouts", href: "/operator/payouts", label: "Payouts", icon: "users" },
+  { section: "payouts", href: "/operator/payouts", label: "Owner payouts", icon: "users" },
   { section: "calendar", href: "/operator/calendar", label: "Calendar", icon: "calendar" },
 ]);
 
@@ -53,16 +53,35 @@ export interface BackOfficePageOptions {
   readonly style?: string;
 }
 
+export function breadcrumbHtml(items: readonly { readonly label: string; readonly href?: string }[]): string {
+  const entries = items
+    .map((item, index) => {
+      const last = index === items.length - 1;
+      if (last || item.href === undefined) {
+        return `<li><span${last ? ' aria-current="page"' : ""}>${escapeHtml(item.label)}</span></li>`;
+      }
+      return `<li><a href="${escapeHtml(item.href)}">${escapeHtml(item.label)}</a></li>`;
+    })
+    .join("");
+  return `<nav class="ui-breadcrumb" aria-label="Breadcrumb"><ol>${entries}</ol></nav>`;
+}
+
 export function backOfficeHeader(viewer: BackOfficeViewer, current: BackOfficeSection): string {
-  const links = BACK_OFFICE_NAV.map((link) => `<li><a class="ui-button ui-button--quiet" href="${link.href}"${link.section === current ? ' aria-current="page"' : ""}>${icon(link.icon)}${escapeHtml(link.label)}</a></li>`).join("");
-  return `<header class="bo-header"><p class="bo-header__who"><span class="ui-eyebrow">Shortlet back office</span><strong>${escapeHtml(viewer.name)}</strong></p><nav class="bo-header__nav" aria-label="Back office"><ul>${links}</ul><form method="post" action="/operator/logout"><button class="ui-button ui-button--quiet" type="submit">Log out</button></form></nav></header>`;
+  const links = BACK_OFFICE_NAV.map((link) => `<li><a href="${link.href}"${link.section === current ? ' aria-current="page"' : ""}>${icon(link.icon)}${escapeHtml(link.label)}</a></li>`).join("");
+  const currentLabel = BACK_OFFICE_NAV.find((link) => link.section === current)?.label ?? "Home";
+  const logoutForm = `<form method="post" action="/operator/logout"><button class="ui-button ui-button--quiet ui-button--block" type="submit">Log out</button></form>`;
+  const desktopSide = `<aside class="ui-sidenav" aria-label="Back office header"><div class="ui-sidenav__brand"><a class="ui-brand" href="/operator">Shortlet</a></div><p class="ui-sidenav__who"><span class="ui-eyebrow">Shortlet back office</span> <strong>${escapeHtml(viewer.name)}</strong></p><nav aria-label="Back office"><ul class="ui-sidenav__list">${links}</ul></nav>${logoutForm}</aside>`;
+  const compactSide = `<details class="ui-sidenav-compact"><summary class="ui-sidenav-compact__bar"><span class="ui-brand">Shortlet</span><span class="ui-sidenav-compact__section">${escapeHtml(currentLabel)} · ${escapeHtml(viewer.name)}</span><span class="ui-sidenav-compact__toggle">Menu</span></summary><div class="ui-sidenav-compact__list"><nav aria-label="Back office navigation"><ul class="ui-sidenav__list">${links}</ul></nav>${logoutForm}</div></details>`;
+  return `${compactSide}${desktopSide}`;
 }
 
 export function backOfficePage(options: BackOfficePageOptions): string {
   return pageShell({
     title: `${options.title} · Back office`,
+    layout: "shell",
     style: BACK_OFFICE_STYLE + (options.style ?? ""),
-    body: backOfficeHeader(options.viewer, options.current) + options.body,
+    frame: backOfficeHeader(options.viewer, options.current),
+    body: options.body,
   });
 }
 

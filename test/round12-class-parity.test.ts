@@ -140,6 +140,98 @@ const GROUP_2B_02_CLASSES = [
   ".ui-page--short",
 ] as const;
 
+const GROUP_2B_03_CLASSES = [
+  ".ui-ticket",
+  ".ui-ticket__eyebrow",
+  ".ui-ticket__name",
+  ".ui-ticket__dates",
+  ".ui-ticket__date",
+  ".ui-ticket__date--end",
+  ".ui-ticket__label",
+  ".ui-ticket__day",
+  ".ui-ticket__time",
+  ".ui-ticket__arrow",
+  ".ui-ticket__foot",
+  ".ui-price-breakdown",
+  ".ui-price-breakdown--band",
+  ".ui-price-breakdown__condition",
+  ".ui-price-breakdown__label",
+  ".ui-price-breakdown__row",
+  ".ui-price-breakdown__value",
+  ".ui-price-breakdown__due",
+  ".ui-price-breakdown__paid",
+  ".ui-tiles",
+  ".ui-tiles__tile",
+  ".ui-steps",
+  ".ui-steps--compact",
+] as const;
+
+const GROUP_2B_04_CLASSES = [
+  ".ui-segmented",
+  ".ui-list",
+  ".ui-list__row",
+  ".ui-list__row--static",
+  ".ui-list__primary",
+  ".ui-list__secondary",
+  ".ui-list__aside",
+  ".ui-list__aside--money",
+  ".ui-list__status",
+  ".ui-result-rows",
+  ".ui-result-row",
+  ".ui-result-row--muted",
+  ".ui-result-row--no-thumb",
+  ".ui-result-row__thumb",
+  ".ui-result-row__body",
+  ".ui-result-row__title",
+  ".ui-result-row__where",
+  ".ui-result-row__price",
+  ".ui-result-row__next",
+  ".ui-stay-card",
+  ".ui-stay-card__media",
+  ".ui-stay-card__photo",
+  ".ui-stay-card__photo--empty",
+  ".ui-stay-card__count",
+  ".ui-stay-card__label",
+  ".ui-stay-card__body",
+  ".ui-stay-card__where",
+  ".ui-stay-card__title",
+  ".ui-stay-card__facts",
+  ".ui-stay-card__total",
+] as const;
+
+const GROUP_2B_07_CLASSES = [
+  ".ui-shell",
+  ".ui-shell__main",
+  ".ui-breadcrumb",
+  ".ui-queue",
+  ".ui-queue-item",
+  ".ui-queue-item__what",
+  ".ui-queue-item__kind",
+  ".ui-queue-item__title",
+  ".ui-queue-item__detail",
+  ".ui-queue-item__action",
+  ".ui-outcome",
+  ".ui-outcome--success",
+  ".ui-outcome--declined",
+  ".ui-outcome__title",
+  ".ui-outcome__body",
+  ".ui-panel--commit",
+  ".ui-panel__title",
+  ".ui-effect",
+  ".ui-effect__title",
+  ".ui-effect__body",
+  ".ui-transfer",
+  ".ui-transfer__side",
+  ".ui-reference",
+  ".ui-receipt",
+  ".ui-receipt__meta",
+  ".ui-receipt__frame",
+  ".ui-receipt__label",
+  ".ui-receipt__file",
+  ".ui-receipt__name",
+  ".ui-receipt__gone",
+] as const;
+
 test("I3: zero board-only classes (xk-*, bd-*) appear anywhere in apps/", () => {
   assert.ok(BOARD_ONLY_CLASSES.length >= 30, "extracted board-only class list from xenia-kit.css");
   const appFiles = walkTsCssHtml(new URL("../apps", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1"));
@@ -151,12 +243,21 @@ test("I3: zero board-only classes (xk-*, bd-*) appear anywhere in apps/", () => 
   }
 });
 
-test("I3 (2b-01 & 2b-02): every mapped class and preserved code-only class exists in shortlet-foundations.css", () => {
+test("I3 (2b-01..2b-07): every mapped class and preserved code-only class exists in shortlet-foundations.css", () => {
   for (const cls of GROUP_2B_01_CLASSES) {
     assert.ok(FOUNDATIONS_CSS.includes(cls), `missing 2b-01 class ${cls} in shortlet-foundations.css`);
   }
   for (const cls of GROUP_2B_02_CLASSES) {
     assert.ok(FOUNDATIONS_CSS.includes(cls), `missing 2b-02 class ${cls} in shortlet-foundations.css`);
+  }
+  for (const cls of GROUP_2B_03_CLASSES) {
+    assert.ok(FOUNDATIONS_CSS.includes(cls), `missing 2b-03 class ${cls} in shortlet-foundations.css`);
+  }
+  for (const cls of GROUP_2B_04_CLASSES) {
+    assert.ok(FOUNDATIONS_CSS.includes(cls), `missing 2b-04 class ${cls} in shortlet-foundations.css`);
+  }
+  for (const cls of GROUP_2B_07_CLASSES) {
+    assert.ok(FOUNDATIONS_CSS.includes(cls), `missing 2b-07 class ${cls} in shortlet-foundations.css`);
   }
   for (const cls of PRESERVED_CODE_CLASSES) {
     assert.ok(FOUNDATIONS_CSS.includes(cls), `missing preserved code-only class ${cls} in shortlet-foundations.css`);

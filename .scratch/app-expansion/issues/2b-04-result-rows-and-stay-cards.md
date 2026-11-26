@@ -1,6 +1,6 @@
 # Phase 2b-04: Port result rows, list rows, view switch and stay cards
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 07, 2b-01
 
@@ -35,10 +35,29 @@ Port discovery stay cards (`.ui-stay-card*` including the 44px title-link defect
 
 ## ADR compliance
 
-0015, 0066, 0077, 0078, 0102, 0105, 0108.
+| ADR | Constraint imposed | Affected acceptance criterion / code path |
+| --- | --- | --- |
+| 0015 | All-In Stay Total leads on stay cards and result rows; separate deposit preserved | AC1, I1 / `stayCardInnerHtml`, `resultRowPartsHtml` (`guest-kit.ts`) |
+| 0066 | Neighbourhood-level location shown before payment without revealing address | I1 / `stayCardInnerHtml` `.ui-stay-card__where` |
+| 0077 | Copy stays sourced from `guest-content.ts` (`GUEST_GLOSSARY`, `GUEST_FACT_LABELS`, `GUEST_DEMO_COPY`) | I4 / `stayCardInnerHtml`, `demoListingChipHtml` |
+| 0078 | >=44px interactive targets (`.ui-stay-card__title`, `.ui-result-row`, `.ui-list__row`, `.ui-segmented > :is(a,label)`); 0 overflow at 320px | AC1, AC2, AC4 / `shortlet-foundations.css`, captures |
+| 0102 | Chat cards project from `guest-kit.ts` `stayCardInnerHtml` and preserve `.stay-card`/`.stay-grid` hooks | AC3, I6 / `shortlet-renderers.ts`, `guest-kit.ts` |
+| 0105 | Demo listing label stays legible on stay cards over media (`__label`) without altering gating | AC1 / `stayPhotoHtml`, `stayCardInnerHtml` |
+| 0108 | Pinned round-12 design bundle authority; unshipped `Save`/`Saved` and `/plans` view-switch routes held back | AC3, I1, I4 / `shortlet-foundations.css`, `guest-kit.ts` |
 
 ## Tests
 
 `npm run check`, `test/guest-retired-classes.test.ts`, discovery/search/gallery tests, and `capture-11-all.sh`. Record exact commands, counts, and capture findings in `## Comments`.
 
 ## Comments
+
+- Ported `2b-04` component rules in [shortlet-foundations.css](../../../apps/web/src/shortlet-foundations.css) against pinned [round-12/bundle.css](../design/round-12/bundle.css): `.ui-stay-card*` (fixed `44px` `.ui-stay-card__title` min-height, `__media` 16:10 + preserved `__photo` 4:3/--radius-card check, `__label`, `__body`, `__facts`, `__total`), `.ui-result-rows`/`.ui-result-row*` (`--muted`, `--no-thumb`, `__next`, Newsreader `__price`), `.ui-list*` (`__row--static`, `__aside--money`, `[aria-busy="true"]`, chevronless column adjustment), and `.ui-segmented` (`.ui-segmented > a` and `> label`, `--radius-control`, `.payment-choice-methods` preserved). Placed `--mode-accent-subtle` fills on `.ui-stay-card__media, .ui-result-row__thumb` after `.ui-status {`.
+- Updated `stayPhotoHtml` and `stayCardInnerHtml` in [guest-kit.ts](../../../apps/local-guest/src/guest-kit.ts) to wrap body content in `.ui-stay-card__body` and badge demo chips in `.ui-stay-card__label`; updated [shortlet-renderers.ts](../../../apps/local-guest/src/shortlet-renderers.ts) to append Compare links inside `.ui-stay-card__body`.
+- Updated [test/guest-kit.test.ts](../../../test/guest-kit.test.ts) AC6 to assert `.ui-segmented` uses `var(--radius-control)`.
+- **Held back for owner (Phase 3/5 / `copy-decisions.md`):**
+  - Copy & features held back: no `Save` / `Saved` buttons added on stay cards, no Find view-switch links/routes added, `"1 / N"` photo count copy and shipped `GUEST_FACT_LABELS` preserved (`Photo 1 of 7` and `All-in · N nights` not introduced).
+- **Verification:**
+  - TDD Red run: `npx tsx --test test/round12-class-parity.test.ts test/round12-2b-04.test.ts` -> `2 pass, 3 fail` (AC1/AC3, AC2, and `2b-04` I3 failed prior to implementation).
+  - `npm run build && npm run check && npx tsx --test test/round12-class-parity.test.ts test/guest-kit.test.ts test/guest-kit-targets.test.ts test/guest-retired-classes.test.ts test/guest-conventional-search.test.ts test/listing-gallery.test.ts test/demo-mode-guest.test.ts test/guest-payment-choice.test.ts test/demo-listing-chip.test.ts test/weaver-discovery-cards-catalogue.test.ts test/shortlet-token-parity.test.ts && npx tsx --test test/round12-2b-04.test.ts` -> **58 pass, 0 fail** + **2 pass, 0 fail** (**60/60 pass**).
+  - Sequential 21-group `capture-11.ts` sweep (`320`, `390`, `768`, `1280`, light & dark) saved into `.scratch/guest-ui-consistency/screenshots/2b-04/`: **0 horizontal overflow**, **0 actionable controls under 44px** across all 21 groups (only expected 1x1 hidden radio `<input>`s on `payment-choice`).
+  - Post-commit `npx tsx --test test/landing-page.test.ts` (see git log / final report).

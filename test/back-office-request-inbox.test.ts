@@ -57,7 +57,7 @@ test("AC1 — Requests awaiting a response come first, ordered by deadline, each
     const a = row(html, first.facts.requestId);
     assert.match(a.text, new RegExp(OWNER));
     assert.match(a.text, new RegExp(APARTMENT));
-    assert.match(a.text, /Adaeze Okafor/);
+    assert.doesNotMatch(a.text, /Adaeze Okafor/, "Decision A5: no guest names on Operator screens");
     assert.ok(a.text.includes(formatStayDates("2026-09-10", "2026-09-13")), "stay dates");
     assert.match(a.text, /1 occupant/);
     assert.ok(a.text.includes(formatMoney(first.facts.quote!.allInStayTotalKobo)), "All-In Stay Total");

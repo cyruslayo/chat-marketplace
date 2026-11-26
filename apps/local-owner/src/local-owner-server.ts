@@ -32,7 +32,7 @@ import { BOOKING_ENDED_REASONS, BOOKING_PAYMENT_METHOD_LABELS, BOOKING_STAGE_LAB
 import { escapeHtml, formatMoney, icon, pageShell, type StatusTone } from "../../web/src/ui-kit.js";
 import { OPERATOR_RESPONSE_REMINDER_MINUTES, operatorResponseReminderDue, type OperatorAuthenticatedPrincipal } from "../../../domains/shortlet/src/index.js";
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
-import { backOfficePage, SIGN_IN_REASONS, signInReason, watTime, type BackOfficeViewer, type SignInReason } from "./back-office-view.js";
+import { backOfficePage, breadcrumbHtml, SIGN_IN_REASONS, signInReason, watTime, type BackOfficeViewer, type SignInReason } from "./back-office-view.js";
 import { formatStayDates } from "../../web-agent/src/booking-presentation.js";
 import { LANDING_BINARY_ASSETS, type LandingBinaryAssetLoader } from "../../local-guest/src/landing-assets.js";
 import { nodeLandingAssetLoader } from "../../local-guest/src/node-landing-assets.js";
@@ -97,6 +97,8 @@ interface WaitingItem {
   /** Projected ISO instant, never recalculated (ADR 0077). */
   readonly dueAt: string;
   readonly dueLabel: string;
+  readonly hasDeadline: boolean;
+  readonly actionLabel: string;
 }
 
 function waitingItems(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal): readonly WaitingItem[] {
@@ -110,6 +112,8 @@ function waitingItems(env: LocalApartmentOwnerEnvironment, principal: OperatorPr
       ...env.requestLabels(request.facts.requestId),
       dueAt: request.facts.operatorResponseDeadlineAt,
       dueLabel: "Respond by",
+      hasDeadline: true,
+      actionLabel: "Answer request",
     }));
   // B6: a manual transfer waiting for your check is due at its verification deadline (ADR 0090).
   const transfers: WaitingItem[] = env.listOperatorManualTransfers(commandPrincipal(principal))
@@ -122,6 +126,8 @@ function waitingItems(env: LocalApartmentOwnerEnvironment, principal: OperatorPr
       apartmentTitle: item.apartmentTitle,
       dueAt: item.transfer.verificationDeadlineAt,
       dueLabel: "Verify by",
+      hasDeadline: true,
+      actionLabel: "Check transfer",
     }));
   // B7: an owner payable that is due, at its due time (ADR 0089).
   const payouts: WaitingItem[] = env.listOwnerPayables(commandPrincipal(principal))
@@ -133,6 +139,8 @@ function waitingItems(env: LocalApartmentOwnerEnvironment, principal: OperatorPr
       apartmentTitle: item.apartmentTitle,
       dueAt: item.payable.dueAt,
       dueLabel: "Due",
+      hasDeadline: true,
+      actionLabel: "View payout",
     }] : []);
   // Issue 11: an Owner Overpayment to recover, listed from when the later cancellation outcome was posted.
   const overpayments: WaitingItem[] = env.listOwnerPayables(commandPrincipal(principal))
@@ -144,6 +152,8 @@ function waitingItems(env: LocalApartmentOwnerEnvironment, principal: OperatorPr
       apartmentTitle: item.apartmentTitle,
       dueAt: item.payable.dueAt,
       dueLabel: "Over-paid since",
+      hasDeadline: false,
+      actionLabel: "Record recovery",
     }] : []);
   // Issue 14: a refund owed to the Guest after an upheld complaint, from when the outcome was recorded.
   const refunds: WaitingItem[] = env.listGuestRefundsOwed(commandPrincipal(principal)).map((reservation) => ({
@@ -154,15 +164,29 @@ function waitingItems(env: LocalApartmentOwnerEnvironment, principal: OperatorPr
     apartmentTitle: reservation.apartmentTitle,
     dueAt: reservation.stayOutcome!.endedAt,
     dueLabel: "Owed since",
+    hasDeadline: false,
+    actionLabel: "Record refund",
   }));
-  return [...requests, ...transfers, ...payouts, ...overpayments, ...refunds].sort((a, b) => Date.parse(a.dueAt) - Date.parse(b.dueAt));
+  return [...requests, ...transfers, ...payouts, ...overpayments, ...refunds].sort((a, b) => {
+    if (a.hasDeadline !== b.hasDeadline) return a.hasDeadline ? -1 : 1;
+    return Date.parse(a.dueAt) - Date.parse(b.dueAt);
+  });
 }
 
 function operatorHomeHtml(env: LocalApartmentOwnerEnvironment, principal: OperatorPrincipal): string {
   const items = waitingItems(env, principal);
+  const nowMs = env.clock().getTime();
   const list = items.length === 0
     ? `<section class="ui-panel ui-empty"><div class="ui-empty__art">${icon("check")}</div><h2>Nothing is waiting on you</h2><p>New Booking Requests appear here as soon as a Guest sends one.</p></section>`
-    : `<ol class="bo-waiting">${items.map((item) => `<li class="bo-waiting__item" data-kind="${item.kind}"><a href="${escapeHtml(item.href)}"><span class="bo-waiting__title">${escapeHtml(item.title)}</span><span>${escapeHtml(item.apartmentTitle)}</span><span>${escapeHtml(item.ownerName)}</span><span>${escapeHtml(item.dueLabel)} ${watTime(item.dueAt)}</span></a></li>`).join("")}</ol>`;
+    : `<ul class="ui-queue">${items.map((item, index) => {
+      const overdue = item.hasDeadline && Date.parse(item.dueAt) < nowMs;
+      const tag = overdue ? `<span class="ui-tag ui-tag--overdue">${icon("clock")}Overdue</span>` : "";
+      const deadline = item.hasDeadline
+        ? `<div class="ui-deadline${overdue ? " ui-deadline--overdue" : ""}"><span class="ui-deadline__at">${escapeHtml(item.dueLabel)} ${watTime(item.dueAt)}</span></div>`
+        : `<div class="ui-deadline ui-deadline--info"><span class="ui-deadline__at">${escapeHtml(item.dueLabel)} ${watTime(item.dueAt)}</span><span class="ui-deadline__left">No deadline set</span></div>`;
+      const btnCls = index === 0 ? "ui-button ui-button--primary" : "ui-button ui-button--quiet";
+      return `<li class="ui-queue-item" data-kind="${item.kind}"><div class="ui-queue-item__what"><p class="ui-queue-item__kind"><span>${escapeHtml(item.title)}</span>${tag}</p><h2 class="ui-queue-item__title">${escapeHtml(item.apartmentTitle)}</h2><p class="ui-queue-item__detail">${escapeHtml(item.ownerName)}</p></div>${deadline}<div class="ui-queue-item__action"><a class="${btnCls}" href="${escapeHtml(item.href)}">${escapeHtml(item.actionLabel)}<span class="ui-sr-only">: ${escapeHtml(item.apartmentTitle)}</span></a></div></li>`;
+    }).join("")}</ul>`;
   const summary = items.length === 0 ? "" : `<p>${items.length} ${items.length === 1 ? "item is" : "items are"} waiting on you, soonest deadline first.</p>`;
   return backOfficePage({
     title: "Home",
@@ -237,8 +261,8 @@ function operatorInboxHtml(env: LocalApartmentOwnerEnvironment, principal: Opera
     const timing = awaitingResponse
       ? `<span class="bo-request__deadline" id="${escapeHtml(deadlineId)}">Respond by ${watTime(facts.operatorResponseDeadlineAt)} · ${reminder === null ? minutesPhrase(left) : `<strong class="bo-request__reminder">${escapeHtml(reminderLabel(reminder, left))}</strong>`}</span>`
       : "";
-    const guest = facts.primaryGuestName ? `${escapeHtml(facts.primaryGuestName)} · ` : "";
-    return `<li class="bo-request" data-request-id="${escapeHtml(facts.requestId)}"${reminder === null ? "" : ` data-reminder="${reminder}"`}><a class="ui-list__row" href="/operator/requests/${encodeURIComponent(facts.requestId)}"${timing ? ` aria-describedby="${escapeHtml(deadlineId)}"` : ""}><span class="ui-list__primary">${guest}${escapeHtml(labels.apartmentTitle)}</span><span class="ui-list__aside"><span class="ui-sr-only">All-In Stay Total </span>${formatMoney(facts.quote?.allInStayTotalKobo ?? 0)}</span><span class="ui-list__secondary">${escapeHtml(labels.ownerName)} · ${escapeHtml(formatStayDates(facts.checkIn, facts.checkOut))} · ${facts.nights} ${facts.nights === 1 ? "night" : "nights"} · ${guestParty(facts)}</span><span class="ui-list__status">${requestBadge(facts.status, facts.delivered)}</span>${timing}</a></li>`;
+    // Decision A5: no guest names on Operator screens.
+    return `<li class="bo-request" data-request-id="${escapeHtml(facts.requestId)}"${reminder === null ? "" : ` data-reminder="${reminder}"`}><a class="ui-list__row" href="/operator/requests/${encodeURIComponent(facts.requestId)}"${timing ? ` aria-describedby="${escapeHtml(deadlineId)}"` : ""}><span class="ui-list__primary">${escapeHtml(labels.apartmentTitle)}</span><span class="ui-list__aside ui-list__aside--money"><span class="ui-sr-only">All-In Stay Total </span>${formatMoney(facts.quote?.allInStayTotalKobo ?? 0)}</span><span class="ui-list__secondary">${escapeHtml(labels.ownerName)} · ${escapeHtml(formatStayDates(facts.checkIn, facts.checkOut))} · ${facts.nights} ${facts.nights === 1 ? "night" : "nights"} · ${guestParty(facts)}</span><span class="ui-list__status">${requestBadge(facts.status, facts.delivered)}</span>${timing}</a></li>`;
   }).join("");
   const summary = requests.length === 0 ? "" : `<p>${awaiting === 0 ? "Nothing needs a response right now." : `${awaiting} ${awaiting === 1 ? "request needs" : "requests need"} your response.`}</p>`;
   const announce = reminders.length === 0 ? "" : `${reminders.length} ${reminders.length === 1 ? "request has" : "requests have"} reached a reminder. Answer the soonest deadline first.`;
@@ -365,7 +389,7 @@ function operatorRequestHtml(env: LocalApartmentOwnerEnvironment, principal: Ope
     style: DECISION_STYLE,
     viewer: viewer(env, principal),
     current: "requests",
-    body: `<p><a class="ui-button ui-button--quiet" href="/operator/requests">${icon("arrow-left")}Back to requests</a></p><header class="ui-page__header" data-request-id="${escapeHtml(facts.requestId)}"><p class="ui-eyebrow">Booking Request</p><h1>${escapeHtml(labels.apartmentTitle)}</h1><div class="ui-row">${requestBadge(facts.status, facts.delivered)}</div></header>${error ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(error)}</span></p>` : ""}<section class="ui-panel" aria-label="Request facts"><dl class="ui-facts"><dt>Owner</dt><dd>${escapeHtml(labels.ownerName)}</dd><dt>Apartment</dt><dd>${escapeHtml(labels.apartmentTitle)}</dd><dt>Dates</dt><dd><time datetime="${escapeHtml(facts.checkIn)}">${escapeHtml(formatStayDates(facts.checkIn, facts.checkOut))}</time> (${facts.nights} nights)</dd><dt>Guest party</dt><dd>${guestParty(facts)}</dd>${phone}<dt>All-In Stay Total</dt><dd class="ui-money-total">${formatMoney(facts.quote?.allInStayTotalKobo ?? 0)}</dd>${facts.quote?.refundableSecurityDepositKobo ? `<dt>Refundable Security Deposit</dt><dd>${formatMoney(facts.quote.refundableSecurityDepositKobo)}</dd>` : ""}<dt>Response deadline</dt><dd>${watTime(facts.operatorResponseDeadlineAt)}</dd></dl></section>${decisions}<script>${DECISION_SUBMIT_GUARD}</script>`,
+    body: `${breadcrumbHtml([{ label: "Requests", href: "/operator/requests" }, { label: labels.apartmentTitle }])}<header class="ui-page__header" data-request-id="${escapeHtml(facts.requestId)}"><p class="ui-eyebrow">Booking Request</p><h1>${escapeHtml(labels.apartmentTitle)}</h1><div class="ui-row">${requestBadge(facts.status, facts.delivered)}</div></header>${error ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(error)}</span></p>` : ""}<section class="ui-panel" aria-label="Request facts"><dl class="ui-facts"><dt>Owner</dt><dd>${escapeHtml(labels.ownerName)}</dd><dt>Apartment</dt><dd>${escapeHtml(labels.apartmentTitle)}</dd><dt>Dates</dt><dd><time datetime="${escapeHtml(facts.checkIn)}">${escapeHtml(formatStayDates(facts.checkIn, facts.checkOut))}</time> (${facts.nights} nights)</dd><dt>Guest party</dt><dd>${guestParty(facts)}</dd>${phone}<dt>All-In Stay Total</dt><dd class="ui-money-total">${formatMoney(facts.quote?.allInStayTotalKobo ?? 0)}</dd>${facts.quote?.refundableSecurityDepositKobo ? `<dt>Refundable Security Deposit</dt><dd>${formatMoney(facts.quote.refundableSecurityDepositKobo)}</dd>` : ""}<dt>Response deadline</dt><dd>${watTime(facts.operatorResponseDeadlineAt)}</dd></dl></section>${decisions}<script>${DECISION_SUBMIT_GUARD}</script>`,
   });
 }
 
@@ -504,7 +528,7 @@ function operatorReservationHtml(env: LocalApartmentOwnerEnvironment, principal:
     viewer: viewer(env, principal),
     current: "bookings",
     style: DECISION_STYLE,
-    body: `<p><a class="ui-button ui-button--quiet" href="/operator/bookings">${icon("arrow-left")}Back to bookings</a></p><header class="ui-page__header"><p class="ui-eyebrow">Reservation</p><h1>${escapeHtml(reservation.apartmentTitle)}</h1><div class="ui-row">${bookingBadge(reservation)}</div></header>${error ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(error)}</span></p>` : ""}<section class="ui-panel" aria-label="Reservation facts">${facts}</section><section class="ui-panel" aria-label="Check-in status">${status}</section>${guestRefundForm(reservation, env.clock())}${reservation.stage === "ended" ? "" : checkInFormsHtml(reservation)}`,
+    body: `${breadcrumbHtml([{ label: "Bookings", href: "/operator/bookings" }, { label: reservation.apartmentTitle }])}<header class="ui-page__header"><p class="ui-eyebrow">Reservation</p><h1>${escapeHtml(reservation.apartmentTitle)}</h1><div class="ui-row">${bookingBadge(reservation)}</div></header>${error ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${escapeHtml(error)}</span></p>` : ""}<section class="ui-panel" aria-label="Reservation facts">${facts}</section><section class="ui-panel" aria-label="Check-in status">${status}</section>${guestRefundForm(reservation, env.clock())}${reservation.stage === "ended" ? "" : checkInFormsHtml(reservation)}`,
   });
 }
 
@@ -554,7 +578,7 @@ function operatorBookingHtml(env: LocalApartmentOwnerEnvironment, principal: Ope
     title: `Booking · ${booking.apartmentTitle}`,
     viewer: viewer(env, principal),
     current: "bookings",
-    body: `<p><a class="ui-button ui-button--quiet" href="/operator/bookings">${icon("arrow-left")}Back to bookings</a></p><header class="ui-page__header"><p class="ui-eyebrow">Booking</p><h1>${escapeHtml(booking.apartmentTitle)}</h1><div class="ui-row">${bookingBadge(booking)}</div></header><section class="ui-panel" aria-label="Booking facts"><dl class="ui-facts"><dt>Owner</dt><dd>${escapeHtml(booking.ownerName)}</dd><dt>Apartment</dt><dd>${escapeHtml(booking.apartmentTitle)}</dd><dt>Dates</dt><dd>${escapeHtml(formatStayDates(booking.checkIn, booking.checkOut))} (${booking.nights} ${booking.nights === 1 ? "night" : "nights"})</dd><dt>Guest party</dt><dd>${booking.partySize} ${booking.partySize === 1 ? "occupant" : "occupants"}</dd>${total ? `<dt>All-In Stay Total</dt><dd class="ui-money-total">${total}</dd>` : ""}<dt>Stage</dt><dd>${escapeHtml(BOOKING_STAGE_LABELS[booking.stage])}</dd><dt>Payment method</dt><dd>${escapeHtml(bookingPaymentMethod(booking))}</dd>${timing ? `<dt>${booking.stage === "ended" ? "Outcome" : "Payment deadline"}</dt><dd>${timing}</dd>` : ""}</dl></section>`,
+    body: `${breadcrumbHtml([{ label: "Bookings", href: "/operator/bookings" }, { label: booking.apartmentTitle }])}<header class="ui-page__header"><p class="ui-eyebrow">Booking</p><h1>${escapeHtml(booking.apartmentTitle)}</h1><div class="ui-row">${bookingBadge(booking)}</div></header><section class="ui-panel" aria-label="Booking facts"><dl class="ui-facts"><dt>Owner</dt><dd>${escapeHtml(booking.ownerName)}</dd><dt>Apartment</dt><dd>${escapeHtml(booking.apartmentTitle)}</dd><dt>Dates</dt><dd>${escapeHtml(formatStayDates(booking.checkIn, booking.checkOut))} (${booking.nights} ${booking.nights === 1 ? "night" : "nights"})</dd><dt>Guest party</dt><dd>${booking.partySize} ${booking.partySize === 1 ? "occupant" : "occupants"}</dd>${total ? `<dt>All-In Stay Total</dt><dd class="ui-money-total">${total}</dd>` : ""}<dt>Stage</dt><dd>${escapeHtml(BOOKING_STAGE_LABELS[booking.stage])}</dd><dt>Payment method</dt><dd>${escapeHtml(bookingPaymentMethod(booking))}</dd>${timing ? `<dt>${booking.stage === "ended" ? "Outcome" : "Payment deadline"}</dt><dd>${timing}</dd>` : ""}</dl></section>`,
   });
 }
 
@@ -582,23 +606,40 @@ function manualTransferCard(item: OperatorManualTransfer): string {
   const id = encodeURIComponent(transfer.transferId);
   const status = TRANSFER_STATUS[transfer.status];
   const version = `<input type="hidden" name="expectedVersion" value="${transfer.version}">`;
-  const receipt = transfer.receipt && !transfer.receiptDeletedAt
-    ? `<dt>Receipt</dt><dd>Uploaded ${watTime(transfer.receipt.uploadedAt)}<br><a class="ui-button ui-button--secondary bo-receipt" href="/operator/transfers/${id}/receipt" target="_blank" rel="noopener">View receipt</a></dd>`
-    : transfer.receiptDeletedAt ? `<dt>Receipt</dt><dd>Deleted after 90 days</dd>` : "";
+  const receiptSection = (() => {
+    if (transfer.receipt && !transfer.receiptDeletedAt) {
+      const meta = `<p class="ui-receipt__meta">Uploaded ${watTime(transfer.receipt.uploadedAt)} · evidence only, not proof of payment</p>`;
+      if (transfer.receipt.contentType === "application/pdf") {
+        const kb = Math.max(1, Math.round(transfer.receipt.sizeBytes / 1024));
+        return `<section class="ui-receipt ui-transfer__side" aria-label="The Guest's receipt">${meta}<div class="ui-receipt__file">${icon("doc")}<span class="ui-receipt__name">Receipt · PDF · ${kb} KB</span><span class="ui-tag">PDF</span></div><a class="ui-button ui-button--secondary bo-receipt" href="/operator/transfers/${id}/receipt" target="_blank" rel="noopener">Open the receipt<span class="ui-sr-only"> (opens in a new tab)</span></a></section>`;
+      }
+      const imgType = transfer.receipt.contentType === "image/png" ? "Image · PNG" : "Image · JPEG";
+      return `<section class="ui-receipt ui-transfer__side" aria-label="The Guest's receipt">${meta}<div class="ui-receipt__frame"><span class="ui-tag ui-receipt__label">${escapeHtml(imgType)}</span><img src="/operator/transfers/${id}/receipt" alt="The Guest's receipt"></div><a class="ui-button ui-button--secondary bo-receipt" href="/operator/transfers/${id}/receipt" target="_blank" rel="noopener">View receipt<span class="ui-sr-only"> (opens in a new tab)</span></a></section>`;
+    }
+    if (transfer.receiptDeletedAt) {
+      return `<section class="ui-receipt ui-transfer__side" aria-label="The Guest's receipt"><div class="ui-receipt__gone"><strong>Deleted after 90 days</strong><p>Removed ${watTime(transfer.receiptDeletedAt)} under the retention rule. The decision on this transfer is unchanged.</p></div></section>`;
+    }
+    return `<section class="ui-receipt ui-transfer__side" aria-label="The Guest's receipt"><p class="ui-receipt__meta">Waiting for the Guest's receipt.</p></section>`;
+  })();
   const deadline = transfer.status === "awaiting_verification" ? `<dt>Verify by</dt><dd>${watTime(transfer.verificationDeadlineAt)}</dd>`
     : transfer.status === "awaiting_receipt" ? `<dt>Guest must pay and upload by</dt><dd>${watTime(transfer.paymentDeadlineAt)}</dd>` : "";
-  const decided = transfer.decision?.kind === "confirmed" ? `<dt>Outcome</dt><dd>Payment confirmed ${watTime(transfer.decision.decidedAt)}; Reservation made</dd>`
-    : transfer.decision?.kind === "rejected" ? `<dt>Outcome</dt><dd>Declined (${escapeHtml(TRANSFER_REJECTION_REASONS[transfer.decision.reason])}) ${watTime(transfer.decision.decidedAt)}; no Reservation</dd>`
-      : transfer.status === "expired" ? `<dt>Outcome</dt><dd>Not verified in time; dates released, no Reservation</dd>` : "";
+  const outcomeBox = transfer.decision?.kind === "confirmed"
+    ? `<div class="ui-outcome ui-outcome--success">${icon("check")}<p class="ui-outcome__title">Confirmed</p><p class="ui-outcome__body">Payment confirmed ${watTime(transfer.decision.decidedAt)}; Reservation made</p></div>`
+    : transfer.decision?.kind === "rejected"
+      ? `<div class="ui-outcome ui-outcome--declined">${icon("x")}<p class="ui-outcome__title">Declined</p><p class="ui-outcome__body">Declined (${escapeHtml(TRANSFER_REJECTION_REASONS[transfer.decision.reason])}) ${watTime(transfer.decision.decidedAt)}; no Reservation</p></div>`
+      : transfer.status === "expired"
+        ? `<div class="ui-outcome">${icon("clock")}<p class="ui-outcome__title">Expired</p><p class="ui-outcome__body">Not verified in time; dates released, no Reservation</p></div>`
+        : "";
   const refund = transfer.refundOwed ? `<dt>Refund</dt><dd>Money received ${watTime(transfer.refundOwed.recordedAt)}: ${formatMoney(transfer.refundOwed.amountReceivedKobo)} is owed back to the Guest in full</dd>` : "";
-  const facts = `<dl class="ui-facts"><dt>Owner</dt><dd>${escapeHtml(item.ownerName)}</dd><dt>Apartment</dt><dd>${escapeHtml(item.apartmentTitle)}</dd><dt>Exact amount</dt><dd class="ui-money-total">${formatMoney(transfer.amountKobo)}</dd><dt>Booking reference</dt><dd class="bo-reference">${escapeHtml(transfer.bookingReference)}</dd>${receipt}${deadline}${decided}${refund}</dl>`;
+  const facts = `<dl class="ui-facts"><dt>Owner</dt><dd>${escapeHtml(item.ownerName)}</dd><dt>Apartment</dt><dd>${escapeHtml(item.apartmentTitle)}</dd><dt>Exact amount</dt><dd class="ui-money-total">${formatMoney(transfer.amountKobo)}</dd><dt>Booking reference</dt><dd class="ui-reference bo-reference">${escapeHtml(transfer.bookingReference)}</dd>${deadline}${refund}</dl>`;
+  const declineEffect = `<div class="ui-effect">${icon("info")}<p class="ui-effect__title">What this does</p><p class="ui-effect__body">Declining releases the dates and tells the Guest no Reservation was made. Any money received is refunded in full.</p></div>`;
   const actions = transfer.status === "awaiting_verification"
-    ? `<form method="post" action="/operator/transfers/${id}/confirm" class="ui-stack">${version}<h3>Confirm payment</h3><p>Confirm only after you see the matching credit in the business account. The receipt alone is not proof of payment.</p><div class="ui-field"><label class="ui-field__label" for="ref-${id}">Bank transaction reference</label><input id="ref-${id}" name="bankTransactionReference" autocomplete="off" required></div><div class="ui-field"><label class="ui-field__label" for="amount-${id}">Amount received (₦)</label><input id="amount-${id}" name="amountReceived" inputmode="decimal" autocomplete="off" required></div><button class="ui-button ui-button--primary ui-button--block" type="submit">Confirm payment</button></form>`
-      + `<details class="ui-confirm"><summary>Decline this transfer…</summary><div class="ui-confirm__body"><form method="post" action="/operator/transfers/${id}/reject" class="ui-stack">${version}<fieldset class="bo-reasons"><legend>Reason</legend>${(Object.keys(TRANSFER_REJECTION_REASONS) as (keyof typeof TRANSFER_REJECTION_REASONS)[]).map((code) => `<label class="bo-choice"><input type="radio" name="reason" value="${code}" required> ${escapeHtml(TRANSFER_REJECTION_REASONS[code])}</label>`).join("")}</fieldset><p>Declining releases the dates and tells the Guest no Reservation was made. Any money received is refunded in full.</p><button class="ui-button ui-button--destructive ui-button--block" type="submit">Decline transfer</button></form></div></details>`
+    ? `<section class="ui-panel ui-panel--commit ui-stack"><form method="post" action="/operator/transfers/${id}/confirm" class="ui-stack">${version}<h3 class="ui-panel__title">Confirm payment</h3><p>Confirm only after you see the matching credit in the business account. The receipt alone is not proof of payment.</p><div class="ui-field"><label class="ui-field__label" for="ref-${id}">Bank transaction reference</label><input id="ref-${id}" name="bankTransactionReference" autocomplete="off" required></div><div class="ui-field"><label class="ui-field__label" for="amount-${id}">Amount received (₦)</label><input id="amount-${id}" name="amountReceived" inputmode="decimal" autocomplete="off" required></div><button class="ui-button ui-button--primary ui-button--block" type="submit">Confirm payment</button></form></section>`
+      + `<details class="ui-confirm"><summary>Decline this transfer…</summary><div class="ui-confirm__body">${declineEffect}<form method="post" action="/operator/transfers/${id}/reject" class="ui-stack">${version}<fieldset class="bo-reasons"><legend>Reason</legend>${(Object.keys(TRANSFER_REJECTION_REASONS) as (keyof typeof TRANSFER_REJECTION_REASONS)[]).map((code) => `<label class="bo-choice"><input type="radio" name="reason" value="${code}" required> ${escapeHtml(TRANSFER_REJECTION_REASONS[code])}</label>`).join("")}</fieldset><button class="ui-button ui-button--destructive ui-button--block" type="submit">Decline transfer</button></form></div></details>`
     : (transfer.status === "expired" || transfer.status === "rejected") && !transfer.refundOwed
       ? `<details class="ui-confirm"><summary>Money arrived after all…</summary><div class="ui-confirm__body"><form method="post" action="/operator/transfers/${id}/late-credit" class="ui-stack">${version}<p>Money for this transfer never confirms the booking. Record it here so it is refunded in full.</p><div class="ui-field"><label class="ui-field__label" for="late-ref-${id}">Bank transaction reference</label><input id="late-ref-${id}" name="bankTransactionReference" autocomplete="off" required></div><div class="ui-field"><label class="ui-field__label" for="late-amount-${id}">Amount received (₦)</label><input id="late-amount-${id}" name="amountReceived" inputmode="decimal" autocomplete="off" required></div><button class="ui-button ui-button--block" type="submit">Record for refund</button></form></div></details>`
       : "";
-  return `<li class="bo-transfer" id="transfer-${escapeHtml(transfer.transferId)}" data-transfer-id="${escapeHtml(transfer.transferId)}" data-status="${transfer.status}"><article class="ui-panel ui-stack"><div class="ui-row"><span class="ui-status ui-status--${status.tone}">${escapeHtml(status.label)}</span></div>${facts}${actions}</article></li>`;
+  return `<li class="bo-transfer" id="transfer-${escapeHtml(transfer.transferId)}" data-transfer-id="${escapeHtml(transfer.transferId)}" data-status="${transfer.status}"><article class="ui-panel ui-stack"><div class="ui-row"><span class="ui-status ui-status--${status.tone}">${escapeHtml(status.label)}</span></div><div class="ui-transfer">${receiptSection}<div class="ui-transfer__side">${facts}${outcomeBox}${actions}</div></div></article></li>`;
 }
 
 const TRANSFER_STYLE = ".bo-receipt{margin-block-start:var(--space-2)}.bo-transfers{display:grid;gap:var(--space-4);margin:0;padding:0;list-style:none}.bo-reference{font-family:var(--font-mono);overflow-wrap:anywhere}";
