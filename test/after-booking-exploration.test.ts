@@ -63,7 +63,7 @@ function runAfterBookingCancellationFailures(): ExploreFailuresResult<Cancellati
 let cachedCheckA: ExploreOrdersResult<AmendmentViolationDetail> | undefined;
 let cachedCheckB: ExploreFailuresResult<CancellationEndState> | undefined;
 
-test('KNOWN DEFECT (issue 04): AC4: The change check finds "request, accept, cancel, commit" on SQLite', () => {
+test("AC2 (issue 04): The order check reports zero failing orders on SQLite, with request, accept, cancel and commit each succeeding in at least one order", () => {
   const result = runAfterBookingChangeExploration({
     depth: DEFAULT_AFTER_BOOKING_DEPTH,
     prune: true,
@@ -73,19 +73,8 @@ test('KNOWN DEFECT (issue 04): AC4: The change check finds "request, accept, can
 
   assert.ok(result.explored < 5460, `Expected pruning below 5460, got ${result.explored}`);
   assert.ok(result.pruned > 0);
-  assert.ok(result.shortestFailure !== null);
-  assert.deepEqual(result.shortestFailure.sequence, [
-    "request",
-    "accept",
-    "cancel",
-    "commit",
-  ]);
-  assert.deepEqual(result.shortestFailure.detail, {
-    reservationStatus: "cancelled",
-    contractVersion: 2,
-    contractTotalKobo: 60000,
-    chargedAfterCancelKobo: 10000,
-  });
+  assert.equal(result.violations.length, 0);
+  assert.equal(result.shortestFailure, null);
   for (const stepName of ["request", "accept", "commit", "cancel"] as const) {
     assert.ok(
       (result.stepSuccessCounts[stepName] ?? 0) > 0,
@@ -158,7 +147,7 @@ test("KNOWN DEFECT (issue 05): AC5: The cancellation check reports the seven unf
   });
 });
 
-test("AC7: The default depth bounds stay deterministic (36 explored for check A, 8 for check B); wider depth runs only from scripts/explore-after-booking.ts, never from npm test", () => {
+test("AC7: The default depth bounds stay deterministic (28 explored for check A, 8 for check B); wider depth runs only from scripts/explore-after-booking.ts, never from npm test", () => {
   const checkA =
     cachedCheckA ??
     runAfterBookingChangeExploration({
@@ -169,8 +158,8 @@ test("AC7: The default depth bounds stay deterministic (36 explored for check A,
   const checkB = cachedCheckB ?? runAfterBookingCancellationFailures();
 
   assert.equal(DEFAULT_AFTER_BOOKING_DEPTH, 6);
-  assert.equal(checkA.explored, 36);
-  assert.equal(checkA.pruned, 28);
+  assert.equal(checkA.explored, 28);
+  assert.equal(checkA.pruned, 22);
   assert.equal(checkB.explored, 8);
   assert.throws(
     () =>

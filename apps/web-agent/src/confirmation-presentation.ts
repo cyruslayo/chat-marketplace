@@ -36,7 +36,9 @@ export function confirmationSteps(facts: BookingContractArtifact["facts"]): read
 function extensionContent(facts: BookingContractArtifact["facts"]): { readonly extension?: NonNullable<ConfirmationContent["extension"]> } {
   const request = facts.extension;
   if (!request && !facts.extensionOffered) return {};
-  const outcome = request && request.status !== "awaiting_operator" ? request.status : undefined;
+  const outcome = request && (request.status === "approved" || request.status === "declined" || request.status === "expired")
+    ? request.status
+    : undefined;
   return {
     extension: {
       offered: facts.extensionOffered === true,

@@ -1,6 +1,6 @@
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import { extensionAwaitingOperator } from "./extended-stay-extension.js";
-import type { BookingContract } from "./card-payment.js";
+import type { BookingContract, Reservation } from "./card-payment.js";
 import type { CancellationEconomics } from "./cancellation-noshow.js";
 import type { CheckInSupportStore } from "./checkin-support.js";
 import { EXTENDED_CANCELLATION_POLICY_VERSION, NOTICE_TO_END_DAYS, noticeToEndTerms, type ExtendedStayPolicy } from "./extended-stay.js";
@@ -164,6 +164,8 @@ export interface NoticeRefundPort {
 
 export interface NoticeToEndManagerOptions {
   readonly contracts: NoticeContractRepository;
+  /** ADR 0058, 0092 (D29): authoritative Reservation status reader; missing or non-confirmed Reservations fail closed. */
+  readonly reservations: { findReservationById(reservationId: string): Pick<Reservation, "reservationId" | "contractId" | "status"> | null };
   readonly periods: NoticePeriodLedger;
   /** The per-period owner ledger (demo-launch issue 11). Each refunded period's owner payable reduction is written here. */
   readonly owners: OwnerPeriodNoticeLedger;
@@ -219,6 +221,9 @@ export class NoticeToEndManager {
   readonly #o: NoticeToEndManagerOptions;
 
   constructor(options: NoticeToEndManagerOptions) {
+    if (!options.reservations?.findReservationById) {
+      throw new Error("reservations reader is required for NoticeToEndManager");
+    }
     this.#o = options;
   }
 
@@ -246,6 +251,7 @@ export class NoticeToEndManager {
     const amendmentId = `notice-to-end:${contract.contractId}:${contract.contractVersion}`;
     const refundKobo = calculation.refundsByPeriod.reduce((sum, entry) => sum + entry.amountKobo, 0);
 
+    this.#assertReservationConfirmed(this.#o.contracts.getContract(contractId));
     const committed = this.#o.contracts.mutateContract(contractId, contract.contractVersion, (current) => ({
       ...current,
       contractVersion: current.contractVersion + 1,
@@ -316,6 +322,7 @@ export class NoticeToEndManager {
     }
     const contract = this.#o.contracts.getContract(contractId);
     if (!guestAuthorized(contract, principal)) throw new Error("Notice to End is not authorized for this principal");
+    this.#assertReservationConfirmed(contract);
     billingPeriodsOf(contract);
     if (contract.noticeToEnd) throw new Error("A Notice to End is already recorded for this contract");
     // Monthly-stays issue 09 (ADR 0092 Extensions): a Notice to End and an extension request exclude each other while the request awaits the Operator.
@@ -333,6 +340,13 @@ export class NoticeToEndManager {
     );
     const calculation = calculateNoticeToEnd({ contract, periods, paidPeriodIndices, noticeDate });
     return { contract, periods, calculation, now };
+  }
+
+  #assertReservationConfirmed(contract: BookingContract): void {
+    const reservation = this.#o.reservations.findReservationById(contract.reservationId);
+    if (!reservation || reservation.contractId !== contract.contractId || reservation.status !== "confirmed") {
+      throw new Error("A Notice to End is available only for a confirmed Reservation");
+    }
   }
 
   #paymentSource(contract: BookingContract, periodIndex: number): { paymentMethod: "fresh_card" | "bank_transfer"; reference: string } {

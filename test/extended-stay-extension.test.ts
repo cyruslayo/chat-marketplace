@@ -43,6 +43,11 @@ function managerWith(f: DatedFixture, clock: () => Date, current: BookingContrac
       getContract: () => current,
       mutateContract: () => { throw new Error("the guard must refuse before any mutation"); },
     },
+    reservations: {
+      findReservationById: (id) => id === current.reservationId
+        ? { reservationId: current.reservationId, contractId: current.contractId, status: "confirmed" }
+        : null,
+    },
     units: env.unitRepository,
     calendar: env.calendar,
     continuousOccupancy: env.bookingRequestApp.continuousOccupancy,

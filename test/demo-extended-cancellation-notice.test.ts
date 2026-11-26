@@ -102,6 +102,11 @@ function noticeManager(contract: BookingContract, options: {
   const owners = new SqliteOwnerPayableLedger(openNodeSqliteDatabase(":memory:"), () => new Date(options.now));
   const manager = new NoticeToEndManager({
     contracts: store,
+    reservations: {
+      findReservationById: (id) => id === contract.reservationId
+        ? { reservationId: contract.reservationId, contractId: contract.contractId, status: "confirmed" }
+        : null,
+    },
     owners,
     periods: paidLedger(periodsOf(contract), options.paid ?? [1]),
     arrival: { hasVerifiedAccess: () => options.verified ?? true },

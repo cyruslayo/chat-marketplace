@@ -1,7 +1,7 @@
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import type { BookingContractView } from "../../../domains/shortlet/src/index.js";
 import type { GuestConductPolicySnapshot } from "../../../domains/shortlet/src/index.js";
-import { extensionStatusAt, noticeToEndTerms, type ExtensionRequestRecord } from "../../../domains/shortlet/src/index.js";
+import { extensionStatusAt, noticeToEndTerms, type ExtensionRequestRecord, type ExtensionStatus } from "../../../domains/shortlet/src/index.js";
 
 export const BOOKING_CONTRACT_ARTIFACT_KIND = "shortlet.booking-contract";
 export const BOOKING_CONTRACT_SCHEMA_VERSION = "shortlet.booking-contract/v1";
@@ -39,7 +39,7 @@ export interface BookingContractArtifact {
     /** Issue 18: the Notice to End recorded on this contract (ADR 0060), so a booking surface shows it instead of offering a second one. */
     readonly noticeToEnd?: { readonly newLastNight: string; readonly newCheckOut: string; readonly refundKobo: number; readonly owedKobo: number };
     /** Monthly-stays issue 09 (ADR 0092 Extensions): the latest extension request, its status read at the clock (expiry is lazy). */
-    readonly extension?: { readonly status: "awaiting_operator" | "approved" | "declined" | "expired"; readonly extensionId: string; readonly addedNights: number; readonly addedAmountKobo: number; readonly newCheckOut: string; readonly periodDueDate: string; readonly responseDeadlineAt: string };
+    readonly extension?: { readonly status: ExtensionStatus; readonly extensionId: string; readonly addedNights: number; readonly addedAmountKobo: number; readonly newCheckOut: string; readonly periodDueDate: string; readonly responseDeadlineAt: string };
     /** Monthly-stays issue 09: an Extended Stay with no notice and no request awaiting may offer an extension (the card previews it). */
     readonly extensionOffered?: true;
     readonly guestConductRules: readonly string[];

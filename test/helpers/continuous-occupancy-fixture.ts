@@ -229,6 +229,11 @@ export function amendmentDependencies(contract: BookingContract, continuousOccup
       getContract: () => contract,
       mutateContract: (_id, _version, mutation) => mutation(contract),
     },
+    reservationRepository: {
+      findReservationById: (id) => id === contract.reservationId
+        ? { reservationId: contract.reservationId, contractId: contract.contractId, unitId: contract.unitId, primaryGuestId: contract.parties.primaryGuest.id, dates: { checkIn: contract.dates.checkIn, checkOut: contract.dates.checkOut }, status: "confirmed", confirmedAt: "2026-08-01T00:00:00Z" }
+        : null,
+    },
     calendar: { getAuthoritativeAvailability: () => ({ isAvailable: true, version: "av-1" }) },
     inspectionRepository: { isPassedAndValidThrough: () => ({ valid: true, version: "ins-1" }) },
     authorityRepository: { isValidThrough: () => ({ valid: true, version: "auth-1" }) },

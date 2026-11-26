@@ -622,6 +622,7 @@ export class LocalGuestEnvironment {
         getContract: contractById,
         mutateContract: mutateBookingContract,
       },
+      reservations: bookingState,
       // Period 1 is paid once the contract exists; a later period is paid when its Period Payment row is recorded (the same
       // rows the owner composition reads). Independent of the card-payment contract cache, so every composition agrees.
       periods: {
@@ -644,6 +645,7 @@ export class LocalGuestEnvironment {
     // same counted-stay ledger as the booking path, and records every step as a versioned contract amendment.
     this.extensions = new ExtendedStayExtensionManager({
       contracts: { getContract: contractById, mutateContract: mutateBookingContract },
+      reservations: bookingState,
       units: this.unitRepository,
       calendar: this.calendar,
       continuousOccupancy: this.bookingRequestApp.continuousOccupancy,

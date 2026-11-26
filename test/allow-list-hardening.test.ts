@@ -54,6 +54,7 @@ function contract(): BookingContract { return { contractId: "ctr-amend-1", reser
 // Minimal amendment fixture: a six-night stay adds a collection, a four-night stay has no financial effect.
 function amendmentSetup() {
   let current = contract();
+  const reservation = { reservationId: current.reservationId, contractId: current.contractId, unitId: current.unitId, primaryGuestId: current.parties.primaryGuest.id, dates: { checkIn: current.dates.checkIn, checkOut: current.dates.checkOut }, status: "confirmed" as const, confirmedAt: "2026-08-01T00:00:00Z" };
   const deps: BookingAmendmentDependencies = {
     continuousOccupancy: fixedOccupancyLedger({ unitProperties: { "unit-1": "property-1" } }),
     contractRepository: {
@@ -63,6 +64,9 @@ function amendmentSetup() {
         current = mutation(current);
         return current;
       },
+    },
+    reservationRepository: {
+      findReservationById: (id) => (id === reservation.reservationId ? reservation : null),
     },
     calendar: { getAuthoritativeAvailability: () => ({ isAvailable: true, version: "a1" }), hasSameDayCheckInOnDate: () => false },
     inspectionRepository: { isPassedAndValidThrough: () => ({ valid: true, version: "i1" }) },

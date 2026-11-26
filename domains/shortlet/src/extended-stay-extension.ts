@@ -1,5 +1,5 @@
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
-import type { BookingContract } from "./card-payment.js";
+import type { BookingContract, Reservation } from "./card-payment.js";
 import { OPERATOR_RESPONSE_WINDOW_MINUTES } from "./booking-request.js";
 import { assertContinuousOccupancy, type ContinuousOccupancyLedger } from "./continuous-occupancy.js";
 import type { ExtendedStayPolicy } from "./extended-stay.js";
@@ -12,7 +12,7 @@ import { extendedStayExtensionPeriods, type BillingPeriodQuote } from "./quote.j
 // Response Window (booking-request.ts); on approval the amendment commits at once and appends the Billing Periods. Existing
 // periods are never repriced: the segment starts at the current checkout (ADR 0092).
 
-export type ExtensionStatus = "awaiting_operator" | "approved" | "declined" | "expired";
+export type ExtensionStatus = "awaiting_operator" | "approved" | "declined" | "expired" | "cancelled";
 
 /** The contract's latest extension request, kept on the contract so every composition reads the same state (ADR 0060). */
 export interface ExtensionRequestRecord {
@@ -74,6 +74,8 @@ export interface ExtendedStayExtensionOptions {
     getContract(id: string): BookingContract;
     mutateContract(id: string, expectedVersion: number, mutation: (current: BookingContract) => BookingContract): BookingContract;
   };
+  /** ADR 0058, 0092 (D29): authoritative Reservation status reader; missing or non-confirmed Reservations fail closed. */
+  readonly reservations: { findReservationById(reservationId: string): Pick<Reservation, "reservationId" | "contractId" | "status"> | null };
   /** The unit's Extended Stay terms and price (read fail closed; a missing unit refuses). */
   readonly units: { findById(unitId: string): unknown };
   readonly calendar: { getAuthoritativeAvailability(unitId: string, checkIn: string, checkOut: string): { readonly isAvailable: boolean } };
@@ -127,6 +129,9 @@ export class ExtendedStayExtensionManager {
   readonly #o: ExtendedStayExtensionOptions;
 
   constructor(options: ExtendedStayExtensionOptions) {
+    if (!options.reservations?.findReservationById) {
+      throw new Error("reservations reader is required for ExtendedStayExtensionManager");
+    }
     this.#o = options;
   }
 
@@ -199,6 +204,7 @@ export class ExtendedStayExtensionManager {
   approveExtension(contractId: string, operator: CommandPrincipal, extensionId: string): ExtensionRequestRecord {
     const contract = this.#contractFor(contractId);
     if (!operatorAuthorized(contract, operator)) throw new ExtensionRefusedError("NOT_OPERATOR", "Only the Operator can approve an extension");
+    this.#assertReservationConfirmed(contract);
     const pending = this.#awaiting(contract, extensionId);
     const now = this.#o.clock();
     if (now.getTime() >= Date.parse(pending.responseDeadlineAt)) {
@@ -211,6 +217,7 @@ export class ExtendedStayExtensionManager {
       throw new ExtensionRefusedError("QUOTE_CHANGED", "The agreed amounts changed; the guest must request the extension again");
     }
     this.#guards(contract, unitId, pending.fromCheckOut, pending.newCheckOut, now);
+    this.#assertReservationConfirmed(this.#contractFor(contractId));
     const amendmentId = `extension-amendment:${contract.contractId}:${contract.contractVersion}:${pending.extensionId}`;
     const decided = { ...pending, status: "approved" as const, decidedAt: now.toISOString(), decidedBy: operator.id, amendmentId };
     const committed = this.#o.contracts.mutateContract(contractId, contract.contractVersion, (current) => {
@@ -238,6 +245,7 @@ export class ExtendedStayExtensionManager {
   declineExtension(contractId: string, operator: CommandPrincipal, extensionId: string): ExtensionRequestRecord {
     const contract = this.#contractFor(contractId);
     if (!operatorAuthorized(contract, operator)) throw new ExtensionRefusedError("NOT_OPERATOR", "Only the Operator can decline an extension");
+    this.#assertReservationConfirmed(contract);
     const pending = this.#awaiting(contract, extensionId);
     const now = this.#o.clock();
     if (now.getTime() >= Date.parse(pending.responseDeadlineAt)) {
@@ -247,12 +255,33 @@ export class ExtendedStayExtensionManager {
     return this.#settle(contract, { ...pending, status: "declined" }, operator.id, now);
   }
 
+  /** D29: closes a waiting extension request when the Reservation becomes cancelled or no_show. */
+  closeWaitingExtensionForCancellation(contractId: string, actorId: string): ExtensionRequestRecord | null {
+    const contract = this.#contractFor(contractId);
+    const record = contract.extensionRequest;
+    const now = this.#o.clock();
+    if (!record || extensionStatusAt(record, now) !== "awaiting_operator") return null;
+    return this.#settle(contract, { ...record, status: "cancelled" }, actorId, now);
+  }
+
   /** The request the guest and the Operator inbox read, with expiry evaluated at the clock. Reads only. */
   statusOf(contractId: string): { readonly record: ExtensionRequestRecord; readonly status: ExtensionStatus } | undefined {
     const contract = this.#contractFor(contractId);
     const record = contract.extensionRequest;
     const status = extensionStatusAt(record, this.#o.clock());
-    return record && status ? { record, status } : undefined;
+    if (!record || !status) return undefined;
+    if (status === "awaiting_operator") {
+      const reservation = this.#o.reservations.findReservationById(contract.reservationId);
+      if (reservation && reservation.status !== "confirmed") return { record, status: "cancelled" };
+    }
+    return { record, status };
+  }
+
+  #assertReservationConfirmed(contract: BookingContract): void {
+    const reservation = this.#o.reservations.findReservationById(contract.reservationId);
+    if (!reservation || reservation.contractId !== contract.contractId || reservation.status !== "confirmed") {
+      throw new ExtensionRefusedError("STALE", "This Reservation is no longer confirmed; an extension is not available");
+    }
   }
 
   #contractFor(contractId: string): BookingContract {
@@ -281,6 +310,7 @@ export class ExtendedStayExtensionManager {
     if (!this.#o.extendedStayPolicy) throw new ExtensionRefusedError("NOT_EXTENDED", "Extensions need an Extended Stay policy (ADR 0092)");
     const contract = this.#contractFor(contractId);
     if (!guestAuthorized(contract, principal)) throw new ExtensionRefusedError("NOT_AUTHORIZED", "Extensions are not authorized for this principal");
+    this.#assertReservationConfirmed(contract);
     const quote = contract.quote as { readonly stayType?: unknown } | undefined;
     if (quote?.stayType !== "extended") throw new ExtensionRefusedError("NOT_EXTENDED", "Only an Extended Stay can be extended; a Short Stay cannot be extended to 30 nights or more");
     if (contract.noticeToEnd) throw new ExtensionRefusedError("NOTICE_IN_FORCE", "A Notice to End is in force; an extension is not available");

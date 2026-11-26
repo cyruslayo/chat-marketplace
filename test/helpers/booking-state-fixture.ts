@@ -232,9 +232,66 @@ export function createAfterBookingWorld(options: {
     calls.push(port);
   };
 
+  let chargedKobo = 0;
+
+  const amendmentDeps: BookingAmendmentDependencies = {
+    continuousOccupancy: fixedOccupancyLedger({ unitProperties: { u1: "p1" } }),
+    contractRepository: {
+      getContract: (id: string) => {
+        const contract = sqlite.state.findContractById(id);
+        if (!contract) throw new Error("Contract not found");
+        return contract;
+      },
+      mutateContract: (id, expectedVersion, mutation) =>
+        sqlite.state.mutateContract(id, expectedVersion, mutation),
+    },
+    reservationRepository: sqlite.state,
+    calendar: {
+      getAuthoritativeAvailability: () => ({ isAvailable: true, version: "a1" }),
+      hasSameDayCheckInOnDate: () => false,
+    },
+    inspectionRepository: {
+      isPassedAndValidThrough: () => ({ valid: true, version: "i1" }),
+    },
+    authorityRepository: {
+      isValidThrough: () => ({ valid: true, version: "m1" }),
+    },
+    quoteProvider: {
+      quote: ({ resultingDates }) => ({
+        quoteId: "q",
+        quoteVersion: "2",
+        currency: "NGN",
+        revisedAllInStayTotalKobo: resultingDates.nights === 6 ? 60000 : 50000,
+        financialAdjustment:
+          resultingDates.nights === 6
+            ? { type: "additional_collection", amountKobo: 10000, currency: "NGN" }
+            : { type: "none", amountKobo: 0, currency: "NGN" },
+      }),
+    },
+    settlementProvider: {
+      settle: ({ amendmentId, contractId, adjustment, quote }) => {
+        chargedKobo += adjustment.amountKobo;
+        return {
+          settlementId: "s1",
+          amendmentId,
+          contractId,
+          type: adjustment.type,
+          amountKobo: adjustment.amountKobo,
+          currency: "NGN",
+          quoteId: quote.quoteId,
+          quoteVersion: quote.quoteVersion,
+          status: "settled",
+        };
+      },
+    },
+  };
+
+  const amendmentManager = new BookingAmendmentManager(amendmentDeps);
+
   const cancelApp = new CancellationApplication({
     state: sqlite.state,
     manager: new CancellationNoShowManager(),
+    amendments: amendmentManager,
     clock: fixedAfterBookingNow,
     timing: {
       getWindow: () => ({
@@ -281,61 +338,6 @@ export function createAfterBookingWorld(options: {
       },
     },
   });
-
-  let chargedKobo = 0;
-
-  const amendmentDeps: BookingAmendmentDependencies = {
-    continuousOccupancy: fixedOccupancyLedger({ unitProperties: { u1: "p1" } }),
-    contractRepository: {
-      getContract: (id: string) => {
-        const contract = sqlite.state.findContractById(id);
-        if (!contract) throw new Error("Contract not found");
-        return contract;
-      },
-      mutateContract: (id, expectedVersion, mutation) =>
-        sqlite.state.mutateContract(id, expectedVersion, mutation),
-    },
-    calendar: {
-      getAuthoritativeAvailability: () => ({ isAvailable: true, version: "a1" }),
-      hasSameDayCheckInOnDate: () => false,
-    },
-    inspectionRepository: {
-      isPassedAndValidThrough: () => ({ valid: true, version: "i1" }),
-    },
-    authorityRepository: {
-      isValidThrough: () => ({ valid: true, version: "m1" }),
-    },
-    quoteProvider: {
-      quote: ({ resultingDates }) => ({
-        quoteId: "q",
-        quoteVersion: "2",
-        currency: "NGN",
-        revisedAllInStayTotalKobo: resultingDates.nights === 6 ? 60000 : 50000,
-        financialAdjustment:
-          resultingDates.nights === 6
-            ? { type: "additional_collection", amountKobo: 10000, currency: "NGN" }
-            : { type: "none", amountKobo: 0, currency: "NGN" },
-      }),
-    },
-    settlementProvider: {
-      settle: ({ amendmentId, contractId, adjustment, quote }) => {
-        chargedKobo += adjustment.amountKobo;
-        return {
-          settlementId: "s1",
-          amendmentId,
-          contractId,
-          type: adjustment.type,
-          amountKobo: adjustment.amountKobo,
-          currency: "NGN",
-          quoteId: quote.quoteId,
-          quoteVersion: quote.quoteVersion,
-          status: "settled",
-        };
-      },
-    },
-  };
-
-  const amendmentManager = new BookingAmendmentManager(amendmentDeps);
 
   const world: AfterBookingWorld = {
     state: sqlite.state,

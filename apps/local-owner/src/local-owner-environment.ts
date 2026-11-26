@@ -670,6 +670,7 @@ export class LocalApartmentOwnerEnvironment {
         },
         mutateContract: (contractId, expectedVersion, mutation) => this.#bookingState.mutateContract(contractId, expectedVersion, mutation),
       },
+      reservations: this.#bookingState,
       periods: {
         projectBillingPeriods: (offerId) => [
           { periodIndex: 1, status: "paid" },
@@ -789,6 +790,7 @@ export class LocalApartmentOwnerEnvironment {
         },
         mutateContract: (contractId, expectedVersion, mutation) => this.#bookingState.mutateContract(contractId, expectedVersion, mutation),
       },
+      reservations: this.#bookingState,
       units: this.unitRepository,
       calendar: this.calendar,
       continuousOccupancy: this.bookingRequestApp.continuousOccupancy,
@@ -1139,6 +1141,8 @@ export class LocalApartmentOwnerEnvironment {
       if (!snapshot) return [];
       const contract = this.#bookingState.findContractById(snapshot.contractId);
       if (!contract || contract.tenantId !== principal.tenantId || contract.extensionRequest === undefined) return [];
+      const reservation = this.#bookingState.findReservationById(contract.reservationId);
+      if (reservation && reservation.status !== "confirmed") return [];
       const status = extensionStatusAt(contract.extensionRequest, now);
       if (status !== "awaiting_operator") return [];
       return [{ contractId: contract.contractId, reservationId: contract.reservationId, unitId: contract.unitId, request: contract.extensionRequest, status }];
@@ -1871,9 +1875,9 @@ export class LocalApartmentOwnerEnvironment {
           throw new CheckInRefusedError("This complaint is already closed");
         const reservation =
           this.#bookingState.findReservationById(reservationId);
-        const contract = reservation
-          ? this.#bookingState.findContractById(reservation.contractId)
-          : null;
+        if (!reservation || reservation.status !== "confirmed")
+          throw new CheckInRefusedError("This Reservation is no longer confirmed");
+        const contract = this.#bookingState.findContractById(reservation.contractId);
         if (!contract) throw new Error("Booking not found");
         let refund: { readonly refundKobo: number };
         try {
@@ -2337,6 +2341,19 @@ export class LocalApartmentOwnerEnvironment {
       store: this.#checkInStore,
       clock: this.clock,
       audit: this.audit,
+      reservationProvider: {
+        getReservation: (reservationId: string) => {
+          const reservation = this.#bookingState.findReservationById(reservationId);
+          if (!reservation) return null;
+          const contract = this.#bookingState.findContractById(reservation.contractId);
+          return {
+            reservationId: reservation.reservationId,
+            primaryGuestId: reservation.primaryGuestId,
+            tenantId: contract?.tenantId,
+            status: reservation.status,
+          };
+        },
+      },
       windowProvider: {
         getWindow: (reservationId: string) => {
           const reservation =

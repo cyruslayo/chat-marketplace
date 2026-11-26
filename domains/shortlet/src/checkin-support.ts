@@ -45,7 +45,7 @@ export interface CheckInReservation {
   readonly reservationId: string;
   readonly primaryGuestId: string;
   readonly tenantId?: string;
-  readonly status: "confirmed" | "cancelled" | "revoked";
+  readonly status: "confirmed" | "cancelled" | "no_show" | "revoked";
 }
 export interface CheckInReservationProvider {
   getReservation(reservationId: string): CheckInReservation | null;
@@ -860,6 +860,15 @@ export class CheckInSupportManager {
       );
     if (!/^\d{4}-\d{2}-\d{2}$/.test(envelope.payload.firstAffectedNight))
       throw new Error("A first affected night is required");
+    // ADR 0058, 0091 (D29): a cancelled or no_show Reservation refuses a second stay-ending outcome fail closed.
+    const reservation = this.#reservations?.getReservation(
+      envelope.payload.reservationId,
+    );
+    if (!reservation || reservation.status !== "confirmed") {
+      throw new Error(
+        "Cannot uphold a blocking complaint for a Reservation that is not confirmed",
+      );
+    }
     this.#hydrate(envelope.payload.reservationId);
     const complaints =
       this.#complaints.get(envelope.payload.reservationId) ?? [];

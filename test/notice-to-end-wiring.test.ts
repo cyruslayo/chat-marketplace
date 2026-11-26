@@ -129,6 +129,11 @@ test("AC2: a Short Stay has no Notice to End: the domain refuses a Short Stay co
     const shortContract = { ...contract, quote: { ...(contract.quote as object), stayType: "short" } } as unknown as BookingContract;
     const manager = new NoticeToEndManager({
       contracts: { getContract: () => shortContract, mutateContract: () => { throw new Error("a refused notice must not commit"); } },
+      reservations: {
+        findReservationById: (id) => id === shortContract.reservationId
+          ? { reservationId: shortContract.reservationId, contractId: shortContract.contractId, status: "confirmed" }
+          : null,
+      },
       periods: { projectBillingPeriods: () => [], paymentsFor: () => [] },
       owners: context.owner.ownerPayableLedger,
       arrival: { hasVerifiedAccess: () => true },
@@ -242,7 +247,19 @@ test("AC1 non-demo: a production composition with demo off records a Notice to E
     } as unknown as BookingContract;
     const database = openNodeSqliteDatabase(files.path);
     try {
-      new SqliteBookingStateRepository(database).saveContract(contract);
+      const bookingState = new SqliteBookingStateRepository(database);
+      bookingState.saveBookingAtomically({
+        contract,
+        reservation: {
+          reservationId: contract.reservationId,
+          contractId: contract.contractId,
+          unitId: contract.unitId,
+          primaryGuestId: contract.parties.primaryGuest.id,
+          dates: { checkIn: CHECK_IN, checkOut: CHECK_OUT },
+          status: "confirmed",
+          confirmedAt: PERIOD_1_STARTED,
+        },
+      });
       new SqliteCheckInSupportStore(database).save(contract.reservationId, {
         schedule: null,
         window: null,
