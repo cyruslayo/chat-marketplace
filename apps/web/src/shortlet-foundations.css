@@ -1043,6 +1043,64 @@
   /* Round-12 2b-04 mode-subtle fills on card media and result-row thumbs (outside guestKitCss). */
   .ui-stay-card__media, .ui-result-row__thumb { background: var(--mode-accent-subtle, var(--color-surface-subtle)); }
 
+  /* Round-12 2b-07: Operator shell, sidenav breakpoints, breadcrumbs, deadline-sorted queue, outcomes, transfer check, and receipt preview. */
+  .ui-shell { container-type: inline-size; display: flex; flex-direction: column; min-block-size: 100dvh; }
+  .ui-shell__main { container-type: inline-size; flex: 1; min-inline-size: 0; display: flex; flex-direction: column; gap: var(--space-6); padding: var(--space-4) var(--space-4) var(--space-10); max-inline-size: 65rem; }
+  @media (min-width: 48rem) {
+    .ui-shell { flex-direction: row; }
+    .ui-shell > .ui-sidenav { display: flex; flex: none; inline-size: 14.5rem; border-inline-end: 1px solid var(--color-border-subtle); }
+    .ui-shell > .ui-sidenav-compact { display: none; }
+    .ui-shell__main { padding: 1.75rem var(--space-8) var(--space-12); }
+  }
+  .ui-sidenav-compact__list { display: flex; flex-direction: column; gap: var(--space-2); padding: 0 var(--space-3) var(--space-3); }
+
+  .ui-breadcrumb { font-size: var(--font-size-small); line-height: var(--font-line-small); color: var(--color-text-secondary); }
+  .ui-breadcrumb ol { display: flex; flex-wrap: wrap; align-items: center; gap: 0 0.375rem; margin: 0; padding: 0; list-style: none; }
+  .ui-breadcrumb li + li::before { content: "/"; margin-inline-end: 0.375rem; color: var(--color-text-muted); }
+  .ui-breadcrumb a { display: inline-flex; align-items: center; min-block-size: var(--control-min-target); color: var(--color-action); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+  .ui-breadcrumb [aria-current="page"] { color: var(--color-text); }
+
+  .ui-queue { container-type: inline-size; display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; border-block-start: 1px solid var(--color-text); }
+  .ui-queue-item { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.625rem; padding: var(--space-4) 0; border-block-end: 1px solid var(--color-border-subtle); }
+  .ui-queue-item__what { display: flex; flex-direction: column; gap: 0.125rem; min-inline-size: 0; }
+  .ui-queue-item__kind { display: flex; flex-wrap: wrap; align-items: center; gap: 0.375rem; margin: 0; font-size: var(--font-size-small); line-height: var(--font-line-small); font-weight: 600; color: var(--color-text-secondary); }
+  .ui-queue-item__title { margin: 0; font-size: var(--font-size-h3); line-height: var(--font-line-h3); font-weight: 600; color: var(--color-text); overflow-wrap: anywhere; }
+  .ui-queue-item__detail { margin: 0; font-size: var(--font-size-small); line-height: var(--font-line-small); color: var(--color-text-secondary); }
+  .ui-queue-item__action { display: flex; }
+  @container (min-width: 40rem) { .ui-queue-item { grid-template-columns: minmax(0, 1fr) 13.125rem auto; align-items: center; gap: var(--space-4); } }
+
+  .ui-panel--commit { box-shadow: inset 0 0 0 1px var(--color-text); border-color: var(--color-text); }
+  .ui-panel__title { margin: 0; font-size: var(--font-size-h3); line-height: var(--font-line-h3); font-weight: 600; color: var(--color-text); }
+  .ui-effect { display: grid; grid-template-columns: 1.25rem minmax(0, 1fr); gap: 0.125rem 0.625rem; padding: var(--space-3) 0.875rem; border-radius: var(--radius-control); background: var(--color-surface-subtle); }
+  .ui-effect__title { margin: 0; font-weight: 700; }
+  .ui-effect__body { margin: 0; grid-column: 2; color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); }
+
+  .ui-outcome { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr); gap: var(--space-1) var(--space-3); padding: var(--space-4); border-radius: var(--radius-control); background: var(--color-surface-subtle); }
+  .ui-outcome .ui-icon { inline-size: 1.5rem; block-size: 1.5rem; }
+  .ui-outcome__title { margin: 0; font-weight: 700; }
+  .ui-outcome__body { margin: 0; grid-column: 2; }
+  .ui-outcome--success { background: var(--color-success-surface); }
+  .ui-outcome--success .ui-icon, .ui-outcome--success .ui-outcome__title { color: var(--color-success); }
+  .ui-outcome--declined { background: var(--color-danger-surface); }
+  .ui-outcome--declined .ui-icon, .ui-outcome--declined .ui-outcome__title { color: var(--color-danger); }
+
+  .ui-transfer { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-5); align-items: start; }
+  @container (min-width: 48rem) { .ui-transfer { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); } }
+  @media (min-width: 48rem) { .ui-transfer { grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); } }
+  .ui-transfer__side { display: flex; flex-direction: column; gap: var(--space-3); min-inline-size: 0; }
+  .ui-reference { font-family: var(--font-mono); font-weight: 600; color: var(--color-text); overflow-wrap: anywhere; }
+
+  .ui-receipt { display: flex; flex-direction: column; gap: 0.625rem; }
+  .ui-receipt__meta { margin: 0; font-size: var(--font-size-small); line-height: var(--font-line-small); color: var(--color-text-secondary); }
+  .ui-receipt__frame { position: relative; display: block; inline-size: 100%; max-block-size: 32.5rem; aspect-ratio: 3 / 4; border-radius: var(--radius-control); background: var(--color-surface); box-shadow: inset 0 0 0 1px var(--color-border); overflow: hidden; }
+  .ui-receipt__frame img, .ui-receipt__frame svg { display: block; inline-size: 100%; block-size: 100%; object-fit: contain; }
+  .ui-receipt__label { position: absolute; inset-inline-start: 0.625rem; inset-block-start: 0.625rem; z-index: 1; }
+  .ui-receipt__file { display: grid; grid-template-columns: 2.5rem minmax(0, 1fr); gap: var(--space-1) var(--space-3); align-items: center; padding: var(--space-4); border-radius: var(--radius-control); background: var(--color-surface); box-shadow: inset 0 0 0 1px var(--color-border); }
+  .ui-receipt__file .ui-icon { inline-size: 2rem; block-size: 2rem; color: var(--color-text-secondary); grid-row: 1 / 3; }
+  .ui-receipt__name { font-weight: 600; overflow-wrap: anywhere; }
+  .ui-receipt__gone { display: flex; flex-direction: column; gap: 0.375rem; padding: var(--space-4); border-radius: var(--radius-control); background: var(--color-surface-subtle); }
+  .ui-receipt__gone p { margin: 0; color: var(--color-text-secondary); font-size: var(--font-size-small); line-height: var(--font-line-small); }
+
   /* Weaver/A2UI theme bridge. Weaver's Basic Catalog writes inline styles that read these
      custom properties, so theming them replaces its blue (#17e) defaults at the source. */
   .weaver-mount {

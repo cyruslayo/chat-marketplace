@@ -199,6 +199,39 @@ const GROUP_2B_04_CLASSES = [
   ".ui-stay-card__total",
 ] as const;
 
+const GROUP_2B_07_CLASSES = [
+  ".ui-shell",
+  ".ui-shell__main",
+  ".ui-breadcrumb",
+  ".ui-queue",
+  ".ui-queue-item",
+  ".ui-queue-item__what",
+  ".ui-queue-item__kind",
+  ".ui-queue-item__title",
+  ".ui-queue-item__detail",
+  ".ui-queue-item__action",
+  ".ui-outcome",
+  ".ui-outcome--success",
+  ".ui-outcome--declined",
+  ".ui-outcome__title",
+  ".ui-outcome__body",
+  ".ui-panel--commit",
+  ".ui-panel__title",
+  ".ui-effect",
+  ".ui-effect__title",
+  ".ui-effect__body",
+  ".ui-transfer",
+  ".ui-transfer__side",
+  ".ui-reference",
+  ".ui-receipt",
+  ".ui-receipt__meta",
+  ".ui-receipt__frame",
+  ".ui-receipt__label",
+  ".ui-receipt__file",
+  ".ui-receipt__name",
+  ".ui-receipt__gone",
+] as const;
+
 test("I3: zero board-only classes (xk-*, bd-*) appear anywhere in apps/", () => {
   assert.ok(BOARD_ONLY_CLASSES.length >= 30, "extracted board-only class list from xenia-kit.css");
   const appFiles = walkTsCssHtml(new URL("../apps", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1"));
@@ -210,7 +243,7 @@ test("I3: zero board-only classes (xk-*, bd-*) appear anywhere in apps/", () => 
   }
 });
 
-test("I3 (2b-01..2b-04): every mapped class and preserved code-only class exists in shortlet-foundations.css", () => {
+test("I3 (2b-01..2b-07): every mapped class and preserved code-only class exists in shortlet-foundations.css", () => {
   for (const cls of GROUP_2B_01_CLASSES) {
     assert.ok(FOUNDATIONS_CSS.includes(cls), `missing 2b-01 class ${cls} in shortlet-foundations.css`);
   }
@@ -222,6 +255,9 @@ test("I3 (2b-01..2b-04): every mapped class and preserved code-only class exists
   }
   for (const cls of GROUP_2B_04_CLASSES) {
     assert.ok(FOUNDATIONS_CSS.includes(cls), `missing 2b-04 class ${cls} in shortlet-foundations.css`);
+  }
+  for (const cls of GROUP_2B_07_CLASSES) {
+    assert.ok(FOUNDATIONS_CSS.includes(cls), `missing 2b-07 class ${cls} in shortlet-foundations.css`);
   }
   for (const cls of PRESERVED_CODE_CLASSES) {
     assert.ok(FOUNDATIONS_CSS.includes(cls), `missing preserved code-only class ${cls} in shortlet-foundations.css`);

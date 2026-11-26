@@ -32,7 +32,7 @@ test("AC1 — Each booking shows the amount received, the owner payable, your ma
     // Not yet due: no Verified Access yet.
     let shown = await payoutsPage(f);
     assert.equal(shown.status, 200);
-    assert.match(shown.html, /aria-current="page"[^>]*>[\s\S]*?Payouts|href="\/operator\/payouts" aria-current="page"/);
+    assert.match(shown.html, /aria-current="page"[^>]*>[\s\S]*?Owner payouts|href="\/operator\/payouts" aria-current="page"/);
     let row = payableRow(shown.html, id);
     assert.equal(row.status, "not_yet_due");
     assert.ok(shown.html.includes(`>${OWNER}</h2>`), "grouped under its owner");

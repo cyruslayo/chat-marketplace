@@ -108,6 +108,7 @@ export interface PageShellOptions {
   /** Pre-rendered, already-escaped body markup placed inside <main>. */
   readonly body: string;
   readonly width?: "default" | "narrow";
+  readonly layout?: "page" | "shell";
   /** "system" follows the OS colour scheme; "light" keeps the page light-only. */
   readonly theme?: "system" | "light" | "dark";
   /** Page-specific rules; keep these to layout that the shared components do not cover. */
@@ -122,7 +123,10 @@ export function pageShell(options: PageShellOptions): string {
   const theme = options.theme ?? "system";
   const widthClass = options.width === "narrow" ? "ui-page ui-page--narrow" : "ui-page";
   const style = options.style ? `<style>${options.style}</style>` : "";
-  return `<!doctype html><html lang="en-NG" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,interactive-widget=resizes-content">${options.head ?? ""}<title>${escapeHtml(options.title)}</title><link rel="stylesheet" href="/shortlet-foundations.css">${style}</head><body><a class="ui-skip-link" href="#main-content">Skip to main content</a>${options.frame ?? ""}<main id="main-content" tabindex="-1" class="${widthClass}">${options.body}</main></body></html>`;
+  const content = options.layout === "shell"
+    ? `<div class="ui-shell">${options.frame ?? ""}<main id="main-content" tabindex="-1" class="ui-shell__main">${options.body}</main></div>`
+    : `${options.frame ?? ""}<main id="main-content" tabindex="-1" class="${widthClass}">${options.body}</main>`;
+  return `<!doctype html><html lang="en-NG" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,interactive-widget=resizes-content">${options.head ?? ""}<title>${escapeHtml(options.title)}</title><link rel="stylesheet" href="/shortlet-foundations.css">${style}</head><body><a class="ui-skip-link" href="#main-content">Skip to main content</a>${content}</body></html>`;
 }
 
 export interface ErrorPageOptions {

@@ -23,8 +23,8 @@ function visibleText(html: string): string {
 }
 
 function header(html: string): string {
-  const match = html.match(/<header class="bo-header"[\s\S]*?<\/header>/);
-  assert.ok(match, "page has the shared back-office header");
+  const match = html.match(/<aside class="ui-sidenav"[\s\S]*?<\/aside>/);
+  assert.ok(match, "page has the shared back-office sidenav");
   return match[0];
 }
 
@@ -45,7 +45,7 @@ test("AC1 — Every back-office page shares one header with your name, navigatio
       assert.equal(response.status, 200, path);
       const html = await response.text();
       const shared = header(html);
-      assert.equal(html.match(/<header class="bo-header"/g)?.length, 1, `${path} has exactly one shared header`);
+      assert.equal(html.match(/<aside class="ui-sidenav"/g)?.length, 1, `${path} has exactly one shared sidenav`);
       assert.match(visibleText(shared), new RegExp(YOU), `${path} names you`);
       assert.match(shared, /<nav[^>]*aria-label="Back office"/);
       assert.match(shared, /href="\/operator"[^>]*>(?:<svg[\s\S]*?<\/svg>)?Home<\/a>/);
@@ -67,7 +67,7 @@ test("AC2 — Home lists what is waiting on you, soonest deadline first, each wi
   try {
     const empty = await (await operatorGet(f.session, "/operator")).text();
     assert.match(visibleText(empty), /Nothing is waiting on you/);
-    assert.doesNotMatch(empty, /class="bo-waiting__item"/);
+    assert.doesNotMatch(empty, /class="ui-queue-item"/);
 
     const first = request(f, "2026-09-10", "2026-09-13"); // deadline 10:30Z = 11:30 WAT
     f.advance(5 * MINUTE);
@@ -77,7 +77,7 @@ test("AC2 — Home lists what is waiting on you, soonest deadline first, each wi
     f.server.environment.confirmBookingRequest(decided);
 
     const html = await (await operatorGet(f.session, "/operator")).text();
-    const items = [...html.matchAll(/<li class="bo-waiting__item"[\s\S]*?<\/li>/g)].map((match) => match[0]);
+    const items = [...html.matchAll(/<li class="ui-queue-item"[\s\S]*?<\/li>/g)].map((match) => match[0]);
     assert.equal(items.length, 2, "only undecided requests are waiting");
     assert.ok(items[0]!.includes(`href="/operator/requests/${first}"`), "soonest deadline first");
     assert.ok(items[1]!.includes(`href="/operator/requests/${second}"`));
@@ -167,12 +167,13 @@ test("AC4 — Pages reflow at 320px with 44px targets, and the pilot startup ban
     for (const path of ["/operator", "/operator/requests", `/operator/requests/${requestId}`]) {
       const html = await (await operatorGet(f.session, path)).text();
       assert.match(html, /<meta name="viewport" content="width=device-width,initial-scale=1(?:,interactive-widget=resizes-content)?">/);
-      // Every header control is a 44px target, and the header wraps rather than overflowing.
-      assert.match(html, /\.bo-header__nav a,\s*\.bo-header \.ui-button\{[^}]*min-block-size:var\(--control-min-target\)/);
-      assert.match(html, /\.bo-header\{[^}]*flex-wrap:wrap/);
+      // Every nav and compact menu control uses a >=44px target token in the shared stylesheet.
+      assert.match(html, /class="ui-sidenav-compact"/);
+      assert.match(html, /class="ui-shell__main"/);
       assert.doesNotMatch(html, /ui-button--small/);
     }
     const css = readFileSync(new URL("../apps/web/src/shortlet-foundations.css", import.meta.url), "utf8");
+    assert.match(css, /\.ui-sidenav-compact__toggle\s*\{[^}]*min-block-size:\s*var\(--control-min-target\)/);
     assert.match(css, /--control-min-target:\s*2\.75rem/, "44px target token");
   } finally { await f.close(); }
 
