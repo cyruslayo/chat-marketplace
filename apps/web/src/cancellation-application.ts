@@ -107,9 +107,8 @@ export function recordedDepositRefundPort(): SecurityDepositCancellationRefundPo
   };
 }
 
-export interface CancellationApplicationOptions {
+export interface CancellationApplicationOptions { readonly manager: CancellationNoShowManager;
   readonly state: BookingStateRepository;
-  readonly manager: CancellationNoShowManager;
   readonly timing: ContractualCheckInWindowProvider;
   readonly economics: CancellationEconomicsProvider;
   readonly arrival: CancellationArrivalStateProvider;
