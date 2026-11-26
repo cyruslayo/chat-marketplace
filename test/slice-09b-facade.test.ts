@@ -21,10 +21,16 @@ test("AC1: no class in apps/web/src exposes a readonly manager", () => {
   const offenders: string[] = [];
   for (const file of walk(webSourceRoot)) {
     if (!file.endsWith(".ts")) continue;
-    // A `readonly manager` inside an `*Options` interface is constructor injection, not a class property.
+    // A `readonly manager` inside an `*Options` interface or type is constructor injection, not a class
+    // property. Track the nearest enclosing declaration so a multi-line interface is not mistaken for a class.
+    let inClass = false;
     const exposed = readFileSync(file, "utf8")
       .split(/\r?\n/)
-      .some((line) => /\breadonly manager\b/.test(line) && !/\binterface\b/.test(line));
+      .some((line) => {
+        if (/\bclass\s+\w+/.test(line)) inClass = true;
+        else if (/\binterface\s+\w+|\btype\s+\w+\s*=/.test(line)) inClass = false;
+        return inClass && /\breadonly manager\b/.test(line);
+      });
     if (exposed) offenders.push(path.relative(webSourceRoot, file));
   }
   assert.deepEqual(offenders, []);

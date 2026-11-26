@@ -23,7 +23,7 @@ test("AC3: Opening or closing the workspace does not shift the layout when a scr
   assert.match(html, /#workspace-region \{[^}]*scrollbar-gutter: stable;/);
 });
 
-test("AC4: The skeleton animates opacity, not background position", () => {
+test("AC4: The skeleton is a static block (no shimmer, no animation), per the round-12 Skeleton README", () => {
   // Issue 2b-01 (round-12 bundle.css) replaced the ui-pulse opacity pulse with a static placeholder (reduced motion by default).
   const skeletonRule = /\.ui-skeleton\s*\{([^}]*)\}/.exec(CSS);
   assert.ok(skeletonRule, ".ui-skeleton rule exists");
