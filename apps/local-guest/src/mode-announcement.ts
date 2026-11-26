@@ -8,8 +8,9 @@ import { readResponseMode } from "./response-mode.js";
  * (switch first, then the reply, separated by a space), or written alone by flush() when nothing else is announced for the response.
  */
 export interface ModeAnnouncements {
-  /** Records a response's mode. A validated id that differs from the last one holds the switch copy. */
-  applyResponse(value: unknown): void;
+  /** Records a response's mode. A validated id that differs from the last one holds the switch copy. Returns the held
+   * switch copy when this response switched modes (round-12 2b-05: the shell also renders the switch divider from it). */
+  applyResponse(value: unknown): string | undefined;
   /** The text for the polite announcer: the held switch copy first, once, then the given text. */
   politeText(text: string): string;
   /** The held switch copy when nothing combined with it, once. Undefined when nothing is held. */
@@ -20,13 +21,16 @@ export function createModeAnnouncements(): ModeAnnouncements {
   let lastModeId: string | undefined;
   let held: string | undefined;
   return {
-    applyResponse(value: unknown): void {
+    applyResponse(value: unknown): string | undefined {
       const mode = readResponseMode(value);
-      if (mode === undefined) return;
+      if (mode === undefined) return undefined;
       if (lastModeId !== undefined && lastModeId !== mode.id) {
         held = guestModeSwitchAnnouncement(GUEST_MODE_CHOOSER.conciergeLabel(mode.label));
+        lastModeId = mode.id;
+        return held;
       }
       lastModeId = mode.id;
+      return undefined;
     },
     politeText(text: string): string {
       if (held === undefined) return text;

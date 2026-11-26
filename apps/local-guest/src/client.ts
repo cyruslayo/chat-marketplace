@@ -53,6 +53,7 @@ import {
   paymentScreenHtml,
   requestScreenHtml,
   signInOfferHtml,
+  switchDividerHtml,
   type SignInOfferContent,
 } from "./guest-kit.js";
 import type { ConfirmationContent } from "../../web-agent/src/confirmation-presentation.js";
@@ -991,7 +992,10 @@ function applyResponseMode(response: GuestResponse): void {
   const committed = readResponseMode(response.mode);
   appliedMode = committed ?? appliedMode;
   // Issue 03l (ADR 0107 decision 7): a committed switch is held for the polite announcer; the first response is never a switch.
-  modeAnnouncements.applyResponse(response.mode);
+  const heldSwitch = modeAnnouncements.applyResponse(response.mode);
+  // Round-12 2b-05 (ADR 0107 decision 11): the same committed switch also leaves the pinned divider row in the lane,
+  // before the new mode's reply. It renders from the kit helper; the copy stays the announcement's.
+  if (heldSwitch !== undefined && committed !== undefined) addSwitchDivider(committed);
   // Issue 03j: the DOM part of the response's mode is one update. A confirmed switch (the validated id differs from data-mode) runs it
   // through the feature-detected transition; anything else runs it at once. The update writes only when this response's mode is still
   // the committed one, so an earlier update still pending can never overwrite a later switch.
@@ -1150,13 +1154,14 @@ function addTurn(role: "assistant" | "user", text: string): void {
   // Issue 03g: the strip belongs to the empty conversation; the sheet opens from the mark during a conversation.
   verticalStarters.hidden = true;
   const turn = document.createElement("article");
-  turn.className = `turn ${role}`;
+  // Round-12 2b-05: the turn keeps its code hooks and gains the pinned message classes; the shell owns the bubbles' look.
+  turn.className = `turn ui-message ${role}`;
   turn.setAttribute(
     "aria-label",
     role === "user" ? "You" : "Shortlet Concierge",
   );
   const bubble = document.createElement("div");
-  bubble.className = "bubble";
+  bubble.className = role === "user" ? "bubble ui-message--guest" : "bubble";
   bubble.textContent = text;
   turn.appendChild(bubble);
   appendToLane(turn);
@@ -1193,6 +1198,19 @@ function addMarker(text: string, className: string): void {
   item.className = className;
   item.textContent = text;
   appendToLane(item);
+}
+
+/**
+ * Round-12 2b-05 (SwitchDivider README, ADR 0107 decision 11): the row a committed concierge switch leaves in the lane.
+ * Rendered from the kit's `switchDividerHtml` (the shipped announcement copy; the client never writes the words itself),
+ * after the server has changed the mode and before the new lane's reply. It is a closed row: no text crosses lanes.
+ */
+function addSwitchDivider(mode: ModePresentation): void {
+  emptyState.hidden = true;
+  const holder = document.createElement("div");
+  holder.innerHTML = switchDividerHtml(mode);
+  const row = holder.firstElementChild;
+  if (row instanceof HTMLElement) appendToLane(row);
 }
 
 function addHistoricalSummary(
@@ -2011,8 +2029,10 @@ function activeProposalOpen(): boolean {
 
 /** One choice: a visually hidden native radio whose label is the 44px target (the kit pattern for hidden radios). */
 function modeChoiceLabel(choice: ModeChoice, group: string, checked: boolean, onChoose: () => void): HTMLLabelElement {
+  // Round-12 2b-05: the option is the pinned chooser option (ui-chooser__option with its text and line columns); the
+  // `mode-choice` hook and the hidden-radio pattern stay, so the existing chooser contracts and tests keep working.
   const label = document.createElement("label");
-  label.className = "ui-vertical-starter mode-choice";
+  label.className = "ui-chooser__option mode-choice";
   label.dataset.domain = choice.domain;
   const input = document.createElement("input");
   input.type = "radio";
@@ -2025,13 +2045,15 @@ function modeChoiceLabel(choice: ModeChoice, group: string, checked: boolean, on
   mark.className = "agent-mark";
   mark.setAttribute("aria-hidden", "true");
   mark.innerHTML = icon(choice.presentation.persona.icon);
+  const text = document.createElement("span");
+  text.className = "ui-chooser__text";
   const title = document.createElement("span");
-  title.className = "ui-vertical-starter__title";
   title.textContent = choice.presentation.persona.name;
-  const description = document.createElement("p");
-  description.className = "ui-vertical-starter__description";
+  const description = document.createElement("span");
+  description.className = "ui-chooser__line";
   description.textContent = choice.presentation.tagline;
-  label.append(input, mark, title, description);
+  text.append(title, description);
+  label.append(input, mark, text);
   return label;
 }
 
@@ -2074,13 +2096,17 @@ function renderModeStrip(): void {
   const committed = committedChoice();
   const shown = modeChoices.find((choice) => choice.domain === previewDomain) ?? committed;
   const fieldset = document.createElement("fieldset");
-  fieldset.className = "mode-choices";
+  // Round-12 2b-05: the strip is the pinned chooser (fieldset with an options grid); `mode-choices` stays as its code hook.
+  fieldset.className = "mode-choices ui-chooser";
   const legend = document.createElement("legend");
   legend.textContent = GUEST_MODE_CHOOSER.heading;
   fieldset.appendChild(legend);
+  const options = document.createElement("div");
+  options.className = "ui-chooser__options";
   for (const choice of modeChoices) {
-    fieldset.appendChild(modeChoiceLabel(choice, "mode-preview", choice.domain === shown?.domain, () => previewChoose(choice)));
+    options.appendChild(modeChoiceLabel(choice, "mode-preview", choice.domain === shown?.domain, () => previewChoose(choice)));
   }
+  fieldset.appendChild(options);
   verticalStarters.appendChild(fieldset);
   if (shown && committed && shown.domain !== committed.domain) verticalStarters.dataset.previewMode = shown.presentation.id;
   else delete verticalStarters.dataset.previewMode;
@@ -2108,7 +2134,8 @@ function syncModeMark(): void {
 function ensureModeSheet(): HTMLDialogElement {
   if (modeSheet) return modeSheet;
   const sheet = document.createElement("dialog");
-  sheet.className = "mode-sheet";
+  // Round-12 2b-05: the sheet is the pinned dialog chooser (ui-dialog + ui-chooser--dialog); `mode-sheet` stays as its code hook.
+  sheet.className = "mode-sheet ui-dialog ui-chooser--dialog";
   sheet.setAttribute("aria-labelledby", "mode-sheet-heading");
   const heading = document.createElement("h2");
   heading.id = "mode-sheet-heading";
@@ -2117,7 +2144,7 @@ function ensureModeSheet(): HTMLDialogElement {
   warning.setAttribute("role", "note");
   warning.textContent = GUEST_MODE_CHOOSER.openProposalWarning;
   const list = document.createElement("div");
-  list.className = "mode-sheet__choices";
+  list.className = "mode-sheet__choices ui-chooser__options";
   const close = document.createElement("button");
   close.type = "button";
   close.className = "ui-button ui-button--quiet mode-sheet__close";
@@ -2492,7 +2519,7 @@ function renderQuickReplies(replies: readonly GuestQuickReply[] | undefined): vo
   const chips = isQuickReplyList(replies) ?? [];
   if (chips.length === 0) return;
   const group = document.createElement("div");
-  group.className = "quick-replies";
+  group.className = "quick-replies ui-chips";
   group.setAttribute("role", "group");
   group.setAttribute("aria-label", "Suggested replies");
   for (const reply of chips) {

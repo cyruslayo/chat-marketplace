@@ -199,6 +199,32 @@ const GROUP_2B_04_CLASSES = [
   ".ui-stay-card__total",
 ] as const;
 
+const GROUP_2B_05_CLASSES = [
+  ".ui-conversation",
+  ".ui-persona",
+  ".ui-persona__mark",
+  ".ui-persona__mode",
+  ".ui-persona--human",
+  ".ui-message",
+  ".ui-message--guest",
+  ".ui-chips",
+  ".ui-chip",
+  ".ui-chip--add",
+  ".ui-chip--demo",
+  ".ui-composer",
+  ".ui-composer__input",
+  ".ui-composer__send",
+  ".ui-chooser",
+  ".ui-chooser--dialog",
+  ".ui-chooser__options",
+  ".ui-chooser__option",
+  ".ui-chooser__text",
+  ".ui-chooser__line",
+  ".ui-domain-tag",
+  ".ui-switch-divider",
+  ".ui-switch-divider__text",
+] as const;
+
 const GROUP_2B_07_CLASSES = [
   ".ui-shell",
   ".ui-shell__main",
@@ -255,6 +281,9 @@ test("I3 (2b-01..2b-07): every mapped class and preserved code-only class exists
   }
   for (const cls of GROUP_2B_04_CLASSES) {
     assert.ok(FOUNDATIONS_CSS.includes(cls), `missing 2b-04 class ${cls} in shortlet-foundations.css`);
+  }
+  for (const cls of GROUP_2B_05_CLASSES) {
+    assert.ok(FOUNDATIONS_CSS.includes(cls), `missing 2b-05 class ${cls} in shortlet-foundations.css`);
   }
   for (const cls of GROUP_2B_07_CLASSES) {
     assert.ok(FOUNDATIONS_CSS.includes(cls), `missing 2b-07 class ${cls} in shortlet-foundations.css`);

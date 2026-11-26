@@ -264,7 +264,7 @@
           <span class="agent-mark" data-agent-mark="hero" data-agent-state="idle" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 19.5V11c0-4 3.6-7 8-7s8 3 8 7v8.5"/><path d="M9.5 19.5v-4a2.5 2.5 0 0 1 5 0v4"/></svg></span>
           <h2 id="empty-state-heading">Find a place to stay</h2>
           <p>Start with a city, your dates (or length of stay), and number of guests. We’ll find available entire-place stays and guide you through requesting one.</p>
-          <div class="prompt-suggestions">
+          <div class="prompt-suggestions ui-chips">
             <button class="prompt-suggestion ui-chip" type="button" data-prompt="I’m looking for a stay in Abuja">Explore Abuja</button>
             <button class="prompt-suggestion ui-chip" type="button" data-prompt="I’m looking for a stay in Lagos">Explore Lagos</button>
           </div>
@@ -286,13 +286,13 @@
         <p id="criteria-status" class="criteria-status" role="status"></p>
       </section>
       <div id="agent-dock" class="agent-dock" hidden><span class="agent-mark" data-agent-mark="dock" data-agent-state="idle" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 19.5V11c0-4 3.6-7 8-7s8 3 8 7v8.5"/><path d="M9.5 19.5v-4a2.5 2.5 0 0 1 5 0v4"/></svg></span><span class="agent-dock__chip"></span></div>
-      <form id="composer" method="post" action="/conversation" aria-label="Message the concierge">
+      <form id="composer" class="ui-composer" method="post" action="/conversation" aria-label="Message the concierge">
         <input type="hidden" name="threadId" value="" />
         <label id="composer-label" for="composer-input">Your message</label>
-        <input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send"
+        <input id="composer-input" class="ui-composer__input" name="message" type="text" autocomplete="off" enterkeyhint="send"
                placeholder="Area, dates, guests" aria-describedby="composer-hint" />
         <span id="composer-hint" class="sr-only">Share a city or neighbourhood, dates or nights, and number of guests.</span>
-        <button id="composer-submit" class="ui-button ui-button--primary" type="submit" aria-label="Send"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
+        <button id="composer-submit" class="ui-button ui-button--primary ui-composer__send" type="submit" aria-label="Send"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
         <p id="working-status" hidden></p>
         <button id="turn-cancel" class="ui-button ui-button--quiet ui-button--small" type="button" hidden>Cancel</button>
       </form>

@@ -9,6 +9,7 @@ import {
   GUEST_ACCOUNT_COPY,
   GUEST_DEMO_COPY,
   GUEST_FACT_LABELS,
+  GUEST_MODE_CHOOSER,
   GUEST_REQUEST_EDIT_COPY,
   GUEST_PAYMENT_COPY,
   GUEST_GLOSSARY,
@@ -21,6 +22,7 @@ import {
   commerceSoldBy,
   extensionFactRows,
   formatGuestDate,
+  guestModeSwitchAnnouncement,
   noticeFactRows,
   type NoticeFactsInput,
   stayTotalLabel,
@@ -41,6 +43,7 @@ import {
   escapeHtml,
   icon,
   statusBadge,
+  type IconName,
 } from "../../web/src/ui-kit.js";
 export { appBarHtml, type AppBarInput } from "../../web/src/ui-kit.js";
 import { MAX_TURN_TEXT_LENGTH } from "./turn-limits.js";
@@ -786,6 +789,43 @@ export function agentMarkHtml(mode: ModePresentation, placement: AgentMarkPlacem
 }
 
 /**
+ * Round-12 2b-05 (ChatMessage README): the speaker label row of a conversation turn, from the mode's own presentation.
+ * The wording is the shipped `conciergeLabel` copy ("Concierge · Stays"); the mode part takes the `--mode-accent` colour.
+ * With `human` (ADR 0076), the mark shows the person's initials in the 24px/12px human form (kit defect #2). No human name
+ * copy exists yet (D14); the initials are caller-supplied and escaped here.
+ */
+export interface PersonaRowInput {
+  readonly mode: ModePresentation;
+  readonly human?: { readonly initials: string };
+}
+
+export function personaRowHtml(input: PersonaRowInput): string {
+  const persona = GUEST_MODE_CHOOSER.conciergeLabel(input.mode.label);
+  const at = persona.lastIndexOf("·");
+  const name = at === -1 ? persona : persona.slice(0, at).trim();
+  const modeName = at === -1 ? "" : persona.slice(at).trim();
+  const markText = input.human === undefined ? "" : escapeHtml(input.human.initials);
+  return `<p class="ui-persona${input.human === undefined ? "" : " ui-persona--human"}"><span class="ui-persona__mark" aria-hidden="true">${markText}</span><span>${escapeHtml(name)}</span>${modeName === "" ? "" : `<span class="ui-persona__mode">${escapeHtml(modeName)}</span>`}</p>`;
+}
+
+/**
+ * Round-12 2b-05 (SwitchDivider README, ADR 0107 decision 11): the row a committed concierge switch leaves in the
+ * conversation. The text is the shipped switch announcement; the mark is the new mode's agent mark. The client renders
+ * this row from the same helper (chat and page agree, ADR 0080); it decides nothing and links nowhere.
+ */
+export function switchDividerHtml(mode: ModePresentation): string {
+  return `<p class="ui-switch-divider"><span class="ui-switch-divider__text"><span class="ui-agent-mark" aria-hidden="true">${icon(mode.persona.icon)}</span>${escapeHtml(guestModeSwitchAnnouncement(GUEST_MODE_CHOOSER.conciergeLabel(mode.label)))}</span></p>`;
+}
+
+/**
+ * Round-12 2b-05 (DomainTag README): the domain badge of a row that mixes two or more domains — the agent mark and the
+ * mode's name as plain text, never a filled pill. Not a control. With one registered domain it is not used.
+ */
+export function domainTagHtml(input: { readonly label: string; readonly icon: IconName }): string {
+  return `<span class="ui-domain-tag"><span class="ui-agent-mark" aria-hidden="true">${icon(input.icon)}</span>${escapeHtml(input.label)}</span>`;
+}
+
+/**
  * The empty state of the chat shell, rendered from the mode (ADR 0107, ADR 0077). Indentation: the first line carries none;
  * the caller indents it to the shell's depth (8 spaces), and every inner line keeps its absolute indentation.
  */
@@ -797,7 +837,7 @@ export function emptyStateHtml(mode: ModePresentation): string {
           ${agentMarkHtml(mode, "hero")}
           <h2 id="empty-state-heading">${escapeHtml(mode.emptyState.heading)}</h2>
           <p>${escapeHtml(mode.emptyState.body)}</p>
-          <div class="prompt-suggestions">
+          <div class="prompt-suggestions ui-chips">
             ${starters}
           </div>
         </section>`;
@@ -807,15 +847,15 @@ function inputModeAttribute(mode: ModePresentation): string {
   return mode.composer.inputMode === undefined ? "" : ` inputmode="${mode.composer.inputMode}"`;
 }
 
-/** The chat shell composer (`variant` "chat") as one block. Indentation as for emptyStateHtml: the caller indents the first line to 6 spaces. */
+/** The chat shell composer (variant "chat") as one block. Indentation as for emptyStateHtml: the caller indents the first line to 6 spaces. */
 function chatComposerHtml(mode: ModePresentation): string {
-  return `<form id="composer" method="post" action="/conversation" aria-label="${escapeHtml(mode.composer.ariaLabel)}">
+  return `<form id="composer" class="ui-composer" method="post" action="/conversation" aria-label="${escapeHtml(mode.composer.ariaLabel)}">
         <input type="hidden" name="threadId" value="" />
         <label id="composer-label" for="composer-input">${escapeHtml(mode.composer.label)}</label>
-        <input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send"${inputModeAttribute(mode)}
+        <input id="composer-input" class="ui-composer__input" name="message" type="text" autocomplete="off" enterkeyhint="send"${inputModeAttribute(mode)}
                placeholder="${escapeHtml(mode.composer.placeholder)}" aria-describedby="composer-hint" />
         <span id="composer-hint" class="sr-only">${escapeHtml(mode.composer.hint)}</span>
-        <button id="composer-submit" class="ui-button ui-button--primary" type="submit" aria-label="Send">${icon("arrow-up")}</button>
+        <button id="composer-submit" class="ui-button ui-button--primary ui-composer__send" type="submit" aria-label="Send">${icon("arrow-up")}</button>
         <p id="working-status" hidden></p>
         <button id="turn-cancel" class="ui-button ui-button--quiet ui-button--small" type="button" hidden>Cancel</button>
       </form>`;
@@ -835,7 +875,7 @@ export interface ConversationComposerOptions {
 function pageComposerHtml(mode: ModePresentation, options: ConversationComposerOptions): string {
   const error = options.error ?? "";
   const maxLength = options.maxLength ?? MAX_TURN_TEXT_LENGTH;
-  return `<form id="composer" class="composer" method="post" action="/conversation" aria-label="${escapeHtml(mode.composer.ariaLabel)}"><div class="ui-field"><label class="ui-field__label" for="composer-input">${escapeHtml(mode.composer.label)}</label><p class="ui-field__hint" id="composer-hint">${escapeHtml(mode.composer.hint)}</p><input id="composer-input" name="message" type="text" autocomplete="off" enterkeyhint="send"${inputModeAttribute(mode)} maxlength="${maxLength}" required aria-describedby="composer-hint${error ? " composer-error" : ""}"${error ? ' aria-invalid="true"' : ""} value="${escapeHtml(options.draft ?? "")}">${error}</div><input type="hidden" name="threadId" value="${escapeHtml(options.threadId ?? "")}"><button class="ui-button ui-button--primary" type="submit">Send</button></form>`;
+  return `<form id="composer" class="composer ui-composer" method="post" action="/conversation" aria-label="${escapeHtml(mode.composer.ariaLabel)}"><div class="ui-field"><label class="ui-field__label" for="composer-input">${escapeHtml(mode.composer.label)}</label><p class="ui-field__hint" id="composer-hint">${escapeHtml(mode.composer.hint)}</p><input id="composer-input" class="ui-composer__input" name="message" type="text" autocomplete="off" enterkeyhint="send"${inputModeAttribute(mode)} maxlength="${maxLength}" required aria-describedby="composer-hint${error ? " composer-error" : ""}"${error ? ' aria-invalid="true"' : ""} value="${escapeHtml(options.draft ?? "")}">${error}</div><input type="hidden" name="threadId" value="${escapeHtml(options.threadId ?? "")}"><button id="composer-submit" class="ui-button ui-button--primary ui-composer__send" type="submit">Send</button></form>`;
 }
 
 /**

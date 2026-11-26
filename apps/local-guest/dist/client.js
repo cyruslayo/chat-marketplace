@@ -10762,6 +10762,9 @@ Known schemas:
     const thumb = parts.photoSrc === void 0 ? icon("photo") : `<img src="${escapeHtml(parts.photoSrc)}" alt="" width="64" height="64" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
     return `<a class="ui-result-row" href="${escapeHtml(parts.href)}"><span class="ui-result-row__thumb">${thumb}</span><span class="ui-result-row__body"><span class="ui-result-row__title">${escapeHtml(parts.title)}</span><span class="ui-result-row__price">${escapeHtml(parts.total)} <span>${escapeHtml(parts.totalLabel)}</span></span></span>${icon("chevron-right")}</a>`;
   }
+  function switchDividerHtml(mode) {
+    return `<p class="ui-switch-divider"><span class="ui-switch-divider__text"><span class="ui-agent-mark" aria-hidden="true">${icon(mode.persona.icon)}</span>${escapeHtml(guestModeSwitchAnnouncement(GUEST_MODE_CHOOSER.conciergeLabel(mode.label)))}</span></p>`;
+  }
   function noticeFactsDlHtml(facts) {
     const rows = noticeFactRows(facts, formatNgnKobo);
     const cells = rows.map((row) => {
@@ -11700,11 +11703,14 @@ Known schemas:
     return {
       applyResponse(value) {
         const mode = readResponseMode(value);
-        if (mode === void 0) return;
+        if (mode === void 0) return void 0;
         if (lastModeId !== void 0 && lastModeId !== mode.id) {
           held = guestModeSwitchAnnouncement(GUEST_MODE_CHOOSER.conciergeLabel(mode.label));
+          lastModeId = mode.id;
+          return held;
         }
         lastModeId = mode.id;
+        return void 0;
       },
       politeText(text2) {
         if (held === void 0) return text2;
@@ -12368,7 +12374,8 @@ Known schemas:
   function applyResponseMode(response) {
     const committed = readResponseMode(response.mode);
     appliedMode = committed ?? appliedMode;
-    modeAnnouncements.applyResponse(response.mode);
+    const heldSwitch = modeAnnouncements.applyResponse(response.mode);
+    if (heldSwitch !== void 0 && committed !== void 0) addSwitchDivider(committed);
     const update = () => {
       if (committed !== void 0 && appliedMode.id === committed.id) applyResponseModeAndThemeColour(document.documentElement, themeColourMetas(), readModeTint, committed);
       if (previewDomain === void 0) renderEmptyCopy(appliedMode);
@@ -12466,13 +12473,13 @@ Known schemas:
     emptyState.hidden = true;
     verticalStarters.hidden = true;
     const turn = document.createElement("article");
-    turn.className = `turn ${role}`;
+    turn.className = `turn ui-message ${role}`;
     turn.setAttribute(
       "aria-label",
       role === "user" ? "You" : "Shortlet Concierge"
     );
     const bubble = document.createElement("div");
-    bubble.className = "bubble";
+    bubble.className = role === "user" ? "bubble ui-message--guest" : "bubble";
     bubble.textContent = text2;
     turn.appendChild(bubble);
     appendToLane(turn);
@@ -12507,6 +12514,13 @@ Known schemas:
     item.className = className;
     item.textContent = text2;
     appendToLane(item);
+  }
+  function addSwitchDivider(mode) {
+    emptyState.hidden = true;
+    const holder = document.createElement("div");
+    holder.innerHTML = switchDividerHtml(mode);
+    const row = holder.firstElementChild;
+    if (row instanceof HTMLElement) appendToLane(row);
   }
   function addHistoricalSummary(summary) {
     addMarker(
@@ -13149,7 +13163,7 @@ Known schemas:
   }
   function modeChoiceLabel(choice, group, checked, onChoose) {
     const label = document.createElement("label");
-    label.className = "ui-vertical-starter mode-choice";
+    label.className = "ui-chooser__option mode-choice";
     label.dataset.domain = choice.domain;
     const input = document.createElement("input");
     input.type = "radio";
@@ -13162,13 +13176,15 @@ Known schemas:
     mark.className = "agent-mark";
     mark.setAttribute("aria-hidden", "true");
     mark.innerHTML = icon(choice.presentation.persona.icon);
+    const text2 = document.createElement("span");
+    text2.className = "ui-chooser__text";
     const title = document.createElement("span");
-    title.className = "ui-vertical-starter__title";
     title.textContent = choice.presentation.persona.name;
-    const description = document.createElement("p");
-    description.className = "ui-vertical-starter__description";
+    const description = document.createElement("span");
+    description.className = "ui-chooser__line";
     description.textContent = choice.presentation.tagline;
-    label.append(input, mark, title, description);
+    text2.append(title, description);
+    label.append(input, mark, text2);
     return label;
   }
   function renderEmptyCopy(mode) {
@@ -13206,13 +13222,16 @@ Known schemas:
     const committed = committedChoice();
     const shown = modeChoices.find((choice) => choice.domain === previewDomain) ?? committed;
     const fieldset = document.createElement("fieldset");
-    fieldset.className = "mode-choices";
+    fieldset.className = "mode-choices ui-chooser";
     const legend = document.createElement("legend");
     legend.textContent = GUEST_MODE_CHOOSER.heading;
     fieldset.appendChild(legend);
+    const options = document.createElement("div");
+    options.className = "ui-chooser__options";
     for (const choice of modeChoices) {
-      fieldset.appendChild(modeChoiceLabel(choice, "mode-preview", choice.domain === shown?.domain, () => previewChoose(choice)));
+      options.appendChild(modeChoiceLabel(choice, "mode-preview", choice.domain === shown?.domain, () => previewChoose(choice)));
     }
+    fieldset.appendChild(options);
     verticalStarters.appendChild(fieldset);
     if (shown && committed && shown.domain !== committed.domain) verticalStarters.dataset.previewMode = shown.presentation.id;
     else delete verticalStarters.dataset.previewMode;
@@ -13237,7 +13256,7 @@ Known schemas:
   function ensureModeSheet() {
     if (modeSheet) return modeSheet;
     const sheet = document.createElement("dialog");
-    sheet.className = "mode-sheet";
+    sheet.className = "mode-sheet ui-dialog ui-chooser--dialog";
     sheet.setAttribute("aria-labelledby", "mode-sheet-heading");
     const heading = document.createElement("h2");
     heading.id = "mode-sheet-heading";
@@ -13246,7 +13265,7 @@ Known schemas:
     warning.setAttribute("role", "note");
     warning.textContent = GUEST_MODE_CHOOSER.openProposalWarning;
     const list2 = document.createElement("div");
-    list2.className = "mode-sheet__choices";
+    list2.className = "mode-sheet__choices ui-chooser__options";
     const close = document.createElement("button");
     close.type = "button";
     close.className = "ui-button ui-button--quiet mode-sheet__close";
@@ -13582,7 +13601,7 @@ Known schemas:
     const chips = isQuickReplyList(replies) ?? [];
     if (chips.length === 0) return;
     const group = document.createElement("div");
-    group.className = "quick-replies";
+    group.className = "quick-replies ui-chips";
     group.setAttribute("role", "group");
     group.setAttribute("aria-label", "Suggested replies");
     for (const reply of chips) {
