@@ -34,6 +34,8 @@ import { OPERATOR_RESPONSE_REMINDER_MINUTES, operatorResponseReminderDue, type O
 import type { CommandPrincipal } from "../../../packages/platform-core/src/index.js";
 import { backOfficePage, SIGN_IN_REASONS, signInReason, watTime, type BackOfficeViewer, type SignInReason } from "./back-office-view.js";
 import { formatStayDates } from "../../web-agent/src/booking-presentation.js";
+import { LANDING_BINARY_ASSETS, type LandingBinaryAssetLoader } from "../../local-guest/src/landing-assets.js";
+import { nodeLandingAssetLoader } from "../../local-guest/src/node-landing-assets.js";
 
 const OPERATOR_SESSION_COOKIE = "shortlet_operator_session";
 const OPERATOR_SECRET_COOKIE = "shortlet_operator_secret";
@@ -1245,6 +1247,8 @@ export interface OwnerRequestHandlerOptions {
   environment?: LocalApartmentOwnerEnvironment;
   /** Slice 09a: the CSS the back office serves; the Node default is `nodeAssetLoader()` (no import-time reads). */
   assets?: AssetLoader;
+  /** Issue 09: self-hosted WOFF2 font loader for /landing/fonts/*; Node default is `nodeLandingAssetLoader()`. */
+  binaryAssets?: LandingBinaryAssetLoader;
   secureCookie?: boolean;
   publicOrigin?: string;
   production?: boolean;
@@ -1268,6 +1272,7 @@ export function createOwnerRequestHandler(
   let env = options.environment ?? LocalApartmentOwnerEnvironment.openNode();
   // Slice 09a: assets come from the injected loader (Node default `nodeAssetLoader()`), never from import-time reads.
   const assets = options.assets ?? nodeAssetLoader();
+  const binaryAssets = options.binaryAssets ?? nodeLandingAssetLoader();
   const production = options.production === true;
   if (production && !options.publicOrigin) throw new Error("Production Operator server requires SHORTLET_PUBLIC_ORIGIN");
   const cookieFlags = `${(options.secureCookie ?? production) ? "; Secure" : ""}; HttpOnly; SameSite=Lax; Path=/operator`;
@@ -1291,6 +1296,29 @@ export function createOwnerRequestHandler(
       } catch {
         res.writeHead(500, { "Content-Type": "text/plain" });
         res.end("Foundation styles missing; run npm run guest:local to build it.");
+      }
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname.startsWith("/landing/fonts/")) {
+      // ADR 0075 / Issue 09: validate against the closed allow-list before reading; immutable long caching.
+      if (!Object.hasOwn(LANDING_BINARY_ASSETS, url.pathname)) {
+        res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("Not Found");
+        return;
+      }
+      const asset = LANDING_BINARY_ASSETS[url.pathname as keyof typeof LANDING_BINARY_ASSETS];
+      try {
+        const bytes = binaryAssets.read(asset.name);
+        res.writeHead(200, {
+          "Content-Type": asset.contentType,
+          "Cache-Control": "public, max-age=31536000, immutable",
+          "X-Content-Type-Options": "nosniff",
+        });
+        res.end(Buffer.from(bytes));
+      } catch {
+        res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+        res.end("Not Found");
       }
       return;
     }

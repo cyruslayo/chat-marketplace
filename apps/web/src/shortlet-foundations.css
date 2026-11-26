@@ -1,3 +1,43 @@
+/* Self-hosted subsetted WOFF2 fonts (issue 09, ADR 0078): Latin + U+20A6 (naira sign in Newsreader only).
+   font-display: swap paints the metric-adjusted fallback stack first; zero third-party font requests. */
+@font-face {
+  font-family: "Newsreader";
+  src: url("/landing/fonts/newsreader-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Newsreader";
+  src: url("/landing/fonts/newsreader-italic-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Hanken Grotesk";
+  src: url("/landing/fonts/hanken-grotesk-400-700.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Newsreader Fallback";
+  src: local("Georgia"), local("Times New Roman");
+  ascent-override: 93%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+  size-adjust: 97%;
+}
+@font-face {
+  font-family: "Hanken Grotesk Fallback";
+  src: local("Segoe UI"), local("Roboto"), local("Arial");
+  ascent-override: 95%;
+  descent-override: 24%;
+  line-gap-override: 0%;
+  size-adjust: 98%;
+}
+
 /* Shared Shortlet presentation foundation (design system v2).
    Light values follow the approved design direction and stay authoritative; v2 adds
    primitives, the missing semantic roles, opt-in dark mode, the Weaver/A2UI theme bridge
@@ -67,10 +107,10 @@
   --color-info-surface: #E6F1F8;
   --color-info-border: #A0BDCC;
 
-  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  /* Display serif for place names, page titles and money totals. System faces only:
-     no third-party font request (privacy, ADR-0078 text-before-media). */
-  --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
+  --font-sans: "Hanken Grotesk", "Hanken Grotesk Fallback", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* Display serif for place names, page titles and money totals (self-hosted WOFF2 with size-adjusted fallback,
+     no third-party font request: privacy, ADR-0078 text-before-media). */
+  --font-display: "Newsreader", "Newsreader Fallback", "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, Georgia, serif;
   --font-heading: var(--font-display);
   --font-mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
   --font-size-display: 2.5rem;
@@ -570,8 +610,8 @@
   .ui-result-row__body { display: grid; flex-grow: 1; gap: 0.125rem; min-inline-size: 0; }
   .ui-result-row__title { font-family: var(--font-display); font-size: 1rem; line-height: 1.25; font-weight: 600; }
   .ui-result-row__where { color: var(--color-text-muted); font-size: var(--font-size-small); }
-  .ui-result-row__price { font-size: var(--font-size-small); font-weight: 650; font-variant-numeric: tabular-nums; }
-  .ui-result-row__price > span { color: var(--color-text-muted); font-size: var(--font-size-metadata); font-weight: 400; }
+  .ui-result-row__price { font-family: var(--font-display); font-size: 1.0625rem; line-height: 1.375rem; font-weight: 500; font-variant-numeric: lining-nums tabular-nums; }
+  .ui-result-row__price > span { color: var(--color-text-muted); font-family: var(--font-sans); font-size: var(--font-size-metadata); font-weight: 400; }
   .ui-result-row > .ui-icon { color: var(--color-action); }
 
   .ui-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
@@ -599,10 +639,10 @@
   .ui-price-breakdown p { margin: 0; }
   .ui-price-breakdown__label { color: var(--color-text-secondary); font-size: var(--font-size-small); }
   .ui-price-breakdown__row { display: flex; justify-content: space-between; gap: var(--space-3); color: var(--color-text-secondary); font-size: var(--font-size-small); }
-  .ui-price-breakdown__value { color: var(--color-text); font-variant-numeric: tabular-nums; text-align: end; }
-  .ui-price-breakdown__due { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3); border-radius: var(--radius-card); background: var(--color-surface-inverse); color: var(--color-text-on-inverse); font-weight: 650; font-variant-numeric: tabular-nums; }
-  .ui-price-breakdown__due .ui-price-breakdown__value { color: var(--color-text-on-inverse); }
-  .ui-price-breakdown__paid { display: flex; justify-content: space-between; gap: var(--space-3); padding-block-start: var(--space-3); border-block-start: 1px solid var(--color-border-subtle); font-weight: 650; font-variant-numeric: tabular-nums; }
+  .ui-price-breakdown__value { color: var(--color-text); font-family: var(--font-display); font-weight: 500; font-variant-numeric: lining-nums tabular-nums; text-align: end; }
+  .ui-price-breakdown__due { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3); border-radius: var(--radius-card); background: var(--color-surface-inverse); color: var(--color-text-on-inverse); font-weight: 650; font-variant-numeric: lining-nums tabular-nums; }
+  .ui-price-breakdown__due .ui-price-breakdown__value { color: var(--color-text-on-inverse); font-family: var(--font-display); font-weight: 500; }
+  .ui-price-breakdown__paid { display: flex; justify-content: space-between; gap: var(--space-3); padding-block-start: var(--space-3); border-block-start: 1px solid var(--color-border-subtle); font-weight: 650; font-variant-numeric: lining-nums tabular-nums; }
   .ui-price-breakdown__condition { display: inline-flex; align-self: flex-start; align-items: center; min-block-size: 1.75rem; padding: 0 var(--space-3); border-radius: var(--radius-pill); background: var(--color-surface-subtle); color: var(--color-text-secondary); font-size: var(--font-size-metadata); font-weight: 600; }
 
   .ui-steps { display: grid; gap: var(--space-3); margin: 0; padding: 0; list-style: none; counter-reset: ui-step; }
@@ -621,7 +661,7 @@
   .ui-facts--stacked dt { color: var(--color-text-muted); font-size: var(--font-size-metadata); }
   .ui-facts--stacked dd { margin: 0; font-size: var(--font-size-label); }
   /* A bank detail that is also a money figure keeps the money face; .ui-facts dd would otherwise outrank it. */
-  .ui-facts dd.ui-money-total { font-family: var(--font-display); font-size: var(--font-size-money-total); line-height: var(--font-line-money-total); font-weight: 700; }
+  .ui-facts dd.ui-money-total { font-family: var(--font-display); font-size: var(--font-size-money-total); line-height: var(--font-line-money-total); font-weight: 500; font-variant-numeric: lining-nums tabular-nums; }
   .transfer-account, .transfer-reference { font-family: var(--font-mono); font-size: var(--font-size-h3); letter-spacing: 0.05em; overflow-wrap: anywhere; }
   .transfer-copy { display: flex; inline-size: fit-content; margin-block-start: var(--space-2); font-family: var(--font-sans); font-size: var(--font-size-small); letter-spacing: normal; }
   .transfer-copy[hidden] { display: none; }
@@ -630,7 +670,7 @@
 
   .ui-link { display: inline-flex; align-items: center; gap: var(--space-2); min-block-size: var(--control-min-target); color: var(--color-action); font-size: var(--font-size-label); font-weight: 600; text-decoration: none; }
   .ui-action-bar__sum { display: flex; flex-direction: column; flex-grow: 1; }
-  .ui-action-bar__sum > strong { font-size: 1.125rem; font-variant-numeric: tabular-nums;}
+  .ui-action-bar__sum > strong { font-family: var(--font-display); font-size: 1.125rem; font-weight: 500; font-variant-numeric: lining-nums tabular-nums; }
 
   /* Request screens share these kit rules across the workspace and conventional route (issue 07). */
   .request-screen,
@@ -803,7 +843,7 @@
   .ui-banner--neutral { border-color: var(--color-border-subtle); background: var(--color-surface-subtle); color: var(--color-text-secondary); }
   .ui-banner--neutral > .ui-icon { color: var(--color-text-secondary); }
 
-  .ui-money-total { color: var(--color-text); font-family: var(--font-display); font-size: var(--font-size-money-total); line-height: var(--font-line-money-total); font-weight: 700; font-variant-numeric: tabular-nums lining-nums; }
+  .ui-money-total { color: var(--color-text); font-family: var(--font-display); font-size: var(--font-size-money-total); line-height: var(--font-line-money-total); font-weight: 500; font-variant-numeric: tabular-nums lining-nums; }
   .ui-money-detail { color: var(--color-text-secondary); font-size: var(--font-size-money-detail); line-height: var(--font-line-money-detail); font-variant-numeric: tabular-nums; }
   .ui-money-metadata { color: var(--color-text-muted); font-size: var(--font-size-small); line-height: var(--font-line-small); font-variant-numeric: tabular-nums; }
 

@@ -4,21 +4,38 @@ import test from "node:test";
 import { contrastRatio } from "./helpers/landing-tokens.js";
 import { modeTokens, resolveToken, themeColors, type ModeTheme } from "./helpers/mode-tokens.js";
 
-const XENIA_KIT_CSS = readFileSync(
-  new URL("../.scratch/app-expansion/design/round-12/xenia-kit.css", import.meta.url),
-  "utf8",
-);
-const XENIA_TOKENS_CSS = readFileSync(
-  new URL("../.scratch/app-expansion/design/round-12/tokens.css", import.meta.url),
-  "utf8",
-);
+interface PinnedTokensJson {
+  readonly color: {
+    readonly tokens: readonly {
+      readonly name: string;
+      readonly value: { readonly light: string; readonly dark: string };
+    }[];
+  };
+  readonly type: {
+    readonly families: { readonly display: string; readonly sans: string };
+  };
+  readonly spacing: {
+    readonly tokens: readonly { readonly name: string; readonly value: string }[];
+  };
+  readonly radius: {
+    readonly tokens: readonly { readonly name: string; readonly value: string }[];
+  };
+}
+
+const PINNED_TOKENS = JSON.parse(
+  readFileSync(
+    new URL("../.scratch/app-expansion/design/round-12/tokens.json", import.meta.url),
+    "utf8",
+  ),
+) as PinnedTokensJson;
+
 const FOUNDATIONS_CSS = readFileSync(
   new URL("../apps/web/src/shortlet-foundations.css", import.meta.url),
   "utf8",
 );
 
 /**
- * Single authoritative mapping from pinned Xenia colour tokens (xenia-kit.css)
+ * Single authoritative mapping from pinned Xenia colour tokens (tokens.json)
  * to Shortlet's semantic foundation tokens (AGENTS.md + parity audit §5).
  */
 const XENIA_TO_CODE_TOKEN: Readonly<Record<string, string>> = {
@@ -60,22 +77,23 @@ const DEFERRED_MODE_TOKENS = new Set([
   "--services-subtle",
 ]);
 
-function parseCustomProperties(body: string): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const match of body.matchAll(/(--[\w-]+)\s*:\s*([^;{}]+?)\s*(?:;|(?=\}))/g)) {
-    result[match[1]!] = match[2]!.trim();
-  }
-  return result;
+const RADIUS_TO_CODE_TOKEN: Readonly<Record<string, string>> = {
+  "radius-sm": "--radius-small",
+  "radius-md": "--radius-control",
+  "radius-lg": "--radius-card",
+  "radius-xl": "--radius-workspace",
+  "radius-pill": "--radius-pill",
+};
+
+function pxToRem(px: string): string {
+  const numeric = Number.parseFloat(px.replace(/px$/, ""));
+  return `${numeric / 16}rem`;
 }
 
-function extractPinnedThemeColors(css: string, selectorPrefix: string): Record<string, string> {
-  const escaped = selectorPrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const match = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`).exec(css);
-  assert.ok(match, `pinned stylesheet contains ${selectorPrefix}`);
-  const props = parseCustomProperties(match[1]!);
+function extractThemeTokenMap(theme: "light" | "dark"): Record<string, string> {
   const colors: Record<string, string> = {};
-  for (const [name, value] of Object.entries(props)) {
-    if (/^#[0-9a-fA-F]{6}$/.test(value)) colors[name] = value.toUpperCase();
+  for (const token of PINNED_TOKENS.color.tokens) {
+    colors[`--${token.name}`] = token.value[theme].toUpperCase();
   }
   return colors;
 }
@@ -88,14 +106,9 @@ function stripThemeBlocksAndComments(css: string): string {
     .replace(/:root\[data-theme="system"\]\s*\{[^}]*\}/g, "");
 }
 
-test("AC1 & I2: every pinned Xenia colour token maps onto shortlet-foundations.css in light, dark, and system-dark without drift", () => {
-  const xeniaLight = extractPinnedThemeColors(XENIA_KIT_CSS, ':root,[data-theme="light"]');
-  const xeniaDark = extractPinnedThemeColors(XENIA_KIT_CSS, '[data-theme="dark"]');
-  const tokensCssLight = extractPinnedThemeColors(XENIA_TOKENS_CSS, ":root");
-
-  for (const [name, hex] of Object.entries(xeniaLight)) {
-    assert.equal(tokensCssLight[name], hex, `tokens.css light ${name} matches xenia-kit.css`);
-  }
+test("AC1 & I2: every pinned Xenia colour token in tokens.json maps onto shortlet-foundations.css in light, dark, and system-dark without drift", () => {
+  const xeniaLight = extractThemeTokenMap("light");
+  const xeniaDark = extractThemeTokenMap("dark");
 
   const allXeniaTokens = new Set([...Object.keys(xeniaLight), ...Object.keys(xeniaDark)]);
   for (const xeniaName of allXeniaTokens) {
@@ -117,12 +130,29 @@ test("AC1 & I2: every pinned Xenia colour token maps onto shortlet-foundations.c
     const codeTokens = themeColors(FOUNDATIONS_CSS, theme);
     for (const [xeniaName, codeName] of Object.entries(XENIA_TO_CODE_TOKEN)) {
       const expected = pinned[xeniaName];
-      assert.ok(expected, `${xeniaName} exists in pinned ${theme}`);
+      assert.ok(expected, `${xeniaName} exists in pinned tokens.json ${theme}`);
       const actual = codeTokens[codeName];
       assert.ok(actual, `${codeName} exists in foundations ${theme}`);
       assert.equal(actual.toUpperCase(), expected, `${theme}: ${codeName} (${actual}) matches pinned ${xeniaName} (${expected})`);
     }
   }
+
+  // Spacing & radius parity with tokens.json
+  const rootMatch = /:root\s*\{([^}]*)\}/.exec(FOUNDATIONS_CSS);
+  assert.ok(rootMatch, ":root block exists");
+  const rootBody = rootMatch[1]!;
+  for (const space of PINNED_TOKENS.spacing.tokens) {
+    const expectedRem = pxToRem(space.value);
+    assert.match(rootBody, new RegExp(`--${space.name}:\\s*${expectedRem.replace(".", "\\.")};`), `spacing --${space.name}`);
+  }
+  for (const radius of PINNED_TOKENS.radius.tokens) {
+    const codeName = RADIUS_TO_CODE_TOKEN[radius.name];
+    assert.ok(codeName, `radius ${radius.name} mapped`);
+    const expected = radius.name === "radius-pill" ? radius.value : pxToRem(radius.value);
+    assert.match(rootBody, new RegExp(`${codeName}:\\s*${expected.replace(".", "\\.")};`), `radius ${codeName}`);
+  }
+  assert.match(PINNED_TOKENS.type.families.display, /Newsreader/);
+  assert.match(PINNED_TOKENS.type.families.sans, /Hanken Grotesk/);
 });
 
 test("I2: no hex colour literals exist outside the theme token blocks of shortlet-foundations.css", () => {
