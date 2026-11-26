@@ -558,9 +558,10 @@ function photoCountHtml(count: number | undefined): string {
 }
 
 function stayPhotoHtml(parts: StayCardParts): string {
+  const demoLabel = parts.demoListing === true ? `<span class="ui-stay-card__label">${demoListingChipHtml()}</span>` : "";
   return parts.photoSrc === undefined
     ? `<div class="ui-stay-card__photo ui-stay-card__photo--empty" role="img" aria-label="Photos are not available for ${escapeHtml(parts.title)}">${icon("photo")}Photos not available</div>`
-    : `<div class="ui-stay-card__media"><img class="ui-stay-card__photo" src="${escapeHtml(parts.photoSrc)}" alt="Photo of ${escapeHtml(parts.title)}" width="800" height="600" loading="lazy" decoding="async" referrerpolicy="no-referrer">${photoCountHtml(parts.photoCount)}</div>`;
+    : `<div class="ui-stay-card__media"><img class="ui-stay-card__photo" src="${escapeHtml(parts.photoSrc)}" alt="Photo of ${escapeHtml(parts.title)}" width="800" height="600" loading="lazy" decoding="async" referrerpolicy="no-referrer">${demoLabel}${photoCountHtml(parts.photoCount)}</div>`;
 }
 
 /** What is inside a stay card; the chat puts this inside Weaver's Card element, the pages inside an article. */
@@ -576,7 +577,8 @@ export function stayCardInnerHtml(parts: StayCardParts): string {
     parts.deposit === undefined
       ? ""
       : `<p class="ui-money-metadata">+ ${escapeHtml(parts.deposit)} ${GUEST_FACT_LABELS.refundableSecurityDeposit}</p>`;
-  return `${stayPhotoHtml(parts)}${parts.demoListing === true ? demoListingChipHtml() : ""}<p class="ui-stay-card__where">${icon("pin")}${escapeHtml(parts.where)}</p><h2 class="ui-stay-card__title"><a href="${href}">${escapeHtml(parts.title)}</a></h2><div class="ui-stay-card__facts" aria-label="Stay facts">${facts}</div><div class="ui-stay-card__total"><p class="ui-money-total">${escapeHtml(parts.total)}</p><p class="ui-money-metadata">${escapeHtml(parts.totalLabel)}</p>${deposit}</div><a class="ui-button ui-button--primary ui-button--block ui-stay-card__view" href="${href}">${GUEST_GLOSSARY.viewUnit}<span class="ui-sr-only">: ${escapeHtml(parts.title)}</span></a>`;
+  const bodyDemo = parts.photoSrc === undefined && parts.demoListing === true ? `<span class="ui-stay-card__label">${demoListingChipHtml()}</span>` : "";
+  return `${stayPhotoHtml(parts)}<div class="ui-stay-card__body">${bodyDemo}<p class="ui-stay-card__where">${icon("pin")}${escapeHtml(parts.where)}</p><h2 class="ui-stay-card__title"><a href="${href}">${escapeHtml(parts.title)}</a></h2><div class="ui-stay-card__facts" aria-label="Stay facts">${facts}</div><div class="ui-stay-card__total"><p class="ui-money-total">${escapeHtml(parts.total)}</p><p class="ui-money-metadata">${escapeHtml(parts.totalLabel)}</p>${deposit}</div><a class="ui-button ui-button--primary ui-button--block ui-stay-card__view" href="${href}">${GUEST_GLOSSARY.viewUnit}<span class="ui-sr-only">: ${escapeHtml(parts.title)}</span></a></div>`;
 }
 
 export function stayCardPartsHtml(

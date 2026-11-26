@@ -277,7 +277,7 @@ function renderStayCard(resourcePolicy: BasicResourcePolicy | undefined) {
     const compare = asElement(single(relationships, "compare"));
     if (compare) {
       compare.classList.add("stay-card__compare", "ui-link");
-      card.append(compare);
+      (card.querySelector(".ui-stay-card__body") ?? card).append(compare);
     }
     return card;
   };

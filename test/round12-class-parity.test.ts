@@ -166,6 +166,39 @@ const GROUP_2B_03_CLASSES = [
   ".ui-steps--compact",
 ] as const;
 
+const GROUP_2B_04_CLASSES = [
+  ".ui-segmented",
+  ".ui-list",
+  ".ui-list__row",
+  ".ui-list__row--static",
+  ".ui-list__primary",
+  ".ui-list__secondary",
+  ".ui-list__aside",
+  ".ui-list__aside--money",
+  ".ui-list__status",
+  ".ui-result-rows",
+  ".ui-result-row",
+  ".ui-result-row--muted",
+  ".ui-result-row--no-thumb",
+  ".ui-result-row__thumb",
+  ".ui-result-row__body",
+  ".ui-result-row__title",
+  ".ui-result-row__where",
+  ".ui-result-row__price",
+  ".ui-result-row__next",
+  ".ui-stay-card",
+  ".ui-stay-card__media",
+  ".ui-stay-card__photo",
+  ".ui-stay-card__photo--empty",
+  ".ui-stay-card__count",
+  ".ui-stay-card__label",
+  ".ui-stay-card__body",
+  ".ui-stay-card__where",
+  ".ui-stay-card__title",
+  ".ui-stay-card__facts",
+  ".ui-stay-card__total",
+] as const;
+
 test("I3: zero board-only classes (xk-*, bd-*) appear anywhere in apps/", () => {
   assert.ok(BOARD_ONLY_CLASSES.length >= 30, "extracted board-only class list from xenia-kit.css");
   const appFiles = walkTsCssHtml(new URL("../apps", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1"));
@@ -177,7 +210,7 @@ test("I3: zero board-only classes (xk-*, bd-*) appear anywhere in apps/", () => 
   }
 });
 
-test("I3 (2b-01..2b-03): every mapped class and preserved code-only class exists in shortlet-foundations.css", () => {
+test("I3 (2b-01..2b-04): every mapped class and preserved code-only class exists in shortlet-foundations.css", () => {
   for (const cls of GROUP_2B_01_CLASSES) {
     assert.ok(FOUNDATIONS_CSS.includes(cls), `missing 2b-01 class ${cls} in shortlet-foundations.css`);
   }
@@ -186,6 +219,9 @@ test("I3 (2b-01..2b-03): every mapped class and preserved code-only class exists
   }
   for (const cls of GROUP_2B_03_CLASSES) {
     assert.ok(FOUNDATIONS_CSS.includes(cls), `missing 2b-03 class ${cls} in shortlet-foundations.css`);
+  }
+  for (const cls of GROUP_2B_04_CLASSES) {
+    assert.ok(FOUNDATIONS_CSS.includes(cls), `missing 2b-04 class ${cls} in shortlet-foundations.css`);
   }
   for (const cls of PRESERVED_CODE_CLASSES) {
     assert.ok(FOUNDATIONS_CSS.includes(cls), `missing preserved code-only class ${cls} in shortlet-foundations.css`);
