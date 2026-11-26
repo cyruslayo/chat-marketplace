@@ -235,7 +235,11 @@ import {
   type StayBudget,
 } from "./concierge.js";
 import { AMENITY_CATALOGUE_IDS } from "./stay-vocabulary.js";
-import { openQuestionForCriterion } from "./assistant/shortlet-assistant-pack.js";
+import { openQuestionForCriterion, createShortletAssistantPack } from "./assistant/shortlet-assistant-pack.js";
+import type { AssistantDomainPack } from "./assistant/assistant-platform.js";
+import { composePlanRows, type ComposedPlanRows, type PlanRowsDiagnostic } from "./assistant/plan-rows.js";
+import { collectStaysPlanEntries, committedWorkScope } from "./assistant/shortlet-plan-rows.js";
+export { committedWorkScope } from "./assistant/shortlet-plan-rows.js";
 import type { OpenQuestion } from "./assistant/assistant-state.js";
 import { ContinuousOccupancyError } from "../../../domains/shortlet/src/index.js";
 import {
@@ -319,27 +323,6 @@ import {
   type AccountFormError,
 } from "./guest-account-pages.js";
 import { A2UI_PRODUCER } from "../../web-agent/src/a2ui-surface.js";
-
-export function committedWorkScope(
-  env: LocalGuestEnvironment,
-  principal: CommandPrincipal,
-  identity?: GuestIdentity,
-): readonly string[] | null {
-  if (
-    principal.role !== "guest" ||
-    !principal.id ||
-    !principal.tenantId ||
-    principal.tenantId !== env.config.tenantId
-  )
-    return null;
-  if (identity?.accountGuestId !== undefined) {
-    return identity.tenantId === principal.tenantId &&
-      identity.principalIds.includes(principal.id)
-      ? identity.principalIds
-      : null;
-  }
-  return principal.id === env.guestPrincipal().id ? [principal.id] : null;
-}
 
 export type GuestSurfaceKind = "discovery" | "unit-detail" | "compare" | "request-draft" | "booking" | "payment" | "contact" | "general";
 
@@ -870,6 +853,7 @@ export class LocalGuestApp {
   #environment: LocalGuestEnvironment;
   readonly #threads = new Map<string, GuestThreadState>();
   readonly #assistantRuntime: AssistantRuntime | null;
+  readonly #packs: readonly AssistantDomainPack[];
   readonly #modelCallBudget: ModelCallBudget | null;
   readonly #paystackCheckoutTimeoutMs: number;
   readonly #onCardCheckoutFailed: ((event: CardCheckoutFailedEvent) => void) | null;
@@ -882,6 +866,8 @@ export class LocalGuestApp {
     environment: LocalGuestEnvironment,
     options: {
       readonly assistantRuntime?: AssistantRuntime;
+      /** Explicit domain packs for platform composition (e.g. planRows); defaults to the runtime's packs or Stays. */
+      readonly packs?: readonly AssistantDomainPack[];
       /** Issue 19: once the daily cap is spent, new turns use the deterministic concierge (ADR 0080). */
       readonly modelCallBudget?: ModelCallBudget;
       /** Issue 06 (M13): bound on the Paystack initialize call that holds the thread's run. Injected by tests. */
@@ -894,6 +880,7 @@ export class LocalGuestApp {
   ) {
     this.#environment = environment;
     this.#assistantRuntime = options.assistantRuntime ?? null;
+    this.#packs = options.packs ?? (this.#assistantRuntime ? this.#assistantRuntime.registeredPacks() : [createShortletAssistantPack(environment)]);
     this.#modelCallBudget = options.modelCallBudget ?? null;
     this.#laneTimelineCap = validateLaneTimelineCap(options.laneTimelineCap ?? DEFAULT_LANE_TIMELINE_CAP);
     const timeoutMs = options.paystackCheckoutTimeoutMs ?? PAYSTACK_CHECKOUT_PROVIDER_TIMEOUT_MS;
@@ -1866,102 +1853,41 @@ export class LocalGuestApp {
   }
 
   /**
+   * Rules 02 / ADR 0099 decision 5: composes the guest's grouped, ordered list across all registered packs
+   * without reading any pack's transaction state directly.
+   */
+  async planRows(
+    principal: CommandPrincipal,
+    identity?: GuestIdentity,
+    now: Date = this.#environment.clock(),
+    onDiagnostic?: (event: PlanRowsDiagnostic) => void,
+  ): Promise<ComposedPlanRows> {
+    return composePlanRows(this.#packs, { principal, identity }, now, {
+      ...(onDiagnostic === undefined ? {} : { onDiagnostic }),
+    });
+  }
+
+  /**
    * Issue 13a: the Guest's live committed work across all of their threads,
    * so a new conversation can say it is unaffected (ADR-0079). Read-only and
-   * derived from the authoritative artifacts via the journey projection; an
-   * unreadable, failed or expired record is never listed. Fails closed to an
-   * empty list for any principal that is not this runtime's Guest (ADR-0070).
+   * derived from the authoritative stays plan collector; an unreadable, failed
+   * or expired record is never listed. Fails closed to an empty list for any
+   * principal that is not this runtime's Guest (ADR-0070).
    */
   async committedWork(
     principal: CommandPrincipal,
     identity?: GuestIdentity,
   ): Promise<GuestCommittedWork[]> {
-    const environment = this.#environment;
-    const scope = committedWorkScope(environment, principal, identity);
-    if (scope === null || !principal.tenantId) return [];
-    const work: GuestCommittedWork[] = [];
-    // The conversations to consider: every thread of the scope's principals, then, for each Booking Request the account
-    // holds by claim (ADR 0093), only that request's conversation, owned by its Primary Guest. Nothing else of that
-    // principal is listed.
-    const candidates: { threadId: string; principalId: string; claimedRequestId: string | null }[] = [];
-    for (const record of await environment.guestData.findThreadsForPrincipals(
-      scope,
-      principal.tenantId,
-    ))
-      candidates.push({ threadId: record.threadId, principalId: record.principalId, claimedRequestId: null });
-    for (const requestId of identity?.claimedRequestIds ?? []) {
-      const request = environment.interactionStore.findBookingRequest(requestId);
-      if (!request || request.tenantId !== principal.tenantId) continue;
-      for (const record of await environment.guestData.findThreadsForPrincipal(
-        request.primaryGuestId,
-        principal.tenantId,
-      ))
-        candidates.push({ threadId: record.threadId, principalId: record.principalId, claimedRequestId: requestId });
-    }
-    const listed = new Set<string>();
     try {
-      for (const record of candidates) {
-        if (listed.has(record.threadId)) continue;
-        const owner: CommandPrincipal = {
-          id: record.principalId,
-          role: "guest",
-          tenantId: principal.tenantId,
-        };
-        const owners = record.claimedRequestId === null ? scope : [record.principalId];
-        const loaded =
-          this.#threads.get(record.threadId) ??
-          (environment.guestDataIsRemote ? await this.#loadRemoteThread(record.threadId, owners) : this.#loadThread(record.threadId, owners));
-        if (!loaded || (!loaded.requestId && !loaded.offerId)) continue;
-        if (record.claimedRequestId !== null && loaded.requestId !== record.claimedRequestId) continue;
-        listed.add(record.threadId);
-        // A thread records its offer only on its next refresh, and this read
-        // never issues one (ADR-0079). Judge the durable offer for a confirmed
-        // request so an expired offer is never called a live request.
-        const offerId =
-          loaded.offerId ??
-          (loaded.requestId
-            ? (environment.interactionStore.findConditionalOfferByRequestId(
-                loaded.requestId,
-              )?.offerId ?? null)
-            : null);
-        const thread: GuestThreadState =
-          offerId === loaded.offerId ? loaded : { ...loaded, offerId };
-        const journey = this.#journeyFor(thread, owner);
-        if (journey === undefined || journey.outcome !== undefined) continue;
-        const unitTitle = this.#currentUnit(thread)?.title;
-        const base = {
-          threadId: thread.threadId,
-          ...(unitTitle === undefined ? {} : { unitTitle }),
-        };
-        if (journey.current === "confirmed" && thread.offerId) {
-          const contractId = this.#snapshotContractId(thread.offerId);
-          if (contractId !== null)
-            work.push({
-              ...base,
-              kind: "reservation",
-              route: conventionalBookingContractRoute(contractId),
-            });
-        } else if (
-          (journey.current === "offer" || journey.current === "pay") &&
-          thread.offerId
-        ) {
-          work.push({
-            ...base,
-            kind: "offer",
-            route: conventionalConditionalOfferRoute(thread.offerId),
-          });
-        } else if (journey.current === "request" && thread.requestId) {
-          work.push({
-            ...base,
-            kind: "request",
-            route: conventionalBookingRequestRoute(thread.requestId),
-          });
-        }
-      }
+      const entries = await collectStaysPlanEntries(
+        this.#environment,
+        { principal, identity },
+        this.#environment.clock(),
+      );
+      return entries.flatMap((entry) => (entry.committedWork ? [entry.committedWork] : []));
     } catch {
       return [];
     }
-    return work;
   }
 
   #snapshotContractId(offerId: string): string | null {
