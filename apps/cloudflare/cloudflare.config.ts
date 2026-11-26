@@ -116,6 +116,8 @@ function workerFor(environment: PilotEnvironment) {
       ...optionalText("SHORTLET_DEMO_ACCEPT_DELAY_SECONDS"),
       // Landing issue 17: the privacy notice address opens the founding partner application; unset keeps it closed.
       ...optionalText("SHORTLET_PARTNER_PRIVACY_URL"),
+      // Owner decision, 26 Nov 2026: "open" opens the application before the privacy notice exists.
+      ...optionalText("SHORTLET_PARTNER_APPLICATIONS"),
       // Non-secret notification settings the operator supplies at deploy time.
       ...optionalText("SHORTLET_NOTIFICATION_FROM"),
       ...optionalText("SHORTLET_OPERATOR_ALERT_EMAILS"),

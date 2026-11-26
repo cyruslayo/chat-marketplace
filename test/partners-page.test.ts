@@ -15,7 +15,7 @@ import {
   validatePartnerApplication,
 } from "../apps/local-guest/src/partner-application.js";
 import { SqlitePartnerApplicationStore } from "../apps/local-guest/src/partner-application-store.js";
-import { partnerPrivacyNoticeUrl } from "../apps/local-guest/src/partner-privacy-notice.js";
+import { partnerApplicationsOpen, partnerPrivacyNoticeUrl } from "../apps/local-guest/src/partner-privacy-notice.js";
 import {
   PARTNERS_COPY,
   PARTNERS_DEMO_STEPS,
@@ -77,6 +77,7 @@ interface Server {
 async function withServer(
   notice: string | null,
   run: (server: Server) => Promise<void>,
+  open = false,
 ): Promise<void> {
   const directory = mkdtempSync(join(tmpdir(), "partners-"));
   const environment = LocalGuestEnvironment.openNode({
@@ -87,6 +88,7 @@ async function withServer(
     port: 0,
     environment,
     partnerPrivacyNoticeUrl: notice,
+    partnerApplicationsOpen: open,
   });
   try {
     const base = `http://127.0.0.1:${await server.listen()}`;
@@ -601,4 +603,35 @@ test("Landing 17 AC10: /welcome and /partners link to each other, and the saved 
       assert.ok((await response.text()).length > 0);
     }
   });
+});
+
+test("Landing 17 owner decision 26 Nov 2026: SHORTLET_PARTNER_APPLICATIONS=open opens the form without a privacy notice link, and any other value stops startup", async () => {
+  for (const off of [undefined, "", "closed"]) assert.equal(partnerApplicationsOpen(off), false);
+  assert.equal(partnerApplicationsOpen(" open "), true);
+  for (const bad of ["true", "enabled", "Open"]) {
+    assert.throws(() => partnerApplicationsOpen(bad), /must be open or closed/);
+    assert.throws(
+      () => loadPilotCoreConfiguration({ ...STAGING_WITHOUT_DEMO_SOURCE, SHORTLET_PARTNER_APPLICATIONS: bad }),
+      /SHORTLET_PARTNER_APPLICATIONS/,
+    );
+  }
+  assert.equal(
+    loadPilotCoreConfiguration({ ...STAGING_WITHOUT_DEMO_SOURCE, SHORTLET_PARTNER_APPLICATIONS: "open" }).partnerApplicationsOpen,
+    true,
+  );
+  await withServer(
+    null,
+    async ({ base, apply, rows }) => {
+      const page = await (await fetch(`${base}/partners`)).text();
+      assert.match(page, /<form class="xp-apply__form"/);
+      assert.ok(!page.includes(PARTNERS_COPY.form.privacyNotice));
+      assert.ok(!page.includes(escapeHtml(PARTNERS_COPY.form.closedHeading)));
+      assert.equal((await apply(VALID)).status, 303);
+      const stored = rows();
+      assert.equal(stored.length, 1);
+      assert.equal(stored[0]!.privacy_notice_url, "");
+      assert.equal(stored[0]!.consent_text, PARTNER_CONSENT_TEXT);
+    },
+    true,
+  );
 });

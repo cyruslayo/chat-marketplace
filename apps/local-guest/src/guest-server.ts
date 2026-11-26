@@ -2365,6 +2365,8 @@ export interface GuestRequestHandlerOptions {
   landingDemo?: boolean;
   /** Landing issue 17: the privacy notice the founding partner application links to. Absent or null: the form is closed. */
   partnerPrivacyNoticeUrl?: string | null;
+  /** Owner decision, 26 Nov 2026: true opens the application even without a privacy notice address. */
+  partnerApplicationsOpen?: boolean;
   /** ADR 0095: Node reads lazily; the Workers host injects its own binary loader. */
   landingBinaryAssets?: LandingBinaryAssetLoader;
   modelClient?: AssistantModelClient;
@@ -5886,10 +5888,11 @@ export function createGuestRequestHandler(
       createPartnersRouteModule({
         assets,
         intake:
-          options.partnerPrivacyNoticeUrl == null
+          options.partnerPrivacyNoticeUrl == null &&
+          options.partnerApplicationsOpen !== true
             ? null
             : {
-                privacyNoticeUrl: options.partnerPrivacyNoticeUrl,
+                privacyNoticeUrl: options.partnerPrivacyNoticeUrl ?? null,
                 // Built per save: /api/reset replaces the local environment and its database.
                 store: {
                   save: (submission) =>

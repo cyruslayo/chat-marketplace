@@ -19,7 +19,8 @@ import {
 
 /** Where applications go. Absent while no privacy notice is configured: the form is closed and nothing is collected. */
 export interface PartnerApplicationIntake {
-  readonly privacyNoticeUrl: string;
+  /** Null when the form is open without a privacy notice (owner decision, 26 Nov 2026). */
+  readonly privacyNoticeUrl: string | null;
   readonly store: PartnerApplicationStore;
   readonly newFormKey: () => string;
 }

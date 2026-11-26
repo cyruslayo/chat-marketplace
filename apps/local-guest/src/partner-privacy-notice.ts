@@ -18,3 +18,15 @@ export function partnerPrivacyNoticeUrl(
   }
   return parsed.href;
 }
+
+/**
+ * Owner decision, 26 Nov 2026: the application may open before a privacy notice exists. "open" opens it (without the notice
+ * link unless SHORTLET_PARTNER_PRIVACY_URL is also set); unset or "closed" leaves it to the notice address. Anything else
+ * stops startup (fail closed).
+ */
+export function partnerApplicationsOpen(value: string | undefined): boolean {
+  const setting = value?.trim() ?? "";
+  if (setting === "" || setting === "closed") return false;
+  if (setting === "open") return true;
+  throw new Error("SHORTLET_PARTNER_APPLICATIONS must be open or closed");
+}

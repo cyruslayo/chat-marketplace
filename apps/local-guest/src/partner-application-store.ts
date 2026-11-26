@@ -29,7 +29,8 @@ export interface PartnerApplicationSubmission {
   readonly application: PartnerApplication;
   /** Identifies one sending of one form, so a double press or a reload stores one row. */
   readonly submissionKey: string;
-  readonly privacyNoticeUrl: string;
+  /** Null when no privacy notice was configured; stored as an empty string. */
+  readonly privacyNoticeUrl: string | null;
 }
 
 export interface PartnerApplicationStore {
@@ -76,7 +77,7 @@ export class SqlitePartnerApplicationStore implements PartnerApplicationStore {
         application.stays.join(","),
         application.how === "" ? null : application.how,
         PARTNER_CONSENT_TEXT,
-        submission.privacyNoticeUrl,
+        submission.privacyNoticeUrl ?? "",
         this.#clock().toISOString(),
       ]);
     return result.changes > 0;
