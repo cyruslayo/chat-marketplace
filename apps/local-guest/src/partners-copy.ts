@@ -1,8 +1,8 @@
 /**
  * The copy of the founding partners page at /partners (landing issue 17). Source: the design file `Xenia Founding Partners
- * Abuja.html` (pass 11, 25 Nov 2026) and the owner-approved deck `.scratch/brand/landing-operators-copy.md`. Strings the demo
- * frames share with the product come from guest-content.ts instead (ADR 0077). Strings marked "New" were written for this
- * build and wait for the owner's approval (issue 17, Comments).
+ * Abuja.html` (pass 11, 25 Nov 2026), the owner-approved deck `.scratch/brand/landing-operators-copy.md`, and the Rory
+ * Sutherland full-voice rewrite (26 Nov 2026). Strings the demo frames share with the product come from guest-content.ts
+ * instead (ADR 0077). Strings marked "New" were written for this build and wait for the owner's approval (issue 17, Comments).
  */
 
 export interface PartnersFaqItem {
@@ -16,7 +16,7 @@ export interface PartnersFaqItem {
 export const PARTNERS_COPY = Object.freeze({
   pageTitle: "Xenia: founding partners in Abuja",
   pageDescription:
-    "Xenia is a concierge that guests chat with to find and book furnished apartments. Apply to be a founding partner in Abuja.",
+    "Xenia is a concierge that answers guests from your verified listing and brings you ready-to-decide booking requests. Apply to be a founding partner in Abuja.",
   brand: "Xenia",
   skip: "Skip to main content",
   nav: {
@@ -35,19 +35,20 @@ export const PARTNERS_COPY = Object.freeze({
 
   hero: {
     eyebrow: "For apartment operators in Abuja",
-    headingBefore: "More guests for your apartments, without the ",
-    headingAccent: "back-and-forth.",
-    lede: "Xenia is a concierge that guests chat with to find and book furnished apartments. It answers their questions from your verified listing, then brings you booking requests that are ready for a yes or no.",
-    note: "You agree the amount you receive. You approve every booking.",
+    headingBefore: "Stop being an unpaid travel agent for people who leave you on ",
+    headingAccent: "read.",
+    lede: "Most shortlet enquiries aren’t bookings—they’re free research. Xenia answers every question from your verified listing, settles the dates and all-in price upfront, and only interrupts you when a guest is ready to book—for a straight yes or no.",
+    note: "You name the exact amount you receive. You approve every stay. No requests after 7:30\u00a0PM\u00a0WAT.",
   },
 
   problem: {
-    eyebrow: "The problem",
-    heading: "Good apartments. Interested guests. Too many messages.",
+    eyebrow: "The real bottleneck",
+    heading: "A hotel doesn’t win because the rooms are better. It wins because nobody has to haggle at 10\u00a0PM.",
     paragraphs: [
-      "One guest asks if the apartment is free next week. Another wants the price for three weeks. A third wants to compare four places before deciding.",
-      "Your team sends photos, checks dates, explains rates, and follows up. Then the chat goes quiet.",
-      "Every enquiry takes time, and most of it is the same questions. Your time is better spent on the apartments themselves.",
+      "You already know how a good Abuja apartment loses a month-long guest. One person asks if next week is free. Another wants a three-week quote, asks for six more photos, asks if diesel is included, and says “let me get back to you.”",
+      "Your team spends half the day answering the same five questions—and the chat ends on two blue ticks.",
+      "Meanwhile, a consultant flying into Abuja for a month wants three things: one clear price, no transfer to a personal account, and a receipt their employer won’t question. When an apartment can’t give them that quickly, they keep looking.",
+      "Good apartments don’t have a quality problem. They have a booking friction problem.",
     ],
     figureLabel: "Example enquiry messages",
     figureTag: "Example",
@@ -61,8 +62,8 @@ export const PARTNERS_COPY = Object.freeze({
 
   guest: {
     eyebrow: "The guest’s side",
-    heading: "This is what your guests see.",
-    lede: "Guests describe their stay in their own words. The concierge does the rest, and asks you only for a yes or no.",
+    heading: "Notice how far the guest gets before your phone rings once.",
+    lede: "In this example, a guest plans a 30-night stay in Wuse—dates, power, Wi-Fi, all-in total—without sending your team a single message. Watch “Where you come in”: you appear only twice. Once to say yes. Once to get paid.",
     stageLabel: "Demo · synthetic listings · nothing is booked",
     stageGroup: "Guest demo",
     stepsLabel: "Demo steps",
@@ -76,14 +77,14 @@ export const PARTNERS_COPY = Object.freeze({
   },
 
   how: {
-    eyebrow: "How Xenia helps",
-    headingBefore: "Guests tell the concierge what they need. ",
-    headingAccent: "You make the decision.",
-    line: "When a guest wants your apartment, they send a booking request, and the decision is yours.",
+    eyebrow: "The deal",
+    headingBefore: "We filter out the idle enquiries. ",
+    headingAccent: "In return, you answer serious guests in 30 minutes.",
+    line: "A good concierge doesn’t flood you with leads. It brings you one guest who already knows your exact price, the dates, and what utilities are included—and wants your dates.",
     requestsHeading: "How requests work",
     minutes: "30",
     minutesText: "minutes to say yes or no",
-    held: "The dates are held for that guest while you decide.",
+    held: "The dates are held for that guest while you decide. Decline privately—the guest never sees your reason.",
     nothingBooked:
       "Nothing is booked until you say yes, the guest accepts the final offer, and their payment is confirmed.",
     requestLabel: "Example: the request you receive",
@@ -93,85 +94,91 @@ export const PARTNERS_COPY = Object.freeze({
 
   benefits: {
     eyebrow: "What you get",
-    heading: "Built around how you run your apartments.",
+    heading: "Built for operators who don’t chase.",
     lead: {
-      heading: "The amount you agree is the amount you receive",
-      body: "For each apartment, we agree the amount you receive. Xenia adds its margin to the price the guest sees, so the guest pays one all-in price and you receive exactly your agreed amount.",
+      heading: "Name your number. Receive your number.",
+      body: "Most platforms quote your rate and then take a bite out of it—so you end up inflating your price and resenting every payout. With Xenia, we agree the exact amount you receive for each apartment and add our margin to the price the guest sees. Our margin is never taken out of your amount. No haggling for “last price.”",
     },
     items: [
       {
         icon: "ready",
-        heading: "In front of guests who are ready",
-        body: "Guests reach your apartment after they’ve already said where, when and for how long. You see a request, not a cold enquiry.",
+        heading: "Requests, not enquiries",
+        body: "By the time a stay reaches you, the guest has already committed to where, when, how many people, and the full all-in price. You see a booking request, not a cold chat.",
       },
       {
         icon: "questions",
-        heading: "Fewer repeat questions",
-        body: "The concierge answers questions about price, location, amenities and dates from your verified listing, at any hour.",
+        heading: "A concierge that never improvises",
+        body: "It answers questions about price, location, amenities and dates at any hour using only the verified facts on your listing. It never guesses—anything unusual goes to our team.",
       },
       {
         icon: "decision",
-        heading: "Every booking is your decision",
-        body: "You approve or decline each request. Your apartments stay under your management.",
+        heading: "Your apartments stay yours",
+        body: "You approve or decline every booking request. No auto-accept, no surprise discounts, and your apartments stay under your management.",
       },
       {
         icon: "lengths",
-        heading: "Short stays, and stays of 1 to 6 months",
-        body: "Guests can book from 1 night to 29 nights. Apartments that opt in can also take stays of 30 to 180 nights, priced by the month, with a clear statement of which utilities are included.",
+        heading: "Built for 30-to-180-night stays, too",
+        body: "Short stays of 1 to 29 nights come standard. Apartments that opt in can also take 1-to-6-month stays priced by the month—with power, fuel and utilities stated upfront so nobody argues in week two.",
       },
       {
         icon: "card",
-        heading: "Payment collected before the stay",
-        body: "Guests pay through Xenia by card or bank transfer before the booking is confirmed. For stays longer than 30 nights, that payment covers the first 30-night period, and the guest pays each later period as the stay goes on.",
+        heading: "Payment collected before the key turns",
+        body: "Guests pay through Xenia by card or bank transfer before a booking is confirmed—never cash at the gate, and never a transfer to someone’s personal account. For stays longer than 30 nights, that payment covers the first 30-night period, and the guest pays each later period as the stay goes on.",
       },
     ],
   },
 
   side: {
     eyebrow: "Your side",
-    heading: "Everything waiting on you, in one place.",
+    heading: "Everything waiting on you, and nothing that isn’t.",
     figureLabel:
       "Example: your partner home in Xenia, showing what is waiting on you across your Abuja apartments",
   },
 
   payment: {
     label: "Payment",
-    eyebrow: "Payment",
-    body: "It’s due 24 hours after the guest gets in, or after the agreed check-in time if that’s later, unless they’ve raised a problem that’s still being resolved. We pay you by bank transfer.",
+    eyebrow: "Payment & trust",
+    headingBefore: "Your agreed amount, ",
+    headingAccent: "24 hours",
+    headingAfter: " after check-in.",
+    paragraphs: [
+      "Guests don’t hesitate to book furnished apartments because they’re cheap—they hesitate because paying a large sum online feels like a leap of faith. Xenia collects the guest’s payment before the booking is confirmed.",
+      "Your agreed amount is due 24 hours after the guest gets in, or after the agreed check-in time if that’s later, unless they’ve raised a problem that’s still being resolved. We pay you by bank transfer. The guest has already paid before arriving, so you never chase a payment for a stay.",
+    ],
     figureLabel: "Example: payments to you, one row per booking",
     close:
-      "Not another listing site where you upload photos and wait. A guided path from the first question to a paid booking, with you deciding the parts that matter.",
+      "Not another classifieds board where you upload photos and hope. A proper booking path—from the first question to a settled bank transfer.",
   },
 
   founding: {
     eyebrow: "The founding network",
-    headingBefore: "We’re building our ",
-    headingAccent: "first",
-    headingAfter: " apartment network in Abuja.",
+    headingBefore: "We inspect every apartment ",
+    headingAccent: "in person",
+    headingAfter: "—which is why serious operators should apply.",
     paragraphs: [
-      "We’d like to build it with operators who care about their apartments and the guests who stay in them. Whether you manage two apartments or twenty, we’d like to hear from you.",
-      "We’re onboarding apartments first. When our first apartments are live, we’ll start advertising to guests, and founding partners will be listed from day one.",
+      "Any marketplace can promise thousands of listings by letting anyone upload three flattering photos. The result is a race to the bottom where well-run apartments get dragged down by bad ones.",
+      "We’re building our first Abuja network the slower way: inspecting every apartment in person, checking authority to let, and onboarding serious operators before we spend anything advertising to guests. Whether you manage two spotless apartments or twenty, you’ll sit in a curated room—not shout in a crowded bazaar.",
     ],
     listHeading: "What founding partners get",
     items: [
       {
-        heading: "Featured in our launch campaigns.",
-        body: "We’ll advertise founding apartments to guests looking for stays in Abuja, and we track which ads bring guests in, so we spend where it works.",
+        heading: "First in front of launch demand.",
+        body: "When our Abuja guest campaigns switch on, founding apartments are the ones we advertise first—and we track which ads bring guests in, so we spend where it works.",
       },
       {
         heading: "A report on how guests find you.",
         body: "You’ll see how many guests viewed and asked about your apartments, and which campaigns brought them.",
       },
       {
-        heading: "Founding margin terms.",
-        body: "A lower Xenia margin on your apartments for an agreed period. That keeps your guest price more competitive, while you still receive your full agreed amount. We’ll set the terms with you when you join.",
+        heading: "Lower Xenia margin, agreed up front.",
+        body: "A reduced founding margin on your apartments for an agreed period. That keeps your guest-facing price sharper while your own agreed payout stays untouched. We set the terms with you when you join.",
       },
       {
-        heading: "Help shape the partner app.",
-        body: "You’ll use it first and tell us what to change.",
+        heading: "A seat at the table for the partner app.",
+        body: "At launch we handle requests directly with you; as we build the partner app shown above, you use it first and tell us what actually saves you time.",
       },
     ],
-    ctaHeading: "Put your apartments in front of the right guests.",
+    ctaHeading: "Put your apartments in front of guests who are ready to pay.",
   },
 
   questions: {
@@ -199,7 +206,7 @@ export const PARTNERS_COPY = Object.freeze({
       {
         question: "How does Xenia make money?",
         paragraphs: [
-          "We agree the amount you receive for each apartment, and add our margin to the price the guest sees. The guest pays one all-in price, and you receive your agreed amount.",
+          "We agree the exact amount you receive for each apartment, and add our margin to the price the guest sees. Our margin is never taken out of your amount: the guest pays one all-in price, and you receive your agreed amount.",
         ],
       },
       {
@@ -223,7 +230,7 @@ export const PARTNERS_COPY = Object.freeze({
       {
         question: "What do I need to join?",
         paragraphs: [
-          "You’ll need:",
+          "The bar is intentionally high—because the same check that applies to you is what keeps unreliable listings off the same page as yours. You’ll need:",
           "We inspect every apartment in person before it goes live.",
         ],
         list: [
@@ -244,7 +251,7 @@ export const PARTNERS_COPY = Object.freeze({
       {
         question: "Are guests booking yet?",
         paragraphs: [
-          "Not yet. We’re onboarding our first apartments now. Our guest campaign begins once they are live.",
+          "Not yet—deliberately. There is no worse mistake than inviting guests to an empty table. We’re inspecting and onboarding our founding Abuja apartments first, so when our guest campaigns begin, every guest meets real, verified inventory from day one.",
         ],
       },
       {
@@ -257,8 +264,8 @@ export const PARTNERS_COPY = Object.freeze({
   },
 
   closing: {
-    heading: "Good hospitality starts with a good place to stay.",
-    lede: "Finding and booking that place should be just as simple. Let’s make it simple together.",
+    heading: "You already did the hard part: building an apartment worth staying in.",
+    lede: "Don’t lose the guest in a WhatsApp thread.",
     place: "Starting in Abuja.",
   },
 
