@@ -120,8 +120,12 @@ export const LANDING_COPY = Object.freeze({
   faqHeading: "Questions, answered plainly",
   /** S11: closing H2. */
   closingHeading: "Start with the stay, not the form.",
+  /** 2b-08: the master brand wordmark (Newsreader 500 type until the logo exists), and the persona label "Concierge · Stays" (ADR 0107). */
+  brandName: "Xenia",
+  conciergeName: "Concierge",
+  modeName: "Stays",
   /** S12: browser tab title. */
-  pageTitle: "Shortlet · Lagos and Abuja apartments, nights or months",
+  pageTitle: "Xenia · Lagos and Abuja apartments, nights or months",
   /**
    * Issue 16 band "Staying for months?", after the money section. The accent is the second sentence (the italic part).
    * Built from the kit and landing tokens only; the facts are text, the kit's check icon marks each one.
@@ -166,9 +170,9 @@ export const LANDING_COPY = Object.freeze({
   statusDueNow: "Due now: the amount on your offer",
   /** Footer column headings and the copyright line. Structure from the direction doc (row 10), not from the issue 06 approvals. */
   footerCities: "Cities",
-  footerShortlet: "Shortlet",
+  footerBrand: "Xenia",
   footerHelp: "Help",
-  footerCopyright: "© 2026 Shortlet",
+  footerCopyright: "© 2026 Xenia",
   /** Help links, shown only once a URL is configured (direction doc row 10). Labels as the direction doc names them. */
   helpSupport: "Support",
   helpPrivacy: "Privacy",
@@ -201,7 +205,7 @@ export const LANDING_COPY = Object.freeze({
       placeholder: true,
     },
     {
-      question: "Is there a fee for using Shortlet?",
+      question: "Is there a fee for using Xenia?",
       answer: "[APPROVED FEE ANSWER]",
       placeholder: true,
     },

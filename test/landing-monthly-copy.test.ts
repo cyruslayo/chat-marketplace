@@ -61,7 +61,7 @@ test("AC1: Every slot in the table renders exactly the approved text, within its
     ["Where, how long, who?", "composerPlaceholder", LANDING_LENGTH_LIMITS.composerPlaceholder],
     ["How it works · one stay, five screens", "howEyebrow", LANDING_LENGTH_LIMITS.howEyebrow],
     ["Start with the stay, not the form.", "closingHeading", LANDING_LENGTH_LIMITS.closingHeading],
-    ["Shortlet · Lagos and Abuja apartments, nights or months", "pageTitle", LANDING_LENGTH_LIMITS.pageTitle],
+    ["Xenia · Lagos and Abuja apartments, nights or months", "pageTitle", LANDING_LENGTH_LIMITS.pageTitle],
     [
       "Once payment is verified, the Reservation is confirmed. Staying a month or more? You pay 30 nights at a time, each on its own due date.",
       "moneyCards[2].body",

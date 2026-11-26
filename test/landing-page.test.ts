@@ -190,7 +190,7 @@ test("AC2: The landing page has one h1, a skip link to main, header, main and fo
   assert.match(html, /<main id="main"/);
   assert.match(html, /<header class="ui-appbar"/);
   assert.match(html, /<footer[\s>]/);
-  assert.match(html, /^<!doctype html><html lang="en-NG" data-theme="system">/);
+  assert.match(html, /^<!doctype html><html lang="en-NG" data-theme="system" data-mode="stays">/);
   await withLocalServer({}, async (base) => {
     const guestPage = await (
       await fetch(
@@ -534,14 +534,6 @@ test("Issue 07 AC4: Every landing token has a light and a dark value, and every 
     ["--landing-accent", "--landing-band-card"],
     ["--landing-band-status-ink", "--landing-band-status-surface"],
   ];
-  // Non-text graphics (WCAG 1.4.11): the logomark against the grounds it sits on, and the keyhole against the mark.
-  const graphics: ReadonlyArray<
-    readonly [graphic: string, background: string]
-  > = [
-    ["--landing-mark", "--landing-ground"],
-    ["--landing-mark", "--landing-paper"],
-    ["--landing-mark-cut", "--landing-mark"],
-  ];
   // Issue 08 sub-task B: the money band tokens do not change between themes (the band stays dark, card 3 stays cream).
   for (const name of Object.keys(sets.light).filter((token) =>
     token.startsWith("--landing-band-"),
@@ -563,13 +555,6 @@ test("Issue 07 AC4: Every landing token has a light and a dark value, and every 
       assert.ok(
         ratio >= 4.5,
         `${theme}: ${text} on ${background} is ${ratio.toFixed(2)}:1, below 4.5:1`,
-      );
-    }
-    for (const [graphic, background] of graphics) {
-      const ratio = contrastRatio(set[graphic]!, set[background]!);
-      assert.ok(
-        ratio >= 3,
-        `${theme}: ${graphic} on ${background} is ${ratio.toFixed(2)}:1, below 3:1`,
       );
     }
   }
@@ -648,7 +633,7 @@ test("Issue 04 AC1: The landing page offers a Light and Dark choice that is save
   }
   assert.match(
     html,
-    /<html lang="en-NG" data-theme="system">/,
+    /<html lang="en-NG" data-theme="system" data-mode="stays">/,
     "the server default is system",
   );
   await withLocalServer({}, async (base) => {
@@ -659,7 +644,7 @@ test("Issue 04 AC1: The landing page offers a Light and Dark choice that is save
     ).text();
     assert.match(
       saved,
-      /<html lang="en-NG" data-theme="dark">/,
+      /<html lang="en-NG" data-theme="dark" data-mode="stays">/,
       "the saved theme is in the first HTML the browser paints",
     );
     const pressed = scanElements(saved).filter(
@@ -676,7 +661,7 @@ test("Issue 04 AC1: The landing page offers a Light and Dark choice that is save
         headers: { cookie: `${THEME_COOKIE}=light` },
       })
     ).text();
-    assert.match(light, /<html lang="en-NG" data-theme="light">/);
+    assert.match(light, /<html lang="en-NG" data-theme="light" data-mode="stays">/);
     const saving = await postTheme(base, "theme=dark");
     assert.equal(saving.status, 303);
     assert.equal(saving.headers.get("location"), "/welcome");
@@ -712,7 +697,7 @@ test("Issue 04 AC2: An invalid theme value is rejected with 400 and leaves the s
         headers: { cookie: `${THEME_COOKIE}=light` },
       })
     ).text();
-    assert.match(page, /<html lang="en-NG" data-theme="light">/);
+    assert.match(page, /<html lang="en-NG" data-theme="light" data-mode="stays">/);
     // Failure path: an invalid cookie value on the page is treated as no saved choice, never as an error.
     for (const value of ["neon", "dark%20", "%22dark%22", "DARK"]) {
       const invalid = await fetch(`${base}/welcome`, {
@@ -721,7 +706,7 @@ test("Issue 04 AC2: An invalid theme value is rejected with 400 and leaves the s
       assert.equal(invalid.status, 200);
       assert.match(
         await invalid.text(),
-        /<html lang="en-NG" data-theme="system">/,
+        /<html lang="en-NG" data-theme="system" data-mode="stays">/,
         value,
       );
     }
@@ -762,7 +747,7 @@ test("Issue 04 AC3: Without JavaScript the theme choice still works through the 
     ).text();
     assert.match(
       reloaded,
-      /<html lang="en-NG" data-theme="light">/,
+      /<html lang="en-NG" data-theme="light" data-mode="stays">/,
       "the redirected page shows the saved theme",
     );
     // Failure path: a GET never saves a theme.
@@ -846,13 +831,14 @@ test("Issue 04 AC7: Prose lines stay at or under 75 characters and headings use 
   // Issue 16: the FAQ answer measure is 56ch (was 60ch), so the approved longer answer keeps its line under 75 characters.
   for (const limit of ["46ch", "56ch", "18ch", "22ch"])
     assert.match(css, new RegExp(`max-inline-size:\\s*${limit}`), limit);
+  // 2b-08: match the rule's own block. The old lazy match reached the next --font-display anywhere in the sheet.
   assert.match(
     css,
-    /\.landing-hero h1[\s\S]*?font-family:\s*var\(--font-display\)/,
+    /\.landing-hero h1 \{[^}]*font-family:\s*var\(--landing-font-display\)/,
   );
   assert.match(
     css,
-    /\.landing-section__intro h2[\s\S]*?font-family:\s*var\(--font-display\)/,
+    /\.landing-section__intro h2 \{[^}]*font-family:\s*var\(--landing-font-display\)/,
   );
 });
 
@@ -1258,50 +1244,64 @@ test("Issue 05 AC5: No landing copy uses a forbidden term or an exclamation mark
   }
 });
 
-test('Issue 07 AC1: The landing page shows the logomark beside the wordmark, and the logo link is named "Shortlet"', () => {
+test('2b-08 AC1: The app bar and footer show the wordmark "Xenia" with no logomark, and the brand link is named "Xenia"', () => {
   const html = renderLandingHtml();
-  const markPattern =
-    /<svg class="landing-mark" [^>]*aria-hidden="true"[^>]*>[\s\S]*?<\/svg>/;
-  // The app-bar brand link keeps its href and class, holds the mark immediately before the wordmark text, and nothing else.
+  // The speech-bubble mark is retired (design-system art-direction, "Shape"): the wordmark is plain type until the logo exists.
   const header =
     /<a class="ui-appbar__brand" href="\/welcome">([\s\S]*?)<\/a>/.exec(html);
   assert.ok(header, "the app-bar brand link is present");
-  assert.match(
-    header[1]!,
-    new RegExp(`^${markPattern.source}Shortlet$`),
-    "the mark sits immediately before the wordmark",
-  );
-  // The accessible name is the link's text without the aria-hidden SVG.
-  assert.equal(
-    header[1]!
-      .replace(/<svg[\s\S]*?<\/svg>/g, "")
-      .replace(/<[^>]+>/g, "")
-      .trim(),
-    "Shortlet",
-  );
-  // The footer brand carries the same mark.
+  assert.equal(header[1], "Xenia", "the brand link holds only the wordmark");
   const footer = /<span class="ui-appbar__brand">([\s\S]*?)<\/span>/.exec(html);
   assert.ok(footer, "the footer brand is present");
-  assert.match(
-    footer[1]!,
-    new RegExp(`^${markPattern.source}Shortlet$`),
-    "the footer mark sits before the footer wordmark",
-  );
-  // Failure path: the phone mockup title bars stay plain wordmarks (app layer), and only the header and footer carry the mark.
-  const bars =
-    html.match(/<div class="landing-phone__bar">[\s\S]*?<\/div>/g) ?? [];
-  assert.ok(bars.length > 0, "phone title bars are present");
-  for (const bar of bars)
-    assert.doesNotMatch(
-      bar,
-      /landing-mark/,
-      "phone title bars carry no logomark",
-    );
-  assert.equal(
-    html.match(/class="landing-mark"/g)?.length,
-    2,
-    "exactly two logomarks: header and footer",
-  );
+  assert.equal(footer[1], "Xenia", "the footer brand holds only the wordmark");
+  // Failure path: no logomark SVG and no mark tokens survive anywhere.
+  assert.doesNotMatch(html, /landing-mark(?!er)/, "no logomark in the page");
+  assert.doesNotMatch(landingCss(), /landing-mark(?!er)/, "no logomark rules or tokens in the landing sheet");
+});
+
+test('2b-08 AC2: Every phone and chat-window bar shows "Xenia" and the mode label "Concierge · Stays", and no "Shortlet" remains', () => {
+  for (const html of [renderLandingHtml(), renderLandingHtml("system", { placeholders: true, demo: true })]) {
+    const bars = html.match(/<div class="landing-(?:phone|chat)__bar">[\s\S]*?<\/span><\/span><\/div>/g) ?? [];
+    assert.ok(bars.length >= 6, "the chat window and the five phones have bars");
+    for (const bar of bars) {
+      assert.match(bar, /__brand">Xenia<\/span>/, "the bar shows the wordmark");
+      assert.match(
+        bar,
+        /<span class="ui-mode-label"><span class="ui-mode-label__mark" aria-hidden="true"><\/span>Concierge <span class="ui-mode-label__mode">· Stays<\/span><\/span>/,
+        "the bar shows the mode label",
+      );
+    }
+    assert.doesNotMatch(visibleText(html), /Shortlet/, "no Shortlet in the visible text");
+    assert.doesNotMatch(/<title>[^<]*<\/title>/.exec(html)![0], /Shortlet/, "no Shortlet in the title");
+    assert.match(html, /<html lang="en-NG" data-theme="[a-z]+" data-mode="stays">/, "the page root carries the Stays mode");
+  }
+});
+
+test('2b-08 AC3: Every concierge speaker label reads "Concierge · Stays" with the mode word in the mode accent', () => {
+  const html = renderLandingHtml();
+  const labels = html.match(/<p class="landing-who">[\s\S]*?<\/p>/g) ?? [];
+  assert.ok(labels.length > 0, "speaker labels are present");
+  for (const label of labels)
+    assert.equal(label, '<p class="landing-who">Concierge <span class="landing-who__mode">· Stays</span></p>');
+  assert.match(landingCss(), /\.landing-who__mode \{[^}]*color: var\(--mode-accent/, "the mode word takes the mode accent");
+});
+
+/** The landing sheet as committed in apps/web/src (2b-08 tests). */
+function landingCss(): string {
+  return readFileSync(new URL("../apps/web/src/shortlet-landing.css", import.meta.url), "utf8");
+}
+
+test("2b-08 AC4: The How it works step numerals are Newsreader numerals in sand-ink, and the eyebrow text is unchanged", () => {
+  const html = renderLandingHtml();
+  const eyebrows = [...html.matchAll(/<p class="ui-eyebrow landing-caption__eyebrow">([\s\S]*?)<\/p>/g)];
+  assert.equal(eyebrows.length, 5, "five step eyebrows");
+  eyebrows.forEach((match, index) => {
+    assert.match(match[1]!, new RegExp(`^<span class="landing-caption__num">${index + 1}</span> · `), "the numeral leads the eyebrow");
+  });
+  const rule = /\.landing-caption__num \{([^}]*)\}/.exec(landingCss());
+  assert.ok(rule, "the numeral rule exists");
+  assert.match(rule[1]!, /font-family: var\(--landing-font-display\)/);
+  assert.match(rule[1]!, /color: var\(--landing-accent-ink\)/);
 });
 
 test("Issue 07 AC5: Total font payload on first load is at most 160 KB, and text paints before the fonts arrive", async () => {

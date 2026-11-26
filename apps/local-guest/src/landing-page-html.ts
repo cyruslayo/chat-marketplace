@@ -34,7 +34,6 @@ import {
   howHeadingParts,
   splitHeadingAtAccent,
 } from "./landing-copy.js";
-import { brandMarkSvg } from "./landing-brand.js";
 import { MAX_TURN_TEXT_LENGTH } from "./turn-limits.js";
 import {
   LANDING_UNITS,
@@ -157,7 +156,7 @@ function appBar(theme: LandingTheme): string {
   const nav = `<nav class="landing-appbar__nav" aria-label="On this page"><a class="ui-link landing-link" href="#how">${escapeHtml(LANDING_COPY.navHowItWorks)}</a><a class="ui-link landing-link" href="#money">${escapeHtml(LANDING_COPY.navYourMoney)}</a><a class="ui-link landing-link" href="#questions">${escapeHtml(LANDING_COPY.navQuestions)}</a></nav>`;
   // The short label shows below 48rem. The link keeps the full name as its accessible name (aria-label), which contains the visible "Start".
   const action = `<a class="ui-button ui-button--primary ui-button--small landing-appbar__action" href="${APP_HREF}" aria-label="${escapeHtml(LANDING_COPY.appBarAction)}"><span class="landing-appbar__long">${escapeHtml(LANDING_COPY.appBarAction)}</span><span class="landing-appbar__short">${escapeHtml(LANDING_COPY.appBarActionShort)}</span></a>`;
-  return `<header class="ui-appbar"><div class="landing-container landing-appbar__row"><a class="ui-appbar__brand" href="/welcome">${brandMarkSvg()}Shortlet</a>${nav}<span class="ui-appbar__grow"></span>${themeSwitch(theme)}${action}</div></header>`;
+  return `<header class="ui-appbar"><div class="landing-container landing-appbar__row"><a class="ui-appbar__brand" href="/welcome">${escapeHtml(LANDING_COPY.brandName)}</a>${nav}<span class="ui-appbar__grow"></span>${themeSwitch(theme)}${action}</div></header>`;
 }
 
 /**
@@ -183,8 +182,24 @@ function typingDots(): string {
   return `<span class="landing-typing" role="img" aria-label="Concierge is typing"><i></i><i></i><i></i></span>`;
 }
 
+/**
+ * The concierge's persona label (2b-08; ChatMessage README): "Concierge", then "· Stays" in the mode accent. Plain text, so the
+ * speaker is clear without colour. The full .ui-persona component lands with 2b-05.
+ */
+function speakerLabel(): string {
+  return `<p class="landing-who">${escapeHtml(LANDING_COPY.conciergeName)} <span class="landing-who__mode">· ${escapeHtml(LANDING_COPY.modeName)}</span></p>`;
+}
+
+/**
+ * The mockup title bar (2b-08; AppBar README, Conversation variant): the Xenia wordmark and the mode label, markup as the
+ * round-12 boards ship it. The landing never adds a logomark: the speech-bubble mark is retired until the logo exists.
+ */
+function mockupBar(kind: "phone" | "chat"): string {
+  return `<div class="landing-${kind}__bar"><span class="landing-${kind}__brand">${escapeHtml(LANDING_COPY.brandName)}</span><span class="ui-mode-label"><span class="ui-mode-label__mark" aria-hidden="true"></span>${escapeHtml(LANDING_COPY.conciergeName)} <span class="ui-mode-label__mode">· ${escapeHtml(LANDING_COPY.modeName)}</span></span></div>`;
+}
+
 function concierge(text: string): string {
-  return `<p class="landing-who">Concierge</p><p class="landing-bot">${escapeHtml(text)}</p>`;
+  return `${speakerLabel()}<p class="landing-bot">${escapeHtml(text)}</p>`;
 }
 
 function rail(current: number): string {
@@ -209,7 +224,7 @@ interface PhoneInput {
 function phone(input: PhoneInput): string {
   const screen =
     input.screen === undefined ? "" : ` data-landing-screen="${input.screen}"`;
-  return `<div class="landing-phone" role="group" aria-label="${escapeHtml(input.label)}" data-landing-play="${escapeHtml(input.play)}" data-landing-stages="${input.stages}"${screen}><div class="landing-phone__bar"><span class="landing-phone__brand">Shortlet</span></div>${rail(input.railCurrent)}<div class="landing-transcript">${input.body}</div>${input.composer ?? ""}</div>`;
+  return `<div class="landing-phone" role="group" aria-label="${escapeHtml(input.label)}" data-landing-play="${escapeHtml(input.play)}" data-landing-stages="${input.stages}"${screen}>${mockupBar("phone")}${rail(input.railCurrent)}<div class="landing-transcript">${input.body}</div>${input.composer ?? ""}</div>`;
 }
 
 /**
@@ -219,7 +234,7 @@ function phone(input: PhoneInput): string {
  */
 function chatWindow(illustrations: boolean): string {
   const body = [
-    `<p class="landing-who">Concierge</p>`,
+    `${speakerLabel()}`,
     `<p class="landing-bot">Hello. Tell me the area, your dates and how many guests.</p>`,
     `<p class="landing-me" data-landing-stage="1" data-landing-message>${escapeHtml(MESSAGE)}</p>`,
     `<div data-landing-stage="2">${chips([
@@ -227,11 +242,11 @@ function chatWindow(illustrations: boolean): string {
       { icon: "calendar", text: "10–13 Sept" },
       { icon: "users", text: "2 guests" },
     ])}</div>`,
-    `<div class="landing-slot"><div data-landing-only="3" hidden><p class="landing-who">Concierge</p><p class="landing-bot">${typingDots()}</p></div><p class="landing-bot" data-landing-stage="4">2 apartments you can book for Thu 10 to Sun 13 Sept. Prices are all-in.</p></div>`,
+    `<div class="landing-slot"><div data-landing-only="3" hidden>${speakerLabel()}<p class="landing-bot">${typingDots()}</p></div><p class="landing-bot" data-landing-stage="4">2 apartments you can book for Thu 10 to Sun 13 Sept. Prices are all-in.</p></div>`,
     `<div class="landing-chat__results" data-landing-stage="4">${resultRow(OLD_IKOYI, illustrations)}${depositLine(OLD_IKOYI.depositKobo)}${resultRow(LEKKI, illustrations)}${depositLine(LEKKI.depositKobo)}</div>`,
   ].join("");
   const composer = `<div class="landing-chat__composer" aria-hidden="true"><span class="landing-chat__field" data-landing-field>${escapeHtml(FIELD_PLACEHOLDER)}</span><span class="landing-chat__send">${icon("arrow-up")}</span></div>`;
-  return `<div class="landing-chat" role="group" aria-label="An example booking conversation" data-landing-play="hero" data-landing-stages="4"><div class="landing-chat__bar"><span class="landing-chat__brand">Shortlet</span></div>${rail(1)}<div class="landing-chat__panes">${body}${composer}</div></div>`;
+  return `<div class="landing-chat" role="group" aria-label="An example booking conversation" data-landing-play="hero" data-landing-stages="4">${mockupBar("chat")}${rail(1)}<div class="landing-chat__panes">${body}${composer}</div></div>`;
 }
 
 /** The hero: a photograph under a solid scrim, the headline, the composer, the example chips and the reassurance line. */
@@ -276,7 +291,7 @@ function beatOneScreen(): string {
         { icon: "calendar", text: "10–13 Sept · 3 nights" },
         { icon: "users", text: "2 guests" },
       ])}</div>`,
-      `<div class="landing-slot"><div data-landing-only="3" hidden><p class="landing-who">Concierge</p><p class="landing-bot">${typingDots()}</p></div>`,
+      `<div class="landing-slot"><div data-landing-only="3" hidden>${speakerLabel()}<p class="landing-bot">${typingDots()}</p></div>`,
       `<div data-landing-stage="4">${concierge("Got it: Lagos, Thu 10 to Sun 13 Sept, 2 guests. Searching apartments you can book…")}</div></div>`,
     ].join(""),
   });
@@ -290,7 +305,7 @@ function beatTwoScreen(illustrations: boolean): string {
     stages: 4,
     screen: 2,
     body: [
-      `<div class="landing-slot"><div data-landing-only="1" hidden><p class="landing-who">Concierge</p><p class="landing-bot">${typingDots()}</p></div>`,
+      `<div class="landing-slot"><div data-landing-only="1" hidden>${speakerLabel()}<p class="landing-bot">${typingDots()}</p></div>`,
       `<div data-landing-stage="2">${concierge("I found 2 eligible apartments in Lagos for Thu 10 to Sun 13 Sept, 3 nights, 2 guests. Prices are all-in for your dates.")}</div></div>`,
       `<div data-landing-stage="3">${resultRow(OLD_IKOYI, illustrations)}${depositLine(OLD_IKOYI.depositKobo)}</div>`,
       `<div data-landing-stage="4">${resultRow(LEKKI, illustrations)}${depositLine(LEKKI.depositKobo)}</div>`,
@@ -340,7 +355,7 @@ function beatFourScreen(): string {
     screen: 4,
     body: [
       `<p class="landing-marker" data-landing-stage="1">${escapeHtml(GUEST_RECEIPTS.requestSent)}</p>`,
-      `<div data-landing-stage="2"><p class="landing-who">Concierge</p><div class="landing-bot landing-waiting"><b>${escapeHtml(waiting.heading)}</b>${waiting.outcomes
+      `<div data-landing-stage="2">${speakerLabel()}<div class="landing-bot landing-waiting"><b>${escapeHtml(waiting.heading)}</b>${waiting.outcomes
         .slice(0, 2)
         .map((line) => `<span>${escapeHtml(line)}</span>`)
         .join(
@@ -380,7 +395,17 @@ function caption(
   text: string,
   cta = "",
 ): string {
-  return `<div class="landing-caption" data-landing-caption="${index}"><p class="ui-eyebrow">${escapeHtml(eyebrow)}</p><h3>${escapeHtml(heading)}</h3><p class="landing-caption__body">${escapeHtml(text)}</p><p class="landing-pain">Instead of ${escapeHtml(pain)}</p>${cta}</div>`;
+  return `<div class="landing-caption" data-landing-caption="${index}">${stepEyebrow(eyebrow)}<h3>${escapeHtml(heading)}</h3><p class="landing-caption__body">${escapeHtml(text)}</p><p class="landing-pain">Instead of ${escapeHtml(pain)}</p>${cta}</div>`;
+}
+
+/**
+ * A step eyebrow ("1 · Search"): the number becomes a Newsreader numeral in sand-ink (2b-08; Steps README, the Xenia look).
+ * The text content is unchanged, so the order still reads without the styling.
+ */
+function stepEyebrow(eyebrow: string): string {
+  const match = /^(\d+) · (.+)$/.exec(eyebrow);
+  if (!match) return `<p class="ui-eyebrow">${escapeHtml(eyebrow)}</p>`;
+  return `<p class="ui-eyebrow landing-caption__eyebrow"><span class="landing-caption__num">${match[1]}</span> · ${escapeHtml(match[2]!)}</p>`;
 }
 
 /** One step as a list item: its caption, then the beat screen it describes (the stage contract is unchanged). */
@@ -523,7 +548,7 @@ function footerSection(helpLinks: LandingHelpLinks): string {
         `<li><a class="landing-link" href="${href}">${escapeHtml(label)}</a></li>`,
     )
     .join("");
-  return `<footer class="landing-footer"><div class="landing-container landing-footer__inner"><div class="landing-footer__brand"><span class="ui-appbar__brand">${brandMarkSvg()}Shortlet</span><p class="landing-footer__line">${escapeHtml(LANDING_COPY.heroEyebrow)}</p></div><div class="landing-footer__columns"><div><p class="landing-footer__heading">${escapeHtml(LANDING_COPY.footerCities)}</p><p class="landing-footer__text">Lagos</p><p class="landing-footer__text">Abuja</p></div><nav aria-label="${escapeHtml(LANDING_COPY.footerShortlet)}"><p class="landing-footer__heading">${escapeHtml(LANDING_COPY.footerShortlet)}</p><ul class="landing-footer__list">${links}</ul></nav>${helpColumn(helpLinks)}</div><p class="landing-footer__copy">${escapeHtml(LANDING_COPY.footerCopyright)}</p></div></footer>`;
+  return `<footer class="landing-footer"><div class="landing-container landing-footer__inner"><div class="landing-footer__brand"><span class="ui-appbar__brand">${escapeHtml(LANDING_COPY.brandName)}</span><p class="landing-footer__line">${escapeHtml(LANDING_COPY.heroEyebrow)}</p></div><div class="landing-footer__columns"><div><p class="landing-footer__heading">${escapeHtml(LANDING_COPY.footerCities)}</p><p class="landing-footer__text">Lagos</p><p class="landing-footer__text">Abuja</p></div><nav aria-label="${escapeHtml(LANDING_COPY.footerBrand)}"><p class="landing-footer__heading">${escapeHtml(LANDING_COPY.footerBrand)}</p><ul class="landing-footer__list">${links}</ul></nav>${helpColumn(helpLinks)}</div><p class="landing-footer__copy">${escapeHtml(LANDING_COPY.footerCopyright)}</p></div></footer>`;
 }
 
 /** The whole landing document. Pure: no session, no clock, no request data. */
@@ -586,5 +611,5 @@ export function renderLandingHtml(
     beat(5, beatCaptions[4]!, beatFiveScreen(illustrations)),
   ].join("")}</ol></div></section>`;
 
-  return `<!doctype html><html lang="en-NG" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="preload" as="font" type="font/woff2" crossorigin href="/landing/fonts/newsreader-500.woff2"><title>${escapeHtml(LANDING_COPY.pageTitle)}</title><link rel="stylesheet" href="/shortlet-foundations.css"><link rel="stylesheet" href="/shortlet-landing.css"><script src="/landing.js" defer></script></head><body><a class="landing-skip" href="#main">Skip to main content</a>${appBar(theme)}<main id="main">${heroSection(illustrations, demoNotice)}${chatWindowSection(illustrations)}${trustStrip()}${apartmentsSection(placeholders, demo)}${how}${moneySection()}${monthsSection()}${questionsSection(placeholders)}${closingSection(illustrations)}</main>${footerSection(options.helpLinks ?? {})}</body></html>`;
+  return `<!doctype html><html lang="en-NG" data-theme="${theme}" data-mode="stays"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="preload" as="font" type="font/woff2" crossorigin href="/landing/fonts/newsreader-500.woff2"><title>${escapeHtml(LANDING_COPY.pageTitle)}</title><link rel="stylesheet" href="/shortlet-foundations.css"><link rel="stylesheet" href="/shortlet-landing.css"><script src="/landing.js" defer></script></head><body><a class="landing-skip" href="#main">Skip to main content</a>${appBar(theme)}<main id="main">${heroSection(illustrations, demoNotice)}${chatWindowSection(illustrations)}${trustStrip()}${apartmentsSection(placeholders, demo)}${how}${moneySection()}${monthsSection()}${questionsSection(placeholders)}${closingSection(illustrations)}</main>${footerSection(options.helpLinks ?? {})}</body></html>`;
 }

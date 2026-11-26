@@ -7,7 +7,8 @@
 /* landing-brand-tokens:start */
 /* Landing brand colour tokens (direction doc, "Colour (landing tokens, light)"). Every text/background pair below meets
    WCAG AA 4.5:1 in light, dark and system-dark (Issue 07 AC4). The photo scrim and the on-deep text keep the same values
-   in both themes because the photo sections stay dark. */
+   in both themes because the photo sections stay dark. The scrim is 0.78 (2b-08): at 0.73 the sand eyebrow read 4.43:1 over
+   the lightest point of a photo (Issue 10 AC3). */
 :root {
   --landing-ground: #F8F5EF;
   --landing-paper: #FFFFFF;
@@ -20,7 +21,7 @@
   --landing-on-deep-muted: #D2D8E8;
   --landing-accent: #EBCC99;
   --landing-accent-ink: #815B1F;
-  --landing-scrim: rgba(17, 30, 71, 0.73);
+  --landing-scrim: rgba(17, 30, 71, 0.78);
   /* Money band cards: the same values in every theme (the band stays dark, the highlight card stays cream). */
   --landing-band-card: #162146;
   --landing-band-highlight: #F8F5EF;
@@ -29,8 +30,6 @@
   --landing-band-status-ink: #8A5601;
   --landing-band-status-surface: #FDECD5;
   --landing-band-status-border: #D5B88B;
-  --landing-mark: var(--landing-forest);
-  --landing-mark-cut: var(--landing-ground);
 }
 
 :root[data-theme="dark"] {
@@ -45,7 +44,7 @@
   --landing-on-deep-muted: #C6CFE6;
   --landing-accent: #EBCC99;
   --landing-accent-ink: #EBCC99;
-  --landing-scrim: rgba(17, 30, 71, 0.73);
+  --landing-scrim: rgba(17, 30, 71, 0.78);
   /* Money band cards: the same values in every theme (the band stays dark, the highlight card stays cream). */
   --landing-band-card: #162146;
   --landing-band-highlight: #F8F5EF;
@@ -54,9 +53,6 @@
   --landing-band-status-ink: #8A5601;
   --landing-band-status-surface: #FDECD5;
   --landing-band-status-border: #D5B88B;
-  /* Indigo is too low contrast to draw the mark on dark grounds; the mark uses the sand accent. */
-  --landing-mark: var(--landing-accent);
-  --landing-mark-cut: var(--landing-ground);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -72,7 +68,7 @@
     --landing-on-deep-muted: #C6CFE6;
     --landing-accent: #EBCC99;
     --landing-accent-ink: #EBCC99;
-    --landing-scrim: rgba(17, 30, 71, 0.73);
+    --landing-scrim: rgba(17, 30, 71, 0.78);
     /* Money band cards: the same values in every theme (the band stays dark, the highlight card stays cream). */
     --landing-band-card: #162146;
     --landing-band-highlight: #F8F5EF;
@@ -81,9 +77,6 @@
     --landing-band-status-ink: #8A5601;
     --landing-band-status-surface: #FDECD5;
     --landing-band-status-border: #D5B88B;
-    /* Same as the dark set: the mark uses the sand accent on dark grounds. */
-    --landing-mark: var(--landing-accent);
-    --landing-mark-cut: var(--landing-ground);
   }
 }
 /* landing-brand-tokens:end */
@@ -223,15 +216,6 @@ header.ui-appbar.landing-appbar--on-photo .landing-link {
   color: var(--landing-on-deep);
 }
 
-/* The mark on the photo: cream shape, and the keyhole cut takes the deep forest the photograph sits on. */
-header.ui-appbar.landing-appbar--on-photo .landing-mark__shape {
-  fill: var(--landing-on-deep);
-}
-
-header.ui-appbar.landing-appbar--on-photo .landing-mark__cut {
-  fill: var(--landing-forest-deep);
-}
-
 /* Focus rings stay visible on the photo: cream instead of the page focus colour. */
 header.ui-appbar.landing-appbar--on-photo :focus-visible {
   outline-color: var(--landing-on-deep);
@@ -278,11 +262,10 @@ header.ui-appbar.landing-appbar--sticky ~ main .landing-beats.is-pinned > .landi
   color: var(--color-text-secondary);
 }
 
-/* Logomark beside the wordmark (brand layer). The fill and the cut-out are landing tokens with semantic fallbacks: the
-   brand green on light, and the surface the mark sits on (the app bar is a surface, the footer is the page canvas). */
+/* The Xenia wordmark (2b-08): Newsreader 500 type, no logomark, until the logo is designed (design-system art-direction,
+   "Shape"). The speech-bubble mark is retired. */
 header.ui-appbar .ui-appbar__brand,
 .landing-footer .ui-appbar__brand {
-  gap: var(--space-2);
   font-family: var(--landing-font-display);
   font-weight: 500;
   font-synthesis-weight: none;
@@ -292,25 +275,6 @@ header.ui-appbar .ui-appbar__brand,
 .landing-money {
   font-family: var(--landing-font-money);
   font-variant-numeric: lining-nums tabular-nums;
-}
-
-.landing-mark {
-  flex: none;
-  inline-size: 28px;
-  block-size: 28px;
-}
-
-.landing-mark__shape {
-  fill: var(--landing-mark, var(--color-action));
-}
-
-.landing-mark__cut {
-  fill: var(--landing-mark-cut, var(--color-canvas));
-}
-
-/* The keyhole sits on the app bar, which is solid landing ground (issue 08), so it takes the ground token. */
-header.ui-appbar .landing-mark__cut {
-  fill: var(--landing-mark-cut);
 }
 
 main {
@@ -596,16 +560,19 @@ form.landing-composer {
   box-shadow: var(--elevation-overlay);
 }
 
+/* The mockup bars (2b-08): wordmark, then the mode label "Concierge · Stays" (.ui-mode-label, foundations). */
 .landing-phone__bar {
   display: flex;
   align-items: center;
+  gap: var(--space-2);
   min-block-size: var(--control-min-target);
 }
 
 .landing-phone__brand {
-  font-family: var(--font-display);
+  font-family: var(--landing-font-display);
   font-size: 1.125rem;
-  font-weight: 600;
+  font-weight: 500;
+  font-synthesis-weight: none;
 }
 
 .landing-transcript {
@@ -622,10 +589,18 @@ form.landing-composer {
   justify-items: start;
 }
 
+/* The persona label (2b-08; ChatMessage README): 13/16 700 in ink, the mode word in the mode accent. Text, so the speaker is
+   clear without colour. */
 .landing-who {
   margin: 0;
-  color: var(--color-text-muted);
-  font-size: var(--font-size-metadata);
+  color: var(--color-text);
+  font-size: 0.8125rem;
+  line-height: 1rem;
+  font-weight: 700;
+}
+
+.landing-who__mode {
+  color: var(--mode-accent, var(--color-text-secondary));
 }
 
 /* Chat bubbles: the concierge on the left, the guest on the right. */
@@ -871,6 +846,25 @@ form.landing-composer {
   display: grid;
   gap: var(--space-3);
   align-content: start;
+}
+
+/* Step numerals (2b-08; Steps README, the Xenia look): the number in Newsreader 500, sand-ink, lining figures. The eyebrow text
+   is unchanged ("1 · Search"); only the number is set as a numeral. */
+.landing-caption__eyebrow {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35em;
+}
+
+.landing-caption__num {
+  font-family: var(--landing-font-display);
+  font-size: 1.5rem;
+  line-height: 1;
+  font-weight: 500;
+  font-synthesis-weight: none;
+  font-variant-numeric: lining-nums tabular-nums;
+  letter-spacing: 0;
+  color: var(--landing-accent-ink);
 }
 
 .landing-caption > p,
@@ -1119,7 +1113,7 @@ a.landing-unit__link:focus-visible {
   inline-size: 100%;
 }
 
-/* Footer (issue 08 sub-task C, row 10): deep green in both themes. Its mark uses the accent, with the footer ground as the keyhole. */
+/* Footer (issue 08 sub-task C, row 10; 2b-08): indigo-deep in both themes, the wordmark in on-deep text, headings in sand. */
 .landing-footer {
   background: var(--landing-forest-deep);
   color: var(--landing-on-deep-muted);
@@ -1139,14 +1133,6 @@ a.landing-unit__link:focus-visible {
 
 .landing-footer .ui-appbar__brand {
   color: var(--landing-on-deep);
-}
-
-.landing-footer .landing-mark__shape {
-  fill: var(--landing-accent);
-}
-
-.landing-footer .landing-mark__cut {
-  fill: var(--landing-forest-deep);
 }
 
 .landing-footer__line,
@@ -1576,14 +1562,16 @@ a.landing-unit__link:focus-visible {
 .landing-chat__bar {
   display: flex;
   align-items: center;
+  gap: var(--space-2);
   min-block-size: var(--control-min-target);
   padding-inline: var(--space-2);
 }
 
 .landing-chat__brand {
-  font-family: var(--font-display);
+  font-family: var(--landing-font-display);
   font-size: 1.125rem;
-  font-weight: 600;
+  font-weight: 500;
+  font-synthesis-weight: none;
 }
 
 /* The journey rail across the top of the window: the same six steps as the phones, one row. */

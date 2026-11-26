@@ -1131,7 +1131,7 @@ test("Issue 04 AC3: Without JavaScript the theme choice still works through the 
       html,
       /<button class="landing-theme__option" type="submit" name="theme" value="dark" aria-label="Switch to dark theme" aria-pressed="true">/,
     );
-    assert.match(html, /<html lang="en-NG" data-theme="dark">/);
+    assert.match(html, /<html lang="en-NG" data-theme="dark" data-mode="stays">/);
   } finally {
     await page.close();
   }
@@ -1810,10 +1810,11 @@ test("Issue 07 AC2: Headings use the self-hosted display face and body text the 
       faces.resources.includes("/landing/fonts/hanken-grotesk-400-700.woff2"),
       "the body face is fetched from the local server",
     );
-    // Failure path: the app layer inside a phone keeps the app's own fonts, not the brand faces.
+    // Failure path: the app layer inside a phone keeps the app's own UI face, never the display face. Since issue 09 the
+    // app's UI face is Hanken Grotesk too (design-system art-direction, "Type"), so only Newsreader is ruled out.
     assert.doesNotMatch(
       faces.phone,
-      /Newsreader|Hanken/,
+      /Newsreader/,
       `phone text family ${faces.phone}`,
     );
   } finally {
