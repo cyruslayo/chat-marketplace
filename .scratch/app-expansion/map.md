@@ -99,6 +99,8 @@ guest-stays 11, 12 (saved), 02 and 08–10 (messages), 05–07 (reviews), re-rea
 
 After each phase: `npm run check`, `npm run test:workers`, the full `npm test` (background), and `capture-11-all.sh` when CSS or the shell changed. Merge to `main` only on the owner's explicit approval.
 
+- **Pre-existing failure (`gate/app-expansion-wave2`):** `test/pilot-guardrails.test.ts` (`"/api/turn 500 responses carry a generic message"`) fails before this wave-2 gate batch and is left untouched.
+
 ## Context pointers
 
 (One line per resolved issue.)
