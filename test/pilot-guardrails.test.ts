@@ -184,7 +184,9 @@ test("/api/turn 500 responses carry a generic message", async () => {
   try {
     const base = `http://127.0.0.1:${await server.listen()}`;
     const guest = cookieFrom(await fetch(`${base}/`));
-    const failed = await fetch(`${base}/api/turn`, { method: "POST", headers: { cookie: guest, origin: base, "content-type": "application/json" }, body: JSON.stringify({ threadId: `g-${crypto.randomUUID()}`, text: `I need an apartment in Lagos from ${arrivalNextWeek()} for 2 nights for 2 people` }) });
+    // The arrival is read from the app's clock, not the wall clock: this environment fixes it at 2026-09-03, and the
+    // 90-day arrival limit is measured from there. A wall-clock date stopped reaching the search on 2026-11-26.
+    const failed = await fetch(`${base}/api/turn`, { method: "POST", headers: { cookie: guest, origin: base, "content-type": "application/json" }, body: JSON.stringify({ threadId: `g-${crypto.randomUUID()}`, text: `I need an apartment in Lagos from ${arrivalNextWeek(environment.clock())} for 2 nights for 2 people` }) });
     assert.equal(failed.status, 500);
     const text = await failed.text();
     assert.deepEqual(JSON.parse(text), { ok: false, code: "INTERNAL_ERROR", message: "Something went wrong. Please try again." });
