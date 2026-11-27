@@ -27,6 +27,10 @@ export interface OperatorServer extends OperatorTarget {
 export async function startOperatorServer(config: Partial<LocalOwnerFixtureConfig> & { readonly databasePath: string }): Promise<OperatorServer> {
   const environment = LocalApartmentOwnerEnvironment.openNode(config);
   const server = startLocalOwnerServer({ port: 0, environment });
+  // node:http closes an idle keep-alive socket after 5 s. A test that blocks its event loop longer than that (a heavy
+  // SQLite step under a loaded batch) has not read the FIN yet, and its next fetch reuses the half-closed socket and
+  // fails with ECONNRESET instead of the response. Idle connections are never closed, so there is no socket to race.
+  server.server.keepAliveTimeout = 0;
   const port = await server.listen();
   return { environment, port, base: `http://localhost:${port}`, close: () => server.close() };
 }

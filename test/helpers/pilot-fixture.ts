@@ -60,7 +60,7 @@ export function cookieFrom(response: Response): string {
   return value.split(";", 1)[0]!;
 }
 
-/** An arrival date the deterministic concierge understands, one week out. */
-export function arrivalNextWeek(): string {
-  return new Date(Date.now() + 7 * 86_400_000).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Africa/Lagos" });
+/** An arrival date the deterministic concierge understands, one week out from `now`. Pass the app's clock when one is fixed. */
+export function arrivalNextWeek(now: Date = new Date()): string {
+  return new Date(now.getTime() + 7 * 86_400_000).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Africa/Lagos" });
 }

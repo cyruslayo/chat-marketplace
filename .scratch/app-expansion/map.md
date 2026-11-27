@@ -95,11 +95,18 @@ guest-stays 11, 12 (saved), 02 and 08–10 (messages), 05–07 (reviews), re-rea
 - **feat/submit-diagnostic** (3 commits) is unmerged and touches the client bundle.
 - `apps/local-guest/src/client.ts`, `guest-server.ts`, `shortlet-app.ts` and `shortlet-foundations.css` are serial: one issue at a time.
 
+## Maintenance
+
+| # | Issue | Type | Status | Blocked by |
+| --- | --- | --- | --- | --- |
+| 28 | [The `/api/turn` 500 guardrail test had drifted out of the arrival window](issues/28-guardrails-500-arrival-window.md) | task | resolved | – |
+| 29 | [Cancellation AC1 failed under load because a pooled keep-alive socket was reset](issues/29-cancellation-ac1-keepalive-reset.md) | task | resolved | – |
+
 ## Batch gates
 
 After each phase: `npm run check`, `npm run test:workers`, the full `npm test` (background), and `capture-11-all.sh` when CSS or the shell changed. Merge to `main` only on the owner's explicit approval.
 
-- **Pre-existing failure (`gate/app-expansion-wave2`):** `test/pilot-guardrails.test.ts` (`"/api/turn 500 responses carry a generic message"`) fails before this wave-2 gate batch and is left untouched.
+- The wave-2 gate's pre-existing `test/pilot-guardrails.test.ts` failure is fixed by 28: the test's arrival date had drifted outside the app clock's 90-day window, so the turn was refused before the injected failing search ran. The 500 path itself was intact.
 
 ## Context pointers
 
@@ -120,3 +127,5 @@ After each phase: `npm run check`, `npm run test:workers`, the full `npm test` (
 - 05: Added durable `SqliteCancellationCaseRepository` (`cancellation_cases` migration v6 + DO export), independent ledger/date-release/refund steps with SQL CAS + per-DB resume guard in `CancellationApplication`, read-time retry on `getArtifact`, recorded stay/deposit refund obligation ports wired to Operator Home and `recordGuestRefund` (D4/D28 P2), guest artifact `dates`/`refunds` read model, and `CancellationCase` row in `docs/agents/state-machines.md`; verified on SQLite (`16` failure combos / `0` violations; mutation check `15` violations) and Worker specs.
 - 12: Added `test/guest-navigation.test.ts` with `GUEST_NAVIGATION_TABLE` (17 live guest routes, 14 non-page GET allow-list entries, 6 planned phase 3/4 rows), static route discovery over `guest-server.ts` and `landing-route-module.ts`, live rendering via `sendGuest`/`withStagePage`, served-target verification (AC3), and a rules N1–N11 ratchet (`unrecordedFailures`/`staleGaps`).
 - 10: Added closed `planRows` contract and fail-closed `composePlanRows` (`apps/local-guest/src/assistant/plan-rows.ts`), Stays implementation (`apps/local-guest/src/assistant/shortlet-plan-rows.ts`) over durable stores with lazy deadlines and exhaustive `GuestStage` mapping, `LocalGuestApp.planRows` + rebuilt `committedWork` (`apps/local-guest/src/shortlet-app.ts`), and `test/domain-plan-rows.test.ts` (AC1–AC6 + 24-cell decision table + identical 404 parity).
+- 28: `arrivalNextWeek(now = new Date())` in `test/helpers/pilot-fixture.ts`; the `/api/turn` 500 test in `test/pilot-guardrails.test.ts` now reads its arrival from `environment.clock()` (fixture clock 2026-09-03, 90-day horizon) instead of the wall clock, which had pushed it past the horizon on 26 Nov 2026. No commit changed the 500 path; no assertion weakened.
+- 29: `startOperatorServer` in `test/helpers/operator-session.ts` sets `keepAliveTimeout = 0`, so `node:http` no longer closes an idle socket at 5 s while a loaded test blocks its event loop; the next `fetch` had reused the half-closed socket (`read ECONNRESET`). Test helper only; 20/20 AC1 passes with three ten-file batches running.
