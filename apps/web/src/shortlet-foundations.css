@@ -485,9 +485,13 @@
   .ui-facts--chips > :where(div, span) { display: inline-flex; min-block-size: var(--control-min-target); align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-pill); background: var(--color-surface-subtle); }
   .ui-facts--chips dt { color: var(--color-text-secondary); font-size: var(--font-size-small); }
   .ui-facts--chips dd { margin: 0; font-weight: 600; }
-  .ui-action-bar { position: sticky; inset-block-end: 0; z-index: var(--layer-sticky); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); margin-inline: calc(-1 * var(--layout-gutter-mobile)); padding: var(--space-3) var(--layout-gutter-mobile) calc(var(--space-3) + env(safe-area-inset-bottom)); border-block-start: 1px solid var(--color-border-subtle); background: var(--color-surface-elevated); box-shadow: var(--elevation-active); }
+  /* Action bar (round 12, 2b-06): inline by default; --sticky keeps a screen's one primary action in reach on phones
+     (ActionBar README), and a 48rem container sits the sticky bar back inline as a bordered panel. */
+  .ui-action-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); padding: 0.75rem var(--space-4) var(--space-4); border-block-start: 1px solid var(--color-border-subtle); background: var(--color-surface); }
   .ui-action-bar > * { min-width: 0; }
   .ui-action-bar .ui-button { flex: 1 1 12rem; }
+  .ui-action-bar--sticky { position: sticky; inset-block-end: 0; z-index: var(--layer-sticky); margin-inline: calc(-1 * var(--layout-gutter-mobile)); padding: var(--space-3) var(--layout-gutter-mobile) calc(var(--space-3) + env(safe-area-inset-bottom)); background: var(--color-surface-elevated); box-shadow: var(--elevation-active); }
+  @container (min-width: 48rem) { .ui-action-bar { border: 0; border-radius: var(--radius-card); box-shadow: inset 0 0 0 1px var(--color-border-subtle); } .ui-action-bar--sticky { position: static; margin-inline: 0; } }
 
   /* Agent Mode tokens (ADR 0107 decision 4, issue 03c): one block per registered mode id, scoped by html[data-mode]. A mode changes
      accents only. The stays values reference the colour roles above, so each theme (light, forced dark, system dark) resolves them
@@ -946,11 +950,14 @@
   .ui-empty__title, .ui-empty h1, .ui-empty h2 { margin: 0; font-family: var(--font-display); font-size: var(--font-size-h2); line-height: var(--font-line-h2); font-weight: 500; }
   .ui-empty__body, .ui-empty p { max-inline-size: 42ch; margin: 0; color: var(--color-text-secondary); }
 
-  .ui-confirm { border: 1px solid var(--color-danger-border); border-radius: var(--radius-card); background: var(--color-surface); }
-  .ui-confirm > summary { display: flex; min-block-size: var(--control-min-target); align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4); color: var(--color-danger); font-weight: 600; cursor: pointer; list-style: none; }
+  /* Disclosure confirm (round 12, 2b-06): a rare or reversing action stays closed behind its name; quiet, no danger
+     colour (DisclosureConfirm README). The opened body holds the inputs and the .ui-effect note. */
+  .ui-confirm { border: 0; border-radius: var(--radius-control); background: var(--color-surface); box-shadow: inset 0 0 0 1px var(--color-border-subtle); }
+  .ui-confirm > summary { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-block-size: 3.25rem; padding: var(--space-3) var(--space-4); color: var(--color-text); font-weight: 600; cursor: pointer; list-style: none; }
   .ui-confirm > summary::-webkit-details-marker { display: none; }
-  .ui-confirm[open] > summary { border-block-end: 1px solid var(--color-danger-border); }
-  .ui-confirm__body { display: grid; gap: var(--space-3); padding: var(--space-4); }
+  .ui-confirm > summary .ui-icon { transition: none; }
+  .ui-confirm[open] > summary .ui-icon { transform: rotate(180deg); }
+  .ui-confirm__body { display: flex; flex-direction: column; gap: var(--space-3); padding: 0 var(--space-4) var(--space-4); }
   .ui-confirm__body p { margin: 0; color: var(--color-text-secondary); }
 
   /* Skeleton (round 12): static blocks without shimmer animation (Light & reduced motion by default). */
@@ -1150,6 +1157,21 @@
   .ui-switch-divider::before, .ui-switch-divider::after { content: ""; flex: 1 1 1rem; block-size: 1px; background: var(--color-border-subtle); }
   .ui-switch-divider__text { display: inline-flex; align-items: center; gap: 0.375rem; }
   .ui-switch-divider .ui-agent-mark { inline-size: 1.25rem; block-size: 1.25rem; }
+
+  /* Round-12 2b-06: the chat card — a read-only summary the concierge places in the conversation, linking to the page
+     that owns the consequential command (ChatCard README; Tier 3 under ADR 0108 when Phase 3/4 emits it). */
+  .ui-chat-card { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); border-radius: var(--radius-card); background: var(--color-surface); box-shadow: inset 0 0 0 1px var(--color-border-subtle); }
+  .ui-chat-card__head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-3); }
+  .ui-chat-card__title { margin: 0; font: 600 var(--font-size-h3)/var(--font-line-h3) var(--font-sans); }
+  .ui-chat-card__aside { margin: 0; font-size: var(--font-size-small); line-height: var(--font-line-small); color: var(--color-text-secondary); }
+  .ui-chat-card__rows { display: flex; flex-direction: column; border-block-start: 1px solid var(--color-border-subtle); }
+  .ui-chat-card__row { display: grid; grid-template-columns: minmax(0, 1fr) 1.25rem; gap: 0.125rem 0.625rem; align-items: center; min-block-size: var(--control-min-target); padding-block: 0.625rem; border-block-end: 1px solid var(--color-border-subtle); color: var(--color-text); text-decoration: none; }
+  .ui-chat-card__row b { font-weight: 600; }
+  .ui-chat-card__row:hover b { text-decoration: underline; }
+  .ui-chat-card__row > .ui-icon { grid-row: 1 / 3; grid-column: 2; color: var(--color-text-secondary); }
+  .ui-chat-card__row:focus-visible { outline: 3px solid var(--color-focus); outline-offset: -3px; }
+  .ui-chat-card__action { display: flex; }
+  .ui-chat-card__action .ui-button { flex: 1 1 100%; }
 
   /* Weaver/A2UI theme bridge. Weaver's Basic Catalog writes inline styles that read these
      custom properties, so theming them replaces its blue (#17e) defaults at the source. */

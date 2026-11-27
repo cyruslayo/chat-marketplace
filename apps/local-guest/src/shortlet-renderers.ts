@@ -190,7 +190,7 @@ function renderUnitDetailSheet({ document, properties }: WebComponentRenderInput
 
 /** The sticky action bar: the total and its label, then the Basic Row of Weaver buttons, which keep their events. */
 function renderUnitActionBar({ document, properties, relationships }: WebComponentRenderInput): Node {
-  const bar = element(document, "div", "ui-action-bar unit-action-bar");
+  const bar = element(document, "div", "ui-action-bar ui-action-bar--sticky unit-action-bar");
   const total = text(properties["total"]);
   const totalLabel = text(properties["totalLabel"]);
   if (total || totalLabel) {

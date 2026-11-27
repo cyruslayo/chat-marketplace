@@ -225,6 +225,23 @@ const GROUP_2B_05_CLASSES = [
   ".ui-switch-divider__text",
 ] as const;
 
+const GROUP_2B_06_CLASSES = [
+  ".ui-chat-card",
+  ".ui-chat-card__head",
+  ".ui-chat-card__title",
+  ".ui-chat-card__aside",
+  ".ui-chat-card__rows",
+  ".ui-chat-card__row",
+  ".ui-action-bar--sticky",
+  ".ui-confirm",
+  ".ui-confirm__body",
+  ".ui-effect",
+  ".ui-effect__title",
+  ".ui-effect__body",
+  ".ui-panel--commit",
+  ".ui-panel__title",
+] as const;
+
 const GROUP_2B_07_CLASSES = [
   ".ui-shell",
   ".ui-shell__main",
@@ -284,6 +301,9 @@ test("I3 (2b-01..2b-07): every mapped class and preserved code-only class exists
   }
   for (const cls of GROUP_2B_05_CLASSES) {
     assert.ok(FOUNDATIONS_CSS.includes(cls), `missing 2b-05 class ${cls} in shortlet-foundations.css`);
+  }
+  for (const cls of GROUP_2B_06_CLASSES) {
+    assert.ok(FOUNDATIONS_CSS.includes(cls), `missing 2b-06 class ${cls} in shortlet-foundations.css`);
   }
   for (const cls of GROUP_2B_07_CLASSES) {
     assert.ok(FOUNDATIONS_CSS.includes(cls), `missing 2b-07 class ${cls} in shortlet-foundations.css`);

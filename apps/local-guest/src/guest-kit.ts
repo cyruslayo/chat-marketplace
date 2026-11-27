@@ -258,7 +258,7 @@ export function offerScreenHtml(
     ? `<section class="ui-panel offer-policies" aria-label="Before you pay"><h2>Before you pay</h2><p>${escapeHtml(content.provider)}</p>${content.policies.map((section) => `<section><h3>${escapeHtml(section.heading)}</h3><ul>${section.items.map(text => `<li>${escapeHtml(text)}</li>`).join("")}</ul></section>`).join("")}${content.notes.map((text) => `<p>${escapeHtml(text)}</p>`).join("")}</section>`
     : "";
   const actions = content.accept
-    ? `<div class="ui-action-bar offer-actions"><div><strong>${escapeHtml(content.amount)}</strong><span class="ui-price-breakdown__label">${GUEST_FACT_LABELS.amountDueNow}</span></div>${form(content.accept.path, GUEST_PAYMENT_COPY.accept, true, content.accept.surfaceId)}</div>`
+    ? `<div class="ui-action-bar ui-action-bar--sticky offer-actions"><div><strong>${escapeHtml(content.amount)}</strong><span class="ui-price-breakdown__label">${GUEST_FACT_LABELS.amountDueNow}</span></div>${form(content.accept.path, GUEST_PAYMENT_COPY.accept, true, content.accept.surfaceId)}</div>`
     : `<div class="offer-actions request-actions">${form(content.conversationPath, "Back to your conversation", true)}${content.searchPath ? form(content.searchPath, "Find other stays", false) : ""}</div>`;
   return `<section class="offer-screen" data-offer-state="${content.state}" data-server-now="${escapeHtml(content.serverNow)}"><header class="request-head offer-head" data-page="booking-record"><p class="ui-eyebrow">Conditional Booking Offer</p><h1>${escapeHtml(content.title)}</h1><span class="ui-status ui-status--${live ? "success" : content.state === "expired" || content.state === "closed" ? "danger" : "warning"}">${escapeHtml(content.status)}</span></header>${banner}${ticket}${live ? breakdown : ""}${policies}${content.steps.length ? `<section class="ui-panel"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>` : ""}${actions}</section>`;
 }
@@ -283,7 +283,7 @@ export function paymentLayoutHtml(input: {
   const actions =
     input.actions === undefined || input.actions === ""
       ? ""
-      : `<div class="payment-actions ui-action-bar">${input.actions}</div>`;
+      : `<div class="payment-actions ui-action-bar ui-action-bar--sticky">${input.actions}</div>`;
   return `<section class="payment-screen" data-payment-state="${escapeHtml(input.state)}"${input.serverNow === undefined ? "" : ` data-server-now="${escapeHtml(input.serverNow)}"`}><header class="request-head payment-head" data-page="booking-record"><p class="ui-eyebrow">${escapeHtml(input.eyebrow)}</p><h1>${escapeHtml(input.title)}</h1>${input.status === undefined ? "" : statusHtml(input.tone, input.status)}</header>${input.banner ?? ""}${input.ticket ?? ""}${input.breakdown ?? ""}${(input.sections ?? []).join("")}${actions}</section>`;
 }
 
@@ -335,7 +335,7 @@ export function paymentScreenHtml(
 export function paymentChoiceHtml(input: PaymentMethodChoice): string {
   const method = (value: string, label: string, help: string, checked = false) => `<label><input type="radio" name="method" value="${value}"${checked ? " checked" : ""} aria-labelledby="method-${value}-label" aria-describedby="method-${value}-help"><span class="ui-field"><strong id="method-${value}-label">${escapeHtml(label)}</strong><span id="method-${value}-help" class="ui-field__hint">${escapeHtml(help)}</span></span></label>`;
   const methods = `<fieldset class="ui-segmented payment-choice-methods"><legend class="ui-sr-only">Payment method</legend>${method("card", GUEST_PAYMENT_COPY.card, GUEST_PAYMENT_COPY.cardHelp, true)}${input.providerTransfer ? method("bank_transfer", GUEST_PAYMENT_COPY.transfer, GUEST_PAYMENT_COPY.transferHelp) : ""}${input.manualAction ? method("manual_transfer", GUEST_PAYMENT_COPY.manual, GUEST_PAYMENT_COPY.manualHelp) : ""}</fieldset>`;
-  return `<form method="post" action="${escapeHtml(input.action)}" class="payment-choice-form"><section class="ui-panel payment-choice" aria-label="Choose how to pay"><h2>How would you like to pay?</h2>${methods}</section><div class="payment-actions ui-action-bar"><button class="ui-button ui-button--primary ui-button--block" type="submit">Continue to stay payment · ${escapeHtml(input.amount)}</button></div></form>`;
+  return `<form method="post" action="${escapeHtml(input.action)}" class="payment-choice-form"><section class="ui-panel payment-choice" aria-label="Choose how to pay"><h2>How would you like to pay?</h2>${methods}</section><div class="payment-actions ui-action-bar ui-action-bar--sticky"><button class="ui-button ui-button--primary ui-button--block" type="submit">Continue to stay payment · ${escapeHtml(input.amount)}</button></div></form>`;
 }
 
 /** The bank-transfer details in one card (account number with its copy button, exact amount, booking-only note). */
@@ -476,7 +476,7 @@ export function requestScreenHtml(
     editable && actionTotal !== undefined
       ? `<p class="ui-action-bar__sum"><strong>${escapeHtml(actionTotal)}</strong><span class="ui-money-metadata">${GUEST_GLOSSARY.allInStayTotal}</span></p>`
       : "";
-  return `<section class="request-screen" data-request-state="${content.state}"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">${GUEST_GLOSSARY.bookingRequest}</p><h2>${escapeHtml(content.title)}</h2>${statusHtml(content.tone, content.status)}</header>${banner}<div class="request-ticket">${ticket}</div>${who}${editor}<div class="request-breakdown">${breakdown}</div>${content.schedule === undefined ? "" : paymentScheduleHtml(content.schedule)}${content.provider === undefined ? "" : `<p class="request-provider">${escapeHtml(content.provider)}</p>`}${content.sentAt === undefined ? "" : `<p class="ui-field__hint">${escapeHtml(content.sentAt)}</p>`}${deadline}<section class="ui-panel request-next"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>${content.notes.length ? `<div class="request-notes">${content.notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</div>` : ""}<div class="request-actions${editable ? " ui-action-bar" : ""}">${sum}${form(content.primary, true)}${content.secondary === undefined ? "" : form(content.secondary, false)}</div></section>`;
+  return `<section class="request-screen" data-request-state="${content.state}"><header class="ui-page__header request-head" data-page="booking-record"><p class="ui-eyebrow">${GUEST_GLOSSARY.bookingRequest}</p><h2>${escapeHtml(content.title)}</h2>${statusHtml(content.tone, content.status)}</header>${banner}<div class="request-ticket">${ticket}</div>${who}${editor}<div class="request-breakdown">${breakdown}</div>${content.schedule === undefined ? "" : paymentScheduleHtml(content.schedule)}${content.provider === undefined ? "" : `<p class="request-provider">${escapeHtml(content.provider)}</p>`}${content.sentAt === undefined ? "" : `<p class="ui-field__hint">${escapeHtml(content.sentAt)}</p>`}${deadline}<section class="ui-panel request-next"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>${content.notes.length ? `<div class="request-notes">${content.notes.map((note) => `<p>${escapeHtml(note)}</p>`).join("")}</div>` : ""}<div class="request-actions${editable ? " ui-action-bar ui-action-bar--sticky" : ""}">${sum}${form(content.primary, true)}${content.secondary === undefined ? "" : form(content.secondary, false)}</div></section>`;
 }
 
 export type KitStatusTone = "success" | "warning" | "danger" | "neutral";
@@ -823,6 +823,54 @@ export function switchDividerHtml(mode: ModePresentation): string {
  */
 export function domainTagHtml(input: { readonly label: string; readonly icon: IconName }): string {
   return `<span class="ui-domain-tag"><span class="ui-agent-mark" aria-hidden="true">${icon(input.icon)}</span>${escapeHtml(input.label)}</span>`;
+}
+
+/**
+ * Round-12 2b-06 (ChatCard README, ADR 0108 decision 1): a read-only summary the concierge places in the conversation —
+ * at most one action, and it opens the page that owns the consequential command (ADR 0072). Strict JSON-serialisable
+ * props, every value escaped (ADR 0075), no copy of its own (ADR 0077); `chatCardText` is the complete plain-text
+ * fallback (ADR 0074). Chat and page render from this same helper (ADR 0080 parity).
+ */
+export interface ChatCardRowProps {
+  /** The row's name, including any status and deadline the guest should hear. */
+  readonly text: string;
+  /** The page the row opens; a row without one is plain text. */
+  readonly href?: string;
+  /** A second line under the row's name, for example a deadline. */
+  readonly aside?: string;
+}
+
+export interface ChatCardProps {
+  readonly title: string;
+  readonly aside?: string;
+  /** The List variant: up to three rows, needs-action first (ChatCard README). */
+  readonly rows?: readonly ChatCardRowProps[];
+  /** Plain paragraphs for the Summary and Empty variants; the caller supplies its own copy. */
+  readonly body?: readonly string[];
+  /** One action at most: the existing page it opens. */
+  readonly action?: { readonly label: string; readonly href: string };
+}
+
+export function chatCardHtml(props: ChatCardProps): string {
+  const rows = (props.rows ?? []).map((row) => {
+    const inner = `<b>${escapeHtml(row.text)}</b>${row.aside === undefined ? "" : `<span class="ui-chat-card__aside">${escapeHtml(row.aside)}</span>`}${row.href === undefined ? "" : icon("arrow-right")}`;
+    return row.href === undefined
+      ? `<div class="ui-chat-card__row">${inner}</div>`
+      : `<a class="ui-chat-card__row" href="${escapeHtml(row.href)}">${inner}</a>`;
+  });
+  const body = (props.body ?? []).map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`);
+  const action = props.action === undefined
+    ? ""
+    : `<div class="ui-chat-card__action"><a class="ui-button ui-button--secondary" href="${escapeHtml(props.action.href)}">${escapeHtml(props.action.label)}</a></div>`;
+  return `<section class="ui-chat-card" aria-label="${escapeHtml(props.title)}"><div class="ui-chat-card__head"><h3 class="ui-chat-card__title">${escapeHtml(props.title)}</h3>${props.aside === undefined ? "" : `<p class="ui-chat-card__aside">${escapeHtml(props.aside)}</p>`}</div>${body.join("")}${rows.length === 0 ? "" : `<div class="ui-chat-card__rows">${rows.join("")}</div>`}${action}</section>`;
+}
+
+export function chatCardText(props: ChatCardProps): string {
+  const lines: string[] = [props.title + (props.aside === undefined ? "" : ` — ${props.aside}`)];
+  for (const paragraph of props.body ?? []) lines.push(paragraph);
+  for (const row of props.rows ?? []) lines.push(`${row.text}${row.aside === undefined ? "" : ` (${row.aside})`}${row.href === undefined ? "" : `: ${row.href}`}`);
+  if (props.action !== undefined) lines.push(`${props.action.label}: ${props.action.href}`);
+  return lines.join("\n");
 }
 
 /**
