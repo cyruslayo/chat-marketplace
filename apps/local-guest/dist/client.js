@@ -9719,12 +9719,14 @@ Known schemas:
     bed: '<path d="M3 7v11M21 18v-6a3 3 0 0 0-3-3h-8v6M3 15h18"/><circle cx="6.5" cy="11.5" r="1.5"/>',
     calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
     card: '<rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M2.5 10h19M6.5 15h4"/>',
+    chat: '<path d="M4 5h16v11H9l-5 4z"/>',
     check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
     "chevron-right": '<path d="M9 6l6 6-6 6"/>',
     clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
     copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
     doc: '<path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2zM9 13h6M9 17h6"/>',
     grid: '<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/>',
+    help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.6 2.6 0 1 1 3.7 2.4c-.8.4-1.2 1-1.2 1.8M12 17v.01"/>',
     home: '<path d="M3.5 11 12 4l8.5 7M5.5 9.5V20h13V9.5"/><path d="M10 20v-5.5h4V20"/>',
     info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.8v.1"/>',
     inbox: '<path d="M3 13h5l1.5 3h5L16 13h5"/><path d="M5.5 5h13L21 13v6H3v-6Z"/>',
@@ -10831,6 +10833,24 @@ Known schemas:
       ...respondBy === void 0 ? [] : [{ key: "respondBy", label: GUEST_EXTENSION_COPY.respondBy, value: respondBy, raw: respondBy }]
     ];
   }
+  var GUEST_SHELL_COPY = Object.freeze({
+    navLabel: "Main",
+    find: "Find",
+    yourStays: "Your stays",
+    yourPlans: "Your plans",
+    account: "Account",
+    help: "Help",
+    badgeNeedsAction: (count) => count === 1 ? " needs your action" : " need your action",
+    askConcierge: "Ask the concierge",
+    askTheseStays: "Ask about these stays",
+    askThisStay: "Ask about this stay",
+    askThisRequest: "Ask about this request",
+    askThisPayment: "Ask about this payment",
+    askYourStays: "Ask about your stays",
+    askYourPlans: "Ask about your plans",
+    askChangingStay: "Ask about changing this stay",
+    closeTask: (title) => `Close ${title}`
+  });
   var GUEST_PLANS_COPY = Object.freeze({
     titleSingleDomain: "Your stays",
     titleMultiDomain: "Your plans",
@@ -11036,7 +11056,8 @@ Known schemas:
     const deadline = `${escapeHtml(input.label)} <time datetime="${escapeHtml(input.deadlineIso)}">${escapeHtml(formatWAT(input.deadlineIso))}</time>`;
     return `<p class="ui-banner ui-banner--warning payment-deadline${input.countdown ? " offer-deadline" : ""}">${icon("clock")}<span>${input.countdown ? `<span class="waiting-deadline-time">${deadline}</span> \xB7 <span class="waiting-countdown">${remaining}</span>` : `${deadline} \xB7 ${remaining}`}${input.consequence ? `<br>${escapeHtml(input.consequence)}` : ""}</span></p>`;
   }
-  function offerScreenHtml(content, ticket, breakdown) {
+  function offerScreenHtml(content, ticket, breakdown, options = {}) {
+    const headingTag = options.headingTag ?? "h1";
     const form = (path, label, primary, surfaceId) => `<form method="post" action="${escapeHtml(path)}">${surfaceId === void 0 ? "" : `<input type="hidden" name="surfaceId" value="${escapeHtml(surfaceId)}">`}<button class="ui-button ui-button--${primary ? "primary" : "secondary"}" type="submit">${escapeHtml(label)}</button></form>`;
     const live = content.state === "live";
     const banner = live ? deadlineBannerHtml({
@@ -11048,11 +11069,12 @@ Known schemas:
     }) : content.state === "expired" ? `<p class="ui-banner ui-banner--neutral offer-deadline">${icon("clock")}<span>The deadline was <time datetime="${escapeHtml(content.deadlineIso)}">${escapeHtml(formatWAT(content.deadlineIso))}</time><br>${escapeHtml(content.consequence)}</span></p>` : "";
     const policies = live ? `<section class="ui-panel offer-policies" aria-label="Before you pay"><h2>Before you pay</h2><p>${escapeHtml(content.provider)}</p>${content.policies.map((section) => `<section><h3>${escapeHtml(section.heading)}</h3><ul>${section.items.map((text2) => `<li>${escapeHtml(text2)}</li>`).join("")}</ul></section>`).join("")}${content.notes.map((text2) => `<p>${escapeHtml(text2)}</p>`).join("")}</section>` : "";
     const actions = content.accept ? `<div class="ui-action-bar ui-action-bar--sticky offer-actions"><div><strong>${escapeHtml(content.amount)}</strong><span class="ui-price-breakdown__label">${GUEST_FACT_LABELS.amountDueNow}</span></div>${form(content.accept.path, GUEST_PAYMENT_COPY.accept, true, content.accept.surfaceId)}</div>` : `<div class="offer-actions request-actions">${form(content.conversationPath, "Back to your conversation", true)}${content.searchPath ? form(content.searchPath, "Find other stays", false) : ""}</div>`;
-    return `<section class="offer-screen" data-offer-state="${content.state}" data-server-now="${escapeHtml(content.serverNow)}"><header class="request-head offer-head" data-page="booking-record"><p class="ui-eyebrow">Conditional Booking Offer</p><h1>${escapeHtml(content.title)}</h1><span class="ui-status ui-status--${live ? "success" : content.state === "expired" || content.state === "closed" ? "danger" : "warning"}">${escapeHtml(content.status)}</span></header>${banner}${ticket}${live ? breakdown : ""}${policies}${content.steps.length ? `<section class="ui-panel"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>` : ""}${actions}</section>`;
+    return `<section class="offer-screen" data-offer-state="${content.state}" data-server-now="${escapeHtml(content.serverNow)}"><header class="request-head offer-head" data-page="booking-record"><p class="ui-eyebrow">Conditional Booking Offer</p><${headingTag}>${escapeHtml(content.title)}</${headingTag}><span class="ui-status ui-status--${live ? "success" : content.state === "expired" || content.state === "closed" ? "danger" : "warning"}">${escapeHtml(content.status)}</span></header>${banner}${ticket}${live ? breakdown : ""}${policies}${content.steps.length ? `<section class="ui-panel"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>` : ""}${actions}</section>`;
   }
   function paymentLayoutHtml(input) {
+    const headingTag = input.headingTag ?? "h1";
     const actions = input.actions === void 0 || input.actions === "" ? "" : `<div class="payment-actions ui-action-bar ui-action-bar--sticky">${input.actions}</div>`;
-    return `<section class="payment-screen" data-payment-state="${escapeHtml(input.state)}"${input.serverNow === void 0 ? "" : ` data-server-now="${escapeHtml(input.serverNow)}"`}><header class="request-head payment-head" data-page="booking-record"><p class="ui-eyebrow">${escapeHtml(input.eyebrow)}</p><h1>${escapeHtml(input.title)}</h1>${input.status === void 0 ? "" : statusHtml(input.tone, input.status)}</header>${input.banner ?? ""}${input.ticket ?? ""}${input.breakdown ?? ""}${(input.sections ?? []).join("")}${actions}</section>`;
+    return `<section class="payment-screen" data-payment-state="${escapeHtml(input.state)}"${input.serverNow === void 0 ? "" : ` data-server-now="${escapeHtml(input.serverNow)}"`}><header class="request-head payment-head" data-page="booking-record"><p class="ui-eyebrow">${escapeHtml(input.eyebrow)}</p><${headingTag}>${escapeHtml(input.title)}</${headingTag}>${input.status === void 0 ? "" : statusHtml(input.tone, input.status)}</header>${input.banner ?? ""}${input.ticket ?? ""}${input.breakdown ?? ""}${(input.sections ?? []).join("")}${actions}</section>`;
   }
   function paymentScreenHtml(content, ticket, breakdown, slots) {
     const banner = content.deadlineIso === void 0 ? "" : deadlineBannerHtml({
@@ -11079,7 +11101,8 @@ Known schemas:
         ] : []
       ],
       actions: content.choice ? "" : slots.actions ?? "",
-      serverNow: content.serverNow
+      serverNow: content.serverNow,
+      ...slots.headingTag === void 0 ? {} : { headingTag: slots.headingTag }
     });
   }
   function paymentChoiceHtml(input) {

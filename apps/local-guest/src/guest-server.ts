@@ -102,6 +102,10 @@ import {
   bankDetailsCardHtml,
   deadlineBannerHtml,
   formatWAT,
+  guestModeLabelHtml,
+  guestShellHtml,
+  guestSideNavHtml,
+  guestTabBarHtml,
   paymentChoiceHtml,
   paymentLayoutHtml,
   paymentOutcomeBannerHtml,
@@ -284,6 +288,7 @@ import {
   GUEST_ACCOUNT_COPY,
   GUEST_MODE_CHOOSER,
   GUEST_PLANS_COPY,
+  GUEST_SHELL_COPY,
   GUEST_TASK_RAIL,
   GUEST_VERTICALS,
 } from "../../web-agent/src/guest-content.js";
@@ -342,7 +347,47 @@ import {
 /** The shell's data-theme. The shell always follows the system (issue 03k reads it for the initial theme-color tags). */
 const SHELL_DATA_THEME = "system";
 
-export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays, notice?: string): string {
+/**
+ * Issue 15 AC5 (ADR 0106): validates an Ask bar `?context=<ref>` link fail-closed against the current
+ * principal's authorized records or eligible public units. Never carries text or grants authority;
+ * any forged, foreign, malformed, or stale reference returns null so a plain conversation opens.
+ */
+async function resolveAskContext(
+  app: LocalGuestApp,
+  session: { readonly principalId: string; readonly tenantId: string; readonly identity?: GuestIdentity } | null,
+  rawContext: string | null,
+): Promise<{ readonly kind: string; readonly id?: string; readonly threadId?: string } | null> {
+  if (!rawContext || rawContext.length > 160) return null;
+  if (rawContext === "stays" || rawContext === "plans" || rawContext === "account") {
+    return { kind: rawContext };
+  }
+  const sep = rawContext.indexOf(":");
+  if (sep <= 0) return null;
+  const kind = rawContext.slice(0, sep);
+  const id = rawContext.slice(sep + 1);
+  if (!id || id.length > 128 || /[^\w:-]/.test(id)) return null;
+  if (kind === "stay") {
+    const unit = app.environment.unitRepository.findById(id);
+    return unit && isEligibleUnit(unit, app.environment.clock()) ? { kind, id } : null;
+  }
+  if (!session) return null;
+  const principal: CommandPrincipal = { id: session.principalId, role: "guest", tenantId: session.tenantId };
+  if (kind === "request" || kind === "offer" || kind === "contract") {
+    const page = await app.conventionalBookingPage(kind, id, principal);
+    return page ? { kind, id, threadId: page.threadId } : null;
+  }
+  if (kind === "payment") {
+    try {
+      app.environment.cardPaymentApp.getArtifact(id, principal);
+      return { kind, id };
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays, notice?: string, badgeCount = 0): string {
   return `<!DOCTYPE html>
 <html lang="en-NG" data-theme="${SHELL_DATA_THEME}" data-mode="${escapeHtml(mode.id)}">
 <head>
@@ -360,7 +405,9 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays,
     :focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
     .skip-link { position: absolute; left: var(--space-2); top: -100px; z-index: var(--layer-skip-link); background: var(--color-surface); color: var(--color-text); padding: var(--space-2) var(--space-3); border: 2px solid var(--color-focus); border-radius: var(--radius-control); }
     .skip-link:focus { top: var(--space-2); }
-    .app { width: 100%; max-width: var(--layout-conversation-max); height: 100dvh; height: 100svh; min-height: 0; margin: 0 auto; display: flex; flex-direction: column; }
+    .app { width: 100%; max-width: var(--layout-conversation-max); flex: 1; min-height: 0; margin: 0 auto; display: flex; flex-direction: column; }
+    .ui-app__col > .app { max-width: none; }
+    .ui-app:has(#active-workspace[data-mode="focused-surface"]:not([hidden])) > .ui-app__col > .ui-app__foot { display: none; }
     .app .ui-appbar { padding-block-start: max(var(--space-2), env(safe-area-inset-top)); }
     .header-identity h1 { margin: 0; font: inherit; }
     .header-identity { display: flex; align-items: center; min-height: var(--control-min-target); }
@@ -579,15 +626,17 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays,
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to conversation</a>
+  <div class="ui-app">
+    ${guestSideNavHtml({ current: "find", badgeCount, mode })}
+    <div class="ui-app__col">
   <div class="app guest-editorial">
     <header class="ui-appbar">
       ${agentMarkHtml(mode, "appbar")}
       <a class="header-identity ui-appbar__brand" href="/" aria-label="Xenia home"><span>Xenia</span></a>
-      <span class="header-note">Abuja · Lagos</span>
+      ${guestModeLabelHtml(mode)}
       <span class="ui-appbar__grow"></span>
       <div class="header-actions">
         <button id="new-conversation" class="ui-button ui-button--small ui-appbar__action" type="button">${icon("message-plus")}<span>New<span class="header-long"> conversation</span></span></button>
-        <a class="ui-button ui-button--small ui-appbar__action" href="/guest/contact">Contact details</a>
       </div>
     </header>
     <section id="new-conversation-confirm" role="group" aria-labelledby="new-conversation-heading" hidden>
@@ -629,6 +678,9 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays,
     <div id="announcer" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
     <div id="error-announcer" class="sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div>
   </div>
+    <div class="ui-app__foot">${guestTabBarHtml({ current: "find", badgeCount })}</div>
+    </div>
+  </div>
   <script src="/client.js" defer></script>
 </body>
 </html>`;
@@ -658,12 +710,18 @@ async function readJsonBody(req: HttpRequestLike): Promise<unknown> {
  * status; only the period that is payable now has a payment button, and each payment is a separate Paystack TEST session.
  */
 /** The Notice to End page wrapper: the same frame and shell as the schedule page (ADR 0077). */
-function renderNoticePageHtml(body: string): string {
+function renderNoticePageHtml(body: string, closeHref = "/"): string {
   return pageShell({
     title: GUEST_NOTICE_COPY.heading,
-    frame: appFrameHtml({ threadId: null, publicStep: "stay" }),
-    style: "",
-    body: `<div class="guest-editorial">${body}</div>`,
+    layout: "guest-shell",
+    mode: "stays",
+    body: guestShellHtml({
+      kind: "task",
+      current: null,
+      taskTitle: GUEST_NOTICE_COPY.heading,
+      closeHref,
+      body: `<div class="guest-editorial">${body}</div>`,
+    }),
   });
 }
 
@@ -689,9 +747,17 @@ function renderPeriodScheduleHtml(offerId: string, periods: readonly BillingPeri
   }).join("");
   return pageShell({
     title: GUEST_FACT_LABELS.paymentSchedule,
-    frame: appFrameHtml({ threadId: null, publicStep: "stay" }),
-    style: "",
-    body: `<div class="guest-editorial"><section aria-label="${escapeHtml(GUEST_FACT_LABELS.paymentSchedule)}"><h1>${escapeHtml(GUEST_FACT_LABELS.paymentSchedule)}</h1><p>${escapeHtml(scheduleLeadText(periods))}</p><ol>${rows}</ol>${noticeLinkHtml}</section></div>`,
+    layout: "guest-shell",
+    mode: "stays",
+    body: guestShellHtml({
+      kind: "state",
+      current: "plans",
+      backHref: "/plans",
+      backLabel: GUEST_SHELL_COPY.yourStays,
+      publicStep: "stay",
+      ask: { label: GUEST_SHELL_COPY.askThisPayment, href: `/?context=payment:${encodeURIComponent(offerId)}` },
+      body: `<div class="guest-editorial"><section aria-label="${escapeHtml(GUEST_FACT_LABELS.paymentSchedule)}"><h1>${escapeHtml(GUEST_FACT_LABELS.paymentSchedule)}</h1><p>${escapeHtml(scheduleLeadText(periods))}</p><ol>${rows}</ol>${noticeLinkHtml}</section></div>`,
+    }),
   });
 }
 
@@ -732,9 +798,18 @@ export function renderConventionalUnitDetailHtml(
       : `${listingGalleryHtml({ title: unit.title, photos: photos.map((url, index) => ({ src: photoUrl ? photoUrl(url) : url, alt: `Photo ${index + 1} of ${unit.title}` })) })}<script src="/gallery.js" defer></script>`;
   return pageShell({
     title: unit.title,
-    frame: appFrameHtml({ threadId: null, publicStep: "stay" }),
+    layout: "guest-shell",
+    mode: "stays",
     style: `${LISTING_GALLERY_STYLE}.unit-detail-sheet{position:relative;z-index:1;display:grid;gap:var(--space-4);margin-block-start:calc(-1 * var(--space-6));padding:var(--space-5);border:1px solid var(--color-border-subtle);border-radius:var(--radius-sheet) var(--radius-sheet) var(--radius-card) var(--radius-card);background:var(--color-surface);box-shadow:var(--elevation-active)}.unit-detail-sheet h1,.unit-detail-sheet h2,.unit-detail-sheet p,.unit-detail-sheet ul{margin:0}.unit-detail-location{display:flex;align-items:center;gap:var(--space-1);color:var(--color-text-secondary)}.unit-detail-description{white-space:pre-line}.unit-detail-page{display:grid;gap:var(--space-4)}.unit-detail-page .listing-gallery{z-index:0}.unit-detail-page .ui-action-bar{position:sticky}.unit-detail-page .ui-ticket{margin-block:var(--space-2)}.stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-4)}.stay-card-photo{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:var(--radius-card);background:var(--color-surface-subtle)}.stay-card-photo--empty{display:grid;place-items:center;color:var(--color-text-secondary)}.stay-card-facts{display:flex;flex-wrap:wrap;gap:var(--space-2)}.stay-card-facts span{display:inline-flex;min-block-size:2.75rem;align-items:center;padding:var(--space-2) var(--space-3);border:1px solid var(--color-border-subtle);border-radius:var(--radius-pill);background:var(--color-surface-subtle);font-size:var(--font-size-small)}.stay-card-price{display:grid;gap:var(--space-1);padding-block-start:var(--space-3);border-block-start:1px solid var(--color-border-subtle)}.stay-card-price p{margin:0}.guest-editorial .ui-button--primary,.guest-editorial .ui-button--block{border-radius:var(--radius-pill)}.ui-panel p{margin:0}`,
-    body: `<div class="guest-editorial unit-detail-page">${photoMarkup}<section class="unit-detail-sheet" aria-label="Stay details">${demo ? demoListingChipHtml() : ""}${unitLocationHtml(`${unit.location.neighbourhood}, ${unit.location.city} · exact address after payment`)}<h1>${escapeHtml(unit.title)}</h1>${unitTilesHtml(unitTiles(unit.bedrooms, unit.bathrooms, unit.capacity))}${quote ? `<section class="unit-detail-price"><p>${escapeHtml(formatStayDates(quote.checkIn, quote.checkOut))} · ${quote.partySize} ${quote.partySize === 1 ? "guest" : "guests"}</p><p>${GUEST_GLOSSARY.allInStayTotal}</p><p class="ui-money-total">${formatNgnKobo(quote.allInStayTotalKobo)}</p><p>+ ${formatNgnKobo(quote.refundableSecurityDepositKobo)} ${GUEST_GLOSSARY.refundableSecurityDeposit} (separate)</p></section>` : unitIndicativePriceHtml(unit.price.nightlyKobo)}${extendedStayPageFacts(unit, extendedStay).map((text) => `<p class="ui-money-metadata">${escapeHtml(text)}</p>`).join("")}${unitAboutHtml(unit.description)}</section><div class="ui-action-bar"><p class="ui-action-bar__sum"><strong>${formatNgnKobo(quote?.allInStayTotalKobo ?? unit.price.nightlyKobo)}</strong><span class="ui-money-metadata">${quote ? GUEST_GLOSSARY.allInStayTotal : "Price per night (indicative)"}</span></p><a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(returnRoute)}">${returnRoute === "/" ? "Continue to Request to Book" : "Back to search results"}</a></div></div>`,
+    body: guestShellHtml({
+      kind: "state",
+      current: "find",
+      backHref: returnRoute,
+      backLabel: returnRoute === "/" ? "Back to your conversation" : "Back to results",
+      publicStep: "stay",
+      ask: { label: GUEST_SHELL_COPY.askThisStay, href: `/?context=stay:${encodeURIComponent(unit.id)}` },
+      body: `<div class="guest-editorial unit-detail-page">${photoMarkup}<section class="unit-detail-sheet" aria-label="Stay details">${demo ? demoListingChipHtml() : ""}${unitLocationHtml(`${unit.location.neighbourhood}, ${unit.location.city} · exact address after payment`)}<h1>${escapeHtml(unit.title)}</h1>${unitTilesHtml(unitTiles(unit.bedrooms, unit.bathrooms, unit.capacity))}${quote ? `<section class="unit-detail-price"><p>${escapeHtml(formatStayDates(quote.checkIn, quote.checkOut))} · ${quote.partySize} ${quote.partySize === 1 ? "guest" : "guests"}</p><p>${GUEST_GLOSSARY.allInStayTotal}</p><p class="ui-money-total">${formatNgnKobo(quote.allInStayTotalKobo)}</p><p>+ ${formatNgnKobo(quote.refundableSecurityDepositKobo)} ${GUEST_GLOSSARY.refundableSecurityDeposit} (separate)</p></section>` : unitIndicativePriceHtml(unit.price.nightlyKobo)}${extendedStayPageFacts(unit, extendedStay).map((text) => `<p class="ui-money-metadata">${escapeHtml(text)}</p>`).join("")}${unitAboutHtml(unit.description)}</section><div class="ui-action-bar"><p class="ui-action-bar__sum"><strong>${formatNgnKobo(quote?.allInStayTotalKobo ?? unit.price.nightlyKobo)}</strong><span class="ui-money-metadata">${quote ? GUEST_GLOSSARY.allInStayTotal : "Price per night (indicative)"}</span></p><a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(returnRoute)}">${returnRoute === "/" ? "Continue to Request to Book" : "Back to search results"}</a></div></div>`,
+    }),
   });
 }
 
@@ -808,11 +883,17 @@ export function renderNoScriptConversationHtml(input: {
           .join("");
   return pageShell({
     title: "Conversation · Xenia",
-    width: "narrow",
+    layout: "guest-shell",
+    mode: mode.id,
     // Issue 03k (ADR 0080 parity): the no-JS page carries the same two static theme-color tags as the shell.
     head: themeColourMetaHtml(SHELL_DATA_THEME),
-    frame: `${appBarHtml({ backHref: "/", backLabel: "Back to your conversation", action: { href: "/conversation", label: GUEST_NEW_CONVERSATION.control, icon: "message-plus" } })}${renderJourneyRailHtml(input.journey)}${taskRailHtml(input.tasks ?? [])}`,
-    body: `<div class="guest-editorial no-js-conversation" data-page="conversation"><h1 class="ui-sr-only">Conversation</h1>${verticalStartersHtml(input.verticals ?? [])}${committed}${turns ? `<ol class="no-js-transcript" aria-label="Conversation">${turns}</ol>` : ""}${surfaces}${composerHtml(mode, "page", { threadId: input.threadId, draft: input.draft, error })}</div>`,
+    body: guestShellHtml({
+      kind: "section",
+      current: "find",
+      mode,
+      ...(input.journey === undefined ? {} : { journey: input.journey }),
+      body: `<div class="guest-editorial no-js-conversation" data-page="conversation"><h1 class="ui-sr-only">Conversation</h1>${taskRailHtml(input.tasks ?? [])}${verticalStartersHtml(input.verticals ?? [])}${committed}${turns ? `<ol class="no-js-transcript" aria-label="Conversation">${turns}</ol>` : ""}${surfaces}${composerHtml(mode, "page", { threadId: input.threadId, draft: input.draft, error })}</div>`,
+    }),
   });
 }
 
@@ -871,20 +952,51 @@ export function renderConventionalBookingHtml(
       })
     : "";
   const signInOffer = page.signInOffer ? signInOfferHtml(page.signInOffer) : "";
+  const isDraftTask =
+    page.requestScreen !== undefined &&
+    (page.requestScreen.state === "draft" || page.requestScreen.state === "review");
+  const isTask = page.offerScreen !== undefined || isDraftTask;
+  const closeHref = `/?threadId=${encodeURIComponent(page.threadId)}`;
+  if (isTask) {
+    const taskTitle = page.offerScreen ? "Conditional Booking Offer" : page.summary;
+    const taskBody = page.offerScreen
+      ? `<div class="guest-editorial">${offerScreenHtml(page.offerScreen, ticket, breakdown, { headingTag: "h2" })}</div><script src="/offer.js" defer></script>`
+      : `<div class="guest-editorial">${requestScreenHtml(page.requestScreen!, ticket, breakdown, stay?.allInStayTotalKobo === undefined ? undefined : formatNgnKobo(stay.allInStayTotalKobo))}${signInOffer}</div>`;
+    return pageShell({
+      title: `${page.summary} · Xenia`,
+      layout: "guest-shell",
+      mode: "stays",
+      body: guestShellHtml({
+        kind: "task",
+        current: null,
+        taskTitle,
+        closeHref,
+        ...(page.journey === undefined ? {} : { journey: page.journey }),
+        body: taskBody,
+      }),
+    });
+  }
+  const stateBody = page.confirmation
+    ? `<div class="guest-editorial">${confirmationScreenHtml(page.confirmation, ticket, breakdown)}${signInOffer}</div>`
+    : page.requestScreen
+      ? `<div class="guest-editorial">${requestScreenHtml(page.requestScreen, ticket, breakdown, stay?.allInStayTotalKobo === undefined ? undefined : formatNgnKobo(stay.allInStayTotalKobo))}${signInOffer}</div>`
+      : `<div class="guest-editorial"><header class="ui-page__header" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h1>${escapeHtml(page.summary)}</h1></header>${ticket}${breakdown}<section class="ui-panel"><p>${escapeHtml(page.textFallback)}</p><a class="ui-button ui-button--primary ui-button--block" href="/?threadId=${encodeURIComponent(page.threadId)}">Back to your conversation</a></section></div>`;
   return pageShell({
     title: `${page.summary} · Xenia`,
-    width: "narrow",
-    frame: appFrameHtml({
-      threadId: page.threadId,
+    layout: "guest-shell",
+    mode: "stays",
+    body: guestShellHtml({
+      kind: "state",
+      current: "plans",
+      backHref: "/plans",
+      backLabel: GUEST_SHELL_COPY.yourStays,
       ...(page.journey === undefined ? {} : { journey: page.journey }),
+      ask: {
+        label: page.confirmation ? GUEST_SHELL_COPY.askThisStay : GUEST_SHELL_COPY.askThisRequest,
+        href: `/?threadId=${encodeURIComponent(page.threadId)}`,
+      },
+      body: stateBody,
     }),
-    body: page.offerScreen
-      ? `<div class="guest-editorial">${offerScreenHtml(page.offerScreen, ticket, breakdown)}</div><script src="/offer.js" defer></script>`
-      : page.confirmation
-        ? `<div class="guest-editorial">${confirmationScreenHtml(page.confirmation, ticket, breakdown)}${signInOffer}</div>`
-        : page.requestScreen
-          ? `<div class="guest-editorial">${requestScreenHtml(page.requestScreen, ticket, breakdown, stay?.allInStayTotalKobo === undefined ? undefined : formatNgnKobo(stay.allInStayTotalKobo))}${signInOffer}</div>`
-          : `<div class="guest-editorial"><header class="ui-page__header" data-page="booking-record"><p class="ui-eyebrow">Your booking</p><h1>${escapeHtml(page.summary)}</h1></header>${ticket}${breakdown}<section class="ui-panel"><p>${escapeHtml(page.textFallback)}</p><a class="ui-button ui-button--primary ui-button--block" href="/?threadId=${encodeURIComponent(page.threadId)}">Back to your conversation</a></section></div>`,
   });
 }
 
@@ -1067,10 +1179,17 @@ export function renderConventionalSearchHtml(
   ].join("")}</div>`;
   return pageShell({
     title: "Search results · Xenia",
-    frame: appFrameHtml({ threadId: null, publicStep: "search" }),
+    layout: "guest-shell",
+    mode: "stays",
     style:
       ".search-form{display:grid;gap:var(--space-3)}.stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-4)}",
-    body: `<div class="guest-editorial"><header class="ui-page__header" data-page="stay-search"><p class="ui-eyebrow">Stays that fit your trip</p><h1>${escapeHtml(heading)}</h1>${summary ? `<p>${escapeHtml(summary)}</p>` : ""}</header>${chips}${form}${cards ? `<ul class="stay-results" aria-label="Stay search results">${cards}</ul>` : ""}<p><a class="ui-button ui-button--primary" href="${threadId ? `/?threadId=${encodeURIComponent(threadId)}` : "/"}">Back to your conversation</a></p></div>`,
+    body: guestShellHtml({
+      kind: "section",
+      current: "find",
+      publicStep: "search",
+      ask: { label: GUEST_SHELL_COPY.askTheseStays, href: "/?context=stays" },
+      body: `<div class="guest-editorial"><header class="ui-page__header" data-page="stay-search"><p class="ui-eyebrow">Stays that fit your trip</p><h1>${escapeHtml(heading)}</h1>${summary ? `<p>${escapeHtml(summary)}</p>` : ""}</header>${chips}${form}${cards ? `<ul class="stay-results" aria-label="Stay search results">${cards}</ul>` : ""}<p><a class="ui-button ui-button--primary" href="${threadId ? `/?threadId=${encodeURIComponent(threadId)}` : "/"}">Back to your conversation</a></p></div>`,
+    }),
   });
 }
 
@@ -1139,10 +1258,18 @@ export function renderGuestContactHtml(
     error && kind === "both"
       ? `<p class="ui-banner ui-banner--danger" role="alert">${icon("alert")}<span>${safe(error)}</span></p>`
       : "";
+  const closeHref = returnTo && returnTo.startsWith("/") ? returnTo : "/";
   return pageShell({
     title: "Guest contact",
-    width: "narrow",
-    body: `<header class="ui-page__header"><h1>Guest contact</h1><p>Used only to coordinate your booking and payment.</p></header>${generalError}${phoneForm}${emailForm}`,
+    layout: "guest-shell",
+    mode: "stays",
+    body: guestShellHtml({
+      kind: "task",
+      current: null,
+      taskTitle: "Contact details",
+      closeHref,
+      body: `<header class="ui-page__header"><h2>Guest contact</h2><p>Used only to coordinate your booking and payment.</p></header>${generalError}${phoneForm}${emailForm}`,
+    }),
   });
 }
 
@@ -1333,35 +1460,40 @@ export function renderManualTransferPageHtml(input: {
   ) =>
     pageShell({
       title: `${heading} · Xenia`,
-      width: "narrow",
-      frame: appFrameHtml({
-        threadId: input.threadId,
+      layout: "guest-shell",
+      mode: "stays",
+      body: guestShellHtml({
+        kind: "task",
+        current: null,
+        taskTitle: "Manual bank transfer",
+        closeHref: conversation,
         ...(input.journey === undefined ? {} : { journey: input.journey }),
+        body: `<div class="guest-editorial">${paymentLayoutHtml({
+          state,
+          eyebrow: "Booking payment · Manual bank transfer",
+          title: heading,
+          tone,
+          status,
+          headingTag: "h2",
+          banner: `${alert}${parts.banner ?? ""}`,
+          ticket: input.stay ? stayTicketHtml(input.stay) : "",
+          breakdown:
+            input.allInStayTotalKobo === undefined
+              ? ""
+              : priceBreakdownHtml({
+                  allInStayTotalKobo: input.allInStayTotalKobo,
+                  ...(input.refundableSecurityDepositKobo === undefined
+                    ? {}
+                    : {
+                        refundableSecurityDepositKobo:
+                          input.refundableSecurityDepositKobo,
+                      }),
+                  thisPaymentKobo: transfer.amountKobo,
+                }),
+          sections: parts.sections ?? [],
+          actions: parts.actions,
+        })}</div><script src="/payment.js" defer></script>`,
       }),
-      body: `<div class="guest-editorial">${paymentLayoutHtml({
-        state,
-        eyebrow: "Booking payment · Manual bank transfer",
-        title: heading,
-        tone,
-        status,
-        banner: `${alert}${parts.banner ?? ""}`,
-        ticket: input.stay ? stayTicketHtml(input.stay) : "",
-        breakdown:
-          input.allInStayTotalKobo === undefined
-            ? ""
-            : priceBreakdownHtml({
-                allInStayTotalKobo: input.allInStayTotalKobo,
-                ...(input.refundableSecurityDepositKobo === undefined
-                  ? {}
-                  : {
-                      refundableSecurityDepositKobo:
-                        input.refundableSecurityDepositKobo,
-                    }),
-                thisPaymentKobo: transfer.amountKobo,
-              }),
-        sections: parts.sections ?? [],
-        actions: parts.actions,
-      })}</div><script src="/payment.js" defer></script>`,
     });
   if (transfer.status === "confirmed") {
     return screen(
@@ -1538,36 +1670,41 @@ export function renderTransferPageHtml(input: {
   ) =>
     pageShell({
       title: `${heading} · Xenia`,
-      width: "narrow",
-      frame: appFrameHtml({
-        threadId: input.threadId,
+      layout: "guest-shell",
+      mode: "stays",
+      body: guestShellHtml({
+        kind: "task",
+        current: null,
+        taskTitle: "Bank transfer",
+        closeHref: conversation,
         ...(input.journey === undefined ? {} : { journey: input.journey }),
+        body: `<div class="guest-editorial">${paymentLayoutHtml({
+          state,
+          eyebrow: "Booking payment · Bank transfer",
+          title: heading,
+          tone,
+          status,
+          headingTag: "h2",
+          ...(parts.banner === undefined ? {} : { banner: parts.banner }),
+          ticket: input.stay ? stayTicketHtml(input.stay) : "",
+          breakdown:
+            input.allInStayTotalKobo === undefined
+              ? ""
+              : priceBreakdownHtml({
+                  allInStayTotalKobo: input.allInStayTotalKobo,
+                  ...(input.refundableSecurityDepositKobo === undefined
+                    ? {}
+                    : {
+                        refundableSecurityDepositKobo:
+                          input.refundableSecurityDepositKobo,
+                      }),
+                  amountDueNowKobo: input.amountDueNowKobo,
+                  thisPaymentKobo: transfer.amountKobo,
+                }),
+          sections: parts.sections ?? [],
+          actions: parts.actions,
+        })}</div><script src="/payment.js" defer></script>`,
       }),
-      body: `<div class="guest-editorial">${paymentLayoutHtml({
-        state,
-        eyebrow: "Booking payment · Bank transfer",
-        title: heading,
-        tone,
-        status,
-        ...(parts.banner === undefined ? {} : { banner: parts.banner }),
-        ticket: input.stay ? stayTicketHtml(input.stay) : "",
-        breakdown:
-          input.allInStayTotalKobo === undefined
-            ? ""
-            : priceBreakdownHtml({
-                allInStayTotalKobo: input.allInStayTotalKobo,
-                ...(input.refundableSecurityDepositKobo === undefined
-                  ? {}
-                  : {
-                      refundableSecurityDepositKobo:
-                        input.refundableSecurityDepositKobo,
-                    }),
-                amountDueNowKobo: input.amountDueNowKobo,
-                thisPaymentKobo: transfer.amountKobo,
-              }),
-        sections: parts.sections ?? [],
-        actions: parts.actions,
-      })}</div><script src="/payment.js" defer></script>`,
     });
   if (input.contract) {
     return screen(
@@ -2837,10 +2974,17 @@ export function createGuestRequestHandler(
           status.account.accountGuestId,
           tenantId,
         );
+    const badgeCount = session
+      ? (await defaultApp.planRows(
+          { id: session.principalId, role: "guest", tenantId },
+          session.identity,
+        )).badgeCount
+      : 0;
     return renderAccountHtml({
       email: status.account.email,
       phone: contact?.phoneNumber ?? null,
       governmentIdVerified: status.governmentIdVerified,
+      badgeCount,
       ...extra,
     });
   };
@@ -3747,6 +3891,8 @@ export function createGuestRequestHandler(
     }
 
     if (req.method === "GET" && url.pathname === "/") {
+      let badgeCount = 0;
+      let resolvedSession = requestSession;
       if (rawSession === null) {
         // A malformed session cookie is rejected, never silently replaced.
         res.writeHead(401, { "Content-Type": "text/plain" });
@@ -3776,6 +3922,7 @@ export function createGuestRequestHandler(
           sessionId,
           principalId,
         );
+        resolvedSession = registered;
         if (sessionScopedGuestPrincipals) runtimeForSession(registered);
         if (options.betaInviteCode !== undefined) {
           // Drop the code from the address bar and history once the session exists.
@@ -3801,10 +3948,17 @@ export function createGuestRequestHandler(
           res.end("Unauthorized");
           return;
         }
+        resolvedSession = resolved;
+        badgeCount = (await app.planRows(
+          { id: resolved.principalId, role: "guest", tenantId: resolved.tenantId },
+          resolved.identity,
+        )).badgeCount;
       }
+      // Issue 15 AC5 (ADR 0106): fail-closed Ask bar context validation; forged/stale/foreign context opens a plain conversation.
+      await resolveAskContext(app, resolvedSession, url.searchParams.get("context"));
       res.writeHead(200, GUEST_HTML_HEADERS);
       const paymentNotice = url.searchParams.get("payment") === "not-confirmed" ? GUEST_PAYMENT_CALLBACK_COPY.notConfirmedNotice : undefined;
-      res.end(renderGuestShellHtml(GUEST_MODES.stays, paymentNotice));
+      res.end(renderGuestShellHtml(GUEST_MODES.stays, paymentNotice, badgeCount));
       return;
     }
 
@@ -4397,22 +4551,31 @@ export function createGuestRequestHandler(
 
             })
           : undefined;
-        res.writeHead(200, GUEST_HTML_HEADERS);
-        res.end(
-          pageShell({
-            title: `${status.label} · Xenia`,
-            width: "narrow",
-            frame: appFrameHtml(
-              await threadFrame(
-                app,
-                offerId,
-                principal,
-                session.identity.principalIds,
-              ),
-            ),
-            body: `<div class="guest-editorial">${paymentScreenHtml(content, ticket, breakdown, canContinue ? (choice !== undefined ? { sections: choice } : { actions: `<a class="ui-button ui-button--primary ui-button--block" href="${href}">${label}</a>` }) : {})}</div>`,
+      const paymentFrame = await threadFrame(
+        app,
+        offerId,
+        principal,
+        session.identity.principalIds,
+      );
+      const paymentCloseHref = paymentFrame.threadId
+        ? `/?threadId=${encodeURIComponent(paymentFrame.threadId)}`
+        : "/plans";
+      res.writeHead(200, GUEST_HTML_HEADERS);
+      res.end(
+        pageShell({
+          title: `${status.label} · Xenia`,
+          layout: "guest-shell",
+          mode: "stays",
+          body: guestShellHtml({
+            kind: "task",
+            current: null,
+            taskTitle: "Choose how to pay",
+            closeHref: paymentCloseHref,
+            ...(paymentFrame.journey === undefined ? {} : { journey: paymentFrame.journey }),
+            body: `<div class="guest-editorial">${paymentScreenHtml(content, ticket, breakdown, { ...(canContinue ? (choice !== undefined ? { sections: choice } : { actions: `<a class="ui-button ui-button--primary ui-button--block" href="${href}">${label}</a>` }) : {}), headingTag: "h2" })}</div>`,
           }),
-        );
+        }),
+      );
       } catch {
         sendPageError(req, res, 404, "PAYMENT_OFFER_NOT_FOUND");
       }
@@ -5112,7 +5275,7 @@ export function createGuestRequestHandler(
               refundKobo: recorded.refundKobo ?? 0,
               owedKobo: recorded.owedKobo ?? 0,
               backHref,
-            })
+            }, { headingTag: "h2" })
           : (() => {
               const preview = app.environment.noticeToEnd.previewNotice(contract.contractId, principal);
               return noticeConfirmationHtml({
@@ -5125,10 +5288,10 @@ export function createGuestRequestHandler(
                 owedKobo: preview.owedKobo,
                 terms: preview.noticeToEndTerms,
                 backHref,
-              });
+              }, { headingTag: "h2" });
             })();
         res.writeHead(200, GUEST_HTML_HEADERS);
-        res.end(renderNoticePageHtml(body));
+        res.end(renderNoticePageHtml(body, backHref));
       } catch {
         sendJson(res, 400, { ok: false, code: "NOTICE_NOT_AVAILABLE" });
       }
@@ -5675,13 +5838,24 @@ export function createGuestRequestHandler(
         : GUEST_PLANS_COPY.titleSingleDomain;
       const html = pageShell({
         title: `${pageTitle} · ${GUEST_ACCOUNT_COPY.brandName}`,
+        layout: "guest-shell",
+        mode: "stays",
         head: themeColourMetaHtml(SHELL_DATA_THEME),
-        frame: appFrameHtml({ threadId: null }),
-        body: plansListHtml(composed, {
+        body: guestShellHtml({
+          kind: "section",
+          current: "plans",
+          badgeCount: composed.badgeCount,
           multiDomain,
-          signedIn: session.identity !== undefined,
-          showSignIn: guestAccounts !== undefined,
-          mode: GUEST_MODES.stays,
+          ask: {
+            label: multiDomain ? GUEST_SHELL_COPY.askYourPlans : GUEST_SHELL_COPY.askYourStays,
+            href: "/?context=plans",
+          },
+          body: plansListHtml(composed, {
+            multiDomain,
+            signedIn: session.identity !== undefined,
+            showSignIn: guestAccounts !== undefined,
+            mode: GUEST_MODES.stays,
+          }),
         }),
       });
       res.writeHead(200, { ...GUEST_HTML_HEADERS, "Cache-Control": "no-store" });

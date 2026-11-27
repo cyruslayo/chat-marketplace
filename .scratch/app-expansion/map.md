@@ -65,7 +65,7 @@ Each issue cherry-picks the named commits from `feat/surface-kit-phase-1` (read 
 | 12 | [Navigation table and reachability check](issues/12-navigation-check.md) | task | resolved | – |
 | 13 | [Emails open their own item, and sign-in returns to it](issues/13-email-links.md) | task | ready-for-agent | guest-accounts 13 |
 | 14 | [When the concierge fails, offer the list](issues/14-concierge-unavailable.md) | task | needs-info | copy approval |
-| 15 | [Tab bar, Ask bar, task bar and desktop rail](issues/15-shell.md) | task | ready-for-agent | 11 |
+| 15 | [Tab bar, Ask bar, task bar and desktop rail](issues/15-shell.md) | task | resolved | 11 |
 | 30 | [Guest-facing name: Xenia](issues/30-guest-facing-xenia.md) | task | resolved | – (D14) |
 | – | Find: one criteria state for concierge and list | task | to slice | 15 |
 | – | Help screen | task | to slice (16) | 15; D6 contact facts |
@@ -144,3 +144,4 @@ After each phase: `npm run check`, `npm run test:workers`, the full `npm test` (
 - 30: Replaced guest-facing `"Shortlet"` with `"Xenia"` across `guest-content.ts`, `bank-transfer-a2ui.ts`, `ui-kit.ts`, `guest-server.ts`, `client.ts`, and `shortlet-app.ts` while keeping `"Concierge · Stays"`, Operator screens, routes, storage keys, identifiers and Worker name unchanged; verified 109/109 tests (`test/guest-brand-xenia.test.ts` + account/UI kit suites) and 24 captures (`screenshots/30/`).
 - 28: `arrivalNextWeek(now = new Date())` in `test/helpers/pilot-fixture.ts`; the `/api/turn` 500 test in `test/pilot-guardrails.test.ts` now reads its arrival from `environment.clock()` (fixture clock 2026-09-03, 90-day horizon) instead of the wall clock, which had pushed it past the horizon on 26 Nov 2026. No commit changed the 500 path; no assertion weakened.
 - 29: `startOperatorServer` in `test/helpers/operator-session.ts` sets `keepAliveTimeout = 0`, so `node:http` no longer closes an idle socket at 5 s while a loaded test blocks its event loop; the next `fetch` had reused the half-closed socket (`read ECONNRESET`). Test helper only; 20/20 AC1 passes with three ten-file batches running.
+- 15: Added guest app shell (`guestShellHtml` in `guest-kit.ts`, `GUEST_SHELL_COPY` in `guest-content.ts`, `layout: "guest-shell"` in `ui-kit.ts`, `.ui-tabbar`/`.ui-ask`/`.ui-composer--link` in `shortlet-foundations.css`) across section, state, and task pages (`guest-server.ts`, `guest-account-pages.ts`), fail-closed `?context=` Ask links (ADR 0106), and `test/guest-shell.test.ts` (143/143 tests, 320×568 content share 80.8% `/` / 73.2% `/plans`, 7-screen walkthrough in `screenshots/shell/`).

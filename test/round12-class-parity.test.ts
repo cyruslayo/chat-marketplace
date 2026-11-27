@@ -336,3 +336,9 @@ test("Step 0: [hidden] base rule hides hidden kit elements while preserving hidd
     /\[hidden\]:not\(\[hidden=["']until-found["']\]\)\s*\{\s*display:\s*none\s*!important;\s*\}/,
   );
 });
+
+test("Issue 15: TabBar, AskBar, TaskBar, and SideNavigationGuest classes exist in shortlet-foundations.css", () => {
+  for (const cls of [".ui-tabbar", ".ui-ask", ".ui-composer--link", ".ui-appbar--task", ".ui-sidenav--guest"]) {
+    assert.ok(FOUNDATIONS_CSS.includes(cls), `missing shell class ${cls} in shortlet-foundations.css`);
+  }
+});

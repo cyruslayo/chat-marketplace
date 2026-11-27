@@ -1,5 +1,6 @@
-import { appBarHtml, errorPage, escapeHtml, pageShell } from "../../web/src/ui-kit.js";
-import { GUEST_ACCOUNT_COPY, GUEST_PLANS_COPY } from "../../web-agent/src/guest-content.js";
+import { errorPage, escapeHtml, pageShell } from "../../web/src/ui-kit.js";
+import { GUEST_ACCOUNT_COPY, GUEST_PLANS_COPY, GUEST_SHELL_COPY } from "../../web-agent/src/guest-content.js";
+import { guestShellHtml } from "./guest-kit.js";
 
 /** Account responses carry personal data, so the browser and any cache must not keep them (review D5). */
 export const ACCOUNT_PAGE_HEADERS = Object.freeze({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
@@ -18,31 +19,33 @@ const ACCOUNT_PATH = "/account";
 const EMAIL_PATH = "/account/email";
 const EMAIL_CODE_PATH = "/account/email/code";
 
-function appBar(backHref: string, backLabel: string, action: { href: string; label: string; icon: "info" | "users" }): string {
-  return appBarHtml({ backHref, backLabel, action });
-}
-
 function inlineError(id: string, error: AccountFormError | undefined): string {
-  return error === undefined
-    ? ""
-    : `<p id="${id}" class="ui-field__error" role="alert" data-error-code="${escapeHtml(error.code)}">${escapeHtml(error.message)}</p>`;
+  if (error === undefined) return "";
+  return `<p id="${id}" class="ui-field__error" role="alert" data-error-code="${escapeHtml(error.code)}">${escapeHtml(error.message)}</p>`;
 }
 
 /** The sign-in page: an email field and one submit. A plain POST form, so it works without JavaScript (ADR 0080). */
 export function renderSignInHtml(input: { readonly returnPath: string; readonly email?: string; readonly error?: AccountFormError }): string {
   const invalid = input.error === undefined ? "" : ` aria-invalid="true" aria-describedby="email-error"`;
+  const closeHref = input.returnPath && input.returnPath.startsWith("/") ? input.returnPath : "/";
   return pageShell({
     title: `${GUEST_ACCOUNT_COPY.signInTitle} · ${GUEST_ACCOUNT_COPY.brandName}`,
-    width: "narrow",
-    frame: appBar("/", GUEST_ACCOUNT_COPY.backToConversation, { href: SIGN_IN_PATH, label: GUEST_ACCOUNT_COPY.appBarSignIn, icon: "info" }),
-    body: `<header class="ui-page__header"><p class="ui-eyebrow">${GUEST_ACCOUNT_COPY.brandEyebrow}</p><h1>${GUEST_ACCOUNT_COPY.signInTitle}</h1><p>${escapeHtml(GUEST_ACCOUNT_COPY.signInIntro)}</p></header>` +
-      `<form class="ui-panel" method="post" action="${SIGN_IN_PATH}">` +
-      `<div class="ui-field"><label class="ui-field__label" for="email">${escapeHtml(GUEST_ACCOUNT_COPY.emailLabel)}</label>` +
-      `<input id="email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" maxlength="254" required value="${escapeHtml(input.email ?? "")}"${invalid}>` +
-      `${inlineError("email-error", input.error)}</div>` +
-      `<input type="hidden" name="return" value="${escapeHtml(input.returnPath)}">` +
-      `<button class="ui-button ui-button--primary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.sendCode)}</button>` +
-      `</form>`,
+    layout: "guest-shell",
+    mode: "stays",
+    body: guestShellHtml({
+      kind: "task",
+      current: null,
+      taskTitle: GUEST_ACCOUNT_COPY.signInTitle,
+      closeHref,
+      body: `<header class="ui-page__header"><p class="ui-eyebrow">${GUEST_ACCOUNT_COPY.brandEyebrow}</p><h2>${GUEST_ACCOUNT_COPY.signInTitle}</h2><p>${escapeHtml(GUEST_ACCOUNT_COPY.signInIntro)}</p></header>` +
+        `<form class="ui-panel" method="post" action="${SIGN_IN_PATH}">` +
+        `<div class="ui-field"><label class="ui-field__label" for="email">${escapeHtml(GUEST_ACCOUNT_COPY.emailLabel)}</label>` +
+        `<input id="email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" maxlength="254" required value="${escapeHtml(input.email ?? "")}"${invalid}>` +
+        `${inlineError("email-error", input.error)}</div>` +
+        `<input type="hidden" name="return" value="${escapeHtml(input.returnPath)}">` +
+        `<button class="ui-button ui-button--primary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.sendCode)}</button>` +
+        `</form>`,
+    }),
   });
 }
 
@@ -55,25 +58,33 @@ export function renderSignInCodeHtml(input: {
   readonly error?: AccountFormError;
 }): string {
   const invalid = input.error === undefined ? "" : ` aria-invalid="true" aria-describedby="code-error"`;
+  const closeHref = input.returnPath && input.returnPath.startsWith("/") ? input.returnPath : "/";
   return pageShell({
     title: `${GUEST_ACCOUNT_COPY.codeTitle} · ${GUEST_ACCOUNT_COPY.brandName}`,
-    width: "narrow",
-    frame: appBar("/", GUEST_ACCOUNT_COPY.backToConversation, { href: SIGN_IN_PATH, label: GUEST_ACCOUNT_COPY.appBarSignIn, icon: "info" }),
-    body: `<header class="ui-page__header"><p class="ui-eyebrow">${GUEST_ACCOUNT_COPY.brandEyebrow}</p><h1>${GUEST_ACCOUNT_COPY.codeTitle}</h1><p>${escapeHtml(GUEST_ACCOUNT_COPY.codeIntro)} ${escapeHtml(GUEST_ACCOUNT_COPY.codeExpiresIn(input.minutes))}</p></header>` +
-      `<form class="ui-panel" method="post" action="${CODE_PATH}">` +
-      `<input type="hidden" name="email" value="${escapeHtml(input.email)}">` +
-      `<input type="hidden" name="challengeId" value="${escapeHtml(input.challengeId)}">` +
-      `<input type="hidden" name="return" value="${escapeHtml(input.returnPath)}">` +
-      `<div class="ui-field"><label class="ui-field__label" for="code">${escapeHtml(GUEST_ACCOUNT_COPY.codeLabel)}</label>` +
-      `<input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required${invalid}>` +
-      `${inlineError("code-error", input.error)}</div>` +
-      `<button class="ui-button ui-button--primary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.checkCode)}</button>` +
-      `</form>` +
-      `<form class="ui-panel" method="post" action="${SIGN_IN_PATH}">` +
-      `<input type="hidden" name="email" value="${escapeHtml(input.email)}">` +
-      `<input type="hidden" name="return" value="${escapeHtml(input.returnPath)}">` +
-      `<button class="ui-button ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.requestNewCode)}</button>` +
-      `</form>`,
+    layout: "guest-shell",
+    mode: "stays",
+    body: guestShellHtml({
+      kind: "task",
+      current: null,
+      taskTitle: GUEST_ACCOUNT_COPY.codeTitle,
+      closeHref,
+      body: `<header class="ui-page__header"><p class="ui-eyebrow">${GUEST_ACCOUNT_COPY.brandEyebrow}</p><h2>${GUEST_ACCOUNT_COPY.codeTitle}</h2><p>${escapeHtml(GUEST_ACCOUNT_COPY.codeIntro)} ${escapeHtml(GUEST_ACCOUNT_COPY.codeExpiresIn(input.minutes))}</p></header>` +
+        `<form class="ui-panel" method="post" action="${CODE_PATH}">` +
+        `<input type="hidden" name="email" value="${escapeHtml(input.email)}">` +
+        `<input type="hidden" name="challengeId" value="${escapeHtml(input.challengeId)}">` +
+        `<input type="hidden" name="return" value="${escapeHtml(input.returnPath)}">` +
+        `<div class="ui-field"><label class="ui-field__label" for="code">${escapeHtml(GUEST_ACCOUNT_COPY.codeLabel)}</label>` +
+        `<input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required${invalid}>` +
+        `${inlineError("code-error", input.error)}</div>` +
+        `<button class="ui-button ui-button--primary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.checkCode)}</button>` +
+        `</form>` +
+        `<form class="ui-panel" method="post" action="${SIGN_IN_PATH}">` +
+        `<input type="hidden" name="email" value="${escapeHtml(input.email)}">` +
+        `<input type="hidden" name="return" value="${escapeHtml(input.returnPath)}">` +
+        `<button class="ui-button ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.requestNewCode)}</button>` +
+        `</form>` +
+        `<p><a href="${ACCOUNT_PATH}">${escapeHtml(GUEST_ACCOUNT_COPY.backToAccount)}</a></p>`,
+    }),
   });
 }
 
@@ -98,6 +109,7 @@ export interface AccountPageInput {
   readonly emailError?: AccountFormError;
   readonly phoneDraft?: string;
   readonly phoneError?: AccountFormError;
+  readonly badgeCount?: number;
 }
 
 /**
@@ -113,32 +125,38 @@ export function renderAccountHtml(input: AccountPageInput): string {
   const notice = input.notice === undefined ? "" : `<p class="ui-banner ui-banner--success" role="status" data-notice="${input.notice}">${escapeHtml(NOTICES[input.notice])}</p>`;
   return pageShell({
     title: `${GUEST_ACCOUNT_COPY.accountTitle} · ${GUEST_ACCOUNT_COPY.brandName}`,
-    width: "narrow",
-    frame: appBar("/", GUEST_ACCOUNT_COPY.backToConversation, { href: "/account", label: GUEST_ACCOUNT_COPY.appBarAccount, icon: "users" }),
-    body: `<header class="ui-page__header"><p class="ui-eyebrow">${GUEST_ACCOUNT_COPY.brandEyebrow}</p><h1>${GUEST_ACCOUNT_COPY.accountTitle}</h1><p>${escapeHtml(GUEST_ACCOUNT_COPY.accountIntro)}</p></header>` +
-      notice +
-      `<section class="ui-panel" data-account-state="signed-in"><h2>${GUEST_ACCOUNT_COPY.detailsHeading}</h2>` +
-      `<dl class="ui-facts ui-facts--stacked">` +
-      `<div><dt>${escapeHtml(GUEST_ACCOUNT_COPY.emailLabel)}</dt><dd data-fact="email">${escapeHtml(input.email)}</dd></div>` +
-      `<div><dt>${escapeHtml(GUEST_ACCOUNT_COPY.phoneLabel)}</dt><dd data-fact="phone">${escapeHtml(input.phone ?? GUEST_ACCOUNT_COPY.phoneNotAdded)}</dd></div>` +
-      `<div><dt>${escapeHtml(GUEST_ACCOUNT_COPY.identityLabel)}</dt><dd data-fact="identity">${escapeHtml(GUEST_ACCOUNT_COPY.identityEmailConfirmed)}</dd><dd data-fact="identity-id">${escapeHtml(identity)}</dd></div>` +
-      `</dl></section>` +
-      `<form class="ui-panel" method="post" action="/account/email"><h2>${GUEST_ACCOUNT_COPY.changeEmailHeading}</h2><p>${escapeHtml(GUEST_ACCOUNT_COPY.changeEmailIntro)}</p>` +
-      `<div class="ui-field"><label class="ui-field__label" for="new-email">${escapeHtml(GUEST_ACCOUNT_COPY.emailLabel)}</label>` +
-      `<input id="new-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" maxlength="254" required value="${escapeHtml(input.emailDraft ?? "")}"${emailInvalid}>` +
-      `${inlineError("new-email-error", input.emailError)}</div>` +
-      `<button class="ui-button ui-button--primary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.changeEmailButton)}</button></form>` +
-      `<form class="ui-panel" method="post" action="/account/phone"><h2>${GUEST_ACCOUNT_COPY.phoneLabel}</h2>` +
-      `<div class="ui-field"><label class="ui-field__label" for="phone">${escapeHtml(GUEST_ACCOUNT_COPY.phoneLabel)}</label>` +
-      `<p class="ui-field__hint" id="phone-help">${escapeHtml(GUEST_ACCOUNT_COPY.phoneHint)}</p>` +
-      `<input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="32" aria-describedby="${phoneDescribedBy}" value="${escapeHtml(input.phoneDraft ?? "")}"${phoneInvalid}>` +
-      `${inlineError("phone-error", input.phoneError)}</div>` +
-      `<button class="ui-button ui-button--primary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.savePhone)}</button></form>` +
-      `<section class="ui-panel"><h2>${escapeHtml(GUEST_PLANS_COPY.titleSingleDomain)}</h2><a class="ui-button ui-button--secondary ui-button--block" href="/plans">${escapeHtml(GUEST_PLANS_COPY.titleSingleDomain)}</a></section>` +
-      `<section class="ui-panel"><h2>${GUEST_ACCOUNT_COPY.sessionsHeading}</h2>` +
-      `<form method="post" action="${SIGN_OUT_PATH}"><button class="ui-button ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.signOut)}</button></form>` +
-      `<form method="post" action="${SIGN_OUT_EVERYWHERE_PATH}"><p>${escapeHtml(GUEST_ACCOUNT_COPY.signOutEverywhereIntro)}</p>` +
-      `<button class="ui-button ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.signOutEverywhere)}</button></form></section>`,
+    layout: "guest-shell",
+    mode: "stays",
+    body: guestShellHtml({
+      kind: "section",
+      current: "account",
+      badgeCount: input.badgeCount ?? 0,
+      ask: { label: GUEST_SHELL_COPY.askConcierge, href: "/?context=account" },
+      body: `<header class="ui-page__header"><p class="ui-eyebrow">${GUEST_ACCOUNT_COPY.brandEyebrow}</p><h1>${GUEST_ACCOUNT_COPY.accountTitle}</h1><p>${escapeHtml(GUEST_ACCOUNT_COPY.accountIntro)}</p></header>` +
+        notice +
+        `<section class="ui-panel" data-account-state="signed-in"><h2>${GUEST_ACCOUNT_COPY.detailsHeading}</h2>` +
+        `<dl class="ui-facts ui-facts--stacked">` +
+        `<div><dt>${escapeHtml(GUEST_ACCOUNT_COPY.emailLabel)}</dt><dd data-fact="email">${escapeHtml(input.email)}</dd></div>` +
+        `<div><dt>${escapeHtml(GUEST_ACCOUNT_COPY.phoneLabel)}</dt><dd data-fact="phone">${escapeHtml(input.phone ?? GUEST_ACCOUNT_COPY.phoneNotAdded)}</dd></div>` +
+        `<div><dt>${escapeHtml(GUEST_ACCOUNT_COPY.identityLabel)}</dt><dd data-fact="identity">${escapeHtml(GUEST_ACCOUNT_COPY.identityEmailConfirmed)}</dd><dd data-fact="identity-id">${escapeHtml(identity)}</dd></div>` +
+        `</dl></section>` +
+        `<form class="ui-panel" method="post" action="/account/email"><h2>${GUEST_ACCOUNT_COPY.changeEmailHeading}</h2><p>${escapeHtml(GUEST_ACCOUNT_COPY.changeEmailIntro)}</p>` +
+        `<div class="ui-field"><label class="ui-field__label" for="new-email">${escapeHtml(GUEST_ACCOUNT_COPY.emailLabel)}</label>` +
+        `<input id="new-email" name="email" type="email" autocomplete="email" inputmode="email" autocapitalize="off" spellcheck="false" maxlength="254" required value="${escapeHtml(input.emailDraft ?? "")}"${emailInvalid}>` +
+        `${inlineError("new-email-error", input.emailError)}</div>` +
+        `<button class="ui-button ui-button--primary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.changeEmailButton)}</button></form>` +
+        `<form class="ui-panel" method="post" action="/account/phone"><h2>${GUEST_ACCOUNT_COPY.phoneLabel}</h2>` +
+        `<div class="ui-field"><label class="ui-field__label" for="phone">${escapeHtml(GUEST_ACCOUNT_COPY.phoneLabel)}</label>` +
+        `<p class="ui-field__hint" id="phone-help">${escapeHtml(GUEST_ACCOUNT_COPY.phoneHint)}</p>` +
+        `<input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="32" aria-describedby="${phoneDescribedBy}" value="${escapeHtml(input.phoneDraft ?? "")}"${phoneInvalid}>` +
+        `${inlineError("phone-error", input.phoneError)}</div>` +
+        `<button class="ui-button ui-button--primary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.savePhone)}</button></form>` +
+        `<section class="ui-panel"><h2>${escapeHtml(GUEST_PLANS_COPY.titleSingleDomain)}</h2><a class="ui-button ui-button--secondary ui-button--block" href="/plans">${escapeHtml(GUEST_PLANS_COPY.titleSingleDomain)}</a></section>` +
+        `<section class="ui-panel"><h2>${GUEST_ACCOUNT_COPY.sessionsHeading}</h2>` +
+        `<form method="post" action="${SIGN_OUT_PATH}"><button class="ui-button ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.signOut)}</button></form>` +
+        `<form method="post" action="${SIGN_OUT_EVERYWHERE_PATH}"><p>${escapeHtml(GUEST_ACCOUNT_COPY.signOutEverywhereIntro)}</p>` +
+        `<button class="ui-button ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.signOutEverywhere)}</button></form></section>`,
+    }),
   });
 }
 
@@ -147,22 +165,29 @@ export function renderEmailChangeCodeHtml(input: { readonly newEmail: string; re
   const invalid = input.error === undefined ? "" : ` aria-invalid="true" aria-describedby="code-error"`;
   return pageShell({
     title: `${GUEST_ACCOUNT_COPY.changeEmailCodeTitle} · ${GUEST_ACCOUNT_COPY.brandName}`,
-    width: "narrow",
-    frame: appBar(ACCOUNT_PATH, GUEST_ACCOUNT_COPY.backToAccount, { href: ACCOUNT_PATH, label: GUEST_ACCOUNT_COPY.appBarAccount, icon: "users" }),
-    body: `<header class="ui-page__header"><p class="ui-eyebrow">${GUEST_ACCOUNT_COPY.brandEyebrow}</p><h1>${GUEST_ACCOUNT_COPY.changeEmailCodeTitle}</h1>` +
-      `<p>${escapeHtml(GUEST_ACCOUNT_COPY.changeEmailCodeIntro)} ${escapeHtml(GUEST_ACCOUNT_COPY.codeExpiresIn(input.minutes))}</p></header>` +
-      `<form class="ui-panel" method="post" action="${EMAIL_CODE_PATH}">` +
-      `<input type="hidden" name="email" value="${escapeHtml(input.newEmail)}">` +
-      `<input type="hidden" name="challengeId" value="${escapeHtml(input.challengeId)}">` +
-      `<div class="ui-field"><label class="ui-field__label" for="code">${escapeHtml(GUEST_ACCOUNT_COPY.codeLabel)}</label>` +
-      `<input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required${invalid}>` +
-      `${inlineError("code-error", input.error)}</div>` +
-      `<button class="ui-button ui-button--primary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.changeEmailCheckButton)}</button>` +
-      `</form>` +
-      `<form class="ui-panel" method="post" action="${EMAIL_PATH}">` +
-      `<input type="hidden" name="email" value="${escapeHtml(input.newEmail)}">` +
-      `<button class="ui-button ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.requestNewCode)}</button>` +
-      `</form>`,
+    layout: "guest-shell",
+    mode: "stays",
+    body: guestShellHtml({
+      kind: "task",
+      current: null,
+      taskTitle: GUEST_ACCOUNT_COPY.changeEmailCodeTitle,
+      closeHref: ACCOUNT_PATH,
+      body: `<header class="ui-page__header"><p class="ui-eyebrow">${GUEST_ACCOUNT_COPY.brandEyebrow}</p><h2>${GUEST_ACCOUNT_COPY.changeEmailCodeTitle}</h2>` +
+        `<p>${escapeHtml(GUEST_ACCOUNT_COPY.changeEmailCodeIntro)} ${escapeHtml(GUEST_ACCOUNT_COPY.codeExpiresIn(input.minutes))}</p></header>` +
+        `<form class="ui-panel" method="post" action="${EMAIL_CODE_PATH}">` +
+        `<input type="hidden" name="email" value="${escapeHtml(input.newEmail)}">` +
+        `<input type="hidden" name="challengeId" value="${escapeHtml(input.challengeId)}">` +
+        `<div class="ui-field"><label class="ui-field__label" for="code">${escapeHtml(GUEST_ACCOUNT_COPY.codeLabel)}</label>` +
+        `<input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required${invalid}>` +
+        `${inlineError("code-error", input.error)}</div>` +
+        `<button class="ui-button ui-button--primary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.changeEmailCheckButton)}</button>` +
+        `</form>` +
+        `<form class="ui-panel" method="post" action="${EMAIL_PATH}">` +
+        `<input type="hidden" name="email" value="${escapeHtml(input.newEmail)}">` +
+        `<button class="ui-button ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.requestNewCode)}</button>` +
+        `</form>` +
+        `<p><a href="${ACCOUNT_PATH}">${escapeHtml(GUEST_ACCOUNT_COPY.backToAccount)}</a></p>`,
+    }),
   });
 }
 
@@ -195,11 +220,18 @@ export function renderSignInUnavailableHtml(): string {
 export function renderOfferNotFoundHtml(): string {
   return pageShell({
     title: `${GUEST_ACCOUNT_COPY.offerNotFoundTitle} · ${GUEST_ACCOUNT_COPY.brandName}`,
-    width: "narrow",
-    frame: appBar("/", GUEST_ACCOUNT_COPY.backToConversation, { href: SIGN_IN_PATH, label: GUEST_ACCOUNT_COPY.appBarSignIn, icon: "info" }),
-    body: `<section class="ui-panel ui-empty" data-error-code="PAYMENT_OFFER_NOT_FOUND" data-status="404"><h1>${escapeHtml(GUEST_ACCOUNT_COPY.offerNotFoundTitle)}</h1>` +
-      `<p>${escapeHtml(GUEST_ACCOUNT_COPY.offerNotFoundMessage)}</p>` +
+    layout: "guest-shell",
+    mode: "stays",
+    body: guestShellHtml({
+      kind: "state",
+      current: "plans",
+      backHref: "/",
+      backLabel: GUEST_ACCOUNT_COPY.backToConversation,
+      ask: { label: GUEST_SHELL_COPY.askConcierge, href: "/" },
+      body: `<section class="ui-panel ui-empty" data-error-code="PAYMENT_OFFER_NOT_FOUND" data-status="404"><h1>${escapeHtml(GUEST_ACCOUNT_COPY.offerNotFoundTitle)}</h1>` +
+        `<p>${escapeHtml(GUEST_ACCOUNT_COPY.offerNotFoundMessage)}</p>` +
       `<a class="ui-button ui-button--primary ui-button--block" href="${SIGN_IN_PATH}">${escapeHtml(GUEST_ACCOUNT_COPY.signInTitle)}</a>` +
       `<a class="ui-button ui-button--block" href="/">${escapeHtml(GUEST_ACCOUNT_COPY.backToConversation)}</a></section>`,
+    }),
   });
 }

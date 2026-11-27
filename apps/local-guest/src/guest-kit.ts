@@ -20,6 +20,7 @@ import {
   GUEST_EXTENSION_COPY,
   GUEST_NOTICE_COPY,
   GUEST_PLANS_COPY,
+  GUEST_SHELL_COPY,
   GUEST_MODES,
   commerceSoldBy,
   extensionFactRows,
@@ -237,7 +238,9 @@ export function offerScreenHtml(
   content: OfferScreenContent,
   ticket: string,
   breakdown: string,
+  options: { readonly headingTag?: "h1" | "h2" } = {},
 ): string {
+  const headingTag = options.headingTag ?? "h1";
   const form = (
     path: string,
     label: string,
@@ -263,7 +266,7 @@ export function offerScreenHtml(
   const actions = content.accept
     ? `<div class="ui-action-bar ui-action-bar--sticky offer-actions"><div><strong>${escapeHtml(content.amount)}</strong><span class="ui-price-breakdown__label">${GUEST_FACT_LABELS.amountDueNow}</span></div>${form(content.accept.path, GUEST_PAYMENT_COPY.accept, true, content.accept.surfaceId)}</div>`
     : `<div class="offer-actions request-actions">${form(content.conversationPath, "Back to your conversation", true)}${content.searchPath ? form(content.searchPath, "Find other stays", false) : ""}</div>`;
-  return `<section class="offer-screen" data-offer-state="${content.state}" data-server-now="${escapeHtml(content.serverNow)}"><header class="request-head offer-head" data-page="booking-record"><p class="ui-eyebrow">Conditional Booking Offer</p><h1>${escapeHtml(content.title)}</h1><span class="ui-status ui-status--${live ? "success" : content.state === "expired" || content.state === "closed" ? "danger" : "warning"}">${escapeHtml(content.status)}</span></header>${banner}${ticket}${live ? breakdown : ""}${policies}${content.steps.length ? `<section class="ui-panel"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>` : ""}${actions}</section>`;
+  return `<section class="offer-screen" data-offer-state="${content.state}" data-server-now="${escapeHtml(content.serverNow)}"><header class="request-head offer-head" data-page="booking-record"><p class="ui-eyebrow">Conditional Booking Offer</p><${headingTag}>${escapeHtml(content.title)}</${headingTag}><span class="ui-status ui-status--${live ? "success" : content.state === "expired" || content.state === "closed" ? "danger" : "warning"}">${escapeHtml(content.status)}</span></header>${banner}${ticket}${live ? breakdown : ""}${policies}${content.steps.length ? `<section class="ui-panel"><h2>What happens next</h2>${stepsHtml(content.steps)}</section>` : ""}${actions}</section>`;
 }
 
 /**
@@ -282,12 +285,14 @@ export function paymentLayoutHtml(input: {
   readonly sections?: readonly string[];
   readonly actions?: string;
   readonly serverNow?: string;
+  readonly headingTag?: "h1" | "h2";
 }): string {
+  const headingTag = input.headingTag ?? "h1";
   const actions =
     input.actions === undefined || input.actions === ""
       ? ""
       : `<div class="payment-actions ui-action-bar ui-action-bar--sticky">${input.actions}</div>`;
-  return `<section class="payment-screen" data-payment-state="${escapeHtml(input.state)}"${input.serverNow === undefined ? "" : ` data-server-now="${escapeHtml(input.serverNow)}"`}><header class="request-head payment-head" data-page="booking-record"><p class="ui-eyebrow">${escapeHtml(input.eyebrow)}</p><h1>${escapeHtml(input.title)}</h1>${input.status === undefined ? "" : statusHtml(input.tone, input.status)}</header>${input.banner ?? ""}${input.ticket ?? ""}${input.breakdown ?? ""}${(input.sections ?? []).join("")}${actions}</section>`;
+  return `<section class="payment-screen" data-payment-state="${escapeHtml(input.state)}"${input.serverNow === undefined ? "" : ` data-server-now="${escapeHtml(input.serverNow)}"`}><header class="request-head payment-head" data-page="booking-record"><p class="ui-eyebrow">${escapeHtml(input.eyebrow)}</p><${headingTag}>${escapeHtml(input.title)}</${headingTag}>${input.status === undefined ? "" : statusHtml(input.tone, input.status)}</header>${input.banner ?? ""}${input.ticket ?? ""}${input.breakdown ?? ""}${(input.sections ?? []).join("")}${actions}</section>`;
 }
 
 /** The chat's and the payment page's shared screen: the deadline banner, steps and the explanation (ADR 0078). */
@@ -299,6 +304,7 @@ export function paymentScreenHtml(
     readonly sections?: string;
     readonly actions?: string;
     readonly countdown?: boolean;
+    readonly headingTag?: "h1" | "h2";
   },
 ): string {
   const banner =
@@ -331,6 +337,7 @@ export function paymentScreenHtml(
     ],
     actions: content.choice ? "" : slots.actions ?? "",
     serverNow: content.serverNow,
+    ...(slots.headingTag === undefined ? {} : { headingTag: slots.headingTag }),
   });
 }
 
@@ -971,14 +978,16 @@ function noticeFactsDlHtml(facts: NoticeFactsInput): string {
   return `<dl class="ui-facts ui-facts--stacked">${cells}</dl>`;
 }
 
-export function noticeConfirmationHtml(input: NoticeConfirmationInput): string {
+export function noticeConfirmationHtml(input: NoticeConfirmationInput, options: { readonly headingTag?: "h1" | "h2" } = {}): string {
+  const headingTag = options.headingTag ?? "h1";
   const action = `/bookings/notice/${encodeURIComponent(input.offerId)}`;
-  return `<section class="ui-panel" aria-labelledby="notice-heading" data-notice-step data-notice-date="${escapeHtml(input.noticeDate)}"><h1 id="notice-heading">${escapeHtml(GUEST_NOTICE_COPY.heading)}</h1><p>${escapeHtml(input.terms)}</p>${noticeFactsDlHtml(input)}<form method="post" action="${escapeHtml(action)}"><input type="hidden" name="noticeDate" value="${escapeHtml(input.noticeDate)}"><input type="hidden" name="contractVersion" value="${input.contractVersion}"><button class="ui-button ui-button--primary ui-button--block" type="submit">${escapeHtml(GUEST_NOTICE_COPY.confirm)}</button></form><a class="ui-button ui-button--block" href="${escapeHtml(input.backHref)}">${escapeHtml(GUEST_NOTICE_COPY.back)}</a></section>`;
+  return `<section class="ui-panel" aria-labelledby="notice-heading" data-notice-step data-notice-date="${escapeHtml(input.noticeDate)}"><${headingTag} id="notice-heading">${escapeHtml(GUEST_NOTICE_COPY.heading)}</${headingTag}><p>${escapeHtml(input.terms)}</p>${noticeFactsDlHtml(input)}<form method="post" action="${escapeHtml(action)}"><input type="hidden" name="noticeDate" value="${escapeHtml(input.noticeDate)}"><input type="hidden" name="contractVersion" value="${input.contractVersion}"><button class="ui-button ui-button--primary ui-button--block" type="submit">${escapeHtml(GUEST_NOTICE_COPY.confirm)}</button></form><a class="ui-button ui-button--block" href="${escapeHtml(input.backHref)}">${escapeHtml(GUEST_NOTICE_COPY.back)}</a></section>`;
 }
 
 /** The recorded Notice to End, read-only: the new last night and checkout and the amounts it fixed. */
-export function noticeRecordedHtml(input: NoticeFactsInput & { readonly backHref: string }): string {
-  return `<section class="ui-panel" aria-labelledby="notice-recorded-heading" data-notice-recorded><h1 id="notice-recorded-heading">${escapeHtml(GUEST_NOTICE_COPY.recordedHeading)}</h1><p>${escapeHtml(GUEST_NOTICE_COPY.recordedLead)}</p>${noticeFactsDlHtml(input)}<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(input.backHref)}">${escapeHtml(GUEST_NOTICE_COPY.recordedBack)}</a></section>`;
+export function noticeRecordedHtml(input: NoticeFactsInput & { readonly backHref: string }, options: { readonly headingTag?: "h1" | "h2" } = {}): string {
+  const headingTag = options.headingTag ?? "h1";
+  return `<section class="ui-panel" aria-labelledby="notice-recorded-heading" data-notice-recorded><${headingTag} id="notice-recorded-heading">${escapeHtml(GUEST_NOTICE_COPY.recordedHeading)}</${headingTag}><p>${escapeHtml(GUEST_NOTICE_COPY.recordedLead)}</p>${noticeFactsDlHtml(input)}<a class="ui-button ui-button--secondary ui-button--block" href="${escapeHtml(input.backHref)}">${escapeHtml(GUEST_NOTICE_COPY.recordedBack)}</a></section>`;
 }
 
 /** The entry point on a confirmed Extended Stay's schedule: a link to the confirmation step. */
@@ -1077,4 +1086,167 @@ export function plansChatCardProps(
     rows,
     action: { label: title, href: "/plans" },
   };
+}
+
+export type GuestShellSection = "find" | "plans" | "account" | "help";
+
+/**
+ * Issue 15 (TabBar / SideNavigationGuest README, rules/03 N11, ADR 0078):
+ * count badge on Your stays / Your plans. Never colour alone: includes screen-reader words.
+ */
+export function guestBadgeHtml(count: number): string {
+  if (!Number.isInteger(count) || count <= 0) return "";
+  const display = count > 9 ? "9+" : String(count);
+  return `<span class="ui-badge">${display}<span class="ui-visually-hidden">${escapeHtml(GUEST_SHELL_COPY.badgeNeedsAction(count))}</span></span>`;
+}
+
+export function guestModeLabelHtml(mode: ModePresentation = GUEST_MODES.stays): string {
+  const persona = GUEST_MODE_CHOOSER.conciergeLabel(mode.label);
+  const at = persona.lastIndexOf("·");
+  const prefix = at === -1 ? persona : persona.slice(0, at).trim();
+  const modeWord = at === -1 ? "" : persona.slice(at).trim();
+  return `<span class="ui-mode-label"><span class="ui-mode-label__mark" aria-hidden="true"></span>${escapeHtml(prefix)}${modeWord === "" ? "" : ` <span class="ui-mode-label__mode">${escapeHtml(modeWord)}</span>`}</span>`;
+}
+
+/** Issue 15 (TabBar README, rules/03 N4): 3-tab mobile bottom bar (Find, Your stays, Account). */
+export function guestTabBarHtml(input: {
+  readonly current: GuestShellSection | null;
+  readonly badgeCount?: number;
+  readonly multiDomain?: boolean;
+}): string {
+  const plansLabel = input.multiDomain ? GUEST_SHELL_COPY.yourPlans : GUEST_SHELL_COPY.yourStays;
+  const badge = guestBadgeHtml(input.badgeCount ?? 0);
+  const tab = (section: "find" | "plans" | "account", href: string, iconName: IconName, label: string, extra = "") =>
+    `<a href="${href}"${input.current === section ? ' aria-current="page"' : ""}>${icon(iconName)}<span>${escapeHtml(label)}</span>${extra}</a>`;
+  return `<nav class="ui-tabbar" aria-label="${escapeHtml(GUEST_SHELL_COPY.navLabel)}">${tab("find", "/", "search", GUEST_SHELL_COPY.find)}${tab("plans", "/plans", "calendar", plansLabel, badge)}${tab("account", "/account", "person", GUEST_SHELL_COPY.account)}</nav>`;
+}
+
+/**
+ * Issue 15 (SideNavigationGuest README, rules/03 N7): desktop side navigation (>=48rem).
+ * Help link renders only when `helpHref` is supplied (omitted until issue 16 adds /help).
+ */
+export function guestSideNavHtml(input: {
+  readonly current: GuestShellSection | null;
+  readonly badgeCount?: number;
+  readonly mode?: ModePresentation;
+  readonly multiDomain?: boolean;
+  readonly helpHref?: string;
+}): string {
+  const mode = input.mode ?? GUEST_MODES.stays;
+  const plansLabel = input.multiDomain ? GUEST_SHELL_COPY.yourPlans : GUEST_SHELL_COPY.yourStays;
+  const badge = guestBadgeHtml(input.badgeCount ?? 0);
+  const item = (section: GuestShellSection, href: string, iconName: IconName, label: string, extra = "") =>
+    `<li><a href="${href}"${input.current === section ? ' aria-current="page"' : ""}>${icon(iconName)}<span>${escapeHtml(label)}</span>${extra}</a></li>`;
+  const helpList = input.helpHref
+    ? `<ul class="ui-sidenav__list ui-sidenav__list--end">${item("help", input.helpHref, "help", GUEST_SHELL_COPY.help)}</ul>`
+    : "";
+  return `<nav class="ui-sidenav ui-sidenav--guest" aria-label="${escapeHtml(GUEST_SHELL_COPY.navLabel)}"><p class="ui-sidenav__brand"><a class="ui-brand" href="/">${escapeHtml(GUEST_ACCOUNT_COPY.brandName)}</a></p>${guestModeLabelHtml(mode)}<ul class="ui-sidenav__list">${item("find", "/", "search", GUEST_SHELL_COPY.find)}${item("plans", "/plans", "calendar", plansLabel, badge)}${item("account", "/account", "person", GUEST_SHELL_COPY.account)}</ul>${helpList}</nav>`;
+}
+
+/** Issue 15 (AskBar README, ADR 0106): Composer as a plain link carrying a server-known context ref, never text or authority. */
+export function guestAskBarHtml(input: { readonly label: string; readonly href: string }): string {
+  return `<div class="ui-ask"><a class="ui-composer ui-composer--link" href="${escapeHtml(input.href)}"><span class="ui-composer__input">${escapeHtml(input.label)}</span><span class="ui-composer__send" aria-hidden="true">${icon("chat")}</span></a></div>`;
+}
+
+/** Issue 15 (AppBar README): Root app bar for section pages (hidden at >=48rem where sidenav shows). */
+export function guestRootAppBarHtml(input: {
+  readonly mode?: ModePresentation;
+  readonly helpHref?: string;
+} = {}): string {
+  const mode = input.mode ?? GUEST_MODES.stays;
+  const help = input.helpHref
+    ? `<a class="ui-appbar__action ui-appbar__help" href="${escapeHtml(input.helpHref)}" aria-label="${escapeHtml(GUEST_SHELL_COPY.help)}">${icon("help")}<span class="ui-appbar__label">${escapeHtml(GUEST_SHELL_COPY.help)}</span></a>`
+    : "";
+  return `<header class="ui-appbar ui-appbar--root"><a class="ui-appbar__brand" href="/">${escapeHtml(GUEST_ACCOUNT_COPY.brandName)}</a>${guestModeLabelHtml(mode)}<span class="ui-appbar__grow"></span>${help}</header>`;
+}
+
+/** Issue 15 (AppBar README): Sub-page app bar with Back, wordmark, mode label, and optional Help. */
+export function guestBackAppBarHtml(input: {
+  readonly backHref: string;
+  readonly backLabel: string;
+  readonly mode?: ModePresentation;
+  readonly helpHref?: string;
+}): string {
+  const mode = input.mode ?? GUEST_MODES.stays;
+  const help = input.helpHref
+    ? `<a class="ui-appbar__action ui-appbar__help" href="${escapeHtml(input.helpHref)}" aria-label="${escapeHtml(GUEST_SHELL_COPY.help)}">${icon("help")}<span class="ui-appbar__label">${escapeHtml(GUEST_SHELL_COPY.help)}</span></a>`
+    : "";
+  return `<header class="ui-appbar"><a class="ui-appbar__action" href="${escapeHtml(input.backHref)}" aria-label="${escapeHtml(input.backLabel)}">${icon("arrow-left")}</a><a class="ui-appbar__brand" href="/">${escapeHtml(GUEST_ACCOUNT_COPY.brandName)}</a>${guestModeLabelHtml(mode)}<span class="ui-appbar__grow"></span>${help}</header>`;
+}
+
+/** Issue 15 (TaskBar README, rules/03 N4/N5/N6): full-screen task header with Close link (no command) and sole <h1>. */
+export function guestTaskBarHtml(input: {
+  readonly title: string;
+  readonly closeHref: string;
+  readonly helpHref?: string;
+}): string {
+  const help = input.helpHref
+    ? `<a class="ui-appbar__action" href="${escapeHtml(input.helpHref)}" aria-label="${escapeHtml(GUEST_SHELL_COPY.help)}">${icon("help")}</a>`
+    : `<span aria-hidden="true"></span>`;
+  return `<header class="ui-appbar ui-appbar--task"><a class="ui-appbar__action" href="${escapeHtml(input.closeHref)}" aria-label="${escapeHtml(GUEST_SHELL_COPY.closeTask(input.title))}">${icon("x")}</a><h1 class="ui-appbar__title">${escapeHtml(input.title)}</h1>${help}</header>`;
+}
+
+/**
+ * Issue 15: wraps any non-chat guest page in the responsive `.ui-app` shell.
+ * - `kind === "section"`: root appbar (<768px), sidenav (>=768px), Ask bar + Tab bar (<768px).
+ * - `kind === "state"`: back appbar, sidenav (>=768px), Ask bar + Tab bar (<768px).
+ * - `kind === "task"`: Task bar (Close + <h1>), optional journey rail, narrow `.ui-app__main--task`, no tab bar / no sidenav / no Ask bar.
+ */
+export function guestShellHtml(input: {
+  readonly kind: "section" | "state" | "task";
+  readonly current: GuestShellSection | null;
+  readonly badgeCount?: number;
+  readonly mode?: ModePresentation;
+  readonly multiDomain?: boolean;
+  readonly backHref?: string;
+  readonly backLabel?: string;
+  readonly taskTitle?: string;
+  readonly closeHref?: string;
+  readonly helpHref?: string;
+  readonly journey?: GuestJourney;
+  readonly publicStep?: JourneyStep;
+  readonly ask?: { readonly label: string; readonly href: string };
+  readonly body: string;
+}): string {
+  const mode = input.mode ?? GUEST_MODES.stays;
+  const journey =
+    input.journey ??
+    (input.publicStep === undefined ? undefined : projectJourney(input.publicStep));
+  const rail = railHtml(journey);
+  if (input.kind === "task") {
+    const title = input.taskTitle ?? GUEST_ACCOUNT_COPY.brandName;
+    const closeHref = input.closeHref ?? "/";
+    const bar = guestTaskBarHtml({
+      title,
+      closeHref,
+      ...(input.helpHref === undefined ? {} : { helpHref: input.helpHref }),
+    });
+    return `<div class="ui-app"><div class="ui-app__col">${bar}${rail}<main id="main-content" tabindex="-1" class="ui-app__main ui-app__main--task">${input.body}</main></div></div>`;
+  }
+  const sideNav = guestSideNavHtml({
+    current: input.current,
+    badgeCount: input.badgeCount ?? 0,
+    mode,
+    ...(input.multiDomain === undefined ? {} : { multiDomain: input.multiDomain }),
+    ...(input.helpHref === undefined ? {} : { helpHref: input.helpHref }),
+  });
+  const topBar =
+    input.kind === "section"
+      ? guestRootAppBarHtml({
+          mode,
+          ...(input.helpHref === undefined ? {} : { helpHref: input.helpHref }),
+        })
+      : guestBackAppBarHtml({
+          backHref: input.backHref ?? "/",
+          backLabel: input.backLabel ?? BACK_LABEL,
+          mode,
+          ...(input.helpHref === undefined ? {} : { helpHref: input.helpHref }),
+        });
+  const askBar = input.ask ? guestAskBarHtml(input.ask) : "";
+  const tabBar = guestTabBarHtml({
+    current: input.current,
+    badgeCount: input.badgeCount ?? 0,
+    ...(input.multiDomain === undefined ? {} : { multiDomain: input.multiDomain }),
+  });
+  return `<div class="ui-app">${sideNav}<div class="ui-app__col">${topBar}${rail}<main id="main-content" tabindex="-1" class="ui-app__main">${input.body}</main><div class="ui-app__foot">${askBar}${tabBar}</div></div></div>`;
 }

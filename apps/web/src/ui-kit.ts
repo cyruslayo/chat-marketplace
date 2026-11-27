@@ -53,12 +53,14 @@ const ICON_PATHS = {
   bed: '<path d="M3 7v11M21 18v-6a3 3 0 0 0-3-3h-8v6M3 15h18"/><circle cx="6.5" cy="11.5" r="1.5"/>',
   calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
   card: '<rect x="2.5" y="5" width="19" height="14" rx="2"/><path d="M2.5 10h19M6.5 15h4"/>',
+  chat: '<path d="M4 5h16v11H9l-5 4z"/>',
   check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
   "chevron-right": '<path d="M9 6l6 6-6 6"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
   doc: '<path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2zM9 13h6M9 17h6"/>',
   grid: '<rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><rect x="14" y="14" width="6" height="6" rx="1"/>',
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.6 2.6 0 1 1 3.7 2.4c-.8.4-1.2 1-1.2 1.8M12 17v.01"/>',
   home: '<path d="M3.5 11 12 4l8.5 7M5.5 9.5V20h13V9.5"/><path d="M10 20v-5.5h4V20"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.8v.1"/>',
   inbox: '<path d="M3 13h5l1.5 3h5L16 13h5"/><path d="M5.5 5h13L21 13v6H3v-6Z"/>',
@@ -108,7 +110,7 @@ export interface PageShellOptions {
   /** Pre-rendered, already-escaped body markup placed inside <main>. */
   readonly body: string;
   readonly width?: "default" | "narrow";
-  readonly layout?: "page" | "shell";
+  readonly layout?: "page" | "shell" | "guest-shell";
   /** "system" follows the OS colour scheme; "light" keeps the page light-only. */
   readonly theme?: "system" | "light" | "dark";
   /** Page-specific rules; keep these to layout that the shared components do not cover. */
@@ -117,6 +119,8 @@ export interface PageShellOptions {
   readonly frame?: string;
   /** Pre-rendered head markup (already escaped), placed after the viewport meta. */
   readonly head?: string;
+  /** Document root data-mode attribute (ADR 0107). */
+  readonly mode?: string;
 }
 
 export function pageShell(options: PageShellOptions): string {
@@ -125,8 +129,11 @@ export function pageShell(options: PageShellOptions): string {
   const style = options.style ? `<style>${options.style}</style>` : "";
   const content = options.layout === "shell"
     ? `<div class="ui-shell">${options.frame ?? ""}<main id="main-content" tabindex="-1" class="ui-shell__main">${options.body}</main></div>`
-    : `${options.frame ?? ""}<main id="main-content" tabindex="-1" class="${widthClass}">${options.body}</main>`;
-  return `<!doctype html><html lang="en-NG" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,interactive-widget=resizes-content">${options.head ?? ""}<title>${escapeHtml(options.title)}</title><link rel="stylesheet" href="/shortlet-foundations.css">${style}</head><body><a class="ui-skip-link" href="#main-content">Skip to main content</a>${content}</body></html>`;
+    : options.layout === "guest-shell"
+      ? options.body
+      : `${options.frame ?? ""}<main id="main-content" tabindex="-1" class="${widthClass}">${options.body}</main>`;
+  const modeAttr = options.mode === undefined ? "" : ` data-mode="${escapeHtml(options.mode)}"`;
+  return `<!doctype html><html lang="en-NG" data-theme="${theme}"${modeAttr}><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,interactive-widget=resizes-content">${options.head ?? ""}<title>${escapeHtml(options.title)}</title><link rel="stylesheet" href="/shortlet-foundations.css">${style}</head><body><a class="ui-skip-link" href="#main-content">Skip to main content</a>${content}</body></html>`;
 }
 
 export interface ErrorPageOptions {

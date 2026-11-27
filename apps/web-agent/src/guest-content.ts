@@ -1137,6 +1137,25 @@ export interface NoticeFactRow {
 }
 
 /** The four facts in the issue 17 order. `money` formats kobo for the surface that shows them. */
+export const GUEST_SHELL_COPY = Object.freeze({
+  navLabel: "Main",
+  find: "Find",
+  yourStays: "Your stays",
+  yourPlans: "Your plans",
+  account: "Account",
+  help: "Help",
+  badgeNeedsAction: (count: number): string => (count === 1 ? " needs your action" : " need your action"),
+  askConcierge: "Ask the concierge",
+  askTheseStays: "Ask about these stays",
+  askThisStay: "Ask about this stay",
+  askThisRequest: "Ask about this request",
+  askThisPayment: "Ask about this payment",
+  askYourStays: "Ask about your stays",
+  askYourPlans: "Ask about your plans",
+  askChangingStay: "Ask about changing this stay",
+  closeTask: (title: string): string => `Close ${title}`,
+});
+
 export const GUEST_PLANS_COPY = Object.freeze({
   titleSingleDomain: "Your stays",
   titleMultiDomain: "Your plans",
