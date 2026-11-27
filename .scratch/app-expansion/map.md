@@ -2,7 +2,7 @@
 
 Plan: [PRD.md](PRD.md) · Method: [method.md](method.md) · Owner answers: [decisions.md](decisions.md) · Rules: [rules/](rules/)
 
-**Frontier:** the first issue that is open, unblocked and unclaimed (Phase 0 complete; currently `06` `ready-for-human` in Rules, Follow-up C in the issue 02 follow-ups — Phase 2b and Follow-ups A–B are resolved; in Phase 3, `13` waits on guest-accounts 13 and the rest on owner decisions). Each issue follows AGENTS.md "Implementation protocol", ends with `npm run check` and its own and affected tests, and records the commands and counts in its Comments. One writer per worktree.
+**Frontier:** the first issue that is open, unblocked and unclaimed (Phase 0 complete; currently `06` `ready-for-human` in Rules — Phase 2b and the issue 02 follow-ups A–C are resolved; in Phase 3, `13` waits on guest-accounts 13 and the rest on owner decisions). Each issue follows AGENTS.md "Implementation protocol", ends with `npm run check` and its own and affected tests, and records the commands and counts in its Comments. One writer per worktree.
 
 Two lanes run in parallel: **Rules** (2, 4) and **Design system** (1b, 2b). They meet at phase 3.
 
@@ -54,7 +54,7 @@ Each issue cherry-picks the named commits from `feat/surface-kit-phase-1` (read 
 | --- | --- | --- | --- | --- |
 | – | [Follow-up A: surface-kit package and Weaver 0.3.1 adapters](issues/followup-a-surface-kit-and-adapters.md) | task | resolved | 02 (D33, D35), 2b-06 |
 | – | [Follow-up B: Tier 3 catalogue wrap](issues/followup-b-tier3-catalogue-wrap.md) | task | resolved | Follow-up A (D34) |
-| – | [Follow-up C: unified runtime registration and snapshot gate](issues/followup-c-unified-runtime-registration.md) | task | ready-for-agent | Follow-up B (D36) |
+| – | [Follow-up C: unified runtime registration and snapshot gate](issues/followup-c-unified-runtime-registration.md) | task | resolved | Follow-up B (D36) |
 
 ## Phase 3: the frame
 
