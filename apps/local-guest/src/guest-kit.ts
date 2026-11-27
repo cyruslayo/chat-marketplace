@@ -19,6 +19,8 @@ import {
   UNIT_DETAIL_ABOUT_HEADING,
   GUEST_EXTENSION_COPY,
   GUEST_NOTICE_COPY,
+  GUEST_PLANS_COPY,
+  GUEST_MODES,
   commerceSoldBy,
   extensionFactRows,
   formatGuestDate,
@@ -60,6 +62,7 @@ import type { OfferScreenContent } from "../../web-agent/src/offer-presentation.
 import type { PaymentScreenContent, PaymentMethodChoice } from "../../web-agent/src/payment-presentation.js";
 import type { CommerceOfferPresentation } from "../../web-agent/src/commerce-presentation.js";
 import type { AgentMarkPlacement, AgentMarkState } from "./agent-mark-state.js";
+import type { ComposedPlanRows, PlanRow, PlanRowGroup } from "./assistant/plan-rows.js";
 
 /** The absolute deadline in Africa/Lagos time (ADR 0078), without the "Pay by" prefix. */
 export function formatWAT(iso: string): string {
@@ -981,4 +984,97 @@ export function noticeRecordedHtml(input: NoticeFactsInput & { readonly backHref
 /** The entry point on a confirmed Extended Stay's schedule: a link to the confirmation step. */
 export function noticeActionLinkHtml(offerId: string): string {
   return `<a class="ui-button ui-button--block" href="/bookings/notice/${encodeURIComponent(offerId)}" data-notice-action>${escapeHtml(GUEST_NOTICE_COPY.action)}</a>`;
+}
+
+const PLAN_GROUP_LABELS: Readonly<Record<PlanRowGroup, string>> = {
+  needs_action: GUEST_PLANS_COPY.needsAction,
+  in_progress: GUEST_PLANS_COPY.inProgress,
+  past: GUEST_PLANS_COPY.past,
+};
+
+function planRowWhereAndDates(row: PlanRow): string {
+  const start = formatGuestDate(row.startsOn) ?? row.startsOn;
+  const end = formatGuestDate(row.endsOn) ?? row.endsOn;
+  const dates = `${start} to ${end}`;
+  return row.where ? `${row.where} · ${dates}` : dates;
+}
+
+function planRowNextText(row: PlanRow): string {
+  return row.nextStep.deadlineAt === undefined
+    ? row.nextStep.label
+    : `${row.nextStep.label} · ${formatWAT(row.nextStep.deadlineAt)}`;
+}
+
+/**
+ * Issue 11 (rules/02, ADR 0077, ADR 0080): one redacted, link-only row in Your stays / Your plans.
+ * Domain tags appear only when more than one domain is registered (rules/03 N7, ADR 0107).
+ */
+export function planRowHtml(
+  row: PlanRow,
+  options: { readonly showDomainTag?: boolean; readonly mode?: ModePresentation } = {},
+): string {
+  const mode = options.mode ?? GUEST_MODES.stays;
+  const domainTag = options.showDomainTag
+    ? domainTagHtml({ label: mode.label, icon: mode.persona.icon })
+    : "";
+  const muted = row.group === "past" ? " ui-result-row--muted" : "";
+  return `<li data-plan-row="${escapeHtml(row.rowId)}"><a class="ui-result-row ui-result-row--no-thumb${muted}" href="${escapeHtml(row.href)}"><span class="ui-result-row__body">${domainTag}<span class="ui-result-row__title">${escapeHtml(row.title)}</span><span class="ui-result-row__where">${escapeHtml(planRowWhereAndDates(row))}</span><span class="ui-result-row__next">${statusBadge(row.status.label, row.status.tone)}<span>${escapeHtml(planRowNextText(row))}</span></span></span>${icon("chevron-right")}</a></li>`;
+}
+
+/** Issue 11 (rules/02, D10): the grouped guest list at /plans, shared between SSR and client helpers. */
+export function plansListHtml(
+  composed: ComposedPlanRows,
+  options: {
+    readonly multiDomain: boolean;
+    readonly signedIn?: boolean;
+    readonly showSignIn?: boolean;
+    readonly mode?: ModePresentation;
+  },
+): string {
+  const title = options.multiDomain ? GUEST_PLANS_COPY.titleMultiDomain : GUEST_PLANS_COPY.titleSingleDomain;
+  const warning =
+    composed.droppedDomains.length > 0
+      ? `<p class="ui-banner ui-banner--warning" role="status">${icon("alert")}<span>${escapeHtml(GUEST_PLANS_COPY.partialError)}</span></p>`
+      : "";
+  const groups = (["needs_action", "in_progress", "past"] as const)
+    .filter((group) => composed.groups[group].length > 0)
+    .map((group) => {
+      const rows = composed.groups[group]
+        .map((row) => planRowHtml(row, { showDomainTag: options.multiDomain, ...(options.mode ? { mode: options.mode } : {}) }))
+        .join("");
+      return `<section aria-labelledby="plans-group-${group}"><h2 id="plans-group-${group}">${escapeHtml(PLAN_GROUP_LABELS[group])}</h2><ul class="ui-result-rows">${rows}</ul></section>`;
+    })
+    .join("");
+  const empty =
+    groups !== ""
+      ? ""
+      : `<section class="ui-panel ui-empty"><h2 class="ui-empty__title">${escapeHtml(GUEST_PLANS_COPY.emptyTitle)}</h2><p class="ui-empty__body">${escapeHtml(GUEST_PLANS_COPY.emptyBody)}</p><div class="ui-row"><a class="ui-button ui-button--primary" href="/">${escapeHtml(GUEST_PLANS_COPY.emptyAction)}</a>${options.showSignIn && !options.signedIn ? `<a class="ui-button ui-button--quiet" href="/account/sign-in?return=%2Fplans">${escapeHtml(GUEST_PLANS_COPY.signInButton)}</a>` : ""}</div></section>`;
+  return `<header class="ui-page__header"><h1>${escapeHtml(title)}</h1></header>${warning}${groups}${empty}`;
+}
+
+/** Issue 11 AC4 (ADR 0077/0080): chat summary card built from the exact same ComposedPlanRows as /plans. */
+export function plansChatCardProps(
+  composed: ComposedPlanRows,
+  options: { readonly multiDomain: boolean },
+): ChatCardProps {
+  const title = options.multiDomain ? GUEST_PLANS_COPY.titleMultiDomain : GUEST_PLANS_COPY.titleSingleDomain;
+  const allRows = [...composed.groups.needs_action, ...composed.groups.in_progress, ...composed.groups.past];
+  if (allRows.length === 0) {
+    return {
+      title,
+      body: [GUEST_PLANS_COPY.emptyBody],
+      action: { label: GUEST_PLANS_COPY.emptyAction, href: "/" },
+    };
+  }
+  const rows: ChatCardRowProps[] = allRows.slice(0, 3).map((row) => ({
+    text: `${row.title} · ${row.status.label}`,
+    aside: `${planRowWhereAndDates(row)} · ${planRowNextText(row)}`,
+    href: row.href,
+  }));
+  return {
+    title,
+    ...(composed.badgeCount > 0 ? { aside: `${composed.badgeCount} ${composed.badgeCount === 1 ? "needs your action" : "need your action"}` } : {}),
+    rows,
+    action: { label: title, href: "/plans" },
+  };
 }

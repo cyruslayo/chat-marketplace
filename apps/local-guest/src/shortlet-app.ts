@@ -1856,6 +1856,10 @@ export class LocalGuestApp {
    * Rules 02 / ADR 0099 decision 5: composes the guest's grouped, ordered list across all registered packs
    * without reading any pack's transaction state directly.
    */
+  get packs(): readonly AssistantDomainPack[] {
+    return this.#packs;
+  }
+
   async planRows(
     principal: CommandPrincipal,
     identity?: GuestIdentity,

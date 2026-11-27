@@ -10831,6 +10831,18 @@ Known schemas:
       ...respondBy === void 0 ? [] : [{ key: "respondBy", label: GUEST_EXTENSION_COPY.respondBy, value: respondBy, raw: respondBy }]
     ];
   }
+  var GUEST_PLANS_COPY = Object.freeze({
+    titleSingleDomain: "Your stays",
+    titleMultiDomain: "Your plans",
+    needsAction: "Needs your action",
+    inProgress: "In progress",
+    past: "Past",
+    emptyTitle: "No stays yet",
+    emptyBody: "Your Booking Requests, Conditional Booking Offers and confirmed Reservations will appear here.",
+    emptyAction: "Find a stay",
+    partialError: "Some items could not be loaded right now. Everything else is shown below.",
+    signInButton: "Sign in"
+  });
   function noticeFactRows(facts, money) {
     return [
       { key: "newLastNight", label: GUEST_NOTICE_COPY.newLastNight, value: formatGuestDate(facts.newLastNight) ?? facts.newLastNight, raw: facts.newLastNight },
@@ -11154,6 +11166,11 @@ Known schemas:
     }).join("");
     return `<dl class="ui-facts ui-facts--stacked">${cells}</dl>`;
   }
+  var PLAN_GROUP_LABELS = {
+    needs_action: GUEST_PLANS_COPY.needsAction,
+    in_progress: GUEST_PLANS_COPY.inProgress,
+    past: GUEST_PLANS_COPY.past
+  };
 
   // apps/local-guest/src/listing-gallery.ts
   var photosWord = (count) => `${count} ${count === 1 ? "photo" : "photos"}`;
@@ -14412,8 +14429,12 @@ Known schemas:
     if (work.length === 0 || transcript.querySelector(".committed-work")) return;
     const heading = transcript.querySelector("#conversation-heading");
     const notes = work.map((entry) => committedWorkNote(entry, guestNewConversationCopy(entry.kind, entry.unitTitle).stillActive));
-    if (heading) heading.after(...notes);
-    else transcript.prepend(...notes);
+    const plansLink = document.createElement("a");
+    plansLink.className = "contact-link";
+    plansLink.href = "/plans";
+    plansLink.textContent = "Your stays";
+    if (heading) heading.after(...notes, plansLink);
+    else transcript.prepend(...notes, plansLink);
   }
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible" && activePayload?.waiting) void refreshServerState();

@@ -1,5 +1,5 @@
 import { appBarHtml, errorPage, escapeHtml, pageShell } from "../../web/src/ui-kit.js";
-import { GUEST_ACCOUNT_COPY } from "../../web-agent/src/guest-content.js";
+import { GUEST_ACCOUNT_COPY, GUEST_PLANS_COPY } from "../../web-agent/src/guest-content.js";
 
 /** Account responses carry personal data, so the browser and any cache must not keep them (review D5). */
 export const ACCOUNT_PAGE_HEADERS = Object.freeze({ "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
@@ -134,6 +134,7 @@ export function renderAccountHtml(input: AccountPageInput): string {
       `<input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="32" aria-describedby="${phoneDescribedBy}" value="${escapeHtml(input.phoneDraft ?? "")}"${phoneInvalid}>` +
       `${inlineError("phone-error", input.phoneError)}</div>` +
       `<button class="ui-button ui-button--primary ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.savePhone)}</button></form>` +
+      `<section class="ui-panel"><h2>${escapeHtml(GUEST_PLANS_COPY.titleSingleDomain)}</h2><a class="ui-button ui-button--secondary ui-button--block" href="/plans">${escapeHtml(GUEST_PLANS_COPY.titleSingleDomain)}</a></section>` +
       `<section class="ui-panel"><h2>${GUEST_ACCOUNT_COPY.sessionsHeading}</h2>` +
       `<form method="post" action="${SIGN_OUT_PATH}"><button class="ui-button ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.signOut)}</button></form>` +
       `<form method="post" action="${SIGN_OUT_EVERYWHERE_PATH}"><p>${escapeHtml(GUEST_ACCOUNT_COPY.signOutEverywhereIntro)}</p>` +

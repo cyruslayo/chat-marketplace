@@ -1137,6 +1137,19 @@ export interface NoticeFactRow {
 }
 
 /** The four facts in the issue 17 order. `money` formats kobo for the surface that shows them. */
+export const GUEST_PLANS_COPY = Object.freeze({
+  titleSingleDomain: "Your stays",
+  titleMultiDomain: "Your plans",
+  needsAction: "Needs your action",
+  inProgress: "In progress",
+  past: "Past",
+  emptyTitle: "No stays yet",
+  emptyBody: "Your Booking Requests, Conditional Booking Offers and confirmed Reservations will appear here.",
+  emptyAction: "Find a stay",
+  partialError: "Some items could not be loaded right now. Everything else is shown below.",
+  signInButton: "Sign in",
+});
+
 export function noticeFactRows(facts: NoticeFactsInput, money: (kobo: number) => string): readonly NoticeFactRow[] {
   return [
     { key: "newLastNight", label: GUEST_NOTICE_COPY.newLastNight, value: formatGuestDate(facts.newLastNight) ?? facts.newLastNight, raw: facts.newLastNight },

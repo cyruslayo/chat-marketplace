@@ -107,6 +107,7 @@ import {
   paymentOutcomeBannerHtml,
   paymentRecoveryActionsHtml,
   paymentScreenHtml,
+  plansListHtml,
   priceBreakdownHtml,
   stayCardHtml,
   stayTicketHtml,
@@ -281,6 +282,7 @@ import {
 } from "./guest-account-runtime.js";
 import {
   GUEST_ACCOUNT_COPY,
+  GUEST_PLANS_COPY,
   GUEST_TASK_RAIL,
   GUEST_VERTICALS,
 } from "../../web-agent/src/guest-content.js";
@@ -800,7 +802,7 @@ export function renderNoScriptConversationHtml(input: {
           .filter((work) => work.threadId !== input.threadId)
           .map((work) => {
             const copy = guestNewConversationCopy(work.kind, work.unitTitle);
-            return `<section class="ui-panel committed-work" data-kind="${work.kind}"><p>${escapeHtml(copy.stillActive)}</p><a class="ui-button" href="${escapeHtml(work.route)}">${escapeHtml(copy.link)}</a></section>`;
+            return `<section class="ui-panel committed-work" data-kind="${work.kind}"><p>${escapeHtml(copy.stillActive)}</p><div class="ui-row"><a class="ui-button" href="${escapeHtml(work.route)}">${escapeHtml(copy.link)}</a><a class="ui-link" href="/plans">${escapeHtml(GUEST_PLANS_COPY.titleSingleDomain)}</a></div></section>`;
           })
           .join("");
   return pageShell({
@@ -5635,6 +5637,54 @@ export function createGuestRequestHandler(
         Location: `/conversation?threadId=${encodeURIComponent(threadId)}`,
       });
       res.end();
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/plans") {
+      // Issue 11 (rules/02, D8, D9, D10): device session or signed-in account; no session returns 401 and reveals nothing.
+      const session = await resolveBrowserSession(
+        app.environment,
+        browserSessions,
+        readGuestSession(req),
+        sessionScopedGuestPrincipals
+          ? undefined
+          : app.environment.config.guestId,
+        accountCredentialsOf(req),
+        guestAccounts,
+      );
+      if (!session) {
+        const html = errorPage({
+          status: 401,
+          code: "AUTHENTICATION_REQUIRED",
+          title: "Sign in or start a conversation",
+          message: "Your stays are shown for your browser session or signed-in account.",
+          action: { href: "/", label: "Back to your conversation" },
+        });
+        res.writeHead(401, { ...GUEST_HTML_HEADERS, "Cache-Control": "no-store" });
+        res.end(html);
+        return;
+      }
+      const composed = await app.planRows(
+        { id: session.principalId, role: "guest", tenantId: session.tenantId },
+        session.identity,
+      );
+      const multiDomain = app.packs.length > 1;
+      const pageTitle = multiDomain
+        ? GUEST_PLANS_COPY.titleMultiDomain
+        : GUEST_PLANS_COPY.titleSingleDomain;
+      const html = pageShell({
+        title: `${pageTitle} · ${GUEST_ACCOUNT_COPY.brandName}`,
+        head: themeColourMetaHtml(SHELL_DATA_THEME),
+        frame: appFrameHtml({ threadId: null }),
+        body: plansListHtml(composed, {
+          multiDomain,
+          signedIn: session.identity !== undefined,
+          showSignIn: guestAccounts !== undefined,
+          mode: GUEST_MODES.stays,
+        }),
+      });
+      res.writeHead(200, { ...GUEST_HTML_HEADERS, "Cache-Control": "no-store" });
+      res.end(html);
       return;
     }
 

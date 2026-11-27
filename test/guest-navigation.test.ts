@@ -216,17 +216,15 @@ export const GUEST_NAVIGATION_TABLE: readonly GuestNavigationRow[] = [
     id: "account",
     route: "/account",
     kind: "section",
-    expectedExits: ["/"],
-    gaps: [N1_HELP_GAP, N3_PLANS_GAP, N4_TAB_BAR_GAP],
+    expectedExits: ["/", "/plans"],
+    gaps: [N1_HELP_GAP, N4_TAB_BAR_GAP],
   },
-  // Planned screens (app-expansion phases 3 & 4): recorded as planned rows, not live failures.
   {
-    id: "planned-plans",
+    id: "plans",
     route: "/plans",
     kind: "section",
-    expectedExits: ["/", "/help"],
-    planned: { issue: "11", note: "Guest stays/plans list screen" },
-    gaps: [],
+    expectedExits: ["/"],
+    gaps: [N1_HELP_GAP, N4_TAB_BAR_GAP],
   },
   {
     id: "planned-help",
@@ -301,6 +299,7 @@ const SERVED_ROUTE_PATTERNS: readonly RegExp[] = [
   /^\/guest\/contact$/,
   /^\/guest\/contact\/(?:phone|email)$/,
   /^\/account$/,
+  /^\/plans$/,
   /^\/account\/(?:sign-in|sign-in\/code|email|email\/code|phone|sign-out|sign-out-everywhere)$/,
   /^\/api\/(?:committed-work|state|turn|event|telemetry|reset)$/,
   /^\/(?:client|gallery|payment|offer|landing)\.js$/,
@@ -497,7 +496,7 @@ export function evaluatePageNavigation(row: GuestNavigationRow, renderedPath: st
   // N2: Non-Back navigation exit
   if (otherRouteLinks.length === 0) failedRules.push("N2");
   // N3: List (/plans) and Find (/ or /stays/search) reachable
-  const canReachPlans = targets.links.includes("/plans");
+  const canReachPlans = renderedPathname === "/plans" || targets.links.includes("/plans");
   const canReachFind = renderedPathname === "/" || renderedPathname === "/stays/search" || targets.links.includes("/") || targets.links.includes("/stays/search");
   if (!canReachPlans || !canReachFind) failedRules.push("N3");
   // N4: Tab bar shows on in-app section pages and never on task screens
@@ -604,6 +603,10 @@ async function renderAllLiveGuestRoutesUncached(): Promise<RenderedLiveRoute[]> 
     assert.equal(home.statusCode, 200);
     const cookie = cookieOf(home);
     rendered.push({ row: rowById("home-chat"), path: "/", html: home.bodyText });
+
+    const plans = await sendGuest(handler, "GET", "/plans", { cookie });
+    assert.equal(plans.statusCode, 200);
+    rendered.push({ row: rowById("plans"), path: "/plans", html: plans.bodyText });
 
     const convInit = await sendGuest(handler, "GET", "/conversation", { cookie });
     assert.equal(convInit.statusCode, 303);
@@ -852,7 +855,7 @@ test("AC4: Removing a recorded gap without fixing it fails; fixing it without re
 
 test("Planned rows: screens that do not exist yet are recorded as planned rows, not failures", () => {
   const planned = GUEST_NAVIGATION_TABLE.filter((row) => row.planned !== undefined);
-  assert.ok(planned.length >= 6, "planned future screens (/plans, /help, /plans/:id, cancel, change, report) are listed");
+  assert.ok(planned.length >= 5, "planned future screens (/help, /plans/:id, cancel, change, report) are listed");
   for (const row of planned) {
     assert.ok(row.planned!.issue.length > 0, `${row.id} names its tracking issue`);
     assert.equal(isServedGuestRoute(row.route.replace(/:[^/]+/g, "sample-id")), false, `${row.route} is not yet served`);

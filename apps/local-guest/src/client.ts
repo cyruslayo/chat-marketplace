@@ -3019,7 +3019,11 @@ async function showCommittedWorkElsewhere(): Promise<void> {
   if (work.length === 0 || transcript.querySelector(".committed-work")) return;
   const heading = transcript.querySelector("#conversation-heading");
   const notes = work.map((entry) => committedWorkNote(entry, guestNewConversationCopy(entry.kind, entry.unitTitle).stillActive));
-  if (heading) heading.after(...notes); else transcript.prepend(...notes);
+  const plansLink = document.createElement("a");
+  plansLink.className = "contact-link";
+  plansLink.href = "/plans";
+  plansLink.textContent = "Your stays";
+  if (heading) heading.after(...notes, plansLink); else transcript.prepend(...notes, plansLink);
 }
 
 // Issue 10: a tab that was hidden may have missed its deadline; ask the server.
