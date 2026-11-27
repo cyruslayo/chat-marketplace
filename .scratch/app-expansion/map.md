@@ -65,7 +65,7 @@ Each issue cherry-picks the named commits from `feat/surface-kit-phase-1` (read 
 | 12 | [Navigation table and reachability check](issues/12-navigation-check.md) | task | resolved | – |
 | 13 | [Emails open their own item, and sign-in returns to it](issues/13-email-links.md) | task | ready-for-agent | guest-accounts 13 |
 | 14 | [When the concierge fails, offer the list](issues/14-concierge-unavailable.md) | task | needs-info | copy approval |
-| 15 | [Tab bar, Ask bar, task bar and desktop rail](issues/15-shell.md) | task | needs-info | 11, shell copy approval |
+| 15 | [Tab bar, Ask bar, task bar and desktop rail](issues/15-shell.md) | task | ready-for-agent | 11 |
 | 30 | [Guest-facing name: Xenia](issues/30-guest-facing-xenia.md) | task | ready-for-agent | – (D14) |
 | – | Find: one criteria state for concierge and list | task | to slice | 15 |
 | – | Help screen | task | to slice (16) | 15; D6 contact facts |

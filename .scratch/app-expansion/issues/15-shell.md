@@ -1,8 +1,8 @@
 # Tab bar, Ask bar, task bar and desktop rail
 
-Status: needs-info
+Status: ready-for-agent
 Type: task
-Blocked by: 11; owner approval of the "Navigation and shell" strings in design/round-12/copy-decisions.md (D10 and D13 accepted 27 Nov 2026; 07, 08, 12 resolved)
+Blocked by: 11 (shell strings approved by the owner 27 Nov 2026: tab and side navigation labels, the badge text, the Ask bar labels including "Ask the concierge", "Close {task}" and "Help"; D10 and D13 accepted; 07, 08, 12 resolved)
 
 ## What to build
 

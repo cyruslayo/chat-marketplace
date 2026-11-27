@@ -26,7 +26,7 @@ All entries from `CopyReview.dc.html` (63 consolidated entries) and every indivi
 
 | String | Tag | Board(s) | Waits on | Owner |
 | --- | --- | --- | --- | --- |
-| Ask the concierge | Brand | Account, Help, SignIn, CopyReview | Brand / Language page approval | |
+| Ask the concierge | Brand | Account, Help, SignIn, CopyReview | Brand / Language page approval || Approved, owner, 27 Nov 2026 |
 | Ask about these stays… | Brand | Unavailable | Brand / Language page approval | |
 | Photo coming soon (Placeholder card) | Brand | Apartment | Brand / Language page approval | |
 | Stay here (Language page pattern) | Brand | Domains | Brand / Language page approval (note: `GUEST_NEW_CONVERSATION.cancel` is already `"Stay here"`) | |
@@ -39,10 +39,10 @@ All entries from `CopyReview.dc.html` (63 consolidated entries) and every indivi
 
 | String | Tag | Board(s) | Waits on | Owner |
 | --- | --- | --- | --- | --- |
-| Find · Your stays · Account (tab and side navigation) | New | Account, Help, SignIn, CopyReview | D10, shell (issue 15) | |
-| 1 needs your action; 2 need your action | New | Main, StayDuring, CopyReview | Phase 3 (`11`, `15`) | |
-| Ask about this stay · these stays · this request · this payment · your stays · changing this stay | New | Change, Compare, Main, Outcomes, Payments, Saved, StayAfter, StayBefore, StayDuring, CopyReview | Phase 3 (`15`) | |
-| Close {task}; Help | New | BankTransfer, Cancel, ManualTransfer, PaymentChoice, Report, CopyReview | Phase 2b (`2b-02`) | |
+| Find · Your stays · Account (tab and side navigation) | New | Account, Help, SignIn, CopyReview | D10, shell (issue 15) || Approved, owner, 27 Nov 2026 |
+| 1 needs your action; 2 need your action | New | Main, StayDuring, CopyReview | Phase 3 (`11`, `15`) || Approved, owner, 27 Nov 2026 |
+| Ask about this stay · these stays · this request · this payment · your stays · changing this stay | New | Change, Compare, Main, Outcomes, Payments, Saved, StayAfter, StayBefore, StayDuring, CopyReview | Phase 3 (`15`) || Approved, owner, 27 Nov 2026 |
+| Close {task}; Help | New | BankTransfer, Cancel, ManualTransfer, PaymentChoice, Report, CopyReview | Phase 2b (`2b-02`) || Approved, owner, 27 Nov 2026 |
 | Show this search as: Concierge, List; Concierge, List (View switch) | New | Unavailable, CopyReview | Phase 3 (Find list) | |
 | Loading list… | New | CopyReview | Phase 3 (Find list) | |
 | Concierge, Stays. Change concierge | New | CopyReview | Multi-domain (`guest-content.ts` has `"Concierge · ${modeLabel}"` & `"Change concierge"`) | |
