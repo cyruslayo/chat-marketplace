@@ -391,6 +391,7 @@ function organizePaymentScreen(
     breakdown.outerHTML,
     {
       countdown: true,
+      headingTag: "h2",
       ...(actions ? { actions: '<div data-payment-action-slot></div>' } : {}),
     },
   );
@@ -434,6 +435,7 @@ function organizeOfferScreen(
     content,
     ticket.outerHTML,
     breakdown.outerHTML,
+    { headingTag: "h2" },
   );
   const screen = template.content.firstElementChild as HTMLElement;
   if (content.accept && original) {

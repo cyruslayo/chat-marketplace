@@ -83,7 +83,7 @@ export function renderSignInCodeHtml(input: {
         `<input type="hidden" name="return" value="${escapeHtml(input.returnPath)}">` +
         `<button class="ui-button ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.requestNewCode)}</button>` +
         `</form>` +
-        `<p><a href="${ACCOUNT_PATH}">${escapeHtml(GUEST_ACCOUNT_COPY.backToAccount)}</a></p>`,
+        `<a class="ui-button ui-button--quiet ui-button--block" href="${ACCOUNT_PATH}">${escapeHtml(GUEST_ACCOUNT_COPY.backToAccount)}</a>`,
     }),
   });
 }
@@ -186,7 +186,7 @@ export function renderEmailChangeCodeHtml(input: { readonly newEmail: string; re
         `<input type="hidden" name="email" value="${escapeHtml(input.newEmail)}">` +
         `<button class="ui-button ui-button--block" type="submit">${escapeHtml(GUEST_ACCOUNT_COPY.requestNewCode)}</button>` +
         `</form>` +
-        `<p><a href="${ACCOUNT_PATH}">${escapeHtml(GUEST_ACCOUNT_COPY.backToAccount)}</a></p>`,
+        `<a class="ui-button ui-button--quiet ui-button--block" href="${ACCOUNT_PATH}">${escapeHtml(GUEST_ACCOUNT_COPY.backToAccount)}</a>`,
     }),
   });
 }

@@ -12435,6 +12435,7 @@ Known schemas:
       breakdown.outerHTML,
       {
         countdown: true,
+        headingTag: "h2",
         ...actions ? { actions: "<div data-payment-action-slot></div>" } : {}
       }
     );
@@ -12472,7 +12473,8 @@ Known schemas:
     template.innerHTML = offerScreenHtml(
       content,
       ticket.outerHTML,
-      breakdown.outerHTML
+      breakdown.outerHTML,
+      { headingTag: "h2" }
     );
     const screen = template.content.firstElementChild;
     if (content.accept && original) {

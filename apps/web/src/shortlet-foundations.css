@@ -600,7 +600,7 @@
   .ui-rail-nav__bar span.is-done { background: var(--color-text-secondary); }
   .ui-rail-nav__bar span.is-now { background: var(--color-action); }
   .ui-rail-nav__bar span.is-failed { background: var(--color-danger); }
-  @container (min-width: 40rem) { .ui-rail-nav > .ui-rail { display: flex; } .ui-rail-nav > .ui-rail-nav__compact { display: none; } }
+  @container (min-width: 32rem) { .ui-rail-nav > .ui-rail { display: flex; } .ui-rail-nav > .ui-rail-nav__compact { display: none; } }
   @media (min-width: 40rem) { .ui-rail-nav { padding-inline: var(--space-6); } }
 
   /* Shell task rail (slice 26): tokens only, matching the journey rail chrome. */
@@ -1001,9 +1001,9 @@
   .ui-badge { display: inline-flex; align-items: center; justify-content: center; min-inline-size: 1.25rem; block-size: 1.25rem; padding: 0 0.3125rem; border-radius: var(--radius-small); background: var(--color-warning-surface); color: var(--color-warning); box-shadow: inset 0 0 0 1px var(--color-warning); font-size: var(--font-size-metadata); line-height: var(--font-line-metadata); font-weight: 700; font-variant-numeric: tabular-nums; }
 
   .ui-app { display: flex; block-size: 100%; min-block-size: 0; container-type: inline-size; }
-  body > .ui-app { block-size: 100dvh; block-size: 100svh; }
+  body > .ui-app:not(.ui-page) { block-size: 100dvh; block-size: 100svh; }
   .ui-app__col { flex: 1; min-inline-size: 0; min-block-size: 0; display: flex; flex-direction: column; }
-  .ui-app__main { flex: 1; min-block-size: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-4); }
+  .ui-app__main { container-type: inline-size; flex: 1; min-block-size: 0; overflow-y: auto; display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-4); }
   .ui-app__main > * { flex-shrink: 0; }
   .ui-app__foot { flex: none; background: var(--color-canvas); }
   .ui-tabbar { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); background: var(--color-canvas); border-block-start: 1px solid var(--color-border-subtle); padding-block-end: env(safe-area-inset-bottom, 0px); }
@@ -1020,7 +1020,7 @@
   .ui-composer--link .ui-composer__send { background: transparent; color: var(--color-action); }
   .ui-ask + .ui-tabbar { border-block-start-color: transparent; }
   /* Issue 15: a media query, because .ui-appbar is its own size container; the side navigation shows from 48rem. */
-  @media (min-width: 48rem) { .ui-app:has(> .ui-sidenav) :is(.ui-tabbar, .ui-appbar--root, .ui-appbar__brand, .ui-appbar .ui-mode-label, .ui-appbar__help) { display: none; } }
+  @media (min-width: 48rem) { .ui-app > .ui-sidenav { display: flex; flex: none; inline-size: 14.5rem; border-inline-end: 1px solid var(--color-border-subtle); } .ui-app:has(> .ui-sidenav) :is(.ui-tabbar, .ui-appbar--root, .ui-appbar__brand, .ui-appbar .ui-mode-label, .ui-appbar__help) { display: none; } }
   @container (min-width: 48rem) {
     .ui-app > .ui-sidenav { block-size: 100%; }
     .ui-app__main { inline-size: 100%; max-inline-size: 51.25rem; padding: 1.75rem var(--space-8) var(--space-12); }
