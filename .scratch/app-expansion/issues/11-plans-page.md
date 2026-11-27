@@ -1,8 +1,8 @@
 # The guest's list at `/plans`
 
-Status: needs-info
+Status: ready-for-agent
 Type: task
-Blocked by: 10, guest-accounts 13 (D21 accepted), D8, D9, D10 (owner). Replaces guest-stays 03 and 04 once accepted
+Blocked by: none (10 resolved; D8, D9, D10 accepted 27 Nov 2026). Opening a row from a signed-in second device needs guest-accounts 13; until it lands, that device keeps today's refusal. Replaces guest-stays 03 and 04
 
 ## What to build
 
@@ -25,3 +25,4 @@ Blocked by: 10, guest-accounts 13 (D21 accepted), D8, D9, D10 (owner). Replaces 
 0005, 0071, 0074, 0077, 0078, 0080, 0085, 0093, 0106.
 
 ## Comments
+- 27 Nov 2026: owner accepted D8 (works on this device's own session, after the shared-device review), D9 (lists open requests and expired offers) and D10 ("Your stays", address `/plans`). Build for this device first; linked-device row pages follow guest-accounts 13.

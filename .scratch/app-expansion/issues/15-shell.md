@@ -2,7 +2,7 @@
 
 Status: needs-info
 Type: task
-Blocked by: 07, 08, 11, 12, D10, D13
+Blocked by: 11; owner approval of the "Navigation and shell" strings in design/round-12/copy-decisions.md (D10 and D13 accepted 27 Nov 2026; 07, 08, 12 resolved)
 
 ## What to build
 

@@ -41,30 +41,27 @@ The owner accepted the recommendation in each row as written.
 | D36 | Lifecycle of `feat/surface-kit-phase-1` (issue 02 decision 4)? | Supersede it via Follow-ups A–C and leave it unmerged/archived | Its content lands as reviewed cherry-picks resolved against the current code; merging the branch directly would replay 14 git + 3 semantic conflicts | Follow-up C |
 | D5 | Install a modelling tool? | No. Revisit after rules page 02 | The plain checks already find defects | – |
 
-## Open: needed before phase 3
+## Accepted by the owner, 27 Nov 2026
 
-| # | Question | Recommended | Blocks |
-| --- | --- | --- | --- |
-| D6 | What is the support contact, who covers it, and when? | One monitored phone and WhatsApp line plus the in-app form (launch-readiness 09). Until it exists, no screen promises cover | 16, 20 |
-| D7 | When is the address released? | Address after payment, access instructions after the identity check. Needs the procedure (launch-readiness 08) and an ADR to settle 0066 against 0085 | 21 |
-| D8 | Does Your stays work without sign-in, on this device's own session? | Yes, after a shared-device review. Changes guest-stays 04 AC1 | 11 |
-| D9 | Does it list open requests and expired offers? | Yes. Changes your 3 October answer (confirmed only) | 11 |
-| D10 | Name and address | "Your stays" now, "Your plans" when a second domain is live; address `/plans` from the start | 11 |
-| D11 | Turn email on for sign-in and guest emails, starting with staging? | Yes. Owner runs the deployment | 13 |
-| D12 | Order of other domains | Events, Services (first inside Stays), Community last. Draft the Events ADR now, no screens until accepted | 26 |
-| D13 | How a guest is told the concierge is automated | "The concierge is automated software. When a question needs a person, it goes to our team." The second sentence only once D6 is true | 08, 16 |
-| D14 | Rename scope | Guest-facing copy only for now. Trademark check before public launch | Phase 2b copy; no issue yet |
-| D15 | Delay public sign-in until account deletion works? | Yes for a public launch, no for the invited beta | Launch gate; no issue yet (guest-accounts 10) |
+The owner accepted every remaining recommendation ("I accept all of the recommendations"). The accepted answer is the recommendation as written. "Still needs" lists facts the owner or counsel must still supply; agents never invent them.
 
-## Open: needed before phase 4
-
-| # | Question | Recommended | Blocks |
-| --- | --- | --- | --- |
-| D16 | Self-service cancellation with the exact refund shown first? | Yes, staff pay the refund | 18 |
-| D17 | One way to change dates, or three? | Keep extension and Notice to End for Extended Stays; use Booking Amendment for Short Stays. Show one "Change or cancel" page | 19 |
-| D18 | Who reads a guest's problem report, and how fast? | The D6 rota, using ADR 0061 categories. No timing shown until staffed | 20 |
-| D19 | Receipt fields | Counsel (monthly-stays 02, 10) | 22 |
-| D20 | Refund wording while a refund is pending | Draft goes through the Language page | 18 |
+| # | Question | Accepted answer | Unblocks | Still needs |
+| --- | --- | --- | --- | --- |
+| D6 | What is the support contact, who covers it, and when? | One monitored phone and WhatsApp line plus the in-app form (launch-readiness 09). Until it exists, no screen promises cover | 16, 20 | The number, who covers it and the hours (owner). Until then no screen promises cover |
+| D7 | When is the address released? | Address after payment, access instructions after the identity check. Needs the procedure (launch-readiness 08) and an ADR to settle 0066 against 0085 | 21 | The identity procedure (launch-readiness 08) and an ADR settling 0066 against 0085 |
+| D8 | Does Your stays work without sign-in, on this device's own session? | Yes, after a shared-device review. Changes guest-stays 04 AC1 | 11 | – |
+| D9 | Does it list open requests and expired offers? | Yes. Changes your 3 October answer (confirmed only) | 11 | – |
+| D10 | Name and address | "Your stays" now, "Your plans" when a second domain is live; address `/plans` from the start | 11 | – |
+| D11 | Turn email on for sign-in and guest emails, starting with staging? | Yes. Owner runs the deployment | 13 | The owner runs the staging change |
+| D12 | Order of other domains | Events, Services (first inside Stays), Community last. Draft the Events ADR now, no screens until accepted | 26 | – |
+| D13 | How a guest is told the concierge is automated | "The concierge is automated software. When a question needs a person, it goes to our team." The second sentence only once D6 is true | 08, 16 | – |
+| D14 | Rename scope | Guest-facing copy only for now. Trademark check before public launch | Phase 2b copy; no issue yet | – |
+| D15 | Delay public sign-in until account deletion works? | Yes for a public launch, no for the invited beta | Launch gate; no issue yet (guest-accounts 10) | – |
+| D16 | Self-service cancellation with the exact refund shown first? | Yes, staff pay the refund | 18 | – |
+| D17 | One way to change dates, or three? | Keep extension and Notice to End for Extended Stays; use Booking Amendment for Short Stays. Show one "Change or cancel" page | 19 | – |
+| D18 | Who reads a guest's problem report, and how fast? | The D6 rota, using ADR 0061 categories. No timing shown until staffed | 20 | Rests on D6 |
+| D19 | Receipt fields | Counsel (monthly-stays 02, 10) | 22 | Counsel supplies the fields |
+| D20 | Refund wording while a refund is pending | Draft goes through the Language page | 18 | The draft goes through the Language page |
 
 ## Still open elsewhere
 
