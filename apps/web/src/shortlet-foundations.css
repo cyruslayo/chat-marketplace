@@ -600,7 +600,7 @@
   .ui-rail-nav__bar span.is-done { background: var(--color-text-secondary); }
   .ui-rail-nav__bar span.is-now { background: var(--color-action); }
   .ui-rail-nav__bar span.is-failed { background: var(--color-danger); }
-  @container (min-width: 32rem) { .ui-rail-nav > .ui-rail { display: flex; } .ui-rail-nav > .ui-rail-nav__compact { display: none; } }
+  @container (min-width: 30rem) { .ui-rail-nav > .ui-rail { display: flex; } .ui-rail-nav > .ui-rail-nav__compact { display: none; } }
   @media (min-width: 40rem) { .ui-rail-nav { padding-inline: var(--space-6); } }
 
   /* Shell task rail (slice 26): tokens only, matching the journey rail chrome. */
