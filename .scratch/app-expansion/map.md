@@ -2,7 +2,7 @@
 
 Plan: [PRD.md](PRD.md) · Method: [method.md](method.md) · Owner answers: [decisions.md](decisions.md) · Rules: [rules/](rules/)
 
-**Frontier:** the first issue that is open, unblocked and unclaimed (Phase 0 complete; currently `06` `ready-for-human` in Rules, `2b-06` in Design system; in Phase 3, `13` waits on guest-accounts 13 and the rest on owner decisions). Each issue follows AGENTS.md "Implementation protocol", ends with `npm run check` and its own and affected tests, and records the commands and counts in its Comments. One writer per worktree.
+**Frontier:** the first issue that is open, unblocked and unclaimed (Phase 0 complete; currently `06` `ready-for-human` in Rules, Follow-up A in the issue 02 follow-ups — Phase 2b is resolved; in Phase 3, `13` waits on guest-accounts 13 and the rest on owner decisions). Each issue follows AGENTS.md "Implementation protocol", ends with `npm run check` and its own and affected tests, and records the commands and counts in its Comments. One writer per worktree.
 
 Two lanes run in parallel: **Rules** (2, 4) and **Design system** (1b, 2b). They meet at phase 3.
 
@@ -45,6 +45,16 @@ Each issue moves one group to [bundle.css](design/round-12/bundle.css) via [clas
 | 2b-07 | [Operator shell, queue, transfer check and receipt preview](issues/2b-07-operator-shell-and-queue.md) | task | resolved | 07, 2b-01 |
 | 2b-08 | [Move /welcome to the Xenia brand layer](issues/2b-08-welcome-landing.md) | task | resolved | 07, 09, 2b-01, 2b-02 |
 | 27 | [Bring main in and renumber the cancellation migration to 7](issues/27-sync-main-schema-v7.md) | task | resolved | none |
+
+## Follow-ups (issue 02, owner decisions D33–D36): land between Phase 2b and Phase 3
+
+Each issue cherry-picks the named commits from `feat/surface-kit-phase-1` (read blobs with `MSYS_NO_PATHCONV=1 git cat-file -p`, resolve against the current code, never merge that branch), proves wire byte-identity of both `v1` catalogues against the pre-change output, and keeps every fail-closed guard.
+
+| # | Issue | Type | Status | Blocked by |
+| --- | --- | --- | --- | --- |
+| – | [Follow-up A: surface-kit package and Weaver 0.3.1 adapters](issues/followup-a-surface-kit-and-adapters.md) | task | ready-for-agent | 02 (D33, D35), 2b-06 |
+| – | [Follow-up B: Tier 3 catalogue wrap](issues/followup-b-tier3-catalogue-wrap.md) | task | ready-for-agent | Follow-up A (D34) |
+| – | [Follow-up C: unified runtime registration and snapshot gate](issues/followup-c-unified-runtime-registration.md) | task | ready-for-agent | Follow-up B (D36) |
 
 ## Phase 3: the frame
 
