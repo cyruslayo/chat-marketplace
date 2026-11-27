@@ -1,6 +1,6 @@
 # Follow-up A: Port packages/surface-kit and the Weaver 0.3.1 adapters
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: 02 (D33, D35), 2b-06
 
@@ -34,3 +34,10 @@ Issue 02 recommended landing `feat/surface-kit-phase-1`'s surface-kit foundation
 `npm run check`, the new `test/surface-kit*.test.ts`, the catalogue byte-identity check, `test/assistant-cold-journey.test.ts`. Record exact commands and counts in `## Comments`.
 
 ## Comments
+
+- 27 Nov 2026 (resolved on `feat/app-expansion-02a`, from `feat/app-expansion-2b-06`): `git cherry-pick dbc13d2` (landed as `dd558e6`) conflicted only in `test/weaver-dependency-boundary.test.ts` — resolved by taking the pick's `sourceFiles` import from `test/helpers/source-files.ts` and the current 0.3.1 pin title, dropping the now-shared inline copy. `git cherry-pick b629535` applied cleanly (landed as `cd27d7f`). `feat/surface-kit-phase-1` itself was never merged (D36).
+  - Wire byte-identity (AC2): SHA-256 of `JSON.stringify` of each catalogue, dumped before (`34a1373`) and after (`cd27d7f`) — `shortlet-discovery/v1` `a2bcc2f865e7509a40f861618f6c1df5226d2896766cdf1ec73bcc7de11361d4`, `shortlet-booking/v1` `44e35c3e38995d661fea1b9096f983152ae24025763f1229461feefd9335e295`. Identical.
+  - `npm run check` = clean (exit 0).
+  - `npx tsx --test test/surface-kit.test.ts test/surface-kit-boundary.test.ts test/surface-kit-weaver.test.ts test/weaver-dependency-boundary.test.ts` = 22 pass, 0 fail (AC1: the boundary gate proves `packages/surface-kit` is Weaver-free).
+  - `npx tsx --test test/assistant-cold-journey.test.ts` = 4 pass, 0 fail (AC3: cold restore before every event, criteria strip intact).
+  - Every command ran with `set NODE_ENV=test&&` (global `NODE_ENV=production` on this machine otherwise fails fixture boot).
