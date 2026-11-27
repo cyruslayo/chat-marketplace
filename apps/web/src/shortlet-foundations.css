@@ -670,7 +670,7 @@
   .ui-tiles__tile { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-1); min-inline-size: 0; padding: var(--space-3); border-radius: var(--radius-card); background: var(--color-surface-subtle); font-size: var(--font-size-small); line-height: var(--font-line-small); font-weight: 600; color: var(--color-text); overflow-wrap: anywhere; }
   .ui-tiles__tile > .ui-icon { color: var(--color-action); }
 
-  .ui-result-rows { display: flex; flex-direction: column; gap: var(--space-2); }
+  .ui-result-rows { display: flex; flex-direction: column; gap: var(--space-2); margin: 0; padding: 0; list-style: none; }
   .ui-compare { overflow: hidden; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-workspace); background: var(--color-surface); font-size: var(--font-size-small); }
   .ui-compare__row { display: grid; grid-template-columns: 6rem repeat(2, minmax(0, 1fr)); border-block-end: 1px solid var(--color-border-subtle); }
   .ui-compare__row:last-child { border-block-end: 0; }
@@ -1019,9 +1019,10 @@
   .ui-composer--link .ui-composer__input { display: flex; align-items: center; min-inline-size: 0; color: var(--color-text-secondary); }
   .ui-composer--link .ui-composer__send { background: transparent; color: var(--color-action); }
   .ui-ask + .ui-tabbar { border-block-start-color: transparent; }
+  /* Issue 15: a media query, because .ui-appbar is its own size container; the side navigation shows from 48rem. */
+  @media (min-width: 48rem) { .ui-app:has(> .ui-sidenav) :is(.ui-tabbar, .ui-appbar--root, .ui-appbar__brand, .ui-appbar .ui-mode-label, .ui-appbar__help) { display: none; } }
   @container (min-width: 48rem) {
     .ui-app > .ui-sidenav { block-size: 100%; }
-    .ui-app:has(> .ui-sidenav) :is(.ui-tabbar, .ui-appbar--root, .ui-appbar__brand, .ui-appbar .ui-mode-label, .ui-appbar__help) { display: none; }
     .ui-app__main { inline-size: 100%; max-inline-size: 51.25rem; padding: 1.75rem var(--space-8) var(--space-12); }
     .ui-app__main--task { max-inline-size: 40rem; margin-inline: auto; }
     .ui-ask { padding: var(--space-2) var(--space-8) var(--space-4); }

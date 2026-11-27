@@ -408,6 +408,8 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays,
     .app { width: 100%; max-width: var(--layout-conversation-max); flex: 1; min-height: 0; margin: 0 auto; display: flex; flex-direction: column; }
     .ui-app__col > .app { max-width: none; }
     .ui-app:has(#active-workspace[data-mode="focused-surface"]:not([hidden])) > .ui-app__col > .ui-app__foot { display: none; }
+    /* Issue 15 (AppBar and SideNavigationGuest READMEs): from 48rem the side navigation carries the wordmark and mode label, so the chat header keeps only its actions. This page style is unlayered, so it must say so here. A media query, because the app bar is its own size container. */
+    @media (min-width: 48rem) { .ui-app:has(> .ui-sidenav) .app > .ui-appbar :is(.agent-mark, .header-identity, .ui-mode-label) { display: none; } }
     .app .ui-appbar { padding-block-start: max(var(--space-2), env(safe-area-inset-top)); }
     .header-identity h1 { margin: 0; font: inherit; }
     .header-identity { display: flex; align-items: center; min-height: var(--control-min-target); }
