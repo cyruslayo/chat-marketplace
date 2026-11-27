@@ -1,6 +1,6 @@
 # Guest-facing name: Xenia
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Blocked by: none (D14 accepted 27 Nov 2026)
 
@@ -19,3 +19,9 @@ Blocked by: none (D14 accepted 27 Nov 2026)
 ## Comments
 
 - D14 also asks for a trademark check before public launch; that is the owner's, not this issue's.
+- 27 Nov 2026 (resolved):
+  - Replaced guest-facing `"Shortlet"` with `"Xenia"` in `apps/web-agent/src/guest-content.ts` (`GUEST_ACCOUNT_COPY`, `GUEST_PAYMENT_COPY.lateReview`), `apps/web-agent/src/bank-transfer-a2ui.ts`, `apps/web/src/ui-kit.ts`, `apps/local-guest/src/guest-server.ts`, `apps/local-guest/src/client.ts` (and `"Ask the concierge"`), and `apps/local-guest/src/shortlet-app.ts` (`You will leave Xenia temporarily...`). Persona label stays `"Concierge · Stays"` (ADR 0107); `"Tolu from the Xenia team"` held back. Operator screens, routes, storage keys, identifiers and Worker name (`shortlet-pilot*`) unchanged.
+  - Checks:
+    - `npm run build` -> clean
+    - `npm run check && npx tsx --test test/guest-brand-xenia.test.ts test/guest-account-pages.test.ts test/guest-account-sign-in.test.ts test/guest-account-page.test.ts test/guest-ui-kit.test.ts` -> 109/109 passed (`guest-brand-xenia.test.ts` 2/2)
+    - Captured 24 screenshots (`appbar`, `signin`, `email` × 320/390/768/1280 × light/dark) under `.scratch/guest-ui-consistency/screenshots/30/`.

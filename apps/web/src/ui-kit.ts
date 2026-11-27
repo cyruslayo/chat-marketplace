@@ -89,7 +89,7 @@ export interface AppBarInput {
 
 export function appBarHtml(input: AppBarInput): string {
   const action = input.action === undefined ? "" : `<a class="ui-button ui-button--small ui-appbar__action" href="${escapeHtml(input.action.href)}">${icon(input.action.icon)}${escapeHtml(input.action.label)}</a>`;
-  return `<header class="ui-appbar"><a class="ui-icon-button" href="${escapeHtml(input.backHref)}" aria-label="${escapeHtml(input.backLabel)}">${icon("arrow-left")}</a><a class="ui-appbar__brand" href="/">${escapeHtml(input.brand ?? "Shortlet")}</a><span class="ui-appbar__grow"></span>${action}</header>`;
+  return `<header class="ui-appbar"><a class="ui-icon-button" href="${escapeHtml(input.backHref)}" aria-label="${escapeHtml(input.backLabel)}">${icon("arrow-left")}</a><a class="ui-appbar__brand" href="/">${escapeHtml(input.brand ?? "Xenia")}</a><span class="ui-appbar__grow"></span>${action}</header>`;
 }
 
 /** Decorative inline icon; pair with visible text or an aria-label on the control. */
@@ -143,7 +143,7 @@ export function errorPage(options: ErrorPageOptions): string {
   const recovery = options.action ?? { href: "/", label: "Back to your conversation" };
   const action = `<a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(recovery.href)}">${escapeHtml(recovery.label)}</a>`;
   return pageShell({
-    title: `${options.title} · Shortlet`,
+    title: `${options.title} · Xenia`,
     width: "narrow",
     frame: appBarHtml({ backHref: recovery.href, backLabel: recovery.label }),
     body: `<section class="ui-panel ui-empty" data-error-code="${escapeHtml(options.code)}" data-status="${options.status}"><div class="ui-empty__art">${icon(artIcon)}</div><h1>${escapeHtml(options.title)}</h1><p>${escapeHtml(options.message)}</p>${action}</section>`,

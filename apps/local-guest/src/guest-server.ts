@@ -282,6 +282,7 @@ import {
 } from "./guest-account-runtime.js";
 import {
   GUEST_ACCOUNT_COPY,
+  GUEST_MODE_CHOOSER,
   GUEST_PLANS_COPY,
   GUEST_TASK_RAIL,
   GUEST_VERTICALS,
@@ -348,7 +349,7 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays,
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   ${themeColourMetaHtml(SHELL_DATA_THEME)}
-  <title>Shortlet Concierge</title>
+  <title>Xenia Concierge</title>
   <link rel="stylesheet" href="/shortlet-foundations.css">
   <style>
     * { box-sizing: border-box; }
@@ -581,7 +582,7 @@ export function renderGuestShellHtml(mode: ModePresentation = GUEST_MODES.stays,
   <div class="app guest-editorial">
     <header class="ui-appbar">
       ${agentMarkHtml(mode, "appbar")}
-      <a class="header-identity ui-appbar__brand" href="/" aria-label="Shortlet home"><span>Shortlet</span></a>
+      <a class="header-identity ui-appbar__brand" href="/" aria-label="Xenia home"><span>Xenia</span></a>
       <span class="header-note">Abuja · Lagos</span>
       <span class="ui-appbar__grow"></span>
       <div class="header-actions">
@@ -777,7 +778,7 @@ export function renderNoScriptConversationHtml(input: {
     .map((entry) =>
       entry.role === "receipt"
         ? `<li class="no-js-receipt receipt-marker" data-role="receipt"><p>${icon("check")} ${escapeHtml(entry.text)}</p></li>`
-        : `<li class="turn ${entry.role} no-js-turn" data-role="${entry.role}"><p class="turn-label">${entry.role === "user" ? "You" : "Shortlet Concierge"}</p><div class="bubble">${escapeHtml(entry.text)}</div></li>`,
+        : `<li class="turn ${entry.role} no-js-turn" data-role="${entry.role}"><p class="turn-label">${entry.role === "user" ? "You" : escapeHtml(GUEST_MODE_CHOOSER.conciergeLabel(mode.label))}</p><div class="bubble">${escapeHtml(entry.text)}</div></li>`,
     )
     .join("");
   const surfaces = input.surfaces
@@ -806,7 +807,7 @@ export function renderNoScriptConversationHtml(input: {
           })
           .join("");
   return pageShell({
-    title: "Conversation · Shortlet",
+    title: "Conversation · Xenia",
     width: "narrow",
     // Issue 03k (ADR 0080 parity): the no-JS page carries the same two static theme-color tags as the shell.
     head: themeColourMetaHtml(SHELL_DATA_THEME),
@@ -871,7 +872,7 @@ export function renderConventionalBookingHtml(
     : "";
   const signInOffer = page.signInOffer ? signInOfferHtml(page.signInOffer) : "";
   return pageShell({
-    title: `${page.summary} · Shortlet`,
+    title: `${page.summary} · Xenia`,
     width: "narrow",
     frame: appFrameHtml({
       threadId: page.threadId,
@@ -1065,7 +1066,7 @@ export function renderConventionalSearchHtml(
       : chip("plus", "Budget", true),
   ].join("")}</div>`;
   return pageShell({
-    title: "Search results · Shortlet",
+    title: "Search results · Xenia",
     frame: appFrameHtml({ threadId: null, publicStep: "search" }),
     style:
       ".search-form{display:grid;gap:var(--space-3)}.stay-results{list-style:none;margin:0;padding:0;display:grid;gap:var(--space-4)}",
@@ -1331,7 +1332,7 @@ export function renderManualTransferPageHtml(input: {
     },
   ) =>
     pageShell({
-      title: `${heading} · Shortlet`,
+      title: `${heading} · Xenia`,
       width: "narrow",
       frame: appFrameHtml({
         threadId: input.threadId,
@@ -1536,7 +1537,7 @@ export function renderTransferPageHtml(input: {
     },
   ) =>
     pageShell({
-      title: `${heading} · Shortlet`,
+      title: `${heading} · Xenia`,
       width: "narrow",
       frame: appFrameHtml({
         threadId: input.threadId,
@@ -1870,9 +1871,9 @@ export function renderBetaInviteHtml(
     ? `<p id="invite-error" class="ui-field__error" role="alert">That invite code is not valid. Check the invite link you were sent.</p>`
     : "";
   return pageShell({
-    title: "Shortlet beta",
+    title: "Xenia beta",
     width: "narrow",
-    body: `<header class="ui-page__header"><p class="ui-eyebrow">Shortlet</p><h1>Shortlet beta</h1><p>This beta is open to invited testers. Open the invite link you were sent, or enter your invite code.</p></header><form class="ui-panel" method="${landingMessage === undefined ? "get" : "post"}" action="${landingMessage === undefined ? "/" : "/welcome/start"}">${landingMessage === undefined ? "" : `<input type="hidden" name="message" value="${escapeHtml(landingMessage)}">`}<div class="ui-field"><label class="ui-field__label" for="invite">Invite code</label><input id="invite" name="invite" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200" required${rejected ? ` aria-invalid="true" aria-describedby="invite-error"` : ""}>${error}</div><button class="ui-button ui-button--primary ui-button--block" type="submit">Continue</button></form>`,
+    body: `<header class="ui-page__header"><p class="ui-eyebrow">Xenia</p><h1>Xenia beta</h1><p>This beta is open to invited testers. Open the invite link you were sent, or enter your invite code.</p></header><form class="ui-panel" method="${landingMessage === undefined ? "get" : "post"}" action="${landingMessage === undefined ? "/" : "/welcome/start"}">${landingMessage === undefined ? "" : `<input type="hidden" name="message" value="${escapeHtml(landingMessage)}">`}<div class="ui-field"><label class="ui-field__label" for="invite">Invite code</label><input id="invite" name="invite" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="200" required${rejected ? ` aria-invalid="true" aria-describedby="invite-error"` : ""}>${error}</div><button class="ui-button ui-button--primary ui-button--block" type="submit">Continue</button></form>`,
   });
 }
 
@@ -1886,9 +1887,9 @@ export function renderLandingContinueHtml(
 ): string {
   const copy = GUEST_CONTINUE_CONVERSATION;
   return pageShell({
-    title: "Continue your conversation · Shortlet",
+    title: "Continue your conversation · Xenia",
     width: "narrow",
-    body: `<header class="ui-page__header"><p class="ui-eyebrow">Shortlet</p><h1>${escapeHtml(copy.heading)}</h1><p>${escapeHtml(copy.lede)}</p></header><section class="ui-panel"><a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(continueHref)}">${escapeHtml(copy.continue)}</a></section><form class="ui-panel" method="post" action="/welcome/start"><h2>${escapeHtml(copy.startNewHeading)}</h2><p>${escapeHtml(copy.reassurance)}</p><input type="hidden" name="message" value="${escapeHtml(message)}"><input type="hidden" name="startNew" value="1"><button class="ui-button ui-button--block" type="submit">${escapeHtml(copy.startNew)}</button></form>`,
+    body: `<header class="ui-page__header"><p class="ui-eyebrow">Xenia</p><h1>${escapeHtml(copy.heading)}</h1><p>${escapeHtml(copy.lede)}</p></header><section class="ui-panel"><a class="ui-button ui-button--primary ui-button--block" href="${escapeHtml(continueHref)}">${escapeHtml(copy.continue)}</a></section><form class="ui-panel" method="post" action="/welcome/start"><h2>${escapeHtml(copy.startNewHeading)}</h2><p>${escapeHtml(copy.reassurance)}</p><input type="hidden" name="message" value="${escapeHtml(message)}"><input type="hidden" name="startNew" value="1"><button class="ui-button ui-button--block" type="submit">${escapeHtml(copy.startNew)}</button></form>`,
   });
 }
 
@@ -4399,7 +4400,7 @@ export function createGuestRequestHandler(
         res.writeHead(200, GUEST_HTML_HEADERS);
         res.end(
           pageShell({
-            title: `${status.label} · Shortlet`,
+            title: `${status.label} · Xenia`,
             width: "narrow",
             frame: appFrameHtml(
               await threadFrame(

@@ -6146,7 +6146,7 @@ export class LocalGuestApp {
           summary: "Payment handoff",
           conventionalRoute: `/payments/offers/${encodeURIComponent(offerId)}/continue`,
           conventionalRouteLabel: `Continue to ${checkoutPurpose} · ${formatNgnKobo(checkoutAmount)}`,
-          textFallback: `You will leave Shortlet temporarily for hosted card checkout. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Next payment: ${formatNgnKobo(checkoutAmount)}. ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Payment has not succeeded and the booking is not confirmed. Your booking details will be retained when you return.`,
+          textFallback: `You will leave Xenia temporarily for hosted card checkout. ${artifact.facts.allInStayTotalKobo === undefined ? "" : `${GUEST_GLOSSARY.allInStayTotal}: ${formatNgnKobo(artifact.facts.allInStayTotalKobo)}. `}${artifact.facts.refundableSecurityDepositKobo ? `${GUEST_GLOSSARY.refundableSecurityDeposit} (separate): ${formatNgnKobo(artifact.facts.refundableSecurityDepositKobo)}. ` : ""}Next payment: ${formatNgnKobo(checkoutAmount)}. ${formatWAT(artifact.facts.paymentWindowExpiresAt)}. Payment has not succeeded and the booking is not confirmed. Your booking details will be retained when you return.`,
           a2uiMessages: cardPaymentArtifactToA2UI({ artifact, surfaceId }),
         },
       ],

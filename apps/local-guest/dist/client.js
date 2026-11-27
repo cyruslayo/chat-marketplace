@@ -10467,8 +10467,8 @@ Known schemas:
     offerNotFoundMessage: "This link does not open here. Sign in with the account that made this booking, or return to your conversation.",
     rateLimitedTitle: "Please slow down",
     rateLimitedMessage: "Too many requests came from here in a short time. Wait a few minutes, then try again.",
-    emailSubject: "Your Shortlet sign-in code",
-    emailBody: (code, minutes) => `Your Shortlet sign-in code is ${code}. It expires in ${minutes} minutes. If you did not ask for this code, you can ignore this email.`,
+    emailSubject: "Your Xenia sign-in code",
+    emailBody: (code, minutes) => `Your Xenia sign-in code is ${code}. It expires in ${minutes} minutes. If you did not ask for this code, you can ignore this email.`,
     unavailable: "Sign-in is not available right now. You can keep searching and booking without signing in.",
     signInRequired: "Sign in to see your account.",
     // Issue 08 sign-in offer after a request is sent and after a booking is confirmed. Functional wording, not final: awaiting human approval (Needs human: copy approval).
@@ -10477,8 +10477,8 @@ Known schemas:
     offerButton: "Send me a code",
     // Issue 07 account page. Functional wording, not final: awaiting human approval with the rest of this block.
     accountTitle: "Your account",
-    brandName: "Shortlet",
-    brandEyebrow: "Shortlet",
+    brandName: "Xenia",
+    brandEyebrow: "Xenia",
     backToConversation: "Back to your conversation",
     tryAgain: "Try again",
     backToAccount: "Back to your account",
@@ -10499,8 +10499,8 @@ Known schemas:
     changeEmailCodeTitle: "Confirm your new email",
     changeEmailCodeIntro: "We sent a six-digit code to the new address. Enter it to change your account email.",
     changeEmailCheckButton: "Confirm new email",
-    emailChangeSubject: "Confirm your new Shortlet email",
-    emailChangeBody: (code, minutes) => `Your Shortlet code to confirm this email address is ${code}. It expires in ${minutes} minutes. If you did not ask for this change, you can ignore this email.`,
+    emailChangeSubject: "Confirm your new Xenia email",
+    emailChangeBody: (code, minutes) => `Your Xenia code to confirm this email address is ${code}. It expires in ${minutes} minutes. If you did not ask for this change, you can ignore this email.`,
     emailChangedNotice: "Your account email has been changed.",
     phoneSavedNotice: "Your phone number has been saved.",
     sessionsHeading: "Where you are signed in",
@@ -10572,7 +10572,7 @@ Known schemas:
     transferHelp: "If you choose bank transfer, you can't switch to card until the transfer account expires.",
     manual: "Manual bank transfer",
     manualHelp: "Pay our business account and upload your receipt. Your booking confirms only after we check the money has arrived. You can't switch until this attempt expires or is declined.",
-    lateReview: "A late payment needs review and does not confirm your booking. Contact Shortlet if you sent money after the deadline.",
+    lateReview: "A late payment needs review and does not confirm your booking. Contact Xenia if you sent money after the deadline.",
     // The card-checkout failure message (ADR 0077). ACTION_NOT_AUTHORIZED keeps it because it is closed guest copy.
     checkoutStartFailed: "The secure card checkout could not be started."
   };
@@ -12855,7 +12855,7 @@ Known schemas:
     turn.className = `turn ui-message ${role}`;
     turn.setAttribute(
       "aria-label",
-      role === "user" ? "You" : "Shortlet Concierge"
+      role === "user" ? "You" : GUEST_MODE_CHOOSER.conciergeLabel(appliedMode.label)
     );
     const bubble = document.createElement("div");
     bubble.className = role === "user" ? "bubble ui-message--guest" : "bubble";
@@ -13155,7 +13155,7 @@ Known schemas:
       const ask = document.createElement("button");
       ask.type = "button";
       ask.className = "workspace-ask ui-button ui-button--quiet";
-      ask.textContent = "Ask Shortlet";
+      ask.textContent = "Ask the concierge";
       ask.addEventListener("click", askShortlet);
       heading.appendChild(ask);
     }

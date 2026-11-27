@@ -1158,7 +1158,7 @@ function addTurn(role: "assistant" | "user", text: string): void {
   turn.className = `turn ui-message ${role}`;
   turn.setAttribute(
     "aria-label",
-    role === "user" ? "You" : "Shortlet Concierge",
+    role === "user" ? "You" : GUEST_MODE_CHOOSER.conciergeLabel(appliedMode.label),
   );
   const bubble = document.createElement("div");
   bubble.className = role === "user" ? "bubble ui-message--guest" : "bubble";
@@ -1552,7 +1552,7 @@ function renderSurface(surface: GuestSurfacePayload, moveFocus = false): void {
     const ask = document.createElement("button");
     ask.type = "button";
     ask.className = "workspace-ask ui-button ui-button--quiet";
-    ask.textContent = "Ask Shortlet";
+    ask.textContent = "Ask the concierge";
     ask.addEventListener("click", askShortlet);
     heading.appendChild(ask);
   }
