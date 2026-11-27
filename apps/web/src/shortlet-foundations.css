@@ -348,6 +348,7 @@
   }
 
   .ui-sr-only, .ui-visually-hidden { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  [hidden]:not([hidden="until-found"]) { display: none !important; }
 
   /* Page scaffold for server-rendered conventional pages (see apps/web/src/ui-kit.ts). */
   .ui-page { inline-size: min(100% - 2 * var(--layout-gutter-mobile), var(--layout-workspace-max)); margin-inline: auto; padding-block: var(--space-6) var(--space-10); display: grid; gap: var(--space-6); align-content: start; container-type: inline-size; }

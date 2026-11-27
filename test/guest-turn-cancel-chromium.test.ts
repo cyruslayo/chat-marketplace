@@ -15,6 +15,7 @@ test("AC1 and AC2: Cancel appears after the still-working threshold, stops the w
     const tab = await browser.createTab();
     await tab.setViewport(390, 900);
     await tab.navigate(`${fixture.base}/`);
+    assert.equal(await tab.evaluate<boolean>("(() => { const el = document.querySelector('#turn-cancel'); return Boolean(el) && el.hasAttribute('hidden') && getComputedStyle(el).display === 'none' && el.getClientRects().length === 0; })()"), true, "Cancel is hidden before any turn");
     // Hold /api/turn open until the client aborts, then let /api/state answer normally.
     await tab.evaluate(`(() => {
       const original = window.fetch;

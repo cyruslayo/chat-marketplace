@@ -329,3 +329,10 @@ test("I2: no raw hex colours outside the theme token blocks and no --mode-* on b
     }
   }
 });
+
+test("Step 0: [hidden] base rule hides hidden kit elements while preserving hidden='until-found'", () => {
+  assert.match(
+    FOUNDATIONS_CSS,
+    /\[hidden\]:not\(\[hidden=["']until-found["']\]\)\s*\{\s*display:\s*none\s*!important;\s*\}/,
+  );
+});
