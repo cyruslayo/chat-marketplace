@@ -64,9 +64,9 @@ test("AC5: with JavaScript disabled, the back control and the rail render and th
       await tab.navigate(`${fixture.base}${path}`);
       assert.equal(await tab.evaluate<number>("document.querySelectorAll('.ui-rail > li').length"), 6, "the rail renders");
       assert.equal(await tab.evaluate<string>("document.querySelector('.ui-rail > li[aria-current=\"step\"]')?.dataset.step ?? ''"), "request");
-      assert.equal(await tab.evaluate<string>("document.querySelector('.ui-appbar .ui-icon-button')?.getAttribute('href') ?? ''"), `/?threadId=${threadId}`);
+      assert.equal(await tab.evaluate<string>("document.querySelector('.ui-appbar .ui-appbar__action')?.getAttribute('href') ?? ''"), `/?threadId=${threadId}`);
       // The back link works: it is a plain link to the conversation.
-      await tab.evaluate("document.querySelector('.ui-appbar .ui-icon-button').click()");
+      await tab.evaluate("document.querySelector('.ui-appbar .ui-appbar__action').click()");
       await tab.waitForFunction(`location.pathname === '/' && location.search === '?threadId=${threadId}'`, 10_000);
       assert.ok(await tab.evaluate<boolean>("Boolean(document.getElementById('composer'))"), "the conversation page loaded");
     } finally {

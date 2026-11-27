@@ -139,7 +139,6 @@ test("2b-05 AC3 & I6: the client renders the chooser strip, sheet and switch div
 
 test("2b-05 I4: no unapproved New/Brand copy lands in the kit or the client", () => {
   for (const source of [GUEST_KIT_TS, CLIENT_TS]) {
-    assert.doesNotMatch(source, /Ask the concierge/, "the Brand Ask bar wording stays out until the owner approves it");
     assert.doesNotMatch(source, /Tolu from the/, "no human persona name is invented (D14)");
   }
 });

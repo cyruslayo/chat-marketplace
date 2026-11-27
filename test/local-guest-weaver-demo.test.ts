@@ -153,8 +153,8 @@ test("Guest natural-language turn produces an authoritative discovery artifact r
   const journey = await startJourneyServer();
   try {
     const page = await fetch(`${journey.base}/`).then((response) => response.text());
-    assert.ok(page.includes("Shortlet"));
-    assert.ok(page.includes("Abuja · Lagos"));
+    assert.ok(page.includes("Xenia"));
+    assert.ok(page.includes("Concierge") && page.includes("Stays"));
     assertNoHandcodedCards(page);
 
     const turn = expectSuccess(

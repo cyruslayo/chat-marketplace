@@ -26,20 +26,26 @@ test("AC1: every standalone guest page renders the app bar and the journey rail,
       const response = await fetch(`${fixture.base}${path}`, { headers: { cookie: fixture.cookie, accept: "text/html" } });
       const html = await response.text();
       assert.equal(response.status, 200, `${spec.label} (${path})`);
-      assert.match(html, /<header class="ui-appbar">/, `${spec.label}: app bar`);
+      assert.match(html, /<header class="ui-appbar(?:\s|")/, `${spec.label}: app bar`);
       assert.match(html, /<ol class="ui-rail">/, `${spec.label}: journey rail`);
-      assert.match(html, new RegExp(`<a class="ui-icon-button" href="/\\?threadId=${threadId}" aria-label="Back to your conversation">`), `${spec.label}: back control targets its own thread`);
+      if (["review", "offer", "payment-ready"].includes(spec.stage)) {
+        assert.match(html, /<header class="ui-appbar ui-appbar--task">/, `${spec.label}: task bar`);
+        assert.match(html, new RegExp(`<a class="ui-appbar__action" href="/\\?threadId=${threadId}" aria-label="Close `), `${spec.label}: close control targets its own thread`);
+      } else {
+        assert.match(html, /<a class="ui-appbar__action" href="\/plans" aria-label="Your stays">/, `${spec.label}: back control targets /plans`);
+      }
       assert.equal(railSteps(html).length, 6, `${spec.label}: six steps`);
     });
   }
   // Failure path: a public page has no thread, so it goes back to "/" and the rail shows only the step it is on.
   await withPublicServer(async (base) => {
     const search = await (await fetch(`${base}${SEARCH_PATH}`)).text();
-    assert.match(search, /<a class="ui-icon-button" href="\/" aria-label="Back to your conversation">/);
+    assert.match(search, /<header class="ui-appbar ui-appbar--root">/);
+    assert.match(search, /class="ui-tabbar"/);
     assert.deepEqual(railSteps(search).filter(([, state]) => state === "current"), [["search", "current"]]);
     const unit = await (await fetch(`${base}/stays/unit-lagos-ikoyi-001`)).text();
     assert.match(unit, /<header class="ui-appbar">/);
-    assert.match(unit, /<a class="ui-icon-button" href="\/" aria-label="Back to your conversation">/);
+    assert.match(unit, /<a class="ui-appbar__action" href="\/" aria-label="Back to your conversation">/);
     assert.deepEqual(railSteps(unit).filter(([, state]) => state === "current"), [["stay", "current"]]);
     assert.doesNotMatch(unit, /threadId=/, "no thread id is invented for a public page");
   });

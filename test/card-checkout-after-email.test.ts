@@ -33,7 +33,7 @@ test("The handoff message and label are the same on both paths", async () => {
     assert.equal(afterEmail.handoff.conventionalRouteLabel, onFile.handoff.conventionalRouteLabel, "the continue label is the same on both paths");
     assert.match(afterEmail.handoff.conventionalRouteLabel ?? "", /^Continue to stay payment · ₦/, "the label names the stay payment and its amount");
     assert.equal(afterEmail.handoff.textFallback, onFile.handoff.textFallback, "the text fallback is the same on both paths");
-    assert.match(afterEmail.handoff.textFallback ?? "", /^You will leave Shortlet temporarily for hosted card checkout\./, "the text fallback is the direct path's wording");
+    assert.match(afterEmail.handoff.textFallback ?? "", /^You will leave Xenia temporarily for hosted card checkout\./, "the text fallback is the direct path's wording");
   } finally { emailPathHarness.f.close(); directHarness.f.close(); }
 });
 

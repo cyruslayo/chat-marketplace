@@ -22,13 +22,13 @@ test("AC1: at 1280px the conversation and workspace sit side by side, the worksp
     await tab.pressKey("Enter");
     await tab.waitForSelector("#active-workspace .stay-card", 10_000);
 
-    const layout = () => tab.evaluate<{ transcript: Box; workspace: Box; appbar: Box; overflow: number }>(`({ transcript: ${box("#transcript")}, workspace: ${box("#active-workspace")}, appbar: ${box(".ui-appbar")}, overflow: document.documentElement.scrollWidth - innerWidth })`);
+    const layout = () => tab.evaluate<{ transcript: Box; workspace: Box; appbar: Box; sidenav: Box; overflow: number }>(`({ transcript: ${box("#transcript")}, workspace: ${box("#active-workspace")}, appbar: ${box(".ui-appbar")}, sidenav: ${box(".ui-sidenav")}, overflow: document.documentElement.scrollWidth - innerWidth })`);
     const discovery = await layout();
     // Failure path: a workspace wider than the reading width, or one that overlaps the conversation, fails.
     assert.ok(discovery.workspace.width <= 760, `discovery workspace ${discovery.workspace.width}px`);
     assert.ok(discovery.transcript.right <= discovery.workspace.left, "side by side, no overlap");
     assert.ok(Math.abs(discovery.transcript.width - 460) <= 40, `conversation column ${discovery.transcript.width}px`);
-    assert.ok(discovery.appbar.width >= 1279, "the app bar spans the full width");
+    assert.ok(discovery.appbar.left >= discovery.sidenav.right - 1 && discovery.appbar.right >= 1279, "the side navigation and app bar span the full width");
     assert.equal(discovery.overflow <= 0, true);
     assert.equal(await tab.evaluate<number>("getComputedStyle(document.querySelector('#active-workspace .stay-grid')).gridTemplateColumns.split(' ').length"), 2, "discovery lays out two stay cards per row");
 

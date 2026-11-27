@@ -23,7 +23,7 @@ test("mobile conversation shell keeps one timeline, one workspace slot, and a te
   assert.match(html, /Start with a city, your dates/);
   assert.match(html, /available entire-place stays/);
   assert.doesNotMatch(html, /Local demo/);
-  assert.match(html, /100dvh/);
+  assert.match(html, /class="ui-app"/);
   assert.match(html, /prefers-reduced-motion/);
   assert.doesNotMatch(html, /microphone|speech recognition|voice input/i);
   assert.doesNotMatch(html, /Current workspace|Search updated|replaced by a newer workspace|Use the details below to continue|>Past</);

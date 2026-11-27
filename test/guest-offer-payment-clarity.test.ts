@@ -115,7 +115,7 @@ test("AC5: late-payment wording matches reconciliation authority without promisi
     g.advance(25 * 60_000);
     const closed = visibleText(await (await g.get(`${g.paymentPage}/manual-transfer`)).text());
     assert.doesNotMatch(closed, /is refunded in full|refund.*completed|automatically refunded/i);
-    assert.match(closed, /contact Shortlet/i);
+    assert.match(closed, /contact Xenia/i);
     assert.equal(g.env.interactionStore.findBookingSnapshotByOfferId(g.offerId), null);
   } finally { await g.close(); }
 });

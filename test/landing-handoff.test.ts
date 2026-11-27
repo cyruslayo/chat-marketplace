@@ -220,7 +220,7 @@ test("Landing 14 AC4: With the beta invite gate on, sending meets the gate exact
     assert.equal(sessionCookie(gated), "", "no session without the code");
     assert.equal(gated.headers.get("cache-control"), "no-store", "a page that echoes the message is never cached");
     const gatedHtml = await gated.text();
-    assert.match(gatedHtml, /Shortlet beta/);
+    assert.match(gatedHtml, /Xenia beta/);
     assert.match(gatedHtml, /<form[^>]*method="post"[^>]*action="\/welcome\/start"/);
     assert.ok(gatedHtml.includes(`name="message"`) && gatedHtml.includes(`value="${MESSAGE}"`), "the text is carried in a hidden body field");
     assert.match(gatedHtml, /name="invite"/);

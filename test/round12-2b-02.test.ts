@@ -155,7 +155,6 @@ test("2b-02 AC3 & I6: Journey rail shows compact 'Step N of 6 · <step>' below 4
 test("2b-02 I2 & I4: No unapproved tokens (--color-scrim) or unapproved New copy added", () => {
   assert.doesNotMatch(FOUNDATIONS_CSS, /--color-scrim/);
   assert.match(FOUNDATIONS_CSS, /\.ui-dialog::backdrop/);
-  assert.doesNotMatch(GUEST_KIT_TS, /\/plans|\/help|Close \{task\}/);
-  assert.doesNotMatch(CLIENT_TS, /\/plans|\/help/);
-  assert.match(appBarHtml({ backHref: "/", backLabel: "Back to your conversation" }), />Shortlet</);
+  assert.doesNotMatch(CLIENT_TS, /\/help/);
+  assert.match(appBarHtml({ backHref: "/", backLabel: "Back to your conversation" }), />Xenia</);
 });

@@ -195,9 +195,9 @@ test("AC4: Going back never cancels a submitted Booking Request", async () => {
 
 test("The no-JS conversation page shows the same journey rail (ADR-0080)", () => {
   const html = renderNoScriptConversationHtml({ threadId: "g-abcdef12", timeline: [], surfaces: [], journey: projectJourney("request", { kind: "declined", label: "Request declined" }) });
-  assert.match(html, /<nav class="ui-rail-nav no-js-journey" aria-label="Booking progress">/);
+  assert.match(html, /<nav class="ui-rail-nav" aria-label="Booking progress">/);
   assert.match(html, /<li data-step="request" data-state="failed" data-tone="danger">Request declined<span class="ui-sr-only"> \(not completed\)<\/span><\/li>/);
-  assert.doesNotMatch(html, /aria-current/);
+  assert.doesNotMatch(html, /aria-current="step"/);
   assert.doesNotMatch(renderNoScriptConversationHtml({ threadId: "g-abcdef12", timeline: [], surfaces: [] }), /class="ui-rail-nav/);
 });
 

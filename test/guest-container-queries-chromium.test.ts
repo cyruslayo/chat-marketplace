@@ -43,10 +43,10 @@ test("AC2: On a 1280 standard page with a wide main region, compare and facts us
     const tab = await browser.createTab();
     await tab.setViewport(1280, 900);
     await tab.navigate(`${fixture.base}/stays/search?area=old-ikoyi&checkIn=2026-09-10&checkOut=2026-09-13&partySize=2`);
-    await tab.waitForSelector("main.ui-page", 10_000);
-    const factsWide = await tab.evaluate<boolean>(`(() => { const main = document.querySelector("main.ui-page"); const dl = document.createElement("dl"); dl.className = "ui-facts"; dl.innerHTML = "<dt>Check-in</dt><dd>10 Sept 2026</dd>"; main.append(dl); const dt = dl.querySelector("dt").getBoundingClientRect(); const dd = dl.querySelector("dd").getBoundingClientRect(); const sideBySide = dd.top < dt.bottom - 1; dl.remove(); return sideBySide; })()`);
+    await tab.waitForSelector("main.ui-app__main", 10_000);
+    const factsWide = await tab.evaluate<boolean>(`(() => { const main = document.querySelector("main.ui-app__main"); const dl = document.createElement("dl"); dl.className = "ui-facts"; dl.innerHTML = "<dt>Check-in</dt><dd>10 Sept 2026</dd>"; main.append(dl); const dt = dl.querySelector("dt").getBoundingClientRect(); const dd = dl.querySelector("dd").getBoundingClientRect(); const sideBySide = dd.top < dt.bottom - 1; dl.remove(); return sideBySide; })()`);
     assert.equal(factsWide, true, "the standard-page facts are side by side");
-    const compareWide = await tab.evaluate<boolean>(`(() => { const main = document.querySelector("main.ui-page"); const table = document.createElement("div"); table.className = "ui-compare"; table.innerHTML = '<div class="ui-compare__row"><span>Key</span><span>A</span><span>B</span></div>'; main.append(table); const cells = [...table.querySelector(".ui-compare__row").children].map((el) => el.getBoundingClientRect()); const sideBySide = Math.abs(cells[0].top - cells[1].top) < 1; table.remove(); return sideBySide; })()`);
+    const compareWide = await tab.evaluate<boolean>(`(() => { const main = document.querySelector("main.ui-app__main"); const table = document.createElement("div"); table.className = "ui-compare"; table.innerHTML = '<div class="ui-compare__row"><span>Key</span><span>A</span><span>B</span></div>'; main.append(table); const cells = [...table.querySelector(".ui-compare__row").children].map((el) => el.getBoundingClientRect()); const sideBySide = Math.abs(cells[0].top - cells[1].top) < 1; table.remove(); return sideBySide; })()`);
     assert.equal(compareWide, true, "the standard-page comparison is side by side");
   } finally { await browser.close(); await fixture.close(); }
 });
@@ -64,7 +64,7 @@ test("AC3: There is no overflow at 320 in chat or on a standard page", async () 
     const factsStacked = await tab.evaluate<boolean>(`(() => { const dl = document.createElement("dl"); dl.className = "ui-facts"; dl.innerHTML = "<dt>Check-in</dt><dd>10 Sept 2026</dd>"; document.querySelector("#active-workspace").append(dl); const dt = dl.querySelector("dt").getBoundingClientRect(); const dd = dl.querySelector("dd").getBoundingClientRect(); const stacked = dd.top >= dt.bottom - 1; dl.remove(); return stacked; })()`);
     assert.equal(factsStacked, true, "facts stack at 320");
     await tab.navigate(`${fixture.base}/stays/search?area=old-ikoyi&checkIn=2026-09-10&checkOut=2026-09-13&partySize=2`);
-    await tab.waitForSelector("main.ui-page", 10_000);
+    await tab.waitForSelector("main.ui-app__main", 10_000);
     const pageOverflow = await tab.evaluate<number>("document.documentElement.scrollWidth - innerWidth");
     assert.equal(pageOverflow, 0, "standard page at 320 does not overflow");
   } finally { await browser.close(); await fixture.close(); }

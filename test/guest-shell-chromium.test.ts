@@ -46,6 +46,7 @@ test("AC3: Result rows (Your stays and search) render without a list marker", as
     const tab = await browser.createTab();
     await tab.setViewport(390, 844);
     await tab.navigate(`${fixture.base}/plans`);
+    await tab.waitForFunction("document.readyState === 'complete' && document.styleSheets.length > 0", 5_000);
     const style = await tab.evaluate<string>(`(() => {
       const list = document.createElement("ul");
       list.className = "ui-result-rows";

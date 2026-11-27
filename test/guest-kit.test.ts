@@ -177,7 +177,7 @@ test("AC6: pill components use --radius-pill, never --radius-round", async () =>
 });
 
 test("The default app bar without a brand is byte-identical to the Shortlet bar it replaces", () => {
-  const expected = `<header class="ui-appbar"><a class="ui-icon-button" href="/" aria-label="Back to your conversation">${icon("arrow-left")}</a><a class="ui-appbar__brand" href="/">Shortlet</a><span class="ui-appbar__grow"></span></header>`;
+  const expected = `<header class="ui-appbar"><a class="ui-icon-button" href="/" aria-label="Back to your conversation">${icon("arrow-left")}</a><a class="ui-appbar__brand" href="/">Xenia</a><span class="ui-appbar__grow"></span></header>`;
   assert.equal(appBarHtml({ backHref: "/", backLabel: "Back to your conversation" }), expected);
 });
 

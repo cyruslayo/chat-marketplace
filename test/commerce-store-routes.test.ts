@@ -268,7 +268,7 @@ test("Store and offer pages show the store name in the top bar, and tracking kee
     const tracking = await request(module, "GET", "/orders/track");
     assert.match(store.body, /<a class="ui-appbar__brand" href="\/">Daily Goods<\/a>/);
     assert.match(offer.body, /<a class="ui-appbar__brand" href="\/">Daily Goods<\/a>/);
-    assert.match(tracking.body, /<a class="ui-appbar__brand" href="\/">Shortlet<\/a>/);
+    assert.match(tracking.body, /<a class="ui-appbar__brand" href="\/">Xenia<\/a>/);
   } finally {
     database.close();
   }

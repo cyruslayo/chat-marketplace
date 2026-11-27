@@ -18,7 +18,7 @@ test("AC4: Each guest route has exactly one H1, naming the current task", () => 
   assert.equal(html.match(/<h1[\s>]/g)?.length, 1, "exactly one H1");
   assert.match(html, /<h1 id="route-heading" class="conversation-heading">Find a place to stay<\/h1>/);
   // Failure path: the brand is no longer a heading.
-  assert.match(html, /<a class="header-identity ui-appbar__brand" href="\/" aria-label="Shortlet home"><span>Shortlet<\/span><\/a>/);
+  assert.match(html, /<a class="header-identity ui-appbar__brand" href="\/" aria-label="Xenia home"><span>Xenia<\/span><\/a>/);
   assert.doesNotMatch(html, /<a[^>]*header-identity[^>]*>\s*<h1>/);
 });
 
